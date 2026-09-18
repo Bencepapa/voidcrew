@@ -13,7 +13,8 @@ const TEXTURE_SET_OPTIONS: { id: TextureSetId; label: string }[] = [
 
 const WALL_PROFILE_OPTIONS: { id: WallProfileId; label: string }[] = [
   { id: "flat", label: "Flat" },
-  { id: "beveled", label: "Beveled (sci-fi corridor)" },
+  { id: "convex", label: "Beveled - convex (bulges out)" },
+  { id: "concave", label: "Beveled - concave (recedes in)" },
 ];
 
 interface SliderConfig {
@@ -78,7 +79,7 @@ export function DebugPanel({ settings, onChange }: DebugPanelProps) {
         ))}
       </div>
 
-      {settings.wallProfile === "beveled" &&
+      {settings.wallProfile !== "flat" &&
         BEVEL_SLIDERS.map((s) => (
           <div key={s.key} className="flex flex-col gap-0.5">
             <div className="flex justify-between text-[10px] text-neutral-500">

@@ -5,7 +5,7 @@ import { DIR_VECTOR } from "../game/movement";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 
 export type TextureSetId = "wall1" | "wall2" | "wall3";
-export type WallProfileId = "flat" | "beveled";
+export type WallProfileId = "flat" | "convex" | "concave";
 
 export interface ViewportSettings {
   textureSet: TextureSetId;
@@ -24,7 +24,7 @@ export interface ViewportSettings {
 
 export const DEFAULT_SETTINGS: ViewportSettings = {
   textureSet: "wall3",
-  wallProfile: "beveled",
+  wallProfile: "convex",
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
@@ -37,35 +37,58 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   bevelAngleDeg: 30,
 };
 
-// A flat wall panel with the top/bottom edges beveled inward, like the
-// classic sci-fi corridor look: floor and ceiling stay flush with the grid
-// boundary, but the middle band recesses inward via two angled bevels.
-// Segments are hard-edged (not smoothed) so each keeps its own flat normal.
-function createBeveledWallGeometry(width: number, height: number, bevelFraction: number, bevelAngleDeg: number): THREE.BufferGeometry {
+// A flat wall panel with the top/bottom edges beveled, like the classic
+// sci-fi corridor look: floor and ceiling stay flush with the grid boundary,
+// but the middle band bulges toward the room (convex, sign=+1) or recedes
+// away from it (concave, sign=-1) via two angled bevels.
+//
+// Each wall face is built independently, so a naive width-uniform bevel
+// doesn't meet correctly where two perpendicular walls share a corner: convex
+// leaves a gap (both edges pull away from the true corner line in different
+// directions) and concave overlaps (both edges push past it). The fix is to
+// taper the bevel amount back to zero within a small margin of each side
+// edge, so every panel is flush (z=0) exactly at the corner regardless of
+// direction, and only bulges/recedes in its own middle stretch.
+function createBeveledWallGeometry(
+  width: number,
+  height: number,
+  bevelFraction: number,
+  bevelAngleDeg: number,
+  sign: 1 | -1,
+): THREE.BufferGeometry {
   const bevelH = height * bevelFraction;
-  const recess = bevelH * Math.tan((bevelAngleDeg * Math.PI) / 180);
-  const halfW = width / 2;
-
-  // profile points (y, z) walking from floor to ceiling, centered on the
-  // origin to match THREE.PlaneGeometry's local coordinate convention (both
-  // are positioned by the same `mesh.position.y = wallHeight / 2` call)
+  const recess = bevelH * Math.tan((bevelAngleDeg * Math.PI) / 180) * sign;
   const halfH = height / 2;
-  const profile: [number, number][] = [
+  const halfW = width / 2;
+  const margin = Math.min(0.15, width * 0.2);
+
+  // profile points (y, zBase) centered on the origin to match
+  // THREE.PlaneGeometry's local coordinate convention (both are positioned
+  // by the same `mesh.position.y = wallHeight / 2` call)
+  const yProfile: [number, number][] = [
     [-halfH, 0],
     [-halfH + bevelH, recess],
     [halfH - bevelH, recess],
     [halfH, 0],
   ];
 
+  // width columns: flush at the true edges, full effect inside the margin
+  const xCols = [-halfW, -halfW + margin, halfW - margin, halfW];
+  const taper = [0, 1, 1, 0];
+
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
 
-  for (let i = 0; i < profile.length - 1; i++) {
-    const [y0, z0] = profile[i];
-    const [y1, z1] = profile[i + 1];
+  for (let yi = 0; yi < yProfile.length - 1; yi++) {
+    const [y0, z0base] = yProfile[yi];
+    const [y1, z1base] = yProfile[yi + 1];
+
+    // flat per-row normal from the height-direction slope only (the small
+    // extra slope introduced by the width taper near corners is ignored -
+    // an acceptable approximation given how narrow that margin is)
     const dy = y1 - y0;
-    const dz = z1 - z0;
+    const dz = z1base - z0base;
     let ny = -dz;
     let nz = dy;
     const len = Math.hypot(ny, nz) || 1;
@@ -76,17 +99,26 @@ function createBeveledWallGeometry(width: number, height: number, bevelFraction:
       nz = -nz;
     }
 
-    const v0 = [-halfW, y0, z0];
-    const v1 = [halfW, y0, z0];
-    const v2 = [halfW, y1, z1];
-    const v3 = [-halfW, y1, z1];
+    for (let xi = 0; xi < xCols.length - 1; xi++) {
+      const x0 = xCols[xi];
+      const x1 = xCols[xi + 1];
+      const t0 = taper[xi];
+      const t1 = taper[xi + 1];
 
-    positions.push(...v0, ...v1, ...v2, ...v0, ...v2, ...v3);
-    for (let k = 0; k < 6; k++) normals.push(0, ny, nz);
+      const v00 = [x0, y0, z0base * t0];
+      const v10 = [x1, y0, z0base * t1];
+      const v11 = [x1, y1, z1base * t1];
+      const v01 = [x0, y1, z1base * t0];
 
-    const v0v = i / (profile.length - 1);
-    const v1v = (i + 1) / (profile.length - 1);
-    uvs.push(0, v0v, 1, v0v, 1, v1v, 0, v0v, 1, v1v, 0, v1v);
+      positions.push(...v00, ...v10, ...v11, ...v00, ...v11, ...v01);
+      for (let k = 0; k < 6; k++) normals.push(0, ny, nz);
+
+      const uv0 = yi / (yProfile.length - 1);
+      const uv1 = (yi + 1) / (yProfile.length - 1);
+      const u0 = (x0 + halfW) / width;
+      const u1 = (x1 + halfW) / width;
+      uvs.push(u0, uv0, u1, uv0, u1, uv1, u0, uv0, u1, uv1, u0, uv1);
+    }
   }
 
   const geo = new THREE.BufferGeometry();
@@ -218,9 +250,9 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
 
     const wallGeo =
-      settings.wallProfile === "beveled"
-        ? createBeveledWallGeometry(1, wallHeight, settings.bevelFraction, settings.bevelAngleDeg)
-        : new THREE.PlaneGeometry(1, wallHeight);
+      settings.wallProfile === "flat"
+        ? new THREE.PlaneGeometry(1, wallHeight)
+        : createBeveledWallGeometry(1, wallHeight, settings.bevelFraction, settings.bevelAngleDeg, settings.wallProfile === "convex" ? 1 : -1);
     const floorGeo = new THREE.PlaneGeometry(1, 1);
 
     const group = new THREE.Group();
