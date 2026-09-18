@@ -5,9 +5,11 @@ import { DIR_VECTOR } from "../game/movement";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 
 export type TextureSetId = "wall1" | "wall2" | "wall3";
+export type WallProfileId = "flat" | "beveled";
 
 export interface ViewportSettings {
   textureSet: TextureSetId;
+  wallProfile: WallProfileId;
   eyeHeight: number;
   wallHeight: number;
   cameraPullback: number;
@@ -16,10 +18,13 @@ export interface ViewportSettings {
   pointLightIntensity: number;
   ambientIntensity: number;
   bobEnabled: boolean;
+  bevelFraction: number;
+  bevelAngleDeg: number;
 }
 
 export const DEFAULT_SETTINGS: ViewportSettings = {
   textureSet: "wall3",
+  wallProfile: "beveled",
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
@@ -28,7 +33,68 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   pointLightIntensity: 3.5,
   ambientIntensity: 0.7,
   bobEnabled: true,
+  bevelFraction: 0.2,
+  bevelAngleDeg: 30,
 };
+
+// A flat wall panel with the top/bottom edges beveled inward, like the
+// classic sci-fi corridor look: floor and ceiling stay flush with the grid
+// boundary, but the middle band recesses inward via two angled bevels.
+// Segments are hard-edged (not smoothed) so each keeps its own flat normal.
+function createBeveledWallGeometry(width: number, height: number, bevelFraction: number, bevelAngleDeg: number): THREE.BufferGeometry {
+  const bevelH = height * bevelFraction;
+  const recess = bevelH * Math.tan((bevelAngleDeg * Math.PI) / 180);
+  const halfW = width / 2;
+
+  // profile points (y, z) walking from floor to ceiling, centered on the
+  // origin to match THREE.PlaneGeometry's local coordinate convention (both
+  // are positioned by the same `mesh.position.y = wallHeight / 2` call)
+  const halfH = height / 2;
+  const profile: [number, number][] = [
+    [-halfH, 0],
+    [-halfH + bevelH, recess],
+    [halfH - bevelH, recess],
+    [halfH, 0],
+  ];
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+
+  for (let i = 0; i < profile.length - 1; i++) {
+    const [y0, z0] = profile[i];
+    const [y1, z1] = profile[i + 1];
+    const dy = y1 - y0;
+    const dz = z1 - z0;
+    let ny = -dz;
+    let nz = dy;
+    const len = Math.hypot(ny, nz) || 1;
+    ny /= len;
+    nz /= len;
+    if (nz < 0) {
+      ny = -ny;
+      nz = -nz;
+    }
+
+    const v0 = [-halfW, y0, z0];
+    const v1 = [halfW, y0, z0];
+    const v2 = [halfW, y1, z1];
+    const v3 = [-halfW, y1, z1];
+
+    positions.push(...v0, ...v1, ...v2, ...v0, ...v2, ...v3);
+    for (let k = 0; k < 6; k++) normals.push(0, ny, nz);
+
+    const v0v = i / (profile.length - 1);
+    const v1v = (i + 1) / (profile.length - 1);
+    uvs.push(0, v0v, 1, v0v, 1, v1v, 0, v0v, 1, v1v, 0, v1v);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  return geo;
+}
 
 const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string }> = {
   // import.meta.env.BASE_URL matches Vite's `base` config (e.g. "/voidcrew/"
@@ -151,7 +217,10 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
 
-    const wallGeo = new THREE.PlaneGeometry(1, wallHeight);
+    const wallGeo =
+      settings.wallProfile === "beveled"
+        ? createBeveledWallGeometry(1, wallHeight, settings.bevelFraction, settings.bevelAngleDeg)
+        : new THREE.PlaneGeometry(1, wallHeight);
     const floorGeo = new THREE.PlaneGeometry(1, 1);
 
     const group = new THREE.Group();
@@ -278,7 +347,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
       normalMap.dispose();
       renderer.dispose();
     };
-  }, [map, settings.textureSet, settings.wallHeight]);
+  }, [map, settings.textureSet, settings.wallProfile, settings.wallHeight, settings.bevelFraction, settings.bevelAngleDeg]);
 
   return <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-black" />;
 }

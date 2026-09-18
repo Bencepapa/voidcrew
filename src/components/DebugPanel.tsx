@@ -1,4 +1,4 @@
-import type { TextureSetId, ViewportSettings } from "./GameViewport";
+import type { TextureSetId, ViewportSettings, WallProfileId } from "./GameViewport";
 
 interface DebugPanelProps {
   settings: ViewportSettings;
@@ -9,6 +9,11 @@ const TEXTURE_SET_OPTIONS: { id: TextureSetId; label: string }[] = [
   { id: "wall1", label: "wall1 - photo" },
   { id: "wall2", label: "wall2 - pixel art" },
   { id: "wall3", label: "wall3 - pixel art (5x)" },
+];
+
+const WALL_PROFILE_OPTIONS: { id: WallProfileId; label: string }[] = [
+  { id: "flat", label: "Flat" },
+  { id: "beveled", label: "Beveled (sci-fi corridor)" },
 ];
 
 interface SliderConfig {
@@ -27,6 +32,11 @@ const SLIDERS: SliderConfig[] = [
   { key: "fov", label: "FOV", min: 40, max: 100, step: 1 },
   { key: "pointLightIntensity", label: "Point light", min: 0, max: 8, step: 0.1 },
   { key: "ambientIntensity", label: "Ambient light", min: 0, max: 2, step: 0.05 },
+];
+
+const BEVEL_SLIDERS: SliderConfig[] = [
+  { key: "bevelFraction", label: "Bevel fraction", min: 0.05, max: 0.45, step: 0.01 },
+  { key: "bevelAngleDeg", label: "Bevel angle (deg)", min: 5, max: 60, step: 1 },
 ];
 
 export function DebugPanel({ settings, onChange }: DebugPanelProps) {
@@ -52,6 +62,40 @@ export function DebugPanel({ settings, onChange }: DebugPanelProps) {
           </label>
         ))}
       </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="text-[10px] text-neutral-500">Wall type</div>
+        {WALL_PROFILE_OPTIONS.map((opt) => (
+          <label key={opt.id} className="flex items-center gap-2 text-[11px] cursor-pointer">
+            <input
+              type="radio"
+              name="wallProfile"
+              checked={settings.wallProfile === opt.id}
+              onChange={() => set("wallProfile", opt.id)}
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+
+      {settings.wallProfile === "beveled" &&
+        BEVEL_SLIDERS.map((s) => (
+          <div key={s.key} className="flex flex-col gap-0.5">
+            <div className="flex justify-between text-[10px] text-neutral-500">
+              <span>{s.label}</span>
+              <span>{(settings[s.key] as number).toFixed(2)}</span>
+            </div>
+            <input
+              type="range"
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              value={settings[s.key] as number}
+              onChange={(e) => set(s.key, parseFloat(e.target.value) as ViewportSettings[typeof s.key])}
+              className="w-full"
+            />
+          </div>
+        ))}
 
       {SLIDERS.map((s) => (
         <div key={s.key} className="flex flex-col gap-0.5">
