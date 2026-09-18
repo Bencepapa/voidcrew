@@ -1,20 +1,22 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Void Crew
 
-# Run and deploy your AI Studio app
+A first-person, grid-based crew dungeon crawler set aboard a derelict spaceship — built with React, Three.js and Vite.
 
-This contains everything you need to run your app locally.
+## Run locally
 
-View your app in AI Studio: https://ai.studio/apps/4f3abd23-55b9-4bc1-831d-7c1dbb0d992f
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. (Optional) Set `GEMINI_API_KEY` in `.env.local` if you want to run the texture-generation scripts under `scripts/`
 3. Run the app:
    `npm run dev`
+
+## Project layout
+
+- `src/game/` — map data, movement, and game state
+- `src/components/GameViewport.tsx` — the Three.js first-person renderer
+- `src/components/DebugPanel.tsx` — in-game panel for switching wall texture sets and tuning rendering settings live
+- `public/textures/` — wall texture sets (diffuse + normal maps) used by the renderer
+- `concept/` — early concept art and AI-generated texture experiments
+- `scripts/` — Gemini-based texture generation and pixel-art downscaling helpers

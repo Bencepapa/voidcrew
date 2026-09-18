@@ -1,0 +1,80 @@
+import type { TextureSetId, ViewportSettings } from "./GameViewport";
+
+interface DebugPanelProps {
+  settings: ViewportSettings;
+  onChange: (settings: ViewportSettings) => void;
+}
+
+const TEXTURE_SET_OPTIONS: { id: TextureSetId; label: string }[] = [
+  { id: "wall1", label: "wall1 - photo" },
+  { id: "wall2", label: "wall2 - pixel art" },
+  { id: "wall3", label: "wall3 - pixel art (5x)" },
+];
+
+interface SliderConfig {
+  key: keyof ViewportSettings;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+}
+
+const SLIDERS: SliderConfig[] = [
+  { key: "eyeHeight", label: "Eye height", min: 0.1, max: 0.9, step: 0.01 },
+  { key: "wallHeight", label: "Wall height", min: 0.6, max: 2, step: 0.05 },
+  { key: "cameraPullback", label: "Camera pullback", min: 0, max: 0.49, step: 0.01 },
+  { key: "moveDurationMs", label: "Move duration (ms)", min: 60, max: 600, step: 10 },
+  { key: "fov", label: "FOV", min: 40, max: 100, step: 1 },
+  { key: "pointLightIntensity", label: "Point light", min: 0, max: 8, step: 0.1 },
+  { key: "ambientIntensity", label: "Ambient light", min: 0, max: 2, step: 0.05 },
+];
+
+export function DebugPanel({ settings, onChange }: DebugPanelProps) {
+  function set<K extends keyof ViewportSettings>(key: K, value: ViewportSettings[K]) {
+    onChange({ ...settings, [key]: value });
+  }
+
+  return (
+    <div className="w-full h-full flex flex-col gap-3 bg-neutral-900/80 border border-neutral-700 rounded-sm p-2 overflow-y-auto text-neutral-300">
+      <div className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">Debug</div>
+
+      <div className="flex flex-col gap-1">
+        <div className="text-[10px] text-neutral-500">Texture set</div>
+        {TEXTURE_SET_OPTIONS.map((opt) => (
+          <label key={opt.id} className="flex items-center gap-2 text-[11px] cursor-pointer">
+            <input
+              type="radio"
+              name="textureSet"
+              checked={settings.textureSet === opt.id}
+              onChange={() => set("textureSet", opt.id)}
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+
+      {SLIDERS.map((s) => (
+        <div key={s.key} className="flex flex-col gap-0.5">
+          <div className="flex justify-between text-[10px] text-neutral-500">
+            <span>{s.label}</span>
+            <span>{(settings[s.key] as number).toFixed(2)}</span>
+          </div>
+          <input
+            type="range"
+            min={s.min}
+            max={s.max}
+            step={s.step}
+            value={settings[s.key] as number}
+            onChange={(e) => set(s.key, parseFloat(e.target.value) as ViewportSettings[typeof s.key])}
+            className="w-full"
+          />
+        </div>
+      ))}
+
+      <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+        <input type="checkbox" checked={settings.bobEnabled} onChange={(e) => set("bobEnabled", e.target.checked)} />
+        Idle head-bob
+      </label>
+    </div>
+  );
+}
