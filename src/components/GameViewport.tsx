@@ -57,7 +57,10 @@ function createBeveledWallGeometry(
   sign: 1 | -1,
 ): THREE.BufferGeometry {
   const bevelH = height * bevelFraction;
-  const recess = bevelH * Math.tan((bevelAngleDeg * Math.PI) / 180) * sign;
+  // bevelAngleDeg is measured from horizontal (the floor/ceiling plane), not
+  // from vertical - so recess = adjacent/opposite = bevelH / tan(angle).
+  // Lower angle -> closer to flat/horizontal -> more dramatic recess.
+  const recess = (bevelH / Math.tan((bevelAngleDeg * Math.PI) / 180)) * sign;
   const halfH = height / 2;
   const halfW = width / 2;
   const margin = Math.min(0.15, width * 0.2);

@@ -37,7 +37,7 @@ const SLIDERS: SliderConfig[] = [
 
 const BEVEL_SLIDERS: SliderConfig[] = [
   { key: "bevelFraction", label: "Bevel fraction", min: 0.05, max: 0.45, step: 0.01 },
-  { key: "bevelAngleDeg", label: "Bevel angle (deg)", min: 5, max: 60, step: 1 },
+  { key: "bevelAngleDeg", label: "Bevel angle (deg, from floor)", min: 15, max: 75, step: 1 },
 ];
 
 export function DebugPanel({ settings, onChange }: DebugPanelProps) {
