@@ -2,6 +2,8 @@
 
 A first-person, grid-based crew dungeon crawler set aboard a derelict spaceship — built with React, Three.js and Vite.
 
+**Play it here: https://bencepapa.github.io/voidcrew/**
+
 ## Run locally
 
 **Prerequisites:** Node.js
