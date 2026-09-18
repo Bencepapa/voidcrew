@@ -31,9 +31,12 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
 };
 
 const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string }> = {
-  wall1: { diffuse: "/textures/wall1/diffuse.jpeg", normal: "/textures/wall1/normal.png" },
-  wall2: { diffuse: "/textures/wall2/diffuse.png", normal: "/textures/wall2/normal.png" },
-  wall3: { diffuse: "/textures/wall3/diffuse.png", normal: "/textures/wall3/normal.png" },
+  // import.meta.env.BASE_URL matches Vite's `base` config (e.g. "/voidcrew/"
+  // on GitHub Pages) - a hardcoded "/textures/..." would 404 there since the
+  // app isn't served from the domain root.
+  wall1: { diffuse: `${import.meta.env.BASE_URL}textures/wall1/diffuse.jpeg`, normal: `${import.meta.env.BASE_URL}textures/wall1/normal.png` },
+  wall2: { diffuse: `${import.meta.env.BASE_URL}textures/wall2/diffuse.png`, normal: `${import.meta.env.BASE_URL}textures/wall2/normal.png` },
+  wall3: { diffuse: `${import.meta.env.BASE_URL}textures/wall3/diffuse.png`, normal: `${import.meta.env.BASE_URL}textures/wall3/normal.png` },
 };
 
 const DOOR_COLOR = 0xd92626;
