@@ -20,6 +20,7 @@ export interface ViewportSettings {
   bobEnabled: boolean;
   bevelFraction: number;
   bevelAngleDeg: number;
+  displacementScale: number;
 }
 
 export const DEFAULT_SETTINGS: ViewportSettings = {
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   bobEnabled: true,
   bevelFraction: 0.2,
   bevelAngleDeg: 30,
+  displacementScale: 0.03,
 };
 
 // A flat wall panel with the top/bottom edges beveled, like the classic
@@ -49,12 +51,16 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
 // taper the bevel amount back to zero within a small margin of each side
 // edge, so every panel is flush (z=0) exactly at the corner regardless of
 // direction, and only bulges/recedes in its own middle stretch.
+// `subdivisions` splits each coarse height-band/width-column into a fine
+// grid - a displacementMap needs enough vertices to read as smooth relief
+// instead of a handful of blocky quads.
 function createBeveledWallGeometry(
   width: number,
   height: number,
   bevelFraction: number,
   bevelAngleDeg: number,
   sign: 1 | -1,
+  subdivisions = 10,
 ): THREE.BufferGeometry {
   const bevelH = height * bevelFraction;
   // bevelAngleDeg is measured from horizontal (the floor/ceiling plane), not
@@ -107,20 +113,39 @@ function createBeveledWallGeometry(
       const x1 = xCols[xi + 1];
       const t0 = taper[xi];
       const t1 = taper[xi + 1];
+      const uvBase0 = yi / (yProfile.length - 1);
+      const uvBase1 = (yi + 1) / (yProfile.length - 1);
 
-      const v00 = [x0, y0, z0base * t0];
-      const v10 = [x1, y0, z0base * t1];
-      const v11 = [x1, y1, z1base * t1];
-      const v01 = [x0, y1, z1base * t0];
+      for (let sv = 0; sv < subdivisions; sv++) {
+        const fv0 = sv / subdivisions;
+        const fv1 = (sv + 1) / subdivisions;
+        const yA = lerp(y0, y1, fv0);
+        const yB = lerp(y0, y1, fv1);
+        const zBaseA = lerp(z0base, z1base, fv0);
+        const zBaseB = lerp(z0base, z1base, fv1);
+        const uvA = lerp(uvBase0, uvBase1, fv0);
+        const uvB = lerp(uvBase0, uvBase1, fv1);
 
-      positions.push(...v00, ...v10, ...v11, ...v00, ...v11, ...v01);
-      for (let k = 0; k < 6; k++) normals.push(0, ny, nz);
+        for (let sh = 0; sh < subdivisions; sh++) {
+          const fh0 = sh / subdivisions;
+          const fh1 = (sh + 1) / subdivisions;
+          const xA = lerp(x0, x1, fh0);
+          const xB = lerp(x0, x1, fh1);
+          const tA = lerp(t0, t1, fh0);
+          const tB = lerp(t0, t1, fh1);
+          const uA = (xA + halfW) / width;
+          const uB = (xB + halfW) / width;
 
-      const uv0 = yi / (yProfile.length - 1);
-      const uv1 = (yi + 1) / (yProfile.length - 1);
-      const u0 = (x0 + halfW) / width;
-      const u1 = (x1 + halfW) / width;
-      uvs.push(u0, uv0, u1, uv0, u1, uv1, u0, uv0, u1, uv1, u0, uv1);
+          const v00 = [xA, yA, zBaseA * tA];
+          const v10 = [xB, yA, zBaseA * tB];
+          const v11 = [xB, yB, zBaseB * tB];
+          const v01 = [xA, yB, zBaseB * tA];
+
+          positions.push(...v00, ...v10, ...v11, ...v00, ...v11, ...v01);
+          for (let k = 0; k < 6; k++) normals.push(0, ny, nz);
+          uvs.push(uA, uvA, uB, uvA, uB, uvB, uA, uvA, uB, uvB, uA, uvB);
+        }
+      }
     }
   }
 
@@ -131,13 +156,27 @@ function createBeveledWallGeometry(
   return geo;
 }
 
-const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string }> = {
+const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; depth: string }> = {
   // import.meta.env.BASE_URL matches Vite's `base` config (e.g. "/voidcrew/"
   // on GitHub Pages) - a hardcoded "/textures/..." would 404 there since the
   // app isn't served from the domain root.
-  wall1: { diffuse: `${import.meta.env.BASE_URL}textures/wall1/diffuse.jpeg`, normal: `${import.meta.env.BASE_URL}textures/wall1/normal.png` },
-  wall2: { diffuse: `${import.meta.env.BASE_URL}textures/wall2/diffuse.png`, normal: `${import.meta.env.BASE_URL}textures/wall2/normal.png` },
-  wall3: { diffuse: `${import.meta.env.BASE_URL}textures/wall3/diffuse.png`, normal: `${import.meta.env.BASE_URL}textures/wall3/normal.png` },
+  wall1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/wall1/diffuse.jpeg`,
+    normal: `${import.meta.env.BASE_URL}textures/wall1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/wall1/depth.png`,
+  },
+  wall2: {
+    diffuse: `${import.meta.env.BASE_URL}textures/wall2/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/wall2/normal.png`,
+    // wall2 has no real depth map from the Sprite Lamp pass - flat/neutral
+    // fallback so displacement is just a no-op instead of erroring.
+    depth: `${import.meta.env.BASE_URL}textures/wall2/depth.png`,
+  },
+  wall3: {
+    diffuse: `${import.meta.env.BASE_URL}textures/wall3/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/wall3/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/wall3/depth.png`,
+  },
 };
 
 const DOOR_COLOR = 0xd92626;
@@ -244,18 +283,34 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
     const loader = new THREE.TextureLoader();
     const diffuse = loader.load(texturePaths.diffuse);
     const normalMap = loader.load(texturePaths.normal);
+    const depthMap = loader.load(texturePaths.depth);
     diffuse.colorSpace = THREE.SRGBColorSpace;
 
     const wallHeight = settings.wallHeight;
-    const wallMat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap, roughness: 0.85, metalness: 0.25 });
+    const wallMat = new THREE.MeshStandardMaterial({
+      map: diffuse,
+      normalMap,
+      displacementMap: depthMap,
+      displacementScale: settings.displacementScale,
+      roughness: 0.85,
+      metalness: 0.25,
+    });
     const doorMat = new THREE.MeshStandardMaterial({ color: DOOR_COLOR, roughness: 0.6 });
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
 
+    const WALL_SUBDIVISIONS = 10;
     const wallGeo =
       settings.wallProfile === "flat"
-        ? new THREE.PlaneGeometry(1, wallHeight)
-        : createBeveledWallGeometry(1, wallHeight, settings.bevelFraction, settings.bevelAngleDeg, settings.wallProfile === "convex" ? 1 : -1);
+        ? new THREE.PlaneGeometry(1, wallHeight, WALL_SUBDIVISIONS * 3, WALL_SUBDIVISIONS * 3)
+        : createBeveledWallGeometry(
+            1,
+            wallHeight,
+            settings.bevelFraction,
+            settings.bevelAngleDeg,
+            settings.wallProfile === "convex" ? 1 : -1,
+            WALL_SUBDIVISIONS,
+          );
     const floorGeo = new THREE.PlaneGeometry(1, 1);
 
     const group = new THREE.Group();
@@ -380,9 +435,18 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
       ceilMat.dispose();
       diffuse.dispose();
       normalMap.dispose();
+      depthMap.dispose();
       renderer.dispose();
     };
-  }, [map, settings.textureSet, settings.wallProfile, settings.wallHeight, settings.bevelFraction, settings.bevelAngleDeg]);
+  }, [
+    map,
+    settings.textureSet,
+    settings.wallProfile,
+    settings.wallHeight,
+    settings.bevelFraction,
+    settings.bevelAngleDeg,
+    settings.displacementScale,
+  ]);
 
   return <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-black" />;
 }

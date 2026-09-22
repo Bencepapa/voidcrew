@@ -26,6 +26,7 @@ interface SliderConfig {
 }
 
 const SLIDERS: SliderConfig[] = [
+  { key: "displacementScale", label: "Depth displacement", min: 0, max: 0.06, step: 0.005 },
   { key: "eyeHeight", label: "Eye height", min: 0.1, max: 0.9, step: 0.01 },
   { key: "wallHeight", label: "Wall height", min: 0.6, max: 2, step: 0.05 },
   { key: "cameraPullback", label: "Camera pullback", min: 0, max: 0.49, step: 0.01 },
