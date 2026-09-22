@@ -25,7 +25,7 @@ export interface ViewportSettings {
 
 export const DEFAULT_SETTINGS: ViewportSettings = {
   textureSet: "wall3",
-  wallProfile: "convex",
+  wallProfile: "flat",
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
