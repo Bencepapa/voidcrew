@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { deck2Engineering, cellAt } from "./map";
-import { leftOf, rightOf, stepForward } from "./movement";
+import { behindOf, leftOf, rightOf, stepForward } from "./movement";
 import type { Direction, Vec2 } from "./types";
 import { initialCrew } from "./crew";
 
@@ -30,10 +30,11 @@ export function useGameState() {
   const turnL = useCallback(() => setDir((d) => leftOf(d)), []);
   const turnR = useCallback(() => setDir((d) => rightOf(d)), []);
 
-  const moveForward = useCallback(() => {
+  // steps one cell in `moveDir` while keeping the current facing
+  const step = useCallback((moveDir: Direction) => {
     if (openingDoor) return;
 
-    const next = stepForward(pos, dir);
+    const next = stepForward(pos, moveDir);
     const target = cellAt(map, next.x, next.y);
 
     if (target === "wall") {
@@ -52,7 +53,10 @@ export function useGameState() {
     }
 
     setPos(next);
-  }, [pos, dir, map, pushLog, openingDoor]);
+  }, [pos, map, pushLog, openingDoor]);
 
-  return { map, pos, dir, crew, log, moveForward, turnL, turnR, pushLog, openingDoor };
+  const moveForward = useCallback(() => step(dir), [step, dir]);
+  const moveBackward = useCallback(() => step(behindOf(dir)), [step, dir]);
+
+  return { map, pos, dir, crew, log, moveForward, moveBackward, turnL, turnR, pushLog, openingDoor };
 }

@@ -4,8 +4,9 @@ import { cellAt } from "../game/map";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
+import { generateLights } from "../game/lights";
 
-export type TextureSetId = "wall1" | "wall2" | "wall3";
+export type TextureSetId = "wall1" | "wall2" | "wall3" | "wall4";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -24,19 +25,27 @@ export interface ViewportSettings {
   displacementScale: number;
   reliefDepth: number;
   reliefLevels: number;
-  reliefCleanup: number;
+  reliefMinIsland: number;
+  mapLightIntensity: number;
+}
+
+export interface ReliefStats {
+  trianglesPerWall: number;
+  levelCount: number;
+  // levels came straight from the map's distinct grays
+  baked: boolean;
 }
 
 export interface ViewportStats {
   // triangles actually drawn last frame (after frustum culling)
   renderedTriangles: number;
   // null unless the relief wall type is active and built
-  reliefTrianglesPerWall: number | null;
+  relief: ReliefStats | null;
 }
 
 export const DEFAULT_SETTINGS: ViewportSettings = {
-  textureSet: "wall3",
-  wallProfile: "flat",
+  textureSet: "wall4",
+  wallProfile: "relief",
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
@@ -50,7 +59,8 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   displacementScale: 0.03,
   reliefDepth: 0.04,
   reliefLevels: 6,
-  reliefCleanup: 1,
+  reliefMinIsland: 3,
+  mapLightIntensity: 1,
 };
 
 // A flat wall panel with the top/bottom edges beveled, like the classic
@@ -194,6 +204,14 @@ const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; dept
     depth: `${import.meta.env.BASE_URL}textures/wall3/depth.png`,
     pixelArt: true,
   },
+  // Gemini 1254px diffuse + depth run through scripts/process-texture.ts
+  // (256px, 32 colors, baked height levels, normal derived from depth)
+  wall4: {
+    diffuse: `${import.meta.env.BASE_URL}textures/wall4/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/wall4/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/wall4/depth.png`,
+    pixelArt: true,
+  },
 };
 
 // custom HMR event sent by the texture hot-reload plugin in vite.config.ts
@@ -201,6 +219,19 @@ const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
 
 const FOG_NEAR = 1.6;
 const FOG_FAR = 5.5;
+
+// Map lights are served by a fixed pool of point lights reassigned to the
+// nearest sources every frame: three.js compiles the light count into its
+// shaders, so a constant pool avoids recompiles, and the per-pixel lighting
+// cost stays bounded however many lights the map has. Lights fade out with
+// distance so a source dropping out of the pool doesn't pop visibly.
+const LIGHT_POOL_SIZE = 6;
+const LIGHT_FADE_START = 3.5;
+const LIGHT_FADE_END = 5;
+
+// settings.fov is applied to the screen's shorter side; on a portrait screen
+// that makes the vertical FOV large, capped here to limit distortion
+const MAX_VERTICAL_FOV = 115;
 
 const DOOR_COLOR = 0xd92626;
 const DOOR_SLIDE_HEIGHT = 1.1;
@@ -241,6 +272,18 @@ function lerp(a: number, b: number, t: number): number {
 
 function easeOutQuad(t: number): number {
   return 1 - (1 - t) * (1 - t);
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+// vertical FOV that shows `fov` degrees across the shorter screen side
+function verticalFov(fov: number, aspect: number): number {
+  if (aspect >= 1) return fov;
+  const v = (2 * Math.atan(Math.tan((fov * Math.PI) / 360) / aspect) * 180) / Math.PI;
+  return Math.min(MAX_VERTICAL_FOV, v);
 }
 
 function doorKey(a: Vec2, b: Vec2): string {
@@ -381,7 +424,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     doorMeshesRef.current.clear();
 
     const wallSlots: { x: number; z: number; rotY: number }[] = [];
-    let reliefTrianglesPerWall: number | null = null;
+    let reliefStats: ReliefStats | null = null;
 
     function placeWalls(geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[]) {
       for (const slot of wallSlots) {
@@ -428,7 +471,18 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     if (wallGeo) {
       placeWalls(wallGeo, wallMat);
     } else {
-      loadHeightGrid(texturePaths.depth + bust)
+      // a height map caught mid-save by an image editor (hot reload) or
+      // fetched while the dev server restarts fails to decode - retry briefly
+      const loadWithRetry = async (attempts: number): Promise<Awaited<ReturnType<typeof loadHeightGrid>>> => {
+        try {
+          return await loadHeightGrid(texturePaths.depth + bust);
+        } catch (err) {
+          if (attempts <= 1 || disposed) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          return loadWithRetry(attempts - 1);
+        }
+      };
+      loadWithRetry(4)
         .then((grid) => {
           if (disposed) return;
           const relief = createReliefWallGeometry(grid, {
@@ -436,13 +490,69 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
             wallHeight,
             depth: settings.reliefDepth,
             levels: settings.reliefLevels,
-            cleanupPasses: settings.reliefCleanup,
+            minIsland: settings.reliefMinIsland,
           });
           geometries.push(relief.geometry);
-          reliefTrianglesPerWall = relief.triangles;
+          reliefStats = { trianglesPerWall: relief.triangles, levelCount: relief.levelCount, baked: relief.baked };
           placeWalls(relief.geometry, [wallMat, reliefSideMat]);
         })
         .catch((err) => console.error("Relief wall build failed:", err));
+    }
+
+    // --- map lights: small glowing fixtures + the shared point-light pool ---
+    const mapLights = generateLights(map);
+    const ceilingFixtureGeo = new THREE.PlaneGeometry(0.26, 0.26);
+    const floorFixtureGeo = new THREE.PlaneGeometry(0.3, 0.05);
+    geometries.push(ceilingFixtureGeo, floorFixtureGeo);
+    const fixtureMats = new Map<number, THREE.MeshBasicMaterial>();
+    const fixtureMat = (color: number) => {
+      let mat = fixtureMats.get(color);
+      if (!mat) {
+        mat = new THREE.MeshBasicMaterial({ color });
+        fixtureMats.set(color, mat);
+      }
+      return mat;
+    };
+
+    for (const light of mapLights) {
+      if (light.kind === "ceiling") {
+        const panel = new THREE.Mesh(ceilingFixtureGeo, fixtureMat(light.color));
+        panel.rotation.x = Math.PI / 2;
+        panel.position.set(light.x, wallHeight - 0.002, light.z);
+        group.add(panel);
+      } else if (light.kind === "floorGlow" && light.wall) {
+        // a thin strip on the floor along the foot of the wall
+        const v = DIR_VECTOR[light.wall];
+        const strip = new THREE.Mesh(floorFixtureGeo, fixtureMat(light.color));
+        strip.rotation.set(-Math.PI / 2, 0, v.x !== 0 ? Math.PI / 2 : 0);
+        strip.position.set(light.x + v.x * 0.1, 0.003, light.z + v.y * 0.1);
+        group.add(strip);
+      }
+      // wall glows have no fixture - the light itself reads as a lit patch
+    }
+
+    const lightPool = Array.from({ length: LIGHT_POOL_SIZE }, () => {
+      const light = new THREE.PointLight(0xffffff, 0, 1, 2);
+      scene.add(light);
+      return light;
+    });
+
+    function updateLightPool(camX: number, camZ: number, intensityScale: number) {
+      const ranked = mapLights
+        .map((light) => ({ light, dist: Math.hypot(light.x - camX, light.z - camZ) }))
+        .sort((a, b) => a.dist - b.dist);
+      lightPool.forEach((slot, i) => {
+        const entry = ranked[i];
+        if (!entry) {
+          slot.intensity = 0;
+          return;
+        }
+        slot.color.setHex(entry.light.color);
+        slot.position.set(entry.light.x, entry.light.elevation * wallHeight, entry.light.z);
+        slot.distance = entry.light.range;
+        slot.intensity =
+          entry.light.intensity * intensityScale * (1 - smoothstep(LIGHT_FADE_START, LIGHT_FADE_END, entry.dist));
+      });
     }
 
     function resize() {
@@ -450,6 +560,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       const h = container!.clientHeight || 1;
       renderer.setSize(w, h);
       camera.aspect = w / h;
+      camera.fov = verticalFov(settingsRef.current.fov, camera.aspect);
       camera.updateProjectionMatrix();
     }
     resize();
@@ -498,8 +609,9 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       const camX = cam.x - (fwdX / fwdLen) * s.cameraPullback;
       const camZ = cam.z - (fwdZ / fwdLen) * s.cameraPullback;
 
-      if (camera.fov !== s.fov) {
-        camera.fov = s.fov;
+      const fov = verticalFov(s.fov, camera.aspect);
+      if (camera.fov !== fov) {
+        camera.fov = fov;
         camera.updateProjectionMatrix();
       }
 
@@ -518,6 +630,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
         s.eyeHeight + 0.3,
         camZ + Math.sin(t * 0.5) * 0.15,
       );
+      updateLightPool(camX, camZ, s.mapLightIntensity);
 
       renderer.render(scene, camera);
 
@@ -525,7 +638,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
         lastStatsAt = now;
         onStatsRef.current?.({
           renderedTriangles: renderer.info.render.triangles,
-          reliefTrianglesPerWall,
+          relief: reliefStats,
         });
       }
 
@@ -544,6 +657,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       doorMat.dispose();
       floorMat.dispose();
       ceilMat.dispose();
+      for (const mat of fixtureMats.values()) mat.dispose();
       diffuse.dispose();
       normalMap.dispose();
       depthMap.dispose();
@@ -559,7 +673,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     settings.displacementScale,
     settings.reliefDepth,
     settings.reliefLevels,
-    settings.reliefCleanup,
+    settings.reliefMinIsland,
     textureVersion,
   ]);
 

@@ -24,6 +24,10 @@ export function stepForward(pos: Vec2, dir: Direction): Vec2 {
   return { x: pos.x + v.x, y: pos.y + v.y };
 }
 
+export function behindOf(dir: Direction): Direction {
+  return turnRight(turnRight(dir));
+}
+
 export function leftOf(dir: Direction): Direction {
   return turnLeft(dir);
 }

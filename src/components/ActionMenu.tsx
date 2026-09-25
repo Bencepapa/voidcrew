@@ -1,20 +1,38 @@
 interface ActionMenuProps {
   onForward: () => void;
+  onBack: () => void;
   onTurnLeft: () => void;
   onTurnRight: () => void;
+  // translucent variant for the mobile overlay layout
+  compact?: boolean;
 }
 
-const ACTIONS = ["Forward", "Turn Left", "Turn Right", "Use", "Open", "Inspect", "Inventory", "Map", "Status", "Rest"] as const;
+const ACTIONS = [
+  "Forward",
+  "Step Back",
+  "Turn Left",
+  "Turn Right",
+  "Use",
+  "Open",
+  "Inspect",
+  "Inventory",
+  "Map",
+  "Status",
+  "Rest",
+] as const;
 
-export function ActionMenu({ onForward, onTurnLeft, onTurnRight }: ActionMenuProps) {
+export function ActionMenu({ onForward, onBack, onTurnLeft, onTurnRight, compact }: ActionMenuProps) {
   const handlers: Partial<Record<(typeof ACTIONS)[number], () => void>> = {
     Forward: onForward,
+    "Step Back": onBack,
     "Turn Left": onTurnLeft,
     "Turn Right": onTurnRight,
   };
 
   return (
-    <div className="border border-neutral-700 bg-neutral-900/80 p-2 flex flex-col gap-1 text-[11px] text-neutral-300">
+    <div
+      className={`border border-neutral-700 p-2 flex flex-col gap-1 text-[11px] text-neutral-300 ${compact ? "bg-black/40" : "bg-neutral-900/80"}`}
+    >
       {ACTIONS.map((action) => {
         const handler = handlers[action];
         return (

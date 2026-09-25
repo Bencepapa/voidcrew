@@ -7,21 +7,77 @@ import { PartyPanel } from "./components/PartyPanel";
 import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
 import { DebugPanel } from "./components/DebugPanel";
+import { useMediaQuery } from "./components/useMediaQuery";
+import { useSwipeControls } from "./components/useSwipeControls";
+
+// phones in portrait (narrow) or landscape (short) get the overlay layout
+const COMPACT_QUERY = "(max-width: 767px), (max-height: 540px)";
 
 export default function App() {
-  const { map, pos, dir, crew, log, moveForward, turnL, turnR, openingDoor } = useGameState();
+  const { map, pos, dir, crew, log, moveForward, moveBackward, turnL, turnR, openingDoor } = useGameState();
   const [settings, setSettings] = useState<ViewportSettings>(DEFAULT_SETTINGS);
   const [stats, setStats] = useState<ViewportStats | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const compact = useMediaQuery(COMPACT_QUERY);
+  const swipe = useSwipeControls({ onForward: moveForward, onBack: moveBackward, onTurnLeft: turnL, onTurnRight: turnR });
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "ArrowUp" || e.key === "w") moveForward();
+      if (e.key === "ArrowDown" || e.key === "s") moveBackward();
       if (e.key === "ArrowLeft" || e.key === "a") turnL();
       if (e.key === "ArrowRight" || e.key === "d") turnR();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [moveForward, turnL, turnR]);
+  }, [moveForward, moveBackward, turnL, turnR]);
+
+  const viewport = (
+    <GameViewport map={map} pos={pos} dir={dir} openingDoor={openingDoor} settings={settings} onStats={setStats} />
+  );
+  const actionMenu = (
+    <ActionMenu onForward={moveForward} onBack={moveBackward} onTurnLeft={turnL} onTurnRight={turnR} compact={compact} />
+  );
+
+  if (compact) {
+    // The game fills the screen; panels float on top with translucent
+    // backgrounds. The left column and party strip ignore pointer events so
+    // swipes on them still reach the viewport.
+    return (
+      <div className="relative h-[100dvh] w-screen overflow-hidden font-sans">
+        <div className="absolute inset-0" {...swipe}>
+          {viewport}
+        </div>
+
+        <div className="absolute top-2 left-2 w-28 flex flex-col gap-1 pointer-events-none">
+          <Minimap map={map} pos={pos} dir={dir} compact />
+          <div className="h-16">
+            <LogPanel log={log} compact />
+          </div>
+        </div>
+
+        <div className="absolute top-2 right-2 bottom-14 flex flex-col items-end gap-1 pointer-events-none">
+          <button
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            className="pointer-events-auto w-9 h-9 flex items-center justify-center border border-neutral-700 bg-black/40 text-neutral-200 text-lg rounded-sm"
+          >
+            {menuOpen ? "✕" : "☰"}
+          </button>
+          {menuOpen && (
+            <div className="pointer-events-auto w-48 min-h-0 flex flex-col gap-1 overflow-y-auto">
+              {actionMenu}
+              <DebugPanel settings={settings} onChange={setSettings} stats={stats} compact />
+            </div>
+          )}
+        </div>
+
+        <div className="absolute bottom-2 inset-x-2 pointer-events-none">
+          <PartyPanel crew={crew} compact />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen w-screen flex flex-col p-2 gap-2 font-sans">
@@ -37,19 +93,12 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex-1 min-w-0">
-          <GameViewport
-            map={map}
-            pos={pos}
-            dir={dir}
-            openingDoor={openingDoor}
-            settings={settings}
-            onStats={setStats}
-          />
+        <div className="flex-1 min-w-0" {...swipe}>
+          {viewport}
         </div>
 
         <div className="w-56 flex flex-col gap-2 min-h-0">
-          <ActionMenu onForward={moveForward} onTurnLeft={turnL} onTurnRight={turnR} />
+          {actionMenu}
           <div className="flex-1 min-h-0">
             <DebugPanel settings={settings} onChange={setSettings} stats={stats} />
           </div>

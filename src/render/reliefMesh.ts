@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mostCommonLevel, quantizeHeights, removeSmallIslands } from "./heightLevels";
 
 // Turns a grayscale height map into real, stepped wall geometry: every height
 // level becomes a flat front face and every step between levels becomes a
@@ -19,18 +20,21 @@ export interface HeightGrid {
 export interface ReliefOptions {
   wallWidth: number;
   wallHeight: number;
-  // world-space distance between the lowest and highest quantized level
+  // world-space distance between the lowest and highest level
   depth: number;
-  // number of discrete height levels (>= 2)
+  // number of discrete height levels (>= 2) for continuous maps; ignored
+  // for maps with baked levels (see quantizeHeights)
   levels: number;
-  // 3x3 majority-filter passes that remove single-pixel speckles left over
-  // after quantizing a noisy/continuous height map
-  cleanupPasses: number;
+  // same-level regions smaller than this many cells get merged into their
+  // surroundings - removes speckles left over after quantizing a noisy map
+  minIsland: number;
 }
 
 export interface ReliefResult {
   geometry: THREE.BufferGeometry;
   triangles: number;
+  levelCount: number;
+  baked: boolean;
 }
 
 // Relief geometry is built per height-map cell; larger maps are box-filtered
@@ -64,69 +68,20 @@ export async function loadHeightGrid(url: string): Promise<HeightGrid> {
   return { width, height, data };
 }
 
-// Quantize to `levels` steps after stretching the 0.5%..99.5% percentile range
-// to 0..1, so a map that only uses a narrow band of grays still spreads over
-// all levels and a few stray white/black pixels don't compress the rest.
-function quantize(grid: HeightGrid, levels: number): Uint8Array {
-  const sorted = Float32Array.from(grid.data).sort();
-  const lo = sorted[Math.floor(sorted.length * 0.005)];
-  const hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.995))];
-  const range = hi - lo || 1;
-
-  const out = new Uint8Array(grid.data.length);
-  for (let i = 0; i < out.length; i++) {
-    const t = Math.min(1, Math.max(0, (grid.data[i] - lo) / range));
-    out[i] = Math.round(t * (levels - 1));
-  }
-  return out;
-}
-
-function majorityFilter(q: Uint8Array, w: number, h: number, levels: number): Uint8Array {
-  const out = new Uint8Array(q.length);
-  const counts = new Uint16Array(levels);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      counts.fill(0);
-      for (let dy = -1; dy <= 1; dy++) {
-        const yy = Math.min(h - 1, Math.max(0, y + dy));
-        for (let dx = -1; dx <= 1; dx++) {
-          const xx = Math.min(w - 1, Math.max(0, x + dx));
-          counts[q[yy * w + xx]]++;
-        }
-      }
-      const self = q[y * w + x];
-      let best = self;
-      for (let l = 0; l < levels; l++) {
-        if (counts[l] > counts[best]) best = l;
-      }
-      out[y * w + x] = best;
-    }
-  }
-  return out;
-}
-
-function mostCommonLevel(q: Uint8Array, levels: number): number {
-  const counts = new Uint32Array(levels);
-  for (const v of q) counts[v]++;
-  let best = 0;
-  for (let l = 1; l < levels; l++) if (counts[l] > counts[best]) best = l;
-  return best;
-}
-
 export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
   const { width: gw, height: gh } = grid;
-  const levels = Math.max(2, Math.round(opts.levels));
 
-  let q = quantize(grid, levels);
-  for (let i = 0; i < opts.cleanupPasses; i++) q = majorityFilter(q, gw, gh, levels);
+  const { q: quantized, heights, baked } = quantizeHeights(grid.data, opts.levels);
+  const q = removeSmallIslands(quantized, gw, gh, Math.round(opts.minIsland));
+  const levelCount = heights.length;
 
   // The most common level (usually the flat panel surface) sits exactly on
   // the grid boundary; lower levels recess into the wall, higher ones protrude
   // into the room. Keeping the dominant surface at z=0 lines it up with the
   // floor/ceiling edges.
-  const base = mostCommonLevel(q, levels);
-  const levelZ = (l: number) => ((l - base) / (levels - 1)) * opts.depth;
-  const maxAbsZ = Math.max(Math.abs(levelZ(0)), Math.abs(levelZ(levels - 1)));
+  const base = mostCommonLevel(q, levelCount);
+  const levelZ = (l: number) => (heights[l] - heights[base]) * opts.depth;
+  const maxAbsZ = Math.max(Math.abs(levelZ(0)), Math.abs(levelZ(levelCount - 1)));
 
   // Each wall face is built independently, so where two perpendicular walls
   // meet, a protrusion on one would poke through the other (inner corners)
@@ -336,5 +291,5 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   geometry.addGroup(0, frontIndexCount, 0);
   geometry.addGroup(frontIndexCount, indices.length - frontIndexCount, 1);
 
-  return { geometry, triangles: indices.length / 3 };
+  return { geometry, triangles: indices.length / 3, levelCount, baked };
 }

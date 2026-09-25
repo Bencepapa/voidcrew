@@ -32,6 +32,13 @@ function textureHotReload(): Plugin {
 
       server.watcher.on("add", onFile);
       server.watcher.on("change", onFile);
+
+      // On Windows, watching a file that another program still has locked
+      // (a browser download in progress, an image editor mid-save) fails
+      // with EBUSY. Unhandled, that watcher error kills the whole dev server.
+      server.watcher.on("error", (err) => {
+        server.config.logger.warn(`File watcher: ${err instanceof Error ? err.message : String(err)}`);
+      });
     },
   };
 }
@@ -41,5 +48,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), textureHotReload()],
   server: {
     port: 3000,
+    watch: {
+      // source images and offline scripts aren't part of the app; watching
+      // them only triggers pointless page reloads
+      ignored: ["**/concept/**", "**/scripts/**"],
+    },
   },
 });

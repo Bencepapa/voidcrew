@@ -4,12 +4,16 @@ interface DebugPanelProps {
   settings: ViewportSettings;
   onChange: (settings: ViewportSettings) => void;
   stats: ViewportStats | null;
+  // translucent, non-scrolling variant for the mobile overlay layout (the
+  // overlay container scrolls instead)
+  compact?: boolean;
 }
 
 const TEXTURE_SET_OPTIONS: { id: TextureSetId; label: string }[] = [
   { id: "wall1", label: "wall1 - photo" },
   { id: "wall2", label: "wall2 - pixel art" },
   { id: "wall3", label: "wall3 - pixel art (5x)" },
+  { id: "wall4", label: "wall4 - pixel art (processed)" },
 ];
 
 const WALL_PROFILE_OPTIONS: { id: WallProfileId; label: string }[] = [
@@ -38,7 +42,7 @@ const DISPLACEMENT_SLIDER: SliderConfig = {
 const RELIEF_SLIDERS: SliderConfig[] = [
   { key: "reliefDepth", label: "Relief depth", min: 0.005, max: 0.12, step: 0.005 },
   { key: "reliefLevels", label: "Relief height levels", min: 2, max: 16, step: 1 },
-  { key: "reliefCleanup", label: "Speckle cleanup passes", min: 0, max: 4, step: 1 },
+  { key: "reliefMinIsland", label: "Min feature size (px, 1 = off)", min: 1, max: 16, step: 1 },
 ];
 
 const SLIDERS: SliderConfig[] = [
@@ -48,6 +52,7 @@ const SLIDERS: SliderConfig[] = [
   { key: "moveDurationMs", label: "Move duration (ms)", min: 60, max: 600, step: 10 },
   { key: "fov", label: "FOV", min: 40, max: 100, step: 1 },
   { key: "pointLightIntensity", label: "Point light", min: 0, max: 8, step: 0.1 },
+  { key: "mapLightIntensity", label: "Map lights", min: 0, max: 3, step: 0.05 },
   { key: "ambientIntensity", label: "Ambient light", min: 0, max: 2, step: 0.05 },
 ];
 
@@ -56,7 +61,7 @@ const BEVEL_SLIDERS: SliderConfig[] = [
   { key: "bevelAngleDeg", label: "Bevel angle (deg, from floor)", min: 15, max: 75, step: 1 },
 ];
 
-export function DebugPanel({ settings, onChange, stats }: DebugPanelProps) {
+export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelProps) {
   function set<K extends keyof ViewportSettings>(key: K, value: ViewportSettings[K]) {
     onChange({ ...settings, [key]: value });
   }
@@ -85,7 +90,9 @@ export function DebugPanel({ settings, onChange, stats }: DebugPanelProps) {
   const relief = settings.wallProfile === "relief";
 
   return (
-    <div className="w-full h-full flex flex-col gap-3 bg-neutral-900/80 border border-neutral-700 rounded-sm p-2 overflow-y-auto text-neutral-300">
+    <div
+      className={`w-full flex flex-col gap-3 border border-neutral-700 rounded-sm p-2 text-neutral-300 ${compact ? "bg-black/40" : "h-full bg-neutral-900/80 overflow-y-auto"}`}
+    >
       <div className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">Debug</div>
 
       <div className="flex flex-col gap-1">
@@ -124,8 +131,14 @@ export function DebugPanel({ settings, onChange, stats }: DebugPanelProps) {
       {stats && (
         <div className="text-[10px] text-neutral-500 flex flex-col">
           <span>Rendered triangles: {stats.renderedTriangles.toLocaleString()}</span>
-          {relief && stats.reliefTrianglesPerWall !== null && (
-            <span>Relief triangles / wall: {stats.reliefTrianglesPerWall.toLocaleString()}</span>
+          {relief && stats.relief && (
+            <>
+              <span>Relief triangles / wall: {stats.relief.trianglesPerWall.toLocaleString()}</span>
+              <span>
+                Height levels: {stats.relief.levelCount}{" "}
+                {stats.relief.baked ? "(baked in map - levels slider ignored)" : "(quantized)"}
+              </span>
+            </>
           )}
         </div>
       )}
