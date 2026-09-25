@@ -1,4 +1,4 @@
-import { cellAt, ceilingHeight, floorHeight } from "./map";
+import { cellAt, ceilingHeight, floorHeight, windowPanels } from "./map";
 import { DIR_VECTOR } from "./movement";
 import type { Direction, GameMap } from "./types";
 
@@ -99,7 +99,22 @@ export function generateLights(map: GameMap): LightSpec[] {
     }
   }
 
-  const redCandidates = floorCells(map, (x) => x > 5).filter(({ x, y }) => adjacentWalls(map, x, y).length > 0);
+  // a faint cold glow of starlight in front of each window panel
+  for (const { cell, wall } of windowPanels(map)) {
+    const v = DIR_VECTOR[wall];
+    lights.push({
+      kind: "wallGlow",
+      x: cell.x + v.x * 0.15,
+      z: cell.y + v.y * 0.15,
+      y: floorHeight(map, cell.x, cell.y) + 0.6,
+      color: 0x9db8ff,
+      intensity: 0.5,
+      range: 1.6,
+      wall,
+    });
+  }
+
+  const redCandidates =floorCells(map, (x) => x > 5).filter(({ x, y }) => adjacentWalls(map, x, y).length > 0);
   for (const { x, y } of pick(redCandidates, 2, random)) {
     const walls = adjacentWalls(map, x, y);
     const wall = walls[Math.floor(random() * walls.length)];

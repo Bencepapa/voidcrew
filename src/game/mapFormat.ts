@@ -1,4 +1,4 @@
-import { DIR_VECTOR } from "./movement";
+import { DIR_VECTOR, rightOf } from "./movement";
 import type { CellType, DecalSpec, Direction, DoorSpec, GameMap } from "./types";
 
 // Map files (src/maps/*.json): a character grid for the cells plus optional
@@ -14,7 +14,7 @@ import type { CellType, DecalSpec, Direction, DoorSpec, GameMap } from "./types"
 //
 // `ladders` stand in a cell against its wall toward a higher neighbor;
 // `bridges` span a cell at a height along an axis; `lights` add ceiling
-// lights.
+// lights; `windows` look out of a wall onto space.
 //
 // Heights are in wall heights (1 = one wall panel), multiples of 0.25.
 
@@ -39,6 +39,8 @@ export interface MapFile {
   ladders?: { x: number; y: number; wall: Direction }[];
   bridges?: { x: number; y: number; height: number; axis: "NS" | "EW" }[];
   lights?: { x: number; y: number }[];
+  // x, y: the (leftmost) cell; wall: the wall it's in; width: panels
+  windows?: { x: number; y: number; wall: Direction; width?: number }[];
   decals?: {
     decal: string;
     x: number;
@@ -117,6 +119,20 @@ export function parseMap(file: MapFile): GameMap {
     return { cell: { x: b.x, y: b.y }, height: b.height, axis: b.axis };
   });
 
+  const windows = (file.windows ?? []).map((w) => {
+    const count = w.width ?? 1;
+    const out = DIR_VECTOR[w.wall];
+    const right = DIR_VECTOR[rightOf(w.wall)];
+    for (let i = 0; i < count; i++) {
+      const x = w.x + right.x * i;
+      const y = w.y + right.y * i;
+      const open = cells[y]?.[x] !== undefined && cells[y][x] !== "wall";
+      const walled = (cells[y + out.y]?.[x + out.x] ?? "wall") === "wall";
+      if (!open || !walled) throw new Error(`window at ${w.x},${w.y} ${w.wall}: panel ${i} isn't a wall of a walkable cell`);
+    }
+    return { cell: { x: w.x, y: w.y }, wall: w.wall, width: count };
+  });
+
   const floorTextures = readLayer(file.layers?.floorTexture, width, height, "floorTexture");
   const wallTextures = readLayer(file.layers?.wallTexture, width, height, "wallTexture");
 
@@ -139,6 +155,7 @@ export function parseMap(file: MapFile): GameMap {
     ladders,
     bridges,
     lights: (file.lights ?? []).map((l) => ({ x: l.x, y: l.y })),
+    windows,
     decals: (file.decals ?? []).map((d) => ({
       decal: d.decal,
       cell: { x: d.x, y: d.y },

@@ -35,6 +35,16 @@ export interface GameMap {
   bridges?: BridgeSpec[];
   // hand-placed ceiling lights, on top of the generated mood lighting
   lights?: Vec2[];
+  windows?: WindowSpec[];
+}
+
+// A window onto space in a wall of a walkable cell, `width` panels wide:
+// the cell's panel and the next ones to its right (seen facing the wall).
+// It takes the wall's first panel above the floor.
+export interface WindowSpec {
+  cell: Vec2;
+  wall: Direction;
+  width: number;
 }
 
 // A catwalk across a tall cell at `height`, walkable along its axis: an

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
-import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween } from "../game/map";
+import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween, windowPanels } from "../game/map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
@@ -14,6 +14,7 @@ import type { FreePose } from "../game/freeMovement";
 import type { PeekState } from "./useViewControls";
 import { WALL_ROTATION, surfaceKey } from "../render/surfaces";
 import { DecalLibrary } from "../render/decals";
+import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
 import { renderText, seededRandom } from "../render/pixelFont";
 
 export type TextureSetId =
@@ -27,7 +28,8 @@ export type TextureSetId =
   | "door1"
   | "doorframe1"
   | "liftdoor1"
-  | "ceiling1";
+  | "ceiling1"
+  | "window1";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -339,6 +341,13 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     depth: `${import.meta.env.BASE_URL}textures/liftdoor1/depth.png`,
     pixelArt: true,
   },
+  // wall panel with a window frame; its opening is transparent
+  window1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/window1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/window1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/window1/depth.png`,
+    pixelArt: true,
+  },
   // ceiling tile; its center panel glows in cells with a ceiling light
   ceiling1: {
     diffuse: `${import.meta.env.BASE_URL}textures/ceiling1/diffuse.png`,
@@ -473,6 +482,13 @@ const MAX_VERTICAL_FOV = 115;
 // two-sided slab inside it, recessed behind the frame's faces, that slides
 // up into the ceiling to open.
 const DOOR_FRAME_SET: TextureSetId = "doorframe1";
+// Windows: the frame panel, how deep its opening recesses into the wall
+// (the glass sits at the back), and the glass's slight cool tint
+const WINDOW_SET: TextureSetId = "window1";
+const WINDOW_DEPTH = 0.1;
+const GLASS_TINT = 0xdfe8ff;
+// how strongly lights glint on the glass
+const GLASS_SHEEN = 0.25;
 const DOOR_PANEL_SETS: Record<DoorSpec["kind"], TextureSetId> = {
   standard: "door1",
   lift: "liftdoor1",
@@ -910,6 +926,9 @@ export function GameViewport({
     );
 
     const frameKit = createWallKit(DOOR_FRAME_SET, false);
+    // window panels (see the wall loop), by their wall's surface key
+    const windowFaces = new Set(windowPanels(map).map((p) => surfaceKey(p.cell, p.wall)));
+    const windowKit = windowFaces.size ? createWallKit(WINDOW_SET, false) : null;
     // door panel kits by door kind, created on demand
     const panelKits = new Map<DoorSpec["kind"], WallKit>();
     const panelKitFor = (kind: DoorSpec["kind"]) => {
@@ -1070,7 +1089,10 @@ export function GameViewport({
           for (const span of spans) {
             for (const panel of wallPanels(span.bottom, span.top, span.anchor)) {
               const y = (panel.bottom + variantHeight(panel.variant) / 2) * wallHeight;
-              kit.slots.push({ ...face, y, variant: panel.variant });
+              // a window takes the first whole panel above the floor
+              const isWindow =
+                windowKit && windowFaces.has(face.key) && panel.bottom === floor && panel.variant === "full";
+              (isWindow ? windowKit : kit).slots.push({ ...face, y, variant: panel.variant });
             }
           }
         });
@@ -1205,7 +1227,66 @@ export function GameViewport({
       frameKit,
       ...panelKits.values(),
       ...(ceilingKit ? [ceilingKit] : []),
+      ...(windowKit ? [windowKit] : []),
     ];
+
+    // Windows are always relief too: the frame panel with its opening cut
+    // out, the opening's jambs reaching WINDOW_DEPTH back into the wall, and
+    // the glass at the back of that recess. Through the glass: the starfield,
+    // looked up by view direction, so it's infinitely far away from any
+    // angle; the wired glass pattern darkens it, and an additive sheen
+    // catches the lights' highlights.
+    const wiredGlass = createWiredGlass();
+    const spaceMat = new THREE.MeshBasicMaterial({
+      envMap: getStarfield(),
+      refractionRatio: 1,
+      map: wiredGlass,
+      color: GLASS_TINT,
+      // stars are light sources: no fog on them
+      fog: false,
+    });
+    const sheenMat = new THREE.MeshStandardMaterial({
+      color: 0x000000,
+      roughness: 0.3,
+      metalness: 0,
+      transparent: true,
+      // added on top, scaled down: a hint of glass, not a glare
+      opacity: GLASS_SHEEN,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    if (windowKit?.slots.length) {
+      buildRelief(windowKit, { height: wallHeight, flushEdges: true, holeBackZ: -WINDOW_DEPTH })
+        .then((frame) => {
+          if (!frame) return;
+          const hole = frame.holeBounds ?? { minX: -0.3, maxX: 0.3, minY: -0.13 * wallHeight, maxY: 0.22 * wallHeight };
+          const w = hole.maxX - hole.minX;
+          const h = hole.maxY - hole.minY;
+          const glassGeo = new THREE.PlaneGeometry(w, h);
+          // wire tiles at the walls' texel density
+          const uv = glassGeo.getAttribute("uv");
+          for (let i = 0; i < uv.count; i++) {
+            uv.setXY(i, (uv.getX(i) * w * TRIM_TEXELS) / WIRE_TILE, (uv.getY(i) * h * TRIM_TEXELS) / WIRE_TILE);
+          }
+          geometries.push(glassGeo);
+          for (const slot of windowKit.slots) {
+            const mesh = new THREE.Mesh(frame.geometry, [windowKit.wallMat, windowKit.sideMat]);
+            mesh.position.set(slot.x, slot.y, slot.z);
+            mesh.rotation.y = slot.rotY;
+            for (const [mat, z] of [
+              [spaceMat, -WINDOW_DEPTH + 0.01],
+              [sheenMat, -WINDOW_DEPTH + 0.012],
+            ] as const) {
+              const glass = new THREE.Mesh(glassGeo, mat);
+              glass.position.set((hole.minX + hole.maxX) / 2, (hole.minY + hole.maxY) / 2, z);
+              mesh.add(glass);
+            }
+            group.add(mesh);
+            decals.registerSurface(slot.key, mesh);
+          }
+        })
+        .catch((err) => console.error("Window build failed:", err));
+    }
 
     if (ceilingKit) {
       if (isRelief) {
@@ -1792,6 +1873,9 @@ export function GameViewport({
       }
       for (const mat of ownMaterials) mat.dispose();
       floorMat.dispose();
+      spaceMat.dispose();
+      sheenMat.dispose();
+      wiredGlass.dispose();
       paintMat.dispose();
       hazardMat.dispose();
       for (const tex of trimTextures) tex.dispose();

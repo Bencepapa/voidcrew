@@ -1,4 +1,4 @@
-import { floorHeight } from "../game/map";
+import { floorHeight, windowPanels } from "../game/map";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 
 interface MinimapProps {
@@ -13,6 +13,7 @@ const ARROW: Record<Direction, string> = { N: "▲", E: "▶", S: "▼", W: "◀
 // box-shadow x/y offsets that draw an inset line along one side
 const LADDER_EDGE: Record<Direction, string> = { N: "0 2px", S: "0 -2px", E: "-2px 0", W: "2px 0" };
 const LADDER_EDGE_COLOR = "#d4a72c";
+const WINDOW_EDGE_COLOR = "#9fc4ff";
 const BRIDGE_COLOR = "rgba(120, 190, 130, 0.8)";
 
 export function Minimap({ map, pos, dir, compact }: MinimapProps) {
@@ -24,12 +25,18 @@ export function Minimap({ map, pos, dir, compact }: MinimapProps) {
     return compact ? `rgba(${r}, ${g}, 18, 0.55)` : `rgb(${r}, ${g}, 18)`;
   };
   const door = compact ? "rgba(58, 31, 31, 0.7)" : "#3a1f1f";
-  // a ladder shows as a yellow edge on its foot cell's side
+  // a ladder shows as a yellow edge on its foot cell's side, a window as a
+  // pale blue one
+  const panes = windowPanels(map);
   const ladderEdges = (x: number, y: number) =>
-    (map.ladders ?? [])
-      .filter((l) => l.cell.x === x && l.cell.y === y)
-      .map((l) => `inset ${LADDER_EDGE[l.wall]} 0 ${LADDER_EDGE_COLOR}`)
-      .join(", ") || undefined;
+    [
+      ...(map.ladders ?? [])
+        .filter((l) => l.cell.x === x && l.cell.y === y)
+        .map((l) => `inset ${LADDER_EDGE[l.wall]} 0 ${LADDER_EDGE_COLOR}`),
+      ...panes
+        .filter((p) => p.cell.x === x && p.cell.y === y)
+        .map((p) => `inset ${LADDER_EDGE[p.wall]} 0 ${WINDOW_EDGE_COLOR}`),
+    ].join(", ") || undefined;
   // a bridge: a band along its axis across the cell
   const bridgeStripe = (x: number, y: number) => {
     const bridge = map.bridges?.find((b) => b.cell.x === x && b.cell.y === y);

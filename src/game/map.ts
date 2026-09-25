@@ -1,5 +1,5 @@
-import { DIR_VECTOR } from "./movement";
-import type { BridgeSpec, CellType, DoorSpec, GameMap, LadderSpec, Vec2 } from "./types";
+import { DIR_VECTOR, rightOf } from "./movement";
+import type { BridgeSpec, CellType, Direction, DoorSpec, GameMap, LadderSpec, Vec2 } from "./types";
 import { parseMap } from "./mapFormat";
 import type { MapFile } from "./mapFormat";
 import deck2File from "../maps/deck2-engineering.json";
@@ -28,6 +28,20 @@ export function floorHeight(map: GameMap, x: number, y: number): number {
 
 export function ceilingHeight(map: GameMap, x: number, y: number): number {
   return map.ceilingHeights[y]?.[x] ?? 1;
+}
+
+// every wall panel a window takes: its cell, the wall, and where in the
+// window it is (0 = leftmost, seen facing the wall)
+export function windowPanels(map: GameMap): { cell: Vec2; wall: Direction; index: number; width: number }[] {
+  return (map.windows ?? []).flatMap((w) => {
+    const right = DIR_VECTOR[rightOf(w.wall)];
+    return Array.from({ length: w.width }, (_, index) => ({
+      cell: { x: w.cell.x + right.x * index, y: w.cell.y + right.y * index },
+      wall: w.wall,
+      index,
+      width: w.width,
+    }));
+  });
 }
 
 export function bridgeAt(map: GameMap, x: number, y: number): BridgeSpec | undefined {
