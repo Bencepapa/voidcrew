@@ -32,7 +32,8 @@ export type TextureSetId =
   | "window1"
   | "window1_left"
   | "window1_mid"
-  | "window1_right";
+  | "window1_right"
+  | "lift1";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -342,6 +343,13 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     diffuse: `${import.meta.env.BASE_URL}textures/liftdoor1/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/liftdoor1/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/liftdoor1/depth.png`,
+    pixelArt: true,
+  },
+  // lift cabin wall: two plain plates
+  lift1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/lift1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/lift1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/lift1/depth.png`,
     pixelArt: true,
   },
   // wall panel with a window frame; its opening is transparent
