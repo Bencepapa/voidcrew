@@ -15,6 +15,9 @@ export interface HeightGrid {
   height: number;
   // 0..1, row-major, row 0 = top of the image
   data: Float32Array;
+  // 1 = solid cell, 0 = hole (transparent in the height map); absent when
+  // the map has no transparency
+  solid?: Uint8Array;
 }
 
 export interface ReliefOptions {
@@ -34,6 +37,16 @@ export interface ReliefOptions {
   // walls meet cleanly at corners (see below); floors tile edge to edge on a
   // single plane and don't need it
   flushEdges?: boolean;
+  // z the side faces around holes reach back to (default: the lowest
+  // level) - e.g. a door frame's back plane, so its opening gets deep jambs
+  holeBackZ?: number;
+}
+
+export interface HoleBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
 }
 
 export interface ReliefResult {
@@ -45,6 +58,9 @@ export interface ReliefResult {
   baked: boolean;
   // how far the highest level sticks out of the base plane
   maxZ: number;
+  // bounding box of the holes in local units (same frame as the geometry),
+  // null when there are none
+  holeBounds: HoleBounds | null;
 }
 
 // Relief geometry is built per height-map cell; larger maps are box-filtered
@@ -72,10 +88,14 @@ export async function loadHeightGrid(url: string): Promise<HeightGrid> {
 
   const rgba = ctx.getImageData(0, 0, width, height).data;
   const data = new Float32Array(width * height);
+  const solid = new Uint8Array(width * height);
+  let holes = false;
   for (let i = 0; i < data.length; i++) {
     data[i] = (rgba[i * 4] * 0.299 + rgba[i * 4 + 1] * 0.587 + rgba[i * 4 + 2] * 0.114) / 255;
+    solid[i] = rgba[i * 4 + 3] >= 128 ? 1 : 0;
+    if (!solid[i]) holes = true;
   }
-  return { width, height, data };
+  return { width, height, data, solid: holes ? solid : undefined };
 }
 
 export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
@@ -89,7 +109,9 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   // the grid boundary; lower levels recess into the wall, higher ones protrude
   // into the room. Keeping the dominant surface at z=0 lines it up with the
   // floor/ceiling edges.
-  const base = mostCommonLevel(q, levelCount);
+  // (counted over solid cells only - a door frame is mostly hole)
+  const solid = grid.solid;
+  const base = mostCommonLevel(solid ? q.filter((_, i) => solid[i]) : q, levelCount);
   const levelZ = (l: number) => (heights[l] - heights[base]) * opts.depth;
   const maxAbsZ = Math.max(Math.abs(levelZ(0)), Math.abs(levelZ(levelCount - 1)));
 
@@ -113,9 +135,21 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   const Y = (y: number) => opts.wallHeight / 2 - y * cellH;
   const U = (x: number) => x / gw;
   const V = (y: number) => 1 - y / gh;
+  // Per-cell key: its level, or HOLE for a transparent cell. Holes get no
+  // front face; the side faces around them reach back to `holeBackZ`.
+  const HOLE = -1;
+  const key = new Int16Array(gw * gh);
+  for (let i = 0; i < key.length; i++) key[i] = solid && !solid[i] ? HOLE : q[i];
+  const holeBackZ = opts.holeBackZ ?? levelZ(0);
+  const zOf = (k: number) => (k === HOLE ? holeBackZ : levelZ(k));
   // outside the map counts as base level, so recesses touching the top/bottom
-  // edge get a closing face
-  const levelAt = (x: number, y: number) => (x < 0 || y < 0 || x >= gw || y >= gh ? base : q[y * gw + x]);
+  // edge get a closing face - except next to a hole, which just stays open
+  // (a door frame's opening runs out through the bottom edge)
+  const levelAt = (x: number, y: number) => {
+    if (x >= 0 && y >= 0 && x < gw && y < gh) return key[y * gw + x];
+    const edge = key[Math.min(gh - 1, Math.max(0, y)) * gw + Math.min(gw - 1, Math.max(0, x))];
+    return edge === HOLE ? HOLE : base;
+  };
 
   const positions: number[] = [];
   const normals: number[] = [];
@@ -140,16 +174,16 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   const used = new Uint8Array(gw * gh);
   for (let y = 0; y < gh; y++) {
     for (let x = 0; x < gw; x++) {
-      if (used[y * gw + x]) continue;
-      const l = q[y * gw + x];
+      if (used[y * gw + x] || key[y * gw + x] === HOLE) continue;
+      const l = key[y * gw + x];
 
       let x1 = x + 1;
-      while (x1 < gw && !used[y * gw + x1] && q[y * gw + x1] === l) x1++;
+      while (x1 < gw && !used[y * gw + x1] && key[y * gw + x1] === l) x1++;
 
       let y1 = y + 1;
       grow: while (y1 < gh) {
         for (let xx = x; xx < x1; xx++) {
-          if (used[y1 * gw + xx] || q[y1 * gw + xx] !== l) break grow;
+          if (used[y1 * gw + xx] || key[y1 * gw + xx] !== l) break grow;
         }
         y1++;
       }
@@ -189,17 +223,17 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
     while (y < gh) {
       const lL = levelAt(bx - 1, y);
       const lR = levelAt(bx, y);
-      if (lL === lR) {
+      const zL = zOf(lL);
+      const zR = zOf(lR);
+      if (zL === zR) {
         y++;
         continue;
       }
       let y1 = y + 1;
       while (y1 < gh && levelAt(bx - 1, y1) === lL && levelAt(bx, y1) === lR) y1++;
 
-      const zL = levelZ(lL);
-      const zR = levelZ(lR);
       const px = X(bx);
-      const leftHigher = lL > lR;
+      const leftHigher = zL > zR;
       const u = U(leftHigher ? bx - 0.5 : bx + 0.5);
       const uLow = U(leftHigher ? bx + 0.5 : bx - 0.5);
       quad(
@@ -233,19 +267,19 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
     while (x < gw) {
       const lA = levelAt(x, by - 1);
       const lB = levelAt(x, by);
-      if (lA === lB) {
+      const zA = zOf(lA);
+      const zB = zOf(lB);
+      if (zA === zB) {
         x++;
         continue;
       }
       let x1 = x + 1;
       while (x1 < gw && levelAt(x1, by - 1) === lA && levelAt(x1, by) === lB) x1++;
 
-      const zA = levelZ(lA);
-      const zB = levelZ(lB);
       const py = Y(by);
       // upper cell sticking out further: its underside faces down;
       // otherwise the lower cell's top faces up
-      const upperHigher = lA > lB;
+      const upperHigher = zA > zB;
       const v = V(upperHigher ? by - 0.5 : by + 0.5);
       const vLow = V(upperHigher ? by + 0.5 : by - 0.5);
       quad(
@@ -286,10 +320,30 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   geometry.addGroup(frontIndexCount, indices.length - frontIndexCount, 1);
 
   const cellZ = new Float32Array(gw * gh);
-  for (let i = 0; i < cellZ.length; i++) cellZ[i] = levelZ(q[i]);
+  for (let i = 0; i < cellZ.length; i++) cellZ[i] = zOf(key[i]);
   const aoMap = createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
 
-  return { geometry, aoMap, triangles: indices.length / 3, levelCount, baked, maxZ: levelZ(levelCount - 1) };
+  let holeBounds: HoleBounds | null = null;
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      if (key[y * gw + x] !== HOLE) continue;
+      if (!holeBounds) holeBounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+      holeBounds.minX = Math.min(holeBounds.minX, X(x));
+      holeBounds.maxX = Math.max(holeBounds.maxX, X(x + 1));
+      holeBounds.minY = Math.min(holeBounds.minY, Y(y + 1));
+      holeBounds.maxY = Math.max(holeBounds.maxY, Y(y));
+    }
+  }
+
+  return {
+    geometry,
+    aoMap,
+    triangles: indices.length / 3,
+    levelCount,
+    baked,
+    maxZ: levelZ(levelCount - 1),
+    holeBounds,
+  };
 }
 
 // Horizon-based ambient occlusion over the relief's height field: for each

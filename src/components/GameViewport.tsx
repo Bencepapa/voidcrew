@@ -5,8 +5,18 @@ import { DIR_VECTOR } from "../game/movement";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights } from "../game/lights";
+import { doorCellKey } from "../game/useGameState";
 
-export type TextureSetId = "wall1" | "wall2" | "wall3" | "wall4" | "wall5" | "floor1" | "floor2";
+export type TextureSetId =
+  | "wall1"
+  | "wall2"
+  | "wall3"
+  | "wall4"
+  | "wall5"
+  | "floor1"
+  | "floor2"
+  | "door1"
+  | "doorframe1";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -275,6 +285,20 @@ const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; dept
     depth: `${import.meta.env.BASE_URL}textures/floor2/depth.png`,
     pixelArt: true,
   },
+  // sliding door panel
+  door1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/door1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/door1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/door1/depth.png`,
+    pixelArt: true,
+  },
+  // door frame; its opening is transparent in both diffuse and depth
+  doorframe1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/doorframe1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/doorframe1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/doorframe1/depth.png`,
+    pixelArt: true,
+  },
 };
 
 // floor used where the map doesn't specify one
@@ -331,14 +355,30 @@ const LIGHT_FADE_END = 5;
 // that makes the vertical FOV large, capped here to limit distortion
 const MAX_VERTICAL_FOV = 115;
 
-const DOOR_COLOR = 0xd92626;
-const DOOR_SLIDE_HEIGHT = 1.1;
+// Doors: a door cell holds one door at its center, across the passage, so
+// the doorway reads as a thick bulkhead with a shallow alcove on each side.
+// The frame is a two-sided slab (two relief halves back to back, their
+// opening's jambs meeting at the center plane); the panel is a thinner
+// two-sided slab inside it, recessed behind the frame's faces, that slides
+// up into the ceiling to open.
+const DOOR_FRAME_SET: TextureSetId = "doorframe1";
+const DOOR_PANEL_SET: TextureSetId = "door1";
+// each frame half's base plane sits this far from the center plane (keep it
+// deeper than the frame relief's deepest recess)
+const DOOR_FRAME_HALF_DEPTH = 0.05;
+// same for the panel: well behind the frame's faces
+const DOOR_PANEL_HALF_DEPTH = 0.02;
+// how far the panel reaches behind the frame around the opening
+const DOOR_PANEL_OVERLAP = 0.03;
+const DOOR_OPEN_MS = 400;
 
 interface GameViewportProps {
   map: GameMap;
   pos: Vec2;
   dir: Direction;
   openingDoor: Vec2 | null;
+  // door cells ("x,y") that are open
+  openDoors: ReadonlySet<string>;
   settings: ViewportSettings;
   onStats?: (stats: ViewportStats) => void;
 }
@@ -384,11 +424,7 @@ function verticalFov(fov: number, aspect: number): number {
   return Math.min(MAX_VERTICAL_FOV, v);
 }
 
-function doorKey(a: Vec2, b: Vec2): string {
-  return `${(a.x + b.x) / 2},${(a.y + b.y) / 2}`;
-}
-
-export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: GameViewportProps) {
+export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, onStats }: GameViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onStatsRef = useRef(onStats);
   onStatsRef.current = onStats;
@@ -415,26 +451,20 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     animRef.current = { from: { ...liveRef.current }, to: computeTarget(pos, dir), start: performance.now() };
   }, [pos, dir]);
 
-  const doorMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
-  const doorAnimRef = useRef<{ mesh: THREE.Mesh; start: number; from: number; to: number; duration: number } | null>(null);
-  const prevPosRef = useRef(pos);
+  // door panels by door cell key ("x,y"); each remembers its open height in
+  // userData.openY
+  const doorPanelsRef = useRef<Map<string, THREE.Object3D>>(new Map());
+  const doorAnimRef = useRef<{ panel: THREE.Object3D; start: number; from: number; to: number } | null>(null);
+  const openDoorsRef = useRef(openDoors);
+  openDoorsRef.current = openDoors;
 
   useEffect(() => {
-    if (openingDoor) {
-      const key = doorKey(prevPosRef.current, openingDoor);
-      const mesh = doorMeshesRef.current.get(key);
-      if (mesh) {
-        doorAnimRef.current = {
-          mesh,
-          start: performance.now(),
-          from: mesh.position.y,
-          to: settingsRef.current.wallHeight * DOOR_SLIDE_HEIGHT,
-          duration: settingsRef.current.moveDurationMs,
-        };
-      }
+    if (!openingDoor) return;
+    const panel = doorPanelsRef.current.get(doorCellKey(openingDoor));
+    if (panel) {
+      doorAnimRef.current = { panel, start: performance.now(), from: panel.position.y, to: panel.userData.openY };
     }
-    prevPosRef.current = pos;
-  }, [openingDoor, pos]);
+  }, [openingDoor]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -525,7 +555,10 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       return kit;
     }
 
-    const doorMat = new THREE.MeshStandardMaterial({ color: DOOR_COLOR, roughness: 0.6 });
+    const frameKit = createWallKit(DOOR_FRAME_SET, false);
+    const panelKit = createWallKit(DOOR_PANEL_SET, false);
+    // door cells, with the Y rotation that faces the door along the passage
+    const doorCells: { x: number; z: number; rotY: number; key: string }[] = [];
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
 
@@ -547,16 +580,12 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       );
     }
     if (wallGeo) geometries.push(wallGeo);
-    // doors stay a plain red slab on relief walls; on flat/beveled walls they
-    // share the wall's profile like before
-    const doorGeo = wallGeo ?? new THREE.PlaneGeometry(1, wallHeight);
-    if (!wallGeo) geometries.push(doorGeo);
     const floorGeo = new THREE.PlaneGeometry(1, 1);
     geometries.push(floorGeo);
 
     const group = new THREE.Group();
     scene.add(group);
-    doorMeshesRef.current.clear();
+    doorPanelsRef.current.clear();
 
     let reliefStats: ReliefStats | null = null;
 
@@ -600,22 +629,18 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
 
         (Object.keys(DIR_VECTOR) as Direction[]).forEach((d) => {
           const v = DIR_VECTOR[d];
-          const neighborType = cellAt(map, x + v.x, y + v.y);
-          if (neighborType !== "wall" && neighborType !== "door") return;
-
-          if (neighborType === "wall") {
-            const slot = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d] };
-            const kit = accentKit && wallVariantRoll(slot.x, slot.z) < settings.accentRatio ? accentKit : primaryKit;
-            kit.slots.push(slot);
-            return;
-          }
-
-          const door = new THREE.Mesh(doorGeo, doorMat);
-          door.position.set(x + v.x * 0.5, wallHeight / 2, y + v.y * 0.5);
-          door.rotation.y = WALL_ROTATION[d];
-          group.add(door);
-          doorMeshesRef.current.set(doorKey({ x, y }, { x: x + v.x, y: y + v.y }), door);
+          if (cellAt(map, x + v.x, y + v.y) !== "wall") return;
+          const slot = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d] };
+          const kit = accentKit && wallVariantRoll(slot.x, slot.z) < settings.accentRatio ? accentKit : primaryKit;
+          kit.slots.push(slot);
         });
+
+        if (cellAt(map, x, y) === "door") {
+          // the passage runs between the two open neighbors; the door stands
+          // across it, facing along it
+          const northSouth = cellAt(map, x, y - 1) !== "wall" || cellAt(map, x, y + 1) !== "wall";
+          doorCells.push({ x, z: y, rotY: northSouth ? 0 : Math.PI / 2, key: doorCellKey({ x, y }) });
+        }
       }
     }
 
@@ -636,17 +661,21 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
 
     // builds a kit's relief geometry from its depth map and hooks up its AO;
     // resolves to null if the scene was torn down meanwhile
-    async function buildRelief(kit: WallKit, height: number, flushEdges: boolean) {
+    async function buildRelief(
+      kit: WallKit,
+      shape: { width?: number; height: number; flushEdges: boolean; holeBackZ?: number },
+    ) {
       const grid = await loadWithRetry(kit.depthUrl, 4);
       if (disposed) return null;
       const relief = createReliefWallGeometry(grid, {
-        wallWidth: 1,
-        wallHeight: height,
+        wallWidth: shape.width ?? 1,
+        wallHeight: shape.height,
         depth: settings.reliefDepth,
         levels: settings.reliefLevels,
         minIsland: settings.reliefMinIsland,
         aoRadius: settings.aoRadius,
-        flushEdges,
+        flushEdges: shape.flushEdges,
+        holeBackZ: shape.holeBackZ,
       });
       geometries.push(relief.geometry);
       kit.textures.push(relief.aoMap);
@@ -662,7 +691,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       for (const kit of kits) placeWalls(wallGeo, kit.wallMat, kit.slots);
     } else {
       for (const kit of kits) {
-        buildRelief(kit, wallHeight, true)
+        buildRelief(kit, { height: wallHeight, flushEdges: true })
           .then((relief) => {
             if (!relief) return;
             if (kit === primaryKit) {
@@ -675,12 +704,12 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     }
 
     // every kit, for per-frame material updates and disposal
-    const allKits = [...kits, ...floorKits.values()];
+    const allKits = [...kits, ...floorKits.values(), frameKit, panelKit];
 
     let floorTop = 0;
     for (const floorKit of floorKits.values()) {
       if (isRelief) {
-        buildRelief(floorKit, 1, false)
+        buildRelief(floorKit, { height: 1, flushEdges: false })
           .then((relief) => {
             if (!relief) return;
             placeFloors(relief.geometry, [floorKit.wallMat, floorKit.sideMat], floorKit.slots);
@@ -692,6 +721,58 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       } else {
         placeFloors(floorGeo, floorKit.wallMat, floorKit.slots);
       }
+    }
+
+    // Doors are always relief (a frame needs its cut-out opening), whatever
+    // the wall type. The frame is built first: the panel is sized to fit its
+    // opening.
+    if (doorCells.length) {
+      (async () => {
+        const frame = await buildRelief(frameKit, {
+          height: wallHeight,
+          flushEdges: false,
+          // the opening's jambs reach back to the center plane, where they
+          // meet the other half's
+          holeBackZ: -DOOR_FRAME_HALF_DEPTH,
+        });
+        if (!frame) return;
+        const hole = frame.holeBounds ?? { minX: -0.35, maxX: 0.35, minY: -wallHeight / 2, maxY: wallHeight * 0.3 };
+        const panelWidth = hole.maxX - hole.minX + 2 * DOOR_PANEL_OVERLAP;
+        // from the floor up behind the frame's header
+        const panelHeight = wallHeight / 2 + hole.maxY + DOOR_PANEL_OVERLAP;
+        const panel = await buildRelief(panelKit, { width: panelWidth, height: panelHeight, flushEdges: false });
+        if (!panel) return;
+        const panelCenterX = (hole.minX + hole.maxX) / 2;
+
+        for (const cell of doorCells) {
+          const door = new THREE.Group();
+          door.position.set(cell.x, 0, cell.z);
+          door.rotation.y = cell.rotY;
+
+          // two halves back to back, each facing out of one side
+          for (const side of [1, -1]) {
+            const frameHalf = new THREE.Mesh(frame.geometry, [frameKit.wallMat, frameKit.sideMat]);
+            frameHalf.position.set(0, wallHeight / 2, side * DOOR_FRAME_HALF_DEPTH);
+            frameHalf.rotation.y = side === 1 ? 0 : Math.PI;
+            door.add(frameHalf);
+          }
+
+          const slider = new THREE.Group();
+          for (const side of [1, -1]) {
+            const panelHalf = new THREE.Mesh(panel.geometry, [panelKit.wallMat, panelKit.sideMat]);
+            panelHalf.position.set(panelCenterX, panelHeight / 2, side * DOOR_PANEL_HALF_DEPTH);
+            panelHalf.rotation.y = side === 1 ? 0 : Math.PI;
+            slider.add(panelHalf);
+          }
+          // open = slid up until its bottom clears the opening
+          slider.userData.openY = panelHeight;
+          if (openDoorsRef.current.has(cell.key)) slider.position.y = panelHeight;
+          door.add(slider);
+
+          group.add(door);
+          doorPanelsRef.current.set(cell.key, slider);
+        }
+      })().catch((err) => console.error("Door build failed:", err));
     }
 
     // --- map lights: small glowing fixtures + the shared point-light pool ---
@@ -790,8 +871,8 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
 
       const doorAnim = doorAnimRef.current;
       if (doorAnim) {
-        const p = Math.min(1, (now - doorAnim.start) / doorAnim.duration);
-        doorAnim.mesh.position.y = lerp(doorAnim.from, doorAnim.to, easeOutQuad(p));
+        const p = Math.min(1, (now - doorAnim.start) / DOOR_OPEN_MS);
+        doorAnim.panel.position.y = lerp(doorAnim.from, doorAnim.to, easeOutQuad(p));
         if (p >= 1) doorAnimRef.current = null;
       }
 
@@ -877,7 +958,6 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
         kit.sideMat.dispose();
         for (const tex of kit.textures) tex.dispose();
       }
-      doorMat.dispose();
       floorMat.dispose();
       ceilMat.dispose();
       for (const mat of fixtureMats.values()) mat.dispose();

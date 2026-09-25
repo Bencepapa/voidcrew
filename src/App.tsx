@@ -14,7 +14,7 @@ import { useSwipeControls } from "./components/useSwipeControls";
 const COMPACT_QUERY = "(max-width: 767px), (max-height: 540px)";
 
 export default function App() {
-  const { map, pos, dir, crew, log, moveForward, moveBackward, turnL, turnR, openingDoor } = useGameState();
+  const { map, pos, dir, crew, log, moveForward, moveBackward, turnL, turnR, openingDoor, openDoors } = useGameState();
   const [settings, setSettings] = useState<ViewportSettings>(DEFAULT_SETTINGS);
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -57,7 +57,15 @@ export default function App() {
   }, [moveForward, moveBackward, turnL, turnR]);
 
   const viewport = (
-    <GameViewport map={map} pos={pos} dir={dir} openingDoor={openingDoor} settings={settings} onStats={setStats} />
+    <GameViewport
+      map={map}
+      pos={pos}
+      dir={dir}
+      openingDoor={openingDoor}
+      openDoors={openDoors}
+      settings={settings}
+      onStats={setStats}
+    />
   );
   const actionMenu = (
     <ActionMenu onForward={moveForward} onBack={moveBackward} onTurnLeft={turnL} onTurnRight={turnR} compact={compact} />

@@ -34,7 +34,14 @@ const USAGE = `Usage: npm run texture:process -- --diffuse <file> --depth <file>
   [--normal-strength 3]   normal map bumpiness
   [--normal-source levels] "levels" (follows the relief steps) or "smooth" (original depth shape)
   [--normal-bevel 2]      rounds edges over about this many pixels before deriving normals (0 = sharp),
-                          which gives pipes and ledges round, light-catching top and bottom halves`;
+                          which gives pipes and ledges round, light-catching top and bottom halves
+  [--trim]                crop both images to the diffuse's opaque area first (for cut-outs like door frames)
+  [--flatten-paint]       flatten saturated paint (stripes, decals, rust) to the surface it's painted on
+  [--paint-saturation 0.45] how saturated a color must be to count as paint
+  [--paint-grow 2]        widen the paint areas by this many pixels (the depth's stripes are often wider)
+
+A transparent diffuse (e.g. a door frame's opening) is kept: diffuse.png and depth.png get the
+same alpha holes, which the relief builder leaves out.`;
 
 const { values: args } = parseArgs({
   options: {
@@ -50,6 +57,10 @@ const { values: args } = parseArgs({
     "normal-strength": { type: "string", default: "3" },
     "normal-source": { type: "string", default: "levels" },
     "normal-bevel": { type: "string", default: "2" },
+    trim: { type: "boolean", default: false },
+    "flatten-paint": { type: "boolean", default: false },
+    "paint-saturation": { type: "string", default: "0.45" },
+    "paint-grow": { type: "string", default: "2" },
   },
 });
 
@@ -76,6 +87,8 @@ function buildPalette(rgb: Uint8Array, channels: number, colors: number): Float6
   const step = Math.max(1, Math.floor(pixelCount / 65536));
   const sample: number[] = [];
   for (let p = 0; p < pixelCount; p += step) {
+    // transparent pixels (a door frame's opening) don't get palette colors
+    if (channels === 4 && rgb[p * 4 + 3] < 128) continue;
     sample.push(rgb[p * channels], rgb[p * channels + 1], rgb[p * channels + 2]);
   }
   const n = sample.length / 3;
@@ -141,41 +154,79 @@ function nearestColor(centers: Float64Array, colors: number, r: number, g: numbe
   return best;
 }
 
-async function processDiffuse(file: string, outW: number, outH: number, colors: number): Promise<Buffer> {
+interface DiffuseResult {
+  // RGBA, outW x outH
+  rgba: Buffer;
+  // 1 = opaque cell, 0 = hole; null when the source has no transparency
+  solid: Uint8Array | null;
+}
+
+async function processDiffuse(input: Buffer, outW: number, outH: number, colors: number): Promise<DiffuseResult> {
+  const hasAlpha = (await sharp(input).metadata()).hasAlpha;
   // median(3) removes JPEG ringing without softening hard pixel-art edges;
   // snapping every pixel to a small palette (no dithering) removes the rest
-  const { data, info } = await sharp(file).removeAlpha().median(3).raw().toBuffer({ resolveWithObject: true });
-  const { width: srcW, height: srcH, channels } = info;
-  const palette = buildPalette(data, channels, colors);
+  const { data, info } = await sharp(input).ensureAlpha().median(3).raw().toBuffer({ resolveWithObject: true });
+  const { width: srcW, height: srcH } = info;
+  const palette = buildPalette(data, 4, colors);
 
   const index = new Uint8Array(srcW * srcH);
   for (let p = 0; p < index.length; p++) {
-    index[p] = nearestColor(palette, colors, data[p * channels], data[p * channels + 1], data[p * channels + 2]);
+    index[p] = nearestColor(palette, colors, data[p * 4], data[p * 4 + 1], data[p * 4 + 2]);
   }
 
-  const out = Buffer.alloc(outW * outH * 3);
+  const rgba = Buffer.alloc(outW * outH * 4);
+  const solid = hasAlpha ? new Uint8Array(outW * outH) : null;
   const counts = new Uint32Array(colors);
   for (let ty = 0; ty < outH; ty++) {
     const [y0, y1] = blockRange(ty, outH, srcH);
     for (let tx = 0; tx < outW; tx++) {
       const [x0, x1] = blockRange(tx, outW, srcW);
       counts.fill(0);
+      let opaque = 0;
       for (let sy = y0; sy < y1; sy++) {
-        for (let sx = x0; sx < x1; sx++) counts[index[sy * srcW + sx]]++;
+        for (let sx = x0; sx < x1; sx++) {
+          const p = sy * srcW + sx;
+          if (data[p * 4 + 3] < 128) continue;
+          counts[index[p]]++;
+          opaque++;
+        }
       }
       let best = 0;
       for (let c = 1; c < colors; c++) if (counts[c] > counts[best]) best = c;
-      const o = (ty * outW + tx) * 3;
-      out[o] = Math.round(palette[best * 3]);
-      out[o + 1] = Math.round(palette[best * 3 + 1]);
-      out[o + 2] = Math.round(palette[best * 3 + 2]);
+      // a cell is opaque when most of its source block is
+      const isSolid = opaque * 2 >= (y1 - y0) * (x1 - x0);
+      const o = (ty * outW + tx) * 4;
+      rgba[o] = Math.round(palette[best * 3]);
+      rgba[o + 1] = Math.round(palette[best * 3 + 1]);
+      rgba[o + 2] = Math.round(palette[best * 3 + 2]);
+      rgba[o + 3] = isSolid ? 255 : 0;
+      if (solid) solid[ty * outW + tx] = isSolid ? 1 : 0;
     }
   }
-  return out;
+  return { rgba, solid };
+}
+
+// bounding box of the pixels with alpha >= 128
+async function opaqueBounds(input: Buffer) {
+  const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  let left = info.width;
+  let right = -1;
+  let top = info.height;
+  let bottom = -1;
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      if (data[(y * info.width + x) * 4 + 3] < 128) continue;
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  return { left, top, width: right - left + 1, height: bottom - top + 1 };
 }
 
 // block median of a denoised grayscale depth map, 0..255 floats
-async function smoothDepth(file: string, srcW: number, srcH: number, outW: number, outH: number): Promise<Float32Array> {
+async function smoothDepth(file: Buffer, srcW: number, srcH: number, outW: number, outH: number): Promise<Float32Array> {
   const { data, info } = await sharp(file)
     .resize(srcW, srcH, { fit: "fill" })
     .removeAlpha()
@@ -375,6 +426,117 @@ function normalMapFromHeight(height: Float32Array, w: number, h: number, strengt
   return out;
 }
 
+// AI depth maps often give painted stripes and decals height, as if the paint
+// were a raised plate. With --flatten-paint, every connected patch of
+// saturated diffuse color (paint, hazard stripes, rust) takes the level most
+// common along its border, i.e. the surface it's painted on. Opt-in: it
+// would also flatten genuinely raised colored parts, like red pipes.
+function flattenPaint(q: Uint8Array, rgba: Buffer, w: number, h: number, minSaturation: number, grow: number): number {
+  const painted = new Uint8Array(w * h);
+  for (let i = 0; i < painted.length; i++) {
+    const r = rgba[i * 4];
+    const g = rgba[i * 4 + 1];
+    const b = rgba[i * 4 + 2];
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    painted[i] = rgba[i * 4 + 3] && max > 60 && (max - min) / max >= minSaturation ? 1 : 0;
+  }
+  // Rust and dirt come as scattered specks; only real paint patches (stripes,
+  // decals) count. Growing the specks too would eat into the thin dark seams
+  // between panels.
+  const MIN_PAINT_PATCH = 12;
+  {
+    const seen = new Uint8Array(w * h);
+    for (let start = 0; start < painted.length; start++) {
+      if (!painted[start] || seen[start]) continue;
+      const comp = [start];
+      seen[start] = 1;
+      for (let k = 0; k < comp.length; k++) {
+        const i = comp[k];
+        const x = i % w;
+        const y = (i - x) / w;
+        for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+          if (j >= 0 && painted[j] && !seen[j]) {
+            seen[j] = 1;
+            comp.push(j);
+          }
+        }
+      }
+      if (comp.length < MIN_PAINT_PATCH) for (const i of comp) painted[i] = 0;
+    }
+  }
+  // The depth map's version of a stripe tends to be a pixel or two wider
+  // than the paint in the diffuse; grow the paint mask so the border we
+  // sample lands on the surface beyond it, not on the stripe's own rim.
+  const paint = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!rgba[(y * w + x) * 4 + 3]) continue;
+      search: for (let dy = -grow; dy <= grow; dy++) {
+        for (let dx = -grow; dx <= grow; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < w && yy < h && painted[yy * w + xx]) {
+            paint[y * w + x] = 1;
+            break search;
+          }
+        }
+      }
+    }
+  }
+
+  const visited = new Uint8Array(w * h);
+  let flattened = 0;
+  for (let start = 0; start < paint.length; start++) {
+    if (!paint[start] || visited[start]) continue;
+    const comp: number[] = [];
+    const border = new Map<number, number>();
+    const stack = [start];
+    visited[start] = 1;
+    while (stack.length) {
+      const i = stack.pop()!;
+      comp.push(i);
+      const x = i % w;
+      const y = (i - x) / w;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+        if (j < 0) continue;
+        if (paint[j]) {
+          if (!visited[j]) {
+            visited[j] = 1;
+            stack.push(j);
+          }
+        } else if (rgba[j * 4 + 3]) {
+          border.set(q[j], (border.get(q[j]) ?? 0) + 1);
+        }
+      }
+    }
+    let best = -1;
+    let bestCount = 0;
+    for (const [level, count] of border) {
+      if (count > bestCount) {
+        best = level;
+        bestCount = count;
+      }
+    }
+    if (best < 0) continue;
+    for (const i of comp) {
+      if (q[i] !== best) flattened++;
+      q[i] = best;
+    }
+  }
+  return flattened;
+}
+
+function rgbaToRgb(rgba: Buffer): Buffer {
+  const rgb = Buffer.alloc((rgba.length / 4) * 3);
+  for (let p = 0; p < rgba.length / 4; p++) {
+    rgb[p * 3] = rgba[p * 4];
+    rgb[p * 3 + 1] = rgba[p * 4 + 1];
+    rgb[p * 3 + 2] = rgba[p * 4 + 2];
+  }
+  return rgb;
+}
+
 async function main() {
   if (!args.diffuse || !args.depth || !args.out) {
     console.error(USAGE);
@@ -387,9 +549,22 @@ async function main() {
   const minLevelGap = parseFloat(args["min-level-gap"]!);
   const fillGaps = parseInt(args["fill-gaps"]!, 10);
   const normalBevel = parseInt(args["normal-bevel"]!, 10);
+  const paintSaturation = parseFloat(args["paint-saturation"]!);
+  const paintGrow = parseInt(args["paint-grow"]!, 10);
   const normalStrength = parseFloat(args["normal-strength"]!);
 
-  const meta = await sharp(args.diffuse).metadata();
+  let diffuseInput = fs.readFileSync(args.diffuse);
+  let depthInput = fs.readFileSync(args.depth);
+  if (args.trim) {
+    // crop both images to the diffuse's opaque area, so e.g. a door frame
+    // drawn with empty space around it fills the whole wall cell
+    const box = await opaqueBounds(diffuseInput);
+    const size0 = await sharp(diffuseInput).metadata();
+    depthInput = await sharp(depthInput).resize(size0.width, size0.height, { fit: "fill" }).extract(box).png().toBuffer();
+    diffuseInput = await sharp(diffuseInput).extract(box).png().toBuffer();
+  }
+
+  const meta = await sharp(diffuseInput).metadata();
   const srcW = meta.width!;
   const srcH = meta.height!;
   const outW = size;
@@ -397,21 +572,29 @@ async function main() {
   const outDir = path.resolve(args.out);
   fs.mkdirSync(outDir, { recursive: true });
 
-  const diffuse = await processDiffuse(args.diffuse, outW, outH, colors);
-  await sharp(diffuse, { raw: { width: outW, height: outH, channels: 3 } })
+  // With a transparent diffuse (a door frame's opening) the opaque cells are
+  // "solid": the relief only builds those, so the depth's levels are fitted
+  // to them alone and the depth map carries the same holes in its alpha.
+  const { rgba, solid } = await processDiffuse(diffuseInput, outW, outH, colors);
+  await sharp(solid ? rgba : rgbaToRgb(rgba), { raw: { width: outW, height: outH, channels: solid ? 4 : 3 } })
     .png({ compressionLevel: 9 })
     .toFile(path.join(outDir, "diffuse.png"));
   const uniqueColors = new Set<number>();
-  for (let i = 0; i < diffuse.length; i += 3) uniqueColors.add((diffuse[i] << 16) | (diffuse[i + 1] << 8) | diffuse[i + 2]);
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (rgba[i + 3]) uniqueColors.add((rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]);
+  }
+  const solidOnly = (values: Float32Array) => (solid ? values.filter((_, i) => solid[i]) : values);
 
-  const rawDepth = await smoothDepth(args.depth, srcW, srcH, outW, outH);
+  const rawDepth = await smoothDepth(depthInput, srcW, srcH, outW, outH);
   // the values are already median-filtered, so the most common gray is the
   // wall's flat base surface
-  const baseGray = mostCommonValue(rawDepth);
+  const baseGray = mostCommonValue(solidOnly(rawDepth));
   const smooth = fillGapsBetweenRaised(rawDepth, outW, outH, fillGaps, baseGray);
-  const centers = mergeCloseLevels(kmeans1d(smooth, levels), smooth, minLevelGap);
+  const solidSmooth = solidOnly(smooth);
+  const centers = mergeCloseLevels(kmeans1d(solidSmooth, levels), solidSmooth, minLevelGap);
   let q = new Uint8Array(smooth.length);
   for (let i = 0; i < q.length; i++) q[i] = nearest(centers, smooth[i]);
+  const flattened = args["flatten-paint"] ? flattenPaint(q, rgba, outW, outH, paintSaturation, paintGrow) : 0;
   q = removeSmallIslands(q, outW, outH, minIsland);
 
   // Stretch the source's full darkest..brightest range to 0..255 so the map is
@@ -421,28 +604,33 @@ async function main() {
   // every step's height relative to the others.
   let lo = Infinity;
   let hi = -Infinity;
-  for (const v of smooth) {
+  for (const v of solidSmooth) {
     if (v < lo) lo = v;
     if (v > hi) hi = v;
   }
   const range = hi - lo || 1;
   const grays = centers.map((c) => Math.round(((c - lo) / range) * 255));
-  const depth = Buffer.alloc(outW * outH);
+  const channels = solid ? 2 : 1;
+  const depth = Buffer.alloc(outW * outH * channels);
+  const depthGray = new Float32Array(outW * outH);
   const perLevel = new Uint32Array(centers.length);
   for (let i = 0; i < q.length; i++) {
-    depth[i] = grays[q[i]];
-    perLevel[q[i]]++;
+    depthGray[i] = grays[q[i]];
+    depth[i * channels] = grays[q[i]];
+    if (solid) depth[i * 2 + 1] = solid[i] ? 255 : 0;
+    if (!solid || solid[i]) perLevel[q[i]]++;
   }
-  await sharp(depth, { raw: { width: outW, height: outH, channels: 1 } })
+  await sharp(depth, { raw: { width: outW, height: outH, channels } })
     .png({ compressionLevel: 9 })
     .toFile(path.join(outDir, "depth.png"));
+  const solidCount = solid ? solid.reduce((n, s) => n + s, 0) : q.length;
 
   // "levels": normals from the same stepped heights the relief geometry is
   // built from, so shading rims line up with the voxel steps; "smooth": from
   // the pre-quantization depth (softer, can drift a pixel off the steps).
   // A bevel blurs the heights first, widening each rim into a rounded
   // chamfer of about that many pixels.
-  const normalSource = args["normal-source"] === "smooth" ? smooth : Float32Array.from(depth);
+  const normalSource = args["normal-source"] === "smooth" ? smooth : depthGray;
   const bevelled = boxBlur(boxBlur(normalSource, outW, outH, normalBevel), outW, outH, normalBevel);
   const normal = normalMapFromHeight(bevelled, outW, outH, normalStrength);
   await sharp(normal, { raw: { width: outW, height: outH, channels: 3 } })
@@ -450,11 +638,15 @@ async function main() {
     .toFile(path.join(outDir, "normal.png"));
 
   console.log(`${srcW}x${srcH} -> ${outW}x${outH} in ${path.relative(process.cwd(), outDir)}`);
-  console.log(`  diffuse.png: ${uniqueColors.size} colors`);
+  console.log(
+    `  diffuse.png: ${uniqueColors.size} colors` +
+      (solid ? `, ${((1 - solidCount / q.length) * 100).toFixed(1)}% transparent` : ""),
+  );
   console.log(
     `  depth.png:   ${grays.length} levels: ` +
-      grays.map((g, i) => `${g} (${((perLevel[i] / q.length) * 100).toFixed(1)}%)`).join(", "),
+      grays.map((g, i) => `${g} (${((perLevel[i] / solidCount) * 100).toFixed(1)}%)`).join(", "),
   );
+  if (args["flatten-paint"]) console.log(`  paint:       ${flattened} depth pixels flattened`);
   console.log(`  normal.png:  strength ${normalStrength}`);
 }
 
