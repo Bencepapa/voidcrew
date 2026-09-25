@@ -1,8 +1,9 @@
+// movement handlers are omitted (buttons disabled) in free movement mode
 interface ActionMenuProps {
-  onForward: () => void;
-  onBack: () => void;
-  onTurnLeft: () => void;
-  onTurnRight: () => void;
+  onForward?: () => void;
+  onBack?: () => void;
+  onTurnLeft?: () => void;
+  onTurnRight?: () => void;
   // translucent variant for the mobile overlay layout
   compact?: boolean;
 }

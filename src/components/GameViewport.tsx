@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { cellAt } from "../game/map";
 import { DIR_VECTOR } from "../game/movement";
@@ -6,6 +7,9 @@ import type { Direction, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights } from "../game/lights";
 import { doorCellKey } from "../game/useGameState";
+import { forwardOf } from "../game/freeMovement";
+import type { FreePose } from "../game/freeMovement";
+import type { PeekState } from "./useViewControls";
 
 export type TextureSetId =
   | "wall1"
@@ -16,7 +20,8 @@ export type TextureSetId =
   | "floor1"
   | "floor2"
   | "door1"
-  | "doorframe1";
+  | "doorframe1"
+  | "ceiling1";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -27,6 +32,10 @@ export interface ViewportSettings {
   // "map" = per cell, as the map specifies (GameMap.floorAt); a set id
   // forces that floor everywhere; "none" = plain dark floor
   floorTextureSet: TextureSetId | "map" | "none";
+  // "none" = plain dark ceiling
+  ceilingTextureSet: TextureSetId | "none";
+  // step cell by cell (true) or move freely with joysticks/held keys (false)
+  gridMovement: boolean;
   wallProfile: WallProfileId;
   eyeHeight: number;
   wallHeight: number;
@@ -72,6 +81,8 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   accentTextureSet: "wall5",
   accentRatio: 0.35,
   floorTextureSet: "map",
+  ceilingTextureSet: "ceiling1",
+  gridMovement: true,
   wallProfile: "relief",
   eyeHeight: 0.5,
   wallHeight: 1.0,
@@ -233,7 +244,16 @@ function createBeveledWallGeometry(
   return geo;
 }
 
-const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; depth: string; pixelArt: boolean }> = {
+interface TextureSetPaths {
+  diffuse: string;
+  normal: string;
+  depth: string;
+  pixelArt: boolean;
+  // mask of the parts that glow when lit (a ceiling light panel)
+  emissive?: string;
+}
+
+const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
   // import.meta.env.BASE_URL matches Vite's `base` config (e.g. "/voidcrew/"
   // on GitHub Pages) - a hardcoded "/textures/..." would 404 there since the
   // app isn't served from the domain root.
@@ -299,7 +319,19 @@ const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; dept
     depth: `${import.meta.env.BASE_URL}textures/doorframe1/depth.png`,
     pixelArt: true,
   },
+  // ceiling tile; its center panel glows in cells with a ceiling light
+  ceiling1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/ceiling1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/ceiling1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/ceiling1/depth.png`,
+    emissive: `${import.meta.env.BASE_URL}textures/ceiling1/emissive.png`,
+    pixelArt: true,
+  },
 };
+
+// warm white of a lit ceiling panel (matches the ceiling light color)
+const LIGHT_PANEL_COLOR = 0xfff4e0;
+const LIGHT_PANEL_INTENSITY = 1.6;
 
 // floor used where the map doesn't specify one
 const DEFAULT_FLOOR: TextureSetId = "floor1";
@@ -312,9 +344,11 @@ interface WallSlot {
   x: number;
   z: number;
   rotY: number;
+  // ceiling tile under a ceiling light: use the kit's glowing material
+  lit?: boolean;
 }
 
-// Everything the walls (or floors) of one texture set need: its own
+// Everything the walls (or floors, ceilings) of one texture set need: its own
 // materials and, in relief mode, its own geometry (built from that set's
 // depth map).
 interface WallKit {
@@ -322,6 +356,8 @@ interface WallKit {
   wallMat: THREE.MeshStandardMaterial;
   // relief step sides: same texture, no normal map (see reliefMesh.ts groups)
   sideMat: THREE.MeshStandardMaterial;
+  // wallMat plus the set's emissive mask glowing, if it has one
+  litMat?: THREE.MeshStandardMaterial;
   // disposed with the scene (incl. the relief AO map once built)
   textures: THREE.Texture[];
   slots: WallSlot[];
@@ -330,6 +366,10 @@ interface WallKit {
 // Stable pseudo-random 0..1 per wall face, from its position (face centers
 // sit on half-cell coordinates, so doubled they're integers). Keeps the
 // accent texture on the same walls across reloads and setting changes.
+function kitMaterials(kit: WallKit): THREE.MeshStandardMaterial[] {
+  return kit.litMat ? [kit.wallMat, kit.sideMat, kit.litMat] : [kit.wallMat, kit.sideMat];
+}
+
 function wallVariantRoll(x: number, z: number): number {
   let h = Math.imul(Math.round(x * 2), 374761393) ^ Math.imul(Math.round(z * 2), 668265263);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -372,6 +412,11 @@ const DOOR_PANEL_HALF_DEPTH = 0.02;
 const DOOR_PANEL_OVERLAP = 0.03;
 const DOOR_OPEN_MS = 400;
 
+// a peek eases back to center once its input has been idle this long...
+const PEEK_IDLE_MS = 300;
+// ...with this time constant (s)
+const PEEK_RETURN_TAU = 0.25;
+
 interface GameViewportProps {
   map: GameMap;
   pos: Vec2;
@@ -379,6 +424,12 @@ interface GameViewportProps {
   openingDoor: Vec2 | null;
   // door cells ("x,y") that are open
   openDoors: ReadonlySet<string>;
+  // free movement: called every frame with the frame time (s), returns the
+  // camera pose; when absent the camera follows pos/dir on the grid
+  freeTick?: (dt: number) => FreePose;
+  // grid movement: glance-around yaw offset (see useViewControls); eased
+  // back to 0 here once its input goes idle
+  peekRef?: MutableRefObject<PeekState>;
   settings: ViewportSettings;
   onStats?: (stats: ViewportStats) => void;
 }
@@ -424,7 +475,17 @@ function verticalFov(fov: number, aspect: number): number {
   return Math.min(MAX_VERTICAL_FOV, v);
 }
 
-export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, onStats }: GameViewportProps) {
+export function GameViewport({
+  map,
+  pos,
+  dir,
+  openingDoor,
+  openDoors,
+  freeTick,
+  peekRef,
+  settings,
+  onStats,
+}: GameViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onStatsRef = useRef(onStats);
   onStatsRef.current = onStats;
@@ -447,9 +508,32 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
+  const peekRefRef = useRef(peekRef);
+  peekRefRef.current = peekRef;
+
   useEffect(() => {
+    const peek = peekRefRef.current?.current;
+    if (peek?.snapTurn) {
+      // a peek turned into this turn: the peek offset already carries the
+      // view across, so jump the facing instead of swinging it again
+      peek.snapTurn = false;
+      animRef.current = null;
+      liveRef.current = computeTarget(pos, dir);
+      return;
+    }
     animRef.current = { from: { ...liveRef.current }, to: computeTarget(pos, dir), start: performance.now() };
   }, [pos, dir]);
+
+  const freeTickRef = useRef(freeTick);
+  freeTickRef.current = freeTick;
+  const freeMode = !!freeTick;
+  // back to grid movement: glide from wherever free movement left the camera
+  // onto the current cell and facing
+  useEffect(() => {
+    if (freeMode) return;
+    animRef.current = { from: { ...liveRef.current }, to: computeTarget(pos, dir), start: performance.now() };
+    // only on the mode switch - pos/dir changes are handled above
+  }, [freeMode]);
 
   // door panels by door cell key ("x,y"); each remembers its open height in
   // userData.openY
@@ -527,7 +611,26 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
       });
       addDirectLightOcclusion(wallMat, cavity);
       addDirectLightOcclusion(sideMat, cavity);
-      return { depthUrl: paths.depth + bust, wallMat, sideMat, textures: [diffuse, normalMap, depthMap], slots: [] };
+      const textures = [diffuse, normalMap, depthMap];
+
+      let litMat: THREE.MeshStandardMaterial | undefined;
+      if (paths.emissive) {
+        const emissiveMap = loader.load(paths.emissive + bust);
+        if (paths.pixelArt) emissiveMap.magFilter = THREE.NearestFilter;
+        textures.push(emissiveMap);
+        litMat = new THREE.MeshStandardMaterial({
+          map: diffuse,
+          normalMap,
+          roughness: settings.roughness,
+          metalness: settings.metalness,
+          emissive: LIGHT_PANEL_COLOR,
+          emissiveMap,
+          emissiveIntensity: LIGHT_PANEL_INTENSITY,
+        });
+        addDirectLightOcclusion(litMat, cavity);
+      }
+
+      return { depthUrl: paths.depth + bust, wallMat, sideMat, litMat, textures, slots: [] };
     }
 
     // most walls use the main texture set; a stable, position-based share of
@@ -554,6 +657,13 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
       }
       return kit;
     }
+
+    const ceilingKit = settings.ceilingTextureSet !== "none" ? createWallKit(settings.ceilingTextureSet, false) : null;
+    // cells with a ceiling light: their ceiling tile's light panel glows
+    const mapLights = generateLights(map);
+    const litCells = new Set(
+      mapLights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`),
+    );
 
     const frameKit = createWallKit(DOOR_FRAME_SET, false);
     const panelKit = createWallKit(DOOR_PANEL_SET, false);
@@ -608,6 +718,18 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
       }
     }
 
+    // ... and turned to face down from the ceiling; lit slots get the kit's
+    // glowing front material
+    function placeCeilings(geo: THREE.BufferGeometry, kit: WallKit, relief: boolean) {
+      for (const slot of kit.slots) {
+        const front = slot.lit && kit.litMat ? kit.litMat : kit.wallMat;
+        const mesh = new THREE.Mesh(geo, relief ? [front, kit.sideMat] : front);
+        mesh.rotation.x = Math.PI / 2;
+        mesh.position.set(slot.x, wallHeight, slot.z);
+        group.add(mesh);
+      }
+    }
+
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         if (cellAt(map, x, y) === "wall") continue;
@@ -622,10 +744,14 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
           group.add(floor);
         }
 
-        const ceiling = new THREE.Mesh(floorGeo, ceilMat);
-        ceiling.rotation.x = Math.PI / 2;
-        ceiling.position.set(x, wallHeight, y);
-        group.add(ceiling);
+        if (ceilingKit) {
+          ceilingKit.slots.push({ x, z: y, rotY: 0, lit: litCells.has(`${x},${y}`) });
+        } else {
+          const ceiling = new THREE.Mesh(floorGeo, ceilMat);
+          ceiling.rotation.x = Math.PI / 2;
+          ceiling.position.set(x, wallHeight, y);
+          group.add(ceiling);
+        }
 
         (Object.keys(DIR_VECTOR) as Direction[]).forEach((d) => {
           const v = DIR_VECTOR[d];
@@ -679,7 +805,7 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
       });
       geometries.push(relief.geometry);
       kit.textures.push(relief.aoMap);
-      for (const mat of [kit.wallMat, kit.sideMat]) {
+      for (const mat of kitMaterials(kit)) {
         mat.aoMap = relief.aoMap;
         mat.aoMapIntensity = settingsRef.current.aoIntensity;
         mat.needsUpdate = true;
@@ -704,7 +830,17 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
     }
 
     // every kit, for per-frame material updates and disposal
-    const allKits = [...kits, ...floorKits.values(), frameKit, panelKit];
+    const allKits = [...kits, ...floorKits.values(), frameKit, panelKit, ...(ceilingKit ? [ceilingKit] : [])];
+
+    if (ceilingKit) {
+      if (isRelief) {
+        buildRelief(ceilingKit, { height: 1, flushEdges: false })
+          .then((relief) => relief && placeCeilings(relief.geometry, ceilingKit, true))
+          .catch((err) => console.error("Relief ceiling build failed:", err));
+      } else {
+        placeCeilings(floorGeo, ceilingKit, false);
+      }
+    }
 
     let floorTop = 0;
     for (const floorKit of floorKits.values()) {
@@ -776,7 +912,6 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
     }
 
     // --- map lights: small glowing fixtures + the shared point-light pool ---
-    const mapLights = generateLights(map);
     const ceilingFixtureGeo = new THREE.PlaneGeometry(0.26, 0.26);
     const floorFixtureGeo = new THREE.PlaneGeometry(0.3, 0.05);
     geometries.push(ceilingFixtureGeo, floorFixtureGeo);
@@ -792,6 +927,8 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
 
     for (const light of mapLights) {
       if (light.kind === "ceiling") {
+        // a textured ceiling brings its own glowing light panel
+        if (ceilingKit?.litMat) continue;
         const panel = new THREE.Mesh(ceilingFixtureGeo, fixtureMat(light.color));
         panel.rotation.x = Math.PI / 2;
         panel.position.set(light.x, wallHeight - 0.002, light.z);
@@ -845,16 +982,31 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
     resizeObserver.observe(container);
 
     const startedAt = performance.now();
+    let lastFrameAt = startedAt;
     let lastStatsAt = 0;
 
     function renderFrame() {
       const s = settingsRef.current;
       const now = performance.now();
       const t = (now - startedAt) / 1000;
+      // capped so a stall (tab switch, breakpoint) doesn't teleport the
+      // free-moving player through a wall
+      const dt = Math.min(0.05, (now - lastFrameAt) / 1000);
+      lastFrameAt = now;
 
       const anim = animRef.current;
+      const freeTick = freeTickRef.current;
       let cam: CamTarget;
-      if (anim) {
+      // free movement puts the eye right at the pose; grid movement pulls it
+      // back from the cell center
+      let pullback = s.cameraPullback;
+      if (freeTick) {
+        const pose = freeTick(dt);
+        const f = forwardOf(pose.yaw);
+        cam = { x: pose.x, z: pose.z, tx: pose.x + f.x, tz: pose.z + f.z };
+        animRef.current = null;
+        pullback = 0;
+      } else if (anim) {
         const p = Math.min(1, (now - anim.start) / s.moveDurationMs);
         const e = easeOutQuad(p);
         cam = {
@@ -882,8 +1034,8 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
       const fwdX = cam.tx - cam.x;
       const fwdZ = cam.tz - cam.z;
       const fwdLen = Math.hypot(fwdX, fwdZ) || 1;
-      const camX = cam.x - (fwdX / fwdLen) * s.cameraPullback;
-      const camZ = cam.z - (fwdZ / fwdLen) * s.cameraPullback;
+      const camX = cam.x - (fwdX / fwdLen) * pullback;
+      const camZ = cam.z - (fwdZ / fwdLen) * pullback;
 
       const fov = verticalFov(s.fov, camera.aspect);
       if (camera.fov !== fov) {
@@ -891,19 +1043,39 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
         camera.updateProjectionMatrix();
       }
 
+      // glance-around (grid movement only): ease back to center once idle,
+      // then turn the head by the offset around the eye
+      const peek = peekRefRef.current?.current;
+      let peekYaw = 0;
+      if (peek && !freeTick) {
+        if (!peek.held && now - peek.lastInputAt > PEEK_IDLE_MS) {
+          peek.offset *= Math.exp(-dt / PEEK_RETURN_TAU);
+          if (Math.abs(peek.offset) < 1e-3) peek.offset = 0;
+        }
+        peekYaw = peek.offset;
+      }
+      // rotating the facing clockwise (seen from above) by peekYaw
+      const fx = fwdX / fwdLen;
+      const fz = fwdZ / fwdLen;
+      const cos = Math.cos(peekYaw);
+      const sin = Math.sin(peekYaw);
+      const lookX = fx * cos - fz * sin;
+      const lookZ = fz * cos + fx * sin;
+
       camera.position.set(camX, s.eyeHeight + bobY, camZ);
-      camera.lookAt(cam.tx, s.eyeHeight + bobY, cam.tz);
+      camera.lookAt(camX + lookX, s.eyeHeight + bobY, camZ + lookZ);
       camera.rotateZ(bobRoll);
 
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.pointLightIntensity;
       for (const kit of allKits) {
-        for (const mat of [kit.wallMat, kit.sideMat]) {
+        for (const mat of kitMaterials(kit)) {
           mat.roughness = s.roughness;
           mat.metalness = s.metalness;
           mat.aoMapIntensity = s.aoIntensity;
         }
         kit.wallMat.normalScale.set(s.normalStrength, s.normalStrength);
+        kit.litMat?.normalScale.set(s.normalStrength, s.normalStrength);
       }
       cavity.value = s.aoDirect;
       // a headlamp-like light orbiting the camera; the small radius keeps it
@@ -912,7 +1084,8 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
       // step sides of relief walls
       pointLight.position.set(
         camX + Math.cos(t * 0.5) * 0.15,
-        s.eyeHeight + 0.3,
+        // above the eyes, but never through the ceiling
+        Math.min(s.eyeHeight + 0.3, s.wallHeight - 0.08),
         camZ + Math.sin(t * 0.5) * 0.15,
       );
       updateLightPool(camX, camZ, s.mapLightIntensity);
@@ -956,6 +1129,7 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
       for (const kit of allKits) {
         kit.wallMat.dispose();
         kit.sideMat.dispose();
+        kit.litMat?.dispose();
         for (const tex of kit.textures) tex.dispose();
       }
       floorMat.dispose();
@@ -969,6 +1143,7 @@ export function GameViewport({ map, pos, dir, openingDoor, openDoors, settings, 
     settings.accentTextureSet,
     settings.accentRatio,
     settings.floorTextureSet,
+    settings.ceilingTextureSet,
     settings.wallProfile,
     settings.wallHeight,
     settings.bevelFraction,

@@ -113,6 +113,15 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
     >
       <div className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">Debug</div>
 
+      <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+        <input
+          type="checkbox"
+          checked={settings.gridMovement}
+          onChange={(e) => set("gridMovement", e.target.checked)}
+        />
+        Grid movement (off: free, joysticks)
+      </label>
+
       <div className="flex flex-col gap-1">
         <div className="text-[10px] text-neutral-500">Texture set</div>
         {TEXTURE_SET_OPTIONS.map((opt) => (
@@ -156,6 +165,18 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
           <option value="none">none (plain)</option>
           <option value="floor1">floor1 - grate</option>
           <option value="floor2">floor2 - diamond plate</option>
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] text-neutral-500">Ceiling texture</span>
+        <select
+          value={settings.ceilingTextureSet}
+          onChange={(e) => set("ceilingTextureSet", e.target.value as ViewportSettings["ceilingTextureSet"])}
+          className="bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm"
+        >
+          <option value="none">none (plain)</option>
+          <option value="ceiling1">ceiling1 - panels with light</option>
         </select>
       </label>
 

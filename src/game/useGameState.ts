@@ -66,5 +66,39 @@ export function useGameState() {
   const moveForward = useCallback(() => step(dir), [step, dir]);
   const moveBackward = useCallback(() => step(behindOf(dir)), [step, dir]);
 
-  return { map, pos, dir, crew, log, moveForward, moveBackward, turnL, turnR, pushLog, openingDoor, openDoors };
+  // free movement: the continuous pose drives the grid state (nearest cell
+  // and facing), which the minimap and door logic read
+  const syncPose = useCallback((cell: Vec2, facing: Direction) => {
+    setPos((p) => (p.x === cell.x && p.y === cell.y ? p : cell));
+    setDir(facing);
+  }, []);
+
+  // free movement: bumping into a closed door opens it
+  const openDoorAt = useCallback(
+    (cell: Vec2) => {
+      if (openingDoor || openDoors.has(doorCellKey(cell))) return;
+      pushLog("The door slides open.");
+      setOpeningDoor(cell);
+      setOpenDoors((prev) => new Set(prev).add(doorCellKey(cell)));
+      setTimeout(() => setOpeningDoor(null), DOOR_ANIM_MS);
+    },
+    [openingDoor, openDoors, pushLog],
+  );
+
+  return {
+    map,
+    pos,
+    dir,
+    crew,
+    log,
+    moveForward,
+    moveBackward,
+    turnL,
+    turnR,
+    pushLog,
+    openingDoor,
+    openDoors,
+    syncPose,
+    openDoorAt,
+  };
 }

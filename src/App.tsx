@@ -8,27 +8,55 @@ import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
 import { DebugPanel } from "./components/DebugPanel";
 import { useMediaQuery } from "./components/useMediaQuery";
-import { useSwipeControls } from "./components/useSwipeControls";
+import { useViewControls } from "./components/useViewControls";
+import { VirtualJoysticks } from "./components/VirtualJoysticks";
+import { useFreeMovement } from "./game/useFreeMovement";
 
 // phones in portrait (narrow) or landscape (short) get the overlay layout
 const COMPACT_QUERY = "(max-width: 767px), (max-height: 540px)";
 
 export default function App() {
-  const { map, pos, dir, crew, log, moveForward, moveBackward, turnL, turnR, openingDoor, openDoors } = useGameState();
+  const {
+    map,
+    pos,
+    dir,
+    crew,
+    log,
+    moveForward,
+    moveBackward,
+    turnL,
+    turnR,
+    openingDoor,
+    openDoors,
+    syncPose,
+    openDoorAt,
+  } = useGameState();
   const [settings, setSettings] = useState<ViewportSettings>(DEFAULT_SETTINGS);
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const compact = useMediaQuery(COMPACT_QUERY);
-  const swipe = useSwipeControls({ onForward: moveForward, onBack: moveBackward, onTurnLeft: turnL, onTurnRight: turnR });
+  const grid = settings.gridMovement;
+  const finePointer = useMediaQuery("(pointer: fine)");
+  const free = useFreeMovement({ enabled: !grid, map, pos, dir, openDoors, openingDoor, syncPose, openDoorAt });
+  const view = useViewControls({
+    grid,
+    onForward: moveForward,
+    onBack: moveBackward,
+    onTurnLeft: turnL,
+    onTurnRight: turnR,
+    onYaw: free.addYaw,
+  });
 
   // dev-only console hooks for comparing rendering settings, e.g.
   //   voidcrew.set({ ambientIntensity: 0.2, roughness: 0.4 })
   //   await voidcrew.capture("low-ambient")  // -> concept/gen/captures/
+  //   voidcrew.peek()  // grid glance-around state
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     Object.assign(window, {
       voidcrew: {
         set: (patch: Partial<ViewportSettings>) => setSettings((s) => ({ ...s, ...patch })),
+        peek: () => ({ ...view.peekRef.current }),
         async capture(name: string) {
           // GameViewport exposes this in dev: renders a frame and reads it back
           // before the browser can present and clear the WebGL canvas
@@ -45,7 +73,10 @@ export default function App() {
     });
   }, []);
 
+  // grid movement steps on key presses; free movement reads held keys itself
+  // (useFreeMovement)
   useEffect(() => {
+    if (!grid) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "ArrowUp" || e.key === "w") moveForward();
       if (e.key === "ArrowDown" || e.key === "s") moveBackward();
@@ -54,7 +85,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [moveForward, moveBackward, turnL, turnR]);
+  }, [grid, moveForward, moveBackward, turnL, turnR]);
 
   const viewport = (
     <GameViewport
@@ -63,12 +94,29 @@ export default function App() {
       dir={dir}
       openingDoor={openingDoor}
       openDoors={openDoors}
+      freeTick={grid ? undefined : free.tick}
+      peekRef={view.peekRef}
       settings={settings}
       onStats={setStats}
     />
   );
-  const actionMenu = (
+  const viewInput = view.handlers;
+  // free movement: touch gets twin sticks; a mouse gets a hint until it's
+  // captured for mouselook
+  const joysticks = grid ? null : (
+    <>
+      <VirtualJoysticks axesRef={free.axesRef} />
+      {finePointer && !view.mouseLocked && (
+        <div className="absolute bottom-16 inset-x-0 text-center text-[11px] text-neutral-300/80 pointer-events-none">
+          Click the view for mouselook (Esc releases) · WASD move · Q/E turn
+        </div>
+      )}
+    </>
+  );
+  const actionMenu = grid ? (
     <ActionMenu onForward={moveForward} onBack={moveBackward} onTurnLeft={turnL} onTurnRight={turnR} compact={compact} />
+  ) : (
+    <ActionMenu compact={compact} />
   );
 
   if (compact) {
@@ -77,8 +125,9 @@ export default function App() {
     // swipes on them still reach the viewport.
     return (
       <div className="relative h-[100dvh] w-screen overflow-hidden font-sans">
-        <div className="absolute inset-0" {...swipe}>
+        <div className="absolute inset-0" {...viewInput}>
           {viewport}
+          {joysticks}
         </div>
 
         <div className="absolute top-2 left-2 w-28 flex flex-col gap-1 pointer-events-none">
@@ -125,8 +174,9 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex-1 min-w-0" {...swipe}>
+        <div className="relative flex-1 min-w-0" {...viewInput}>
           {viewport}
+          {joysticks}
         </div>
 
         <div className="w-56 flex flex-col gap-2 min-h-0">

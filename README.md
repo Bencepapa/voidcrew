@@ -16,8 +16,19 @@ A first-person, grid-based crew dungeon crawler set aboard a derelict spaceship 
 
 ## Controls
 
+Grid movement (default):
+
 - Keyboard: `W`/`↑` forward, `S`/`↓` step back, `A`/`←` turn left, `D`/`→` turn right
-- Touch / mouse drag on the game view: drag up = forward, down = step back; drag left/right turns as if grabbing the view (drag left = turn right)
+- Mouse: moving it glances left/right (up to 60°); the view drifts back to center when the mouse rests. Dragging works like touch swipes
+- Touch, left half of the view: drag up = forward, down = step back; drag left/right turns as if grabbing the view (drag left = turn right)
+- Touch, right half: drag sideways to glance around; let go while looking well to one side to turn that way, or back near the middle to not turn
+
+Free movement (untick "Grid movement" in the debug panel):
+
+- Keyboard: hold `W`/`S` (or `↑`/`↓`) to move, `A`/`D` to strafe, `Q`/`E` (or `←`/`→`) to turn
+- Mouse: click the view for mouselook (`Esc` releases)
+- Touch: a virtual joystick appears where you press - left half of the view moves (and strafes), right half turns
+- Walking into a closed door opens it
 
 On phones (narrow or short screens) the game fills the screen with translucent overlay panels; the action and debug menu sits behind the ☰ button.
 

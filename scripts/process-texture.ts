@@ -39,6 +39,8 @@ const USAGE = `Usage: npm run texture:process -- --diffuse <file> --depth <file>
   [--flatten-paint]       flatten saturated paint (stripes, decals, rust) to the surface it's painted on
   [--paint-saturation 0.45] how saturated a color must be to count as paint
   [--paint-grow 2]        widen the paint areas by this many pixels (the depth's stripes are often wider)
+  [--emissive-panel]      also write emissive.png: the largest bright, colorless patch (a light panel)
+  [--emissive-luma 150]   how bright a pixel must be to belong to the light panel
 
 A transparent diffuse (e.g. a door frame's opening) is kept: diffuse.png and depth.png get the
 same alpha holes, which the relief builder leaves out.`;
@@ -61,6 +63,8 @@ const { values: args } = parseArgs({
     "flatten-paint": { type: "boolean", default: false },
     "paint-saturation": { type: "string", default: "0.45" },
     "paint-grow": { type: "string", default: "2" },
+    "emissive-panel": { type: "boolean", default: false },
+    "emissive-luma": { type: "string", default: "150" },
   },
 });
 
@@ -527,6 +531,67 @@ function flattenPaint(q: Uint8Array, rgba: Buffer, w: number, h: number, minSatu
   return flattened;
 }
 
+// --emissive-panel: a mask of the largest connected patch of bright,
+// colorless diffuse pixels - e.g. the frosted light panel in the middle of a
+// ceiling tile - for the game to light up where there's a ceiling light.
+function largestBrightPatch(rgba: Buffer, w: number, h: number, minLuma: number): { mask: Uint8Array; size: number } {
+  const bright = new Uint8Array(w * h);
+  for (let i = 0; i < bright.length; i++) {
+    const r = rgba[i * 4];
+    const g = rgba[i * 4 + 1];
+    const b = rgba[i * 4 + 2];
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+    bright[i] = rgba[i * 4 + 3] && luma >= minLuma && (max - min) / (max || 1) < 0.2 ? 1 : 0;
+  }
+  const seen = new Uint8Array(w * h);
+  let best: number[] = [];
+  for (let start = 0; start < bright.length; start++) {
+    if (!bright[start] || seen[start]) continue;
+    const comp = [start];
+    seen[start] = 1;
+    for (let k = 0; k < comp.length; k++) {
+      const i = comp[k];
+      const x = i % w;
+      const y = (i - x) / w;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+        if (j >= 0 && bright[j] && !seen[j]) {
+          seen[j] = 1;
+          comp.push(j);
+        }
+      }
+    }
+    if (comp.length > best.length) best = comp;
+  }
+  const mask = new Uint8Array(w * h);
+  for (const i of best) mask[i] = 1;
+
+  // fill the patch's interior holes (dark cracks, dirt) so the whole panel
+  // glows: anything the outside can't reach without crossing the patch
+  const outside = new Uint8Array(w * h);
+  const stack: number[] = [];
+  for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x);
+  for (let y = 0; y < h; y++) stack.push(y * w, y * w + w - 1);
+  while (stack.length) {
+    const i = stack.pop()!;
+    if (outside[i] || mask[i]) continue;
+    outside[i] = 1;
+    const x = i % w;
+    const y = (i - x) / w;
+    if (x > 0) stack.push(i - 1);
+    if (x < w - 1) stack.push(i + 1);
+    if (y > 0) stack.push(i - w);
+    if (y < h - 1) stack.push(i + w);
+  }
+  let size = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (!outside[i]) mask[i] = 1;
+    size += mask[i];
+  }
+  return { mask, size };
+}
+
 function rgbaToRgb(rgba: Buffer): Buffer {
   const rgb = Buffer.alloc((rgba.length / 4) * 3);
   for (let p = 0; p < rgba.length / 4; p++) {
@@ -646,6 +711,16 @@ async function main() {
     `  depth.png:   ${grays.length} levels: ` +
       grays.map((g, i) => `${g} (${((perLevel[i] / solidCount) * 100).toFixed(1)}%)`).join(", "),
   );
+  if (args["emissive-panel"]) {
+    const { mask, size: panelSize } = largestBrightPatch(rgba, outW, outH, parseFloat(args["emissive-luma"]!));
+    const emissive = Buffer.alloc(outW * outH);
+    for (let i = 0; i < mask.length; i++) emissive[i] = mask[i] ? 255 : 0;
+    await sharp(emissive, { raw: { width: outW, height: outH, channels: 1 } })
+      .png({ compressionLevel: 9 })
+      .toFile(path.join(outDir, "emissive.png"));
+    console.log(`  emissive.png: ${panelSize} px light panel`);
+  }
+
   if (args["flatten-paint"]) console.log(`  paint:       ${flattened} depth pixels flattened`);
   console.log(`  normal.png:  strength ${normalStrength}`);
 }
