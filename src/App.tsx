@@ -92,7 +92,6 @@ export default function App() {
       map={map}
       pos={pos}
       dir={dir}
-      openingDoor={openingDoor}
       openDoors={openDoors}
       freeTick={grid ? undefined : free.tick}
       peekRef={view.peekRef}

@@ -11,7 +11,10 @@
     "lint": "tsc --noEmit",
     "gen:wall": "tsx scripts/gen-wall-texture.ts",
     "downscale:pixelart": "tsx scripts/downscale-pixelart.ts",
-    "texture:process": "tsx scripts/process-texture.ts"
+    "texture:process": "tsx scripts/process-texture.ts",
+    "decals:test": "tsx scripts/make-test-decals.ts",
+    "decals:import": "tsx scripts/import-decals.ts",
+    "decals:text": "tsx scripts/make-text-decal.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -122,6 +122,15 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
         Grid movement (off: free, joysticks)
       </label>
 
+      <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+        <input
+          type="checkbox"
+          checked={settings.decalsEnabled}
+          onChange={(e) => set("decalsEnabled", e.target.checked)}
+        />
+        Decals
+      </label>
+
       <div className="flex flex-col gap-1">
         <div className="text-[10px] text-neutral-500">Texture set</div>
         {TEXTURE_SET_OPTIONS.map((opt) => (

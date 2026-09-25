@@ -24,7 +24,10 @@ import { removeSmallIslands } from "../src/render/heightLevels";
 // Normal: derived from the smooth (pre-quantization) depth, so it adds soft
 // shading within each flat relief step.
 
-const USAGE = `Usage: npm run texture:process -- --diffuse <file> --depth <file> --out <dir>
+const USAGE = `Usage: npm run texture:process -- --diffuse <file> [--depth <file>] --out <dir>
+  (without --depth only diffuse.png is written - e.g. for flat painted decals)
+  [--key ff00ff]          make this background color transparent (for decals drawn on a key color)
+  [--key-tolerance 90]    how close (RGB distance) a pixel must be to the key color
   [--size 256]            output width in pixels (height keeps the aspect ratio)
   [--colors 32]           diffuse palette size
   [--levels 6]            depth height levels (at most; close ones get merged)
@@ -63,6 +66,8 @@ const { values: args } = parseArgs({
     "flatten-paint": { type: "boolean", default: false },
     "paint-saturation": { type: "string", default: "0.45" },
     "paint-grow": { type: "string", default: "2" },
+    key: { type: "string" },
+    "key-tolerance": { type: "string", default: "90" },
     "emissive-panel": { type: "boolean", default: false },
     "emissive-luma": { type: "string", default: "150" },
   },
@@ -592,6 +597,33 @@ function largestBrightPatch(rgba: Buffer, w: number, h: number, minLuma: number)
   return { mask, size };
 }
 
+// --key: AI image tools can't produce real transparency, so decals are drawn
+// on a flat key color (magenta by default) that gets cut out here. For a
+// magenta key, the anti-aliased pinkish fringe around each shape goes too:
+// any pixel whose red and blue both clearly dominate its green. What's left
+// of the key's tint in darker mixes (purple edges, lilac chips in the paint)
+// is despilled: red and blue are pulled down to no more than green.
+async function keyOut(input: Buffer, keyHex: string, tolerance: number): Promise<Buffer> {
+  const key = [0, 2, 4].map((i) => parseInt(keyHex.replace("#", "").slice(i, i + 2), 16));
+  const magenta = key[0] > 200 && key[2] > 200 && key[1] < 60;
+  const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (let i = 0; i < data.length; i += 4) {
+    const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
+    const near = Math.hypot(r - key[0], g - key[1], b - key[2]) < tolerance;
+    const fringe = magenta && r - g > 50 && b - g > 50;
+    if (near || fringe) {
+      data[i + 3] = 0;
+    } else if (magenta) {
+      const spill = Math.min(r, b) - g;
+      if (spill > 0) {
+        data[i] = r - spill;
+        data[i + 2] = b - spill;
+      }
+    }
+  }
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
 function rgbaToRgb(rgba: Buffer): Buffer {
   const rgb = Buffer.alloc((rgba.length / 4) * 3);
   for (let p = 0; p < rgba.length / 4; p++) {
@@ -603,7 +635,7 @@ function rgbaToRgb(rgba: Buffer): Buffer {
 }
 
 async function main() {
-  if (!args.diffuse || !args.depth || !args.out) {
+  if (!args.diffuse || !args.out) {
     console.error(USAGE);
     process.exit(1);
   }
@@ -618,14 +650,17 @@ async function main() {
   const paintGrow = parseInt(args["paint-grow"]!, 10);
   const normalStrength = parseFloat(args["normal-strength"]!);
 
-  let diffuseInput = fs.readFileSync(args.diffuse);
-  let depthInput = fs.readFileSync(args.depth);
+  let diffuseInput: Buffer = fs.readFileSync(args.diffuse);
+  let depthInput: Buffer | null = args.depth ? fs.readFileSync(args.depth) : null;
+  if (args.key) diffuseInput = await keyOut(diffuseInput, args.key, parseFloat(args["key-tolerance"]!));
   if (args.trim) {
     // crop both images to the diffuse's opaque area, so e.g. a door frame
     // drawn with empty space around it fills the whole wall cell
     const box = await opaqueBounds(diffuseInput);
     const size0 = await sharp(diffuseInput).metadata();
-    depthInput = await sharp(depthInput).resize(size0.width, size0.height, { fit: "fill" }).extract(box).png().toBuffer();
+    if (depthInput) {
+      depthInput = await sharp(depthInput).resize(size0.width, size0.height, { fit: "fill" }).extract(box).png().toBuffer();
+    }
     diffuseInput = await sharp(diffuseInput).extract(box).png().toBuffer();
   }
 
@@ -649,6 +684,16 @@ async function main() {
     if (rgba[i + 3]) uniqueColors.add((rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]);
   }
   const solidOnly = (values: Float32Array) => (solid ? values.filter((_, i) => solid[i]) : values);
+
+  if (!depthInput) {
+    // e.g. a flat painted decal: no height, so no depth or normal map
+    console.log(`${srcW}x${srcH} -> ${outW}x${outH} in ${path.relative(process.cwd(), outDir)}`);
+    console.log(
+      `  diffuse.png: ${uniqueColors.size} colors` +
+        (solid ? `, ${((1 - solid.reduce((n, s) => n + s, 0) / solid.length) * 100).toFixed(1)}% transparent` : ""),
+    );
+    return;
+  }
 
   const rawDepth = await smoothDepth(depthInput, srcW, srcH, outW, outH);
   // the values are already median-filtered, so the most common gray is the

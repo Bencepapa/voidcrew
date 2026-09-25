@@ -64,8 +64,26 @@ export function generateLights(map: GameMap): LightSpec[] {
   const random = seededRandom(map.name);
   const lights: LightSpec[] = [];
 
+  const ceilingLight = (x: number, y: number): LightSpec => ({
+    kind: "ceiling",
+    x,
+    z: y,
+    elevation: 0.9,
+    color: 0xfff4e0,
+    intensity: 1.6,
+    range: 2.4,
+  });
   for (const { x, y } of floorCells(map, (x, y) => x <= 5 && y <= 5 && x % 2 === 1 && y % 2 === 1)) {
-    lights.push({ kind: "ceiling", x, z: y, elevation: 0.9, color: 0xfff4e0, intensity: 1.6, range: 2.4 });
+    lights.push(ceilingLight(x, y));
+  }
+  // every lift cabin (the cell behind a lift door) is always lit
+  for (const door of map.doors ?? []) {
+    if (door.kind !== "lift") continue;
+    const v = DIR_VECTOR[door.facing];
+    const cabin = { x: door.cell.x - v.x, y: door.cell.y - v.y };
+    if (!lights.some((l) => l.kind === "ceiling" && l.x === cabin.x && l.z === cabin.y)) {
+      lights.push(ceilingLight(cabin.x, cabin.y));
+    }
   }
 
   const redCandidates = floorCells(map, (x) => x > 5).filter(({ x, y }) => adjacentWalls(map, x, y).length > 0);

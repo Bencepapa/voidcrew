@@ -65,19 +65,19 @@ function circleHitsBox(x: number, z: number, r: number, b: Box): boolean {
   return dx * dx + dz * dz < r * r;
 }
 
-// Solid boxes of one cell. A closed door fills its cell; an open door leaves
-// its frame's two side pieces standing around the opening.
+// Solid boxes of one cell. A door stands across the middle of its cell (see
+// GameViewport): closed, the whole door slab blocks; open, only its frame's
+// two side pieces around the opening do. Either way the half-cell alcoves on
+// both sides stay walkable.
 function cellBoxes(map: GameMap, cx: number, cy: number, doors: DoorState): Box[] {
   const type = cellAt(map, cx, cy);
-  const full = { minX: cx - 0.5, maxX: cx + 0.5, minZ: cy - 0.5, maxZ: cy + 0.5 };
-  if (type === "wall") return [full];
+  if (type === "wall") return [{ minX: cx - 0.5, maxX: cx + 0.5, minZ: cy - 0.5, maxZ: cy + 0.5 }];
   if (type !== "door") return [];
-  if (!doors.isOpen({ x: cx, y: cy })) return [full];
 
   const northSouth = cellAt(map, cx, cy - 1) !== "wall" || cellAt(map, cx, cy + 1) !== "wall";
   const d = DOOR_FRAME_HALF_DEPTH;
-  const o = DOOR_OPENING_HALF_WIDTH;
-  return northSouth
+  const o = doors.isOpen({ x: cx, y: cy }) ? DOOR_OPENING_HALF_WIDTH : 0;
+  const pieces = northSouth
     ? [
         { minX: cx - 0.5, maxX: cx - o, minZ: cy - d, maxZ: cy + d },
         { minX: cx + o, maxX: cx + 0.5, minZ: cy - d, maxZ: cy + d },
@@ -86,6 +86,7 @@ function cellBoxes(map: GameMap, cx: number, cy: number, doors: DoorState): Box[
         { minX: cx - d, maxX: cx + d, minZ: cy - 0.5, maxZ: cy - o },
         { minX: cx - d, maxX: cx + d, minZ: cy + o, maxZ: cy + 0.5 },
       ];
+  return pieces;
 }
 
 // first blocking cell for a circle at (x, z), or null if the spot is free

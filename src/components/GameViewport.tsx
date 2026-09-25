@@ -1,15 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
-import { cellAt } from "../game/map";
+import { cellAt, doorAt } from "../game/map";
 import { DIR_VECTOR } from "../game/movement";
-import type { Direction, GameMap, Vec2 } from "../game/types";
+import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights } from "../game/lights";
 import { doorCellKey } from "../game/useGameState";
 import { forwardOf } from "../game/freeMovement";
 import type { FreePose } from "../game/freeMovement";
 import type { PeekState } from "./useViewControls";
+import { WALL_ROTATION, surfaceKey } from "../render/surfaces";
+import { DecalLibrary } from "../render/decals";
+import { renderText, seededRandom } from "../render/pixelFont";
 
 export type TextureSetId =
   | "wall1"
@@ -21,6 +24,7 @@ export type TextureSetId =
   | "floor2"
   | "door1"
   | "doorframe1"
+  | "liftdoor1"
   | "ceiling1";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
@@ -36,6 +40,8 @@ export interface ViewportSettings {
   ceilingTextureSet: TextureSetId | "none";
   // step cell by cell (true) or move freely with joysticks/held keys (false)
   gridMovement: boolean;
+  // the map's decals (bullet holes, stencils...)
+  decalsEnabled: boolean;
   wallProfile: WallProfileId;
   eyeHeight: number;
   wallHeight: number;
@@ -83,6 +89,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   floorTextureSet: "map",
   ceilingTextureSet: "ceiling1",
   gridMovement: true,
+  decalsEnabled: true,
   wallProfile: "relief",
   eyeHeight: 0.5,
   wallHeight: 1.0,
@@ -319,6 +326,13 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     depth: `${import.meta.env.BASE_URL}textures/doorframe1/depth.png`,
     pixelArt: true,
   },
+  // lift door panel: slides sideways; a blank field on its left takes a label
+  liftdoor1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/liftdoor1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/liftdoor1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/liftdoor1/depth.png`,
+    pixelArt: true,
+  },
   // ceiling tile; its center panel glows in cells with a ceiling light
   ceiling1: {
     diffuse: `${import.meta.env.BASE_URL}textures/ceiling1/diffuse.png`,
@@ -346,6 +360,8 @@ interface WallSlot {
   rotY: number;
   // ceiling tile under a ceiling light: use the kit's glowing material
   lit?: boolean;
+  // surfaceKey of the panel, for decals to find it
+  key: string;
 }
 
 // Everything the walls (or floors, ceilings) of one texture set need: its own
@@ -402,7 +418,27 @@ const MAX_VERTICAL_FOV = 115;
 // two-sided slab inside it, recessed behind the frame's faces, that slides
 // up into the ceiling to open.
 const DOOR_FRAME_SET: TextureSetId = "doorframe1";
-const DOOR_PANEL_SET: TextureSetId = "door1";
+const DOOR_PANEL_SETS: Record<DoorSpec["kind"], TextureSetId> = {
+  standard: "door1",
+  lift: "liftdoor1",
+};
+// door group Y rotation that turns its local +Z toward the door's facing
+const FACING_ROTATION: Record<Direction, number> = {
+  S: 0,
+  E: Math.PI / 2,
+  N: Math.PI,
+  W: -Math.PI / 2,
+};
+// where a door's label goes on its panel texture (pixels): the blank field
+// on the left of the lift door panel, minus the strip hidden behind the
+// frame's jamb (the panel reaches DOOR_PANEL_OVERLAP behind the frame)
+const DOOR_LABEL_AREA = { x: 14, y: 8, w: 78, h: 240 };
+// label letters are at most this many texture pixels per font pixel (a 5x7
+// letter at 4 = 20x28 of the panel's 256px)
+const DOOR_LABEL_MAX_SCALE = 4;
+// the dark red of the walls' painted stripes
+const LABEL_PAINT: [number, number, number] = [156, 27, 26];
+const LABEL_PAINT_DARK: [number, number, number] = [133, 22, 24];
 // each frame half's base plane sits this far from the center plane (keep it
 // deeper than the frame relief's deepest recess)
 const DOOR_FRAME_HALF_DEPTH = 0.05;
@@ -421,7 +457,6 @@ interface GameViewportProps {
   map: GameMap;
   pos: Vec2;
   dir: Direction;
-  openingDoor: Vec2 | null;
   // door cells ("x,y") that are open
   openDoors: ReadonlySet<string>;
   // free movement: called every frame with the frame time (s), returns the
@@ -433,15 +468,6 @@ interface GameViewportProps {
   settings: ViewportSettings;
   onStats?: (stats: ViewportStats) => void;
 }
-
-// direction -> the Y rotation a boundary plane needs so its front face is
-// visible from the walkable cell it belongs to (see derivation in-repo history)
-const WALL_ROTATION: Record<Direction, number> = {
-  N: 0,
-  S: Math.PI,
-  E: -Math.PI / 2,
-  W: Math.PI / 2,
-};
 
 interface CamTarget {
   x: number;
@@ -479,7 +505,6 @@ export function GameViewport({
   map,
   pos,
   dir,
-  openingDoor,
   openDoors,
   freeTick,
   peekRef,
@@ -540,20 +565,23 @@ export function GameViewport({
     // only on the mode switch - pos/dir changes are handled above
   }, [freeMode]);
 
-  // door panels by door cell key ("x,y"); each remembers its open height in
-  // userData.openY
+  // door panels (the sliding part) by door cell key ("x,y"); userData holds
+  // `open` and its `openPos`/`closedPos`
   const doorPanelsRef = useRef<Map<string, THREE.Object3D>>(new Map());
-  const doorAnimRef = useRef<{ panel: THREE.Object3D; start: number; from: number; to: number } | null>(null);
+  const doorAnimsRef = useRef(new Map<string, { panel: THREE.Object3D; from: THREE.Vector3; start: number }>());
   const openDoorsRef = useRef(openDoors);
   openDoorsRef.current = openDoors;
 
+  // slide every panel whose open state changed (opened, or a lift door
+  // shutting) towards its new position
   useEffect(() => {
-    if (!openingDoor) return;
-    const panel = doorPanelsRef.current.get(doorCellKey(openingDoor));
-    if (panel) {
-      doorAnimRef.current = { panel, start: performance.now(), from: panel.position.y, to: panel.userData.openY };
+    for (const [key, panel] of doorPanelsRef.current) {
+      const open = openDoors.has(key);
+      if (panel.userData.open === open) continue;
+      panel.userData.open = open;
+      doorAnimsRef.current.set(key, { panel, from: panel.position.clone(), start: performance.now() });
     }
-  }, [openingDoor]);
+  }, [openDoors]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -647,7 +675,18 @@ export function GameViewport({
       settings.accentRatio > 0
         ? createWallKit(settings.accentTextureSet)
         : null;
-    const kits = accentKit ? [primaryKit, accentKit] : [primaryKit];
+    // wall kits by texture set: the default mix plus any the map asks for
+    // (map.wallTextureAt), created on demand
+    const wallKits = new Map<TextureSetId, WallKit>([[settings.textureSet, primaryKit]]);
+    if (accentKit) wallKits.set(settings.accentTextureSet as TextureSetId, accentKit);
+    function wallKitFor(setId: TextureSetId): WallKit {
+      let kit = wallKits.get(setId);
+      if (!kit) {
+        kit = createWallKit(setId);
+        wallKits.set(setId, kit);
+      }
+      return kit;
+    }
     // floor kits are created on demand, one per floor texture actually used
     const floorKits = new Map<TextureSetId, WallKit>();
     function floorKitAt(x: number, y: number): WallKit | null {
@@ -671,9 +710,19 @@ export function GameViewport({
     );
 
     const frameKit = createWallKit(DOOR_FRAME_SET, false);
-    const panelKit = createWallKit(DOOR_PANEL_SET, false);
-    // door cells, with the Y rotation that faces the door along the passage
-    const doorCells: { x: number; z: number; rotY: number; key: string }[] = [];
+    // door panel kits by door kind, created on demand
+    const panelKits = new Map<DoorSpec["kind"], WallKit>();
+    const panelKitFor = (kind: DoorSpec["kind"]) => {
+      let kit = panelKits.get(kind);
+      if (!kit) {
+        kit = createWallKit(DOOR_PANEL_SETS[kind], false);
+        panelKits.set(kind, kit);
+      }
+      return kit;
+    };
+    const doorCells: { x: number; z: number; spec: DoorSpec; key: string }[] = [];
+    // panel materials with a stenciled label, one per labeled door
+    const labelMaterials: THREE.MeshStandardMaterial[] = [];
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
 
@@ -702,6 +751,13 @@ export function GameViewport({
     scene.add(group);
     doorPanelsRef.current.clear();
 
+    // decals land on surface panels as they get placed (relief ones arrive
+    // asynchronously)
+    const decals = new DecalLibrary({ baseUrl: import.meta.env.BASE_URL, bust, loader, wallHeight, parent: group });
+    if (settings.decalsEnabled) decals.add(map.decals ?? []);
+    // dev-only: inspect from the console
+    if (import.meta.env.DEV) Object.assign(window, { __voidcrewDecals: decals });
+
     let reliefStats: ReliefStats | null = null;
 
     function placeWalls(geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], slots: WallSlot[]) {
@@ -710,6 +766,7 @@ export function GameViewport({
         mesh.position.set(slot.x, wallHeight / 2, slot.z);
         mesh.rotation.y = slot.rotY;
         group.add(mesh);
+        decals.registerSurface(slot.key, mesh);
       }
     }
 
@@ -720,6 +777,7 @@ export function GameViewport({
         mesh.rotation.x = -Math.PI / 2;
         mesh.position.set(slot.x, 0, slot.z);
         group.add(mesh);
+        decals.registerSurface(slot.key, mesh);
       }
     }
 
@@ -732,6 +790,7 @@ export function GameViewport({
         mesh.rotation.x = Math.PI / 2;
         mesh.position.set(slot.x, wallHeight, slot.z);
         group.add(mesh);
+        decals.registerSurface(slot.key, mesh);
       }
     }
 
@@ -741,39 +800,46 @@ export function GameViewport({
 
         const floorKit = floorKitAt(x, y);
         if (floorKit) {
-          floorKit.slots.push({ x, z: y, rotY: 0 });
+          floorKit.slots.push({ x, z: y, rotY: 0, key: surfaceKey({ x, y }, "floor") });
         } else {
           const floor = new THREE.Mesh(floorGeo, floorMat);
           floor.rotation.x = -Math.PI / 2;
           floor.position.set(x, 0, y);
           group.add(floor);
+          decals.registerSurface(surfaceKey({ x, y }, "floor"), floor);
         }
 
         if (ceilingKit) {
-          ceilingKit.slots.push({ x, z: y, rotY: 0, lit: litCells.has(`${x},${y}`) });
+          ceilingKit.slots.push({ x, z: y, rotY: 0, lit: litCells.has(`${x},${y}`), key: surfaceKey({ x, y }, "ceiling") });
         } else {
           const ceiling = new THREE.Mesh(floorGeo, ceilMat);
           ceiling.rotation.x = Math.PI / 2;
           ceiling.position.set(x, wallHeight, y);
           group.add(ceiling);
+          decals.registerSurface(surfaceKey({ x, y }, "ceiling"), ceiling);
         }
 
+        const wallOverride = map.wallTextureAt?.(x, y);
         (Object.keys(DIR_VECTOR) as Direction[]).forEach((d) => {
           const v = DIR_VECTOR[d];
           if (cellAt(map, x + v.x, y + v.y) !== "wall") return;
-          const slot = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d] };
-          const kit = accentKit && wallVariantRoll(slot.x, slot.z) < settings.accentRatio ? accentKit : primaryKit;
+          const slot = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d], key: surfaceKey({ x, y }, d) };
+          const kit = isTextureSetId(wallOverride)
+            ? wallKitFor(wallOverride)
+            : accentKit && wallVariantRoll(slot.x, slot.z) < settings.accentRatio
+              ? accentKit
+              : primaryKit;
           kit.slots.push(slot);
         });
 
         if (cellAt(map, x, y) === "door") {
-          // the passage runs between the two open neighbors; the door stands
-          // across it, facing along it
-          const northSouth = cellAt(map, x, y - 1) !== "wall" || cellAt(map, x, y + 1) !== "wall";
-          doorCells.push({ x, z: y, rotY: northSouth ? 0 : Math.PI / 2, key: doorCellKey({ x, y }) });
+          const spec = doorAt(map, x, y);
+          panelKitFor(spec.kind);
+          doorCells.push({ x, z: y, spec, key: doorCellKey({ x, y }) });
         }
       }
     }
+    const kits = [...wallKits.values()];
 
     // floor glow fixtures, lifted above the floor relief once it's built
     const floorStrips: THREE.Mesh[] = [];
@@ -835,7 +901,13 @@ export function GameViewport({
     }
 
     // every kit, for per-frame material updates and disposal
-    const allKits = [...kits, ...floorKits.values(), frameKit, panelKit, ...(ceilingKit ? [ceilingKit] : [])];
+    const allKits = [
+      ...kits,
+      ...floorKits.values(),
+      frameKit,
+      ...panelKits.values(),
+      ...(ceilingKit ? [ceilingKit] : []),
+    ];
 
     if (ceilingKit) {
       if (isRelief) {
@@ -881,14 +953,21 @@ export function GameViewport({
         const panelWidth = hole.maxX - hole.minX + 2 * DOOR_PANEL_OVERLAP;
         // from the floor up behind the frame's header
         const panelHeight = wallHeight / 2 + hole.maxY + DOOR_PANEL_OVERLAP;
-        const panel = await buildRelief(panelKit, { width: panelWidth, height: panelHeight, flushEdges: false });
-        if (!panel) return;
         const panelCenterX = (hole.minX + hole.maxX) / 2;
+        // one panel geometry per door kind (each kit has its own depth map)
+        const panelGeos = new Map<DoorSpec["kind"], THREE.BufferGeometry>();
+        for (const [kind, kit] of panelKits) {
+          const panel = await buildRelief(kit, { width: panelWidth, height: panelHeight, flushEdges: false });
+          if (!panel) return;
+          panelGeos.set(kind, panel.geometry);
+        }
 
         for (const cell of doorCells) {
+          const { spec } = cell;
           const door = new THREE.Group();
           door.position.set(cell.x, 0, cell.z);
-          door.rotation.y = cell.rotY;
+          // local +Z = the side the door faces
+          door.rotation.y = FACING_ROTATION[spec.facing];
 
           // two halves back to back, each facing out of one side
           for (const side of [1, -1]) {
@@ -898,22 +977,81 @@ export function GameViewport({
             door.add(frameHalf);
           }
 
+          const kit = panelKits.get(spec.kind)!;
+          const front = spec.label ? await labeledPanelMaterial(spec, kit) : kit.wallMat;
+          if (disposed) return;
           const slider = new THREE.Group();
           for (const side of [1, -1]) {
-            const panelHalf = new THREE.Mesh(panel.geometry, [panelKit.wallMat, panelKit.sideMat]);
+            const panelHalf = new THREE.Mesh(panelGeos.get(spec.kind)!, [front, kit.sideMat]);
             panelHalf.position.set(panelCenterX, panelHeight / 2, side * DOOR_PANEL_HALF_DEPTH);
             panelHalf.rotation.y = side === 1 ? 0 : Math.PI;
             slider.add(panelHalf);
           }
-          // open = slid up until its bottom clears the opening
-          slider.userData.openY = panelHeight;
-          if (openDoorsRef.current.has(cell.key)) slider.position.y = panelHeight;
+          // open: a standard door slides up until its bottom clears the
+          // opening; a lift door slides right (seen from the front, local +X)
+          // into the wall beside the frame
+          const closedPos = new THREE.Vector3();
+          const openPos =
+            spec.kind === "lift" ? new THREE.Vector3(panelWidth, 0, 0) : new THREE.Vector3(0, panelHeight, 0);
+          const open = openDoorsRef.current.has(cell.key);
+          slider.position.copy(open ? openPos : closedPos);
+          slider.userData = { open, openPos, closedPos };
           door.add(slider);
 
           group.add(door);
           doorPanelsRef.current.set(cell.key, slider);
         }
       })().catch((err) => console.error("Door build failed:", err));
+    }
+
+    // a copy of the kit's panel material whose diffuse has the door's label
+    // stenciled into the panel's label field
+    async function labeledPanelMaterial(spec: DoorSpec, kit: WallKit): Promise<THREE.MeshStandardMaterial> {
+      const setPaths = TEXTURE_SETS[DOOR_PANEL_SETS[spec.kind]];
+      const image = (await loader.loadAsync(setPaths.diffuse + bust)).image as HTMLImageElement;
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(image, 0, 0);
+
+      const area = DOOR_LABEL_AREA;
+      const random = seededRandom(spec.label!);
+      // the biggest stencil that fits the field, up to a readable maximum
+      let label = renderText(spec.label!, 1, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, random);
+      for (let scale = DOOR_LABEL_MAX_SCALE; scale >= 1; scale--) {
+        label = renderText(spec.label!, scale, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, seededRandom(spec.label!));
+        if (label.width <= area.w && label.height <= area.h) break;
+      }
+      const ox = area.x + Math.floor((area.w - label.width) / 2);
+      const oy = area.y + Math.floor((area.h - label.height) / 2);
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let y = 0; y < label.height; y++) {
+        for (let x = 0; x < label.width; x++) {
+          const i = (y * label.width + x) * 4;
+          if (!label.rgba[i + 3]) continue;
+          const o = ((oy + y) * canvas.width + ox + x) * 4;
+          pixels.data[o] = label.rgba[i];
+          pixels.data[o + 1] = label.rgba[i + 1];
+          pixels.data[o + 2] = label.rgba[i + 2];
+        }
+      }
+      ctx.putImageData(pixels, 0, 0);
+
+      const map = new THREE.CanvasTexture(canvas);
+      map.colorSpace = THREE.SRGBColorSpace;
+      map.magFilter = THREE.NearestFilter;
+      const material = new THREE.MeshStandardMaterial({
+        map,
+        normalMap: kit.wallMat.normalMap,
+        aoMap: kit.wallMat.aoMap,
+        roughness: settingsRef.current.roughness,
+        metalness: settingsRef.current.metalness,
+      });
+      addDirectLightOcclusion(material, cavity);
+      labelMaterials.push(material);
+      kit.textures.push(map);
+      return material;
     }
 
     // --- map lights: small glowing fixtures + the shared point-light pool ---
@@ -1026,11 +1164,11 @@ export function GameViewport({
       }
       liveRef.current = cam;
 
-      const doorAnim = doorAnimRef.current;
-      if (doorAnim) {
-        const p = Math.min(1, (now - doorAnim.start) / DOOR_OPEN_MS);
-        doorAnim.panel.position.y = lerp(doorAnim.from, doorAnim.to, easeOutQuad(p));
-        if (p >= 1) doorAnimRef.current = null;
+      for (const [key, anim] of doorAnimsRef.current) {
+        const p = Math.min(1, (now - anim.start) / DOOR_OPEN_MS);
+        const target: THREE.Vector3 = anim.panel.userData.open ? anim.panel.userData.openPos : anim.panel.userData.closedPos;
+        anim.panel.position.lerpVectors(anim.from, target, easeOutQuad(p));
+        if (p >= 1) doorAnimsRef.current.delete(key);
       }
 
       const bobY = s.bobEnabled ? Math.sin((t * 2 * Math.PI) / 3.2) * 0.035 : 0;
@@ -1085,6 +1223,12 @@ export function GameViewport({
         kit.wallMat.normalScale.set(s.normalStrength, s.normalStrength);
         kit.litMat?.normalScale.set(s.normalStrength, s.normalStrength);
       }
+      for (const mat of labelMaterials) {
+        mat.roughness = s.roughness;
+        mat.metalness = s.metalness;
+        mat.aoMapIntensity = s.aoIntensity;
+        mat.normalScale.set(s.normalStrength, s.normalStrength);
+      }
       cavity.value = s.aoDirect;
       // a headlamp-like light orbiting the camera; the small radius keeps it
       // well inside the side walls of the current cell - a light that slips
@@ -1121,8 +1265,23 @@ export function GameViewport({
     // voidcrew.capture() console helper - works even when the browser has
     // paused requestAnimationFrame (hidden tab/pane)
     const snapshot = () => {
+      // a hidden page lays the view out at ~0x0; render captures at a fixed
+      // size then, and put the real size back afterwards
+      const size = renderer.getSize(new THREE.Vector2());
+      const tiny = size.x < 16 || size.y < 16;
+      if (tiny) {
+        renderer.setSize(800, 600, false);
+        camera.aspect = 800 / 600;
+        camera.updateProjectionMatrix();
+      }
       renderFrame();
-      return renderer.domElement.toDataURL("image/jpeg", 0.9);
+      const url = renderer.domElement.toDataURL("image/jpeg", 0.9);
+      if (tiny) {
+        renderer.setSize(size.x, size.y, false);
+        camera.aspect = size.x / size.y;
+        camera.updateProjectionMatrix();
+      }
+      return url;
     };
     if (import.meta.env.DEV) Object.assign(window, { __voidcrewSnapshot: snapshot });
 
@@ -1140,9 +1299,11 @@ export function GameViewport({
         kit.litMat?.dispose();
         for (const tex of kit.textures) tex.dispose();
       }
+      for (const mat of labelMaterials) mat.dispose();
       floorMat.dispose();
       ceilMat.dispose();
       for (const mat of fixtureMats.values()) mat.dispose();
+      decals.dispose();
       renderer.dispose();
     };
   }, [
@@ -1152,6 +1313,7 @@ export function GameViewport({
     settings.accentRatio,
     settings.floorTextureSet,
     settings.ceilingTextureSet,
+    settings.decalsEnabled,
     settings.wallProfile,
     settings.wallHeight,
     settings.bevelFraction,

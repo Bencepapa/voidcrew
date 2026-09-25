@@ -58,8 +58,8 @@ export interface ReliefResult {
   baked: boolean;
   // how far the highest level sticks out of the base plane
   maxZ: number;
-  // bounding box of the holes in local units (same frame as the geometry),
-  // null when there are none
+  // extent of the central hole (e.g. a door frame's opening) in local units,
+  // measured through the middle; null when the center isn't a hole
   holeBounds: HoleBounds | null;
 }
 
@@ -323,16 +323,33 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   for (let i = 0; i < cellZ.length; i++) cellZ[i] = zOf(key[i]);
   const aoMap = createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
 
+  // The central opening (a door frame's): its width is the run of hole cells
+  // through the middle row (the jambs can flare out near the floor); its top
+  // is the highest hole cell straight above any of those columns - the
+  // opening can reach higher at the sides than in the middle (a plate hanging
+  // from the header). Stray transparent pixels elsewhere, like a sliver along
+  // the image's edge, aren't part of it.
   let holeBounds: HoleBounds | null = null;
-  for (let y = 0; y < gh; y++) {
-    for (let x = 0; x < gw; x++) {
-      if (key[y * gw + x] !== HOLE) continue;
-      if (!holeBounds) holeBounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-      holeBounds.minX = Math.min(holeBounds.minX, X(x));
-      holeBounds.maxX = Math.max(holeBounds.maxX, X(x + 1));
-      holeBounds.minY = Math.min(holeBounds.minY, Y(y + 1));
-      holeBounds.maxY = Math.max(holeBounds.maxY, Y(y));
+  const cx = Math.floor(gw / 2);
+  const cy = Math.floor(gh / 2);
+  const isHole = (x: number, y: number) => key[y * gw + x] === HOLE;
+  if (isHole(cx, cy)) {
+    let rowTop = cy;
+    let rowBottom = cy;
+    while (rowTop > 0 && isHole(cx, rowTop - 1)) rowTop--;
+    while (rowBottom < gh - 1 && isHole(cx, rowBottom + 1)) rowBottom++;
+    let x0 = cx;
+    let x1 = cx;
+    while (x0 > 0 && isHole(x0 - 1, cy)) x0--;
+    while (x1 < gw - 1 && isHole(x1 + 1, cy)) x1++;
+    let top = rowTop;
+    for (let x = x0; x <= x1; x++) {
+      if (!isHole(x, cy)) continue;
+      let y = cy;
+      while (y > 0 && isHole(x, y - 1)) y--;
+      top = Math.min(top, y);
     }
+    holeBounds = { minX: X(x0), maxX: X(x1 + 1), minY: Y(rowBottom + 1), maxY: Y(top) };
   }
 
   return {

@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { deck2Engineering, cellAt } from "./map";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { deck2Engineering, cellAt, doorAt } from "./map";
 import { behindOf, leftOf, rightOf, stepForward } from "./movement";
 import type { Direction, Vec2 } from "./types";
 import { initialCrew } from "./crew";
@@ -12,6 +12,8 @@ export interface LogEntry {
 let logId = 0;
 
 const DOOR_ANIM_MS = 450;
+// a lift door shuts this long after the last time someone passed through it
+const LIFT_DOOR_CLOSE_MS = 15000;
 
 export function doorCellKey(cell: Vec2): string {
   return `${cell.x},${cell.y}`;
@@ -19,8 +21,9 @@ export function doorCellKey(cell: Vec2): string {
 
 export function useGameState() {
   const [map] = useState(deck2Engineering);
-  const [pos, setPos] = useState<Vec2>({ x: 2, y: 1 });
-  const [dir, setDir] = useState<Direction>("S");
+  // arriving in the lift, facing its door
+  const [pos, setPos] = useState<Vec2>({ x: 1, y: 1 });
+  const [dir, setDir] = useState<Direction>("E");
   const [crew] = useState(initialCrew);
   const [log, setLog] = useState<LogEntry[]>([
     { id: logId++, text: "You board the USV Horizon, Deck 2 - Engineering." },
@@ -34,8 +37,62 @@ export function useGameState() {
     setLog((prev) => [...prev.slice(-7), { id: logId++, text }]);
   }, []);
 
+  // Lift doors close LIFT_DOOR_CLOSE_MS after the last passage: entering or
+  // leaving the door cell (re)starts the countdown. It never closes on the
+  // player - while they stand in the doorway it checks again shortly.
+  const posRef = useRef(pos);
+  posRef.current = pos;
+  const openDoorsRef = useRef(openDoors);
+  openDoorsRef.current = openDoors;
+  const prevPosRef = useRef(pos);
+  const closeTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const timers = closeTimers.current;
+    const schedule = (cell: Vec2, delay: number) => {
+      const key = doorCellKey(cell);
+      clearTimeout(timers.get(key));
+      timers.set(
+        key,
+        setTimeout(() => {
+          timers.delete(key);
+          const here = posRef.current;
+          if (here.x === cell.x && here.y === cell.y) {
+            schedule(cell, 1000);
+            return;
+          }
+          if (!openDoorsRef.current.has(key)) return;
+          setOpenDoors((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+          pushLog("The lift door slides shut.");
+        }, delay),
+      );
+    };
+    for (const cell of [prevPosRef.current, pos]) {
+      if (cellAt(map, cell.x, cell.y) === "door" && doorAt(map, cell.x, cell.y).kind === "lift") {
+        schedule(cell, LIFT_DOOR_CLOSE_MS);
+      }
+    }
+    prevPosRef.current = pos;
+  }, [pos, map, pushLog]);
+  useEffect(() => {
+    const timers = closeTimers.current;
+    return () => timers.forEach((t) => clearTimeout(t));
+  }, []);
+
   const turnL = useCallback(() => setDir((d) => leftOf(d)), []);
   const turnR = useCallback(() => setDir((d) => rightOf(d)), []);
+
+  const startOpening = useCallback(
+    (cell: Vec2) => {
+      pushLog(doorAt(map, cell.x, cell.y).kind === "lift" ? "The lift door slides open." : "The door slides open.");
+      setOpeningDoor(cell);
+      setOpenDoors((prev) => new Set(prev).add(doorCellKey(cell)));
+    },
+    [map, pushLog],
+  );
 
   // steps one cell in `moveDir` while keeping the current facing
   const step = useCallback((moveDir: Direction) => {
@@ -50,9 +107,7 @@ export function useGameState() {
     }
 
     if (target === "door" && !openDoors.has(doorCellKey(next))) {
-      pushLog("The door slides open.");
-      setOpeningDoor(next);
-      setOpenDoors((prev) => new Set(prev).add(doorCellKey(next)));
+      startOpening(next);
       setTimeout(() => {
         setPos(next);
         setOpeningDoor(null);
@@ -61,7 +116,7 @@ export function useGameState() {
     }
 
     setPos(next);
-  }, [pos, map, pushLog, openingDoor, openDoors]);
+  }, [pos, map, pushLog, openingDoor, openDoors, startOpening]);
 
   const moveForward = useCallback(() => step(dir), [step, dir]);
   const moveBackward = useCallback(() => step(behindOf(dir)), [step, dir]);
@@ -77,12 +132,10 @@ export function useGameState() {
   const openDoorAt = useCallback(
     (cell: Vec2) => {
       if (openingDoor || openDoors.has(doorCellKey(cell))) return;
-      pushLog("The door slides open.");
-      setOpeningDoor(cell);
-      setOpenDoors((prev) => new Set(prev).add(doorCellKey(cell)));
+      startOpening(cell);
       setTimeout(() => setOpeningDoor(null), DOOR_ANIM_MS);
     },
-    [openingDoor, openDoors, pushLog],
+    [openingDoor, openDoors, startOpening],
   );
 
   return {

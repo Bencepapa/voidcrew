@@ -1,0 +1,41 @@
+{
+  "arrow": {
+    "normal": false
+  },
+  "bullet_hole": {
+    "normal": true
+  },
+  "bullet_holes": {
+    "normal": true
+  },
+  "claw_marks": {
+    "normal": true
+  },
+  "hazard_stripes": {
+    "normal": false
+  },
+  "num_07": {
+    "normal": false
+  },
+  "oil": {
+    "normal": false
+  },
+  "patch_plate": {
+    "normal": true
+  },
+  "scorch": {
+    "normal": true
+  },
+  "text_danger": {
+    "normal": false
+  },
+  "text_engine": {
+    "normal": false
+  },
+  "text_lift": {
+    "normal": false
+  },
+  "warning": {
+    "normal": false
+  }
+}
