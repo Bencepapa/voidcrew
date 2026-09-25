@@ -1,8 +1,9 @@
-import type { TextureSetId, ViewportSettings, WallProfileId } from "./GameViewport";
+import type { TextureSetId, ViewportSettings, ViewportStats, WallProfileId } from "./GameViewport";
 
 interface DebugPanelProps {
   settings: ViewportSettings;
   onChange: (settings: ViewportSettings) => void;
+  stats: ViewportStats | null;
 }
 
 const TEXTURE_SET_OPTIONS: { id: TextureSetId; label: string }[] = [
@@ -15,6 +16,7 @@ const WALL_PROFILE_OPTIONS: { id: WallProfileId; label: string }[] = [
   { id: "flat", label: "Flat" },
   { id: "convex", label: "Beveled - convex (bulges out)" },
   { id: "concave", label: "Beveled - concave (recedes in)" },
+  { id: "relief", label: "Relief mesh (from depth map)" },
 ];
 
 interface SliderConfig {
@@ -25,8 +27,21 @@ interface SliderConfig {
   step: number;
 }
 
+const DISPLACEMENT_SLIDER: SliderConfig = {
+  key: "displacementScale",
+  label: "Depth displacement",
+  min: 0,
+  max: 0.06,
+  step: 0.005,
+};
+
+const RELIEF_SLIDERS: SliderConfig[] = [
+  { key: "reliefDepth", label: "Relief depth", min: 0.005, max: 0.12, step: 0.005 },
+  { key: "reliefLevels", label: "Relief height levels", min: 2, max: 16, step: 1 },
+  { key: "reliefCleanup", label: "Speckle cleanup passes", min: 0, max: 4, step: 1 },
+];
+
 const SLIDERS: SliderConfig[] = [
-  { key: "displacementScale", label: "Depth displacement", min: 0, max: 0.06, step: 0.005 },
   { key: "eyeHeight", label: "Eye height", min: 0.1, max: 0.9, step: 0.01 },
   { key: "wallHeight", label: "Wall height", min: 0.6, max: 2, step: 0.05 },
   { key: "cameraPullback", label: "Camera pullback", min: 0, max: 0.49, step: 0.01 },
@@ -41,10 +56,33 @@ const BEVEL_SLIDERS: SliderConfig[] = [
   { key: "bevelAngleDeg", label: "Bevel angle (deg, from floor)", min: 15, max: 75, step: 1 },
 ];
 
-export function DebugPanel({ settings, onChange }: DebugPanelProps) {
+export function DebugPanel({ settings, onChange, stats }: DebugPanelProps) {
   function set<K extends keyof ViewportSettings>(key: K, value: ViewportSettings[K]) {
     onChange({ ...settings, [key]: value });
   }
+
+  function slider(s: SliderConfig) {
+    return (
+      <div key={s.key} className="flex flex-col gap-0.5">
+        <div className="flex justify-between text-[10px] text-neutral-500">
+          <span>{s.label}</span>
+          <span>{(settings[s.key] as number).toFixed(s.step >= 1 ? 0 : s.step >= 0.01 ? 2 : 3)}</span>
+        </div>
+        <input
+          type="range"
+          min={s.min}
+          max={s.max}
+          step={s.step}
+          value={settings[s.key] as number}
+          onChange={(e) => set(s.key, parseFloat(e.target.value) as ViewportSettings[typeof s.key])}
+          className="w-full"
+        />
+      </div>
+    );
+  }
+
+  const beveled = settings.wallProfile === "convex" || settings.wallProfile === "concave";
+  const relief = settings.wallProfile === "relief";
 
   return (
     <div className="w-full h-full flex flex-col gap-3 bg-neutral-900/80 border border-neutral-700 rounded-sm p-2 overflow-y-auto text-neutral-300">
@@ -80,42 +118,19 @@ export function DebugPanel({ settings, onChange }: DebugPanelProps) {
         ))}
       </div>
 
-      {settings.wallProfile !== "flat" &&
-        BEVEL_SLIDERS.map((s) => (
-          <div key={s.key} className="flex flex-col gap-0.5">
-            <div className="flex justify-between text-[10px] text-neutral-500">
-              <span>{s.label}</span>
-              <span>{(settings[s.key] as number).toFixed(2)}</span>
-            </div>
-            <input
-              type="range"
-              min={s.min}
-              max={s.max}
-              step={s.step}
-              value={settings[s.key] as number}
-              onChange={(e) => set(s.key, parseFloat(e.target.value) as ViewportSettings[typeof s.key])}
-              className="w-full"
-            />
-          </div>
-        ))}
+      {beveled && BEVEL_SLIDERS.map(slider)}
+      {relief ? RELIEF_SLIDERS.map(slider) : slider(DISPLACEMENT_SLIDER)}
 
-      {SLIDERS.map((s) => (
-        <div key={s.key} className="flex flex-col gap-0.5">
-          <div className="flex justify-between text-[10px] text-neutral-500">
-            <span>{s.label}</span>
-            <span>{(settings[s.key] as number).toFixed(2)}</span>
-          </div>
-          <input
-            type="range"
-            min={s.min}
-            max={s.max}
-            step={s.step}
-            value={settings[s.key] as number}
-            onChange={(e) => set(s.key, parseFloat(e.target.value) as ViewportSettings[typeof s.key])}
-            className="w-full"
-          />
+      {stats && (
+        <div className="text-[10px] text-neutral-500 flex flex-col">
+          <span>Rendered triangles: {stats.renderedTriangles.toLocaleString()}</span>
+          {relief && stats.reliefTrianglesPerWall !== null && (
+            <span>Relief triangles / wall: {stats.reliefTrianglesPerWall.toLocaleString()}</span>
+          )}
         </div>
-      ))}
+      )}
+
+      {SLIDERS.map(slider)}
 
       <label className="flex items-center gap-2 text-[11px] cursor-pointer">
         <input type="checkbox" checked={settings.bobEnabled} onChange={(e) => set("bobEnabled", e.target.checked)} />

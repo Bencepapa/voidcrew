@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
-import type { ViewportSettings } from "./components/GameViewport";
+import type { ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { Minimap } from "./components/Minimap";
 import { PartyPanel } from "./components/PartyPanel";
 import { LogPanel } from "./components/LogPanel";
@@ -11,6 +11,7 @@ import { DebugPanel } from "./components/DebugPanel";
 export default function App() {
   const { map, pos, dir, crew, log, moveForward, turnL, turnR, openingDoor } = useGameState();
   const [settings, setSettings] = useState<ViewportSettings>(DEFAULT_SETTINGS);
+  const [stats, setStats] = useState<ViewportStats | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -37,13 +38,20 @@ export default function App() {
         </div>
 
         <div className="flex-1 min-w-0">
-          <GameViewport map={map} pos={pos} dir={dir} openingDoor={openingDoor} settings={settings} />
+          <GameViewport
+            map={map}
+            pos={pos}
+            dir={dir}
+            openingDoor={openingDoor}
+            settings={settings}
+            onStats={setStats}
+          />
         </div>
 
         <div className="w-56 flex flex-col gap-2 min-h-0">
           <ActionMenu onForward={moveForward} onTurnLeft={turnL} onTurnRight={turnR} />
           <div className="flex-1 min-h-0">
-            <DebugPanel settings={settings} onChange={setSettings} />
+            <DebugPanel settings={settings} onChange={setSettings} stats={stats} />
           </div>
         </div>
       </div>

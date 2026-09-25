@@ -1,11 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { cellAt } from "../game/map";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, GameMap, Vec2 } from "../game/types";
+import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 
 export type TextureSetId = "wall1" | "wall2" | "wall3";
-export type WallProfileId = "flat" | "convex" | "concave";
+export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
   textureSet: TextureSetId;
@@ -21,6 +22,16 @@ export interface ViewportSettings {
   bevelFraction: number;
   bevelAngleDeg: number;
   displacementScale: number;
+  reliefDepth: number;
+  reliefLevels: number;
+  reliefCleanup: number;
+}
+
+export interface ViewportStats {
+  // triangles actually drawn last frame (after frustum culling)
+  renderedTriangles: number;
+  // null unless the relief wall type is active and built
+  reliefTrianglesPerWall: number | null;
 }
 
 export const DEFAULT_SETTINGS: ViewportSettings = {
@@ -37,6 +48,9 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   bevelFraction: 0.2,
   bevelAngleDeg: 30,
   displacementScale: 0.03,
+  reliefDepth: 0.04,
+  reliefLevels: 6,
+  reliefCleanup: 1,
 };
 
 // A flat wall panel with the top/bottom edges beveled, like the classic
@@ -156,7 +170,7 @@ function createBeveledWallGeometry(
   return geo;
 }
 
-const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; depth: string }> = {
+const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; depth: string; pixelArt: boolean }> = {
   // import.meta.env.BASE_URL matches Vite's `base` config (e.g. "/voidcrew/"
   // on GitHub Pages) - a hardcoded "/textures/..." would 404 there since the
   // app isn't served from the domain root.
@@ -164,6 +178,7 @@ const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; dept
     diffuse: `${import.meta.env.BASE_URL}textures/wall1/diffuse.jpeg`,
     normal: `${import.meta.env.BASE_URL}textures/wall1/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/wall1/depth.png`,
+    pixelArt: false,
   },
   wall2: {
     diffuse: `${import.meta.env.BASE_URL}textures/wall2/diffuse.png`,
@@ -171,13 +186,21 @@ const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; dept
     // wall2 has no real depth map from the Sprite Lamp pass - flat/neutral
     // fallback so displacement is just a no-op instead of erroring.
     depth: `${import.meta.env.BASE_URL}textures/wall2/depth.png`,
+    pixelArt: true,
   },
   wall3: {
     diffuse: `${import.meta.env.BASE_URL}textures/wall3/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/wall3/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/wall3/depth.png`,
+    pixelArt: true,
   },
 };
+
+// custom HMR event sent by the texture hot-reload plugin in vite.config.ts
+const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
+
+const FOG_NEAR = 1.6;
+const FOG_FAR = 5.5;
 
 const DOOR_COLOR = 0xd92626;
 const DOOR_SLIDE_HEIGHT = 1.1;
@@ -188,6 +211,7 @@ interface GameViewportProps {
   dir: Direction;
   openingDoor: Vec2 | null;
   settings: ViewportSettings;
+  onStats?: (stats: ViewportStats) => void;
 }
 
 // direction -> the Y rotation a boundary plane needs so its front face is
@@ -223,8 +247,22 @@ function doorKey(a: Vec2, b: Vec2): string {
   return `${(a.x + b.x) / 2},${(a.y + b.y) / 2}`;
 }
 
-export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewportProps) {
+export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: GameViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onStatsRef = useRef(onStats);
+  onStatsRef.current = onStats;
+
+  // bumped whenever a file under public/textures changes on disk (dev only),
+  // which rebuilds the scene with cache-busted texture URLs - edit a height
+  // map in GIMP/Aseprite, save, and the walls update in place
+  const [textureVersion, setTextureVersion] = useState(0);
+  useEffect(() => {
+    const hot = import.meta.hot;
+    if (!hot) return;
+    const onChange = () => setTextureVersion((v) => v + 1);
+    hot.on(TEXTURE_CHANGED_EVENT, onChange);
+    return () => hot.off(TEXTURE_CHANGED_EVENT, onChange);
+  }, []);
   // continuously-updated "where the camera actually is right now", read and
   // written every animation frame, whether mid-transition or settled
   const liveRef = useRef<CamTarget>(computeTarget(pos, dir));
@@ -265,9 +303,12 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
     let raf = 0;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x000000, 1.6, 5.5);
+    scene.fog = new THREE.Fog(0x000000, FOG_NEAR, FOG_FAR);
 
-    const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 50);
+    // anything past the fog's end renders pure black anyway, so the far plane
+    // sits just beyond it and frustum culling skips those walls entirely
+    // (a big saving with relief walls' thousands of triangles each)
+    const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, FOG_FAR + 1);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -280,42 +321,76 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
     scene.add(pointLight);
 
     const texturePaths = TEXTURE_SETS[settings.textureSet];
+    const bust = textureVersion ? `?v=${textureVersion}` : "";
     const loader = new THREE.TextureLoader();
-    const diffuse = loader.load(texturePaths.diffuse);
-    const normalMap = loader.load(texturePaths.normal);
-    const depthMap = loader.load(texturePaths.depth);
+    const diffuse = loader.load(texturePaths.diffuse + bust);
+    const normalMap = loader.load(texturePaths.normal + bust);
+    const depthMap = loader.load(texturePaths.depth + bust);
     diffuse.colorSpace = THREE.SRGBColorSpace;
+    if (texturePaths.pixelArt) {
+      // crisp texels up close instead of bilinear blur; minification keeps
+      // mipmaps so distant walls don't shimmer
+      diffuse.magFilter = THREE.NearestFilter;
+      normalMap.magFilter = THREE.NearestFilter;
+    }
 
+    const isRelief = settings.wallProfile === "relief";
     const wallHeight = settings.wallHeight;
     const wallMat = new THREE.MeshStandardMaterial({
       map: diffuse,
       normalMap,
-      displacementMap: depthMap,
+      // relief walls already carry the depth as real geometry
+      displacementMap: isRelief ? null : depthMap,
       displacementScale: settings.displacementScale,
       roughness: 0.85,
       metalness: 0.25,
     });
+    // relief step sides: same texture, no normal map (see reliefMesh.ts groups)
+    const reliefSideMat = new THREE.MeshStandardMaterial({ map: diffuse, roughness: 0.85, metalness: 0.25 });
     const doorMat = new THREE.MeshStandardMaterial({ color: DOOR_COLOR, roughness: 0.6 });
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
 
     const WALL_SUBDIVISIONS = 10;
-    const wallGeo =
-      settings.wallProfile === "flat"
-        ? new THREE.PlaneGeometry(1, wallHeight, WALL_SUBDIVISIONS * 3, WALL_SUBDIVISIONS * 3)
-        : createBeveledWallGeometry(
-            1,
-            wallHeight,
-            settings.bevelFraction,
-            settings.bevelAngleDeg,
-            settings.wallProfile === "convex" ? 1 : -1,
-            WALL_SUBDIVISIONS,
-          );
+    // relief geometry needs the height map's pixels, so it's built once the
+    // image has loaded; flat/beveled walls are ready immediately
+    const geometries: THREE.BufferGeometry[] = [];
+    let wallGeo: THREE.BufferGeometry | null = null;
+    if (settings.wallProfile === "flat") {
+      wallGeo = new THREE.PlaneGeometry(1, wallHeight, WALL_SUBDIVISIONS * 3, WALL_SUBDIVISIONS * 3);
+    } else if (settings.wallProfile === "convex" || settings.wallProfile === "concave") {
+      wallGeo = createBeveledWallGeometry(
+        1,
+        wallHeight,
+        settings.bevelFraction,
+        settings.bevelAngleDeg,
+        settings.wallProfile === "convex" ? 1 : -1,
+        WALL_SUBDIVISIONS,
+      );
+    }
+    if (wallGeo) geometries.push(wallGeo);
+    // doors stay a plain red slab on relief walls; on flat/beveled walls they
+    // share the wall's profile like before
+    const doorGeo = wallGeo ?? new THREE.PlaneGeometry(1, wallHeight);
+    if (!wallGeo) geometries.push(doorGeo);
     const floorGeo = new THREE.PlaneGeometry(1, 1);
+    geometries.push(floorGeo);
 
     const group = new THREE.Group();
     scene.add(group);
     doorMeshesRef.current.clear();
+
+    const wallSlots: { x: number; z: number; rotY: number }[] = [];
+    let reliefTrianglesPerWall: number | null = null;
+
+    function placeWalls(geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[]) {
+      for (const slot of wallSlots) {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(slot.x, wallHeight / 2, slot.z);
+        mesh.rotation.y = slot.rotY;
+        group.add(mesh);
+      }
+    }
 
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
@@ -336,16 +411,38 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
           const neighborType = cellAt(map, x + v.x, y + v.y);
           if (neighborType !== "wall" && neighborType !== "door") return;
 
-          const plane = new THREE.Mesh(wallGeo, neighborType === "door" ? doorMat : wallMat);
-          plane.position.set(x + v.x * 0.5, wallHeight / 2, y + v.y * 0.5);
-          plane.rotation.y = WALL_ROTATION[d];
-          group.add(plane);
-
-          if (neighborType === "door") {
-            doorMeshesRef.current.set(doorKey({ x, y }, { x: x + v.x, y: y + v.y }), plane);
+          if (neighborType === "wall") {
+            wallSlots.push({ x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d] });
+            return;
           }
+
+          const door = new THREE.Mesh(doorGeo, doorMat);
+          door.position.set(x + v.x * 0.5, wallHeight / 2, y + v.y * 0.5);
+          door.rotation.y = WALL_ROTATION[d];
+          group.add(door);
+          doorMeshesRef.current.set(doorKey({ x, y }, { x: x + v.x, y: y + v.y }), door);
         });
       }
+    }
+
+    if (wallGeo) {
+      placeWalls(wallGeo, wallMat);
+    } else {
+      loadHeightGrid(texturePaths.depth + bust)
+        .then((grid) => {
+          if (disposed) return;
+          const relief = createReliefWallGeometry(grid, {
+            wallWidth: 1,
+            wallHeight,
+            depth: settings.reliefDepth,
+            levels: settings.reliefLevels,
+            cleanupPasses: settings.reliefCleanup,
+          });
+          geometries.push(relief.geometry);
+          reliefTrianglesPerWall = relief.triangles;
+          placeWalls(relief.geometry, [wallMat, reliefSideMat]);
+        })
+        .catch((err) => console.error("Relief wall build failed:", err));
     }
 
     function resize() {
@@ -359,13 +456,14 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
 
-    const clock = new THREE.Clock();
+    const startedAt = performance.now();
+    let lastStatsAt = 0;
 
     function animate() {
       if (disposed) return;
       const s = settingsRef.current;
-      const t = clock.getElapsedTime();
       const now = performance.now();
+      const t = (now - startedAt) / 1000;
 
       const anim = animRef.current;
       let cam: CamTarget;
@@ -411,13 +509,26 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
 
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.pointLightIntensity;
+      // a headlamp-like light orbiting the camera; the small radius keeps it
+      // well inside the side walls of the current cell - a light that slips
+      // behind a wall plane lights the back of its front faces and only the
+      // step sides of relief walls
       pointLight.position.set(
-        camera.position.x + Math.cos(t * 0.5) * 0.4,
+        camX + Math.cos(t * 0.5) * 0.15,
         s.eyeHeight + 0.3,
-        camera.position.z + Math.sin(t * 0.5) * 0.4 - 0.3,
+        camZ + Math.sin(t * 0.5) * 0.15,
       );
 
       renderer.render(scene, camera);
+
+      if (now - lastStatsAt > 500) {
+        lastStatsAt = now;
+        onStatsRef.current?.({
+          renderedTriangles: renderer.info.render.triangles,
+          reliefTrianglesPerWall,
+        });
+      }
+
       raf = requestAnimationFrame(animate);
     }
     animate();
@@ -427,9 +538,9 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
       container.removeChild(renderer.domElement);
-      wallGeo.dispose();
-      floorGeo.dispose();
+      for (const geo of geometries) geo.dispose();
       wallMat.dispose();
+      reliefSideMat.dispose();
       doorMat.dispose();
       floorMat.dispose();
       ceilMat.dispose();
@@ -446,6 +557,10 @@ export function GameViewport({ map, pos, dir, openingDoor, settings }: GameViewp
     settings.bevelFraction,
     settings.bevelAngleDeg,
     settings.displacementScale,
+    settings.reliefDepth,
+    settings.reliefLevels,
+    settings.reliefCleanup,
+    textureVersion,
   ]);
 
   return <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-black" />;
