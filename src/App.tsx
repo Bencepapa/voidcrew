@@ -21,6 +21,32 @@ export default function App() {
   const compact = useMediaQuery(COMPACT_QUERY);
   const swipe = useSwipeControls({ onForward: moveForward, onBack: moveBackward, onTurnLeft: turnL, onTurnRight: turnR });
 
+  // dev-only console hooks for comparing rendering settings, e.g.
+  //   voidcrew.set({ ambientIntensity: 0.2, roughness: 0.4 })
+  //   await voidcrew.capture("low-ambient")  // -> concept/gen/captures/
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    Object.assign(window, {
+      voidcrew: {
+        set: (patch: Partial<ViewportSettings>) => setSettings((s) => ({ ...s, ...patch })),
+        async capture(name: string) {
+          const canvas = document.querySelector("canvas");
+          if (!canvas) throw new Error("no game canvas");
+          // read the WebGL canvas in the frame right after it was drawn, before
+          // the browser presents and clears it
+          const dataUrl = await new Promise<string>((resolve) =>
+            requestAnimationFrame(() => resolve(canvas.toDataURL("image/jpeg", 0.9))),
+          );
+          const res = await fetch(`${import.meta.env.BASE_URL}__voidcrew/capture?name=${encodeURIComponent(name)}`, {
+            method: "POST",
+            body: dataUrl,
+          });
+          return res.text();
+        },
+      },
+    });
+  }, []);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "ArrowUp" || e.key === "w") moveForward();

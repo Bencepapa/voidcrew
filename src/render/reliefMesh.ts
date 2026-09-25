@@ -28,10 +28,14 @@ export interface ReliefOptions {
   // same-level regions smaller than this many cells get merged into their
   // surroundings - removes speckles left over after quantizing a noisy map
   minIsland: number;
+  // how far (in height-map cells) ambient occlusion looks for occluders
+  aoRadius: number;
 }
 
 export interface ReliefResult {
   geometry: THREE.BufferGeometry;
+  // ambient occlusion baked from the relief, read through the `uv1` set
+  aoMap: THREE.DataTexture;
   triangles: number;
   levelCount: number;
   baked: boolean;
@@ -110,14 +114,17 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
+  // second UV set, for the ambient occlusion map (see computeAmbientOcclusion)
+  const uvs1: number[] = [];
   const indices: number[] = [];
 
-  function quad(p: number[][], n: number[], uv: number[][]) {
+  function quad(p: number[][], n: number[], uv: number[][], uv1: number[][] = uv) {
     const i0 = positions.length / 3;
     for (let k = 0; k < 4; k++) {
       positions.push(p[k][0], p[k][1], p[k][2]);
       normals.push(n[0], n[1], n[2]);
       uvs.push(uv[k][0], uv[k][1]);
+      uvs1.push(uv1[k][0], uv1[k][1]);
     }
     // vertices are given counter-clockwise as seen from the normal side
     indices.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
@@ -166,7 +173,9 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   // --- side faces: one per run of identical steps along a cell boundary ---
   // A step's side face shows the higher cell's edge texel stretched across
   // its depth (u or v pinned to that cell's center), the classic look of
-  // extruded pixel art.
+  // extruded pixel art. Its ambient occlusion comes from the lower cell at
+  // the foot of the step instead - the side sits in that crevice, not up on
+  // the open top surface.
 
   // vertical boundaries between column bx-1 and bx
   for (let bx = 0; bx <= gw; bx++) {
@@ -184,41 +193,30 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
       const zL = levelZ(lL);
       const zR = levelZ(lR);
       const px = X(bx);
-      if (lL > lR) {
-        const u = U(bx - 0.5);
-        quad(
-          [
-            [px, Y(y1), zL],
-            [px, Y(y1), zR],
-            [px, Y(y), zR],
-            [px, Y(y), zL],
-          ],
-          [1, 0, 0],
-          [
-            [u, V(y1)],
-            [u, V(y1)],
-            [u, V(y)],
-            [u, V(y)],
-          ],
-        );
-      } else {
-        const u = U(bx + 0.5);
-        quad(
-          [
-            [px, Y(y1), zL],
-            [px, Y(y1), zR],
-            [px, Y(y), zR],
-            [px, Y(y), zL],
-          ],
-          [-1, 0, 0],
-          [
-            [u, V(y1)],
-            [u, V(y1)],
-            [u, V(y)],
-            [u, V(y)],
-          ],
-        );
-      }
+      const leftHigher = lL > lR;
+      const u = U(leftHigher ? bx - 0.5 : bx + 0.5);
+      const uLow = U(leftHigher ? bx + 0.5 : bx - 0.5);
+      quad(
+        [
+          [px, Y(y1), zL],
+          [px, Y(y1), zR],
+          [px, Y(y), zR],
+          [px, Y(y), zL],
+        ],
+        [leftHigher ? 1 : -1, 0, 0],
+        [
+          [u, V(y1)],
+          [u, V(y1)],
+          [u, V(y)],
+          [u, V(y)],
+        ],
+        [
+          [uLow, V(y1)],
+          [uLow, V(y1)],
+          [uLow, V(y)],
+          [uLow, V(y)],
+        ],
+      );
       y = y1;
     }
   }
@@ -239,43 +237,32 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
       const zA = levelZ(lA);
       const zB = levelZ(lB);
       const py = Y(by);
-      if (lA > lB) {
-        // upper cell sticks out further: its underside faces down
-        const v = V(by - 0.5);
-        quad(
-          [
-            [X(x), py, zB],
-            [X(x1), py, zB],
-            [X(x1), py, zA],
-            [X(x), py, zA],
-          ],
-          [0, -1, 0],
-          [
-            [U(x), v],
-            [U(x1), v],
-            [U(x1), v],
-            [U(x), v],
-          ],
-        );
-      } else {
-        // lower cell sticks out further: its top faces up
-        const v = V(by + 0.5);
-        quad(
-          [
-            [X(x), py, zB],
-            [X(x1), py, zB],
-            [X(x1), py, zA],
-            [X(x), py, zA],
-          ],
-          [0, 1, 0],
-          [
-            [U(x), v],
-            [U(x1), v],
-            [U(x1), v],
-            [U(x), v],
-          ],
-        );
-      }
+      // upper cell sticking out further: its underside faces down;
+      // otherwise the lower cell's top faces up
+      const upperHigher = lA > lB;
+      const v = V(upperHigher ? by - 0.5 : by + 0.5);
+      const vLow = V(upperHigher ? by + 0.5 : by - 0.5);
+      quad(
+        [
+          [X(x), py, zB],
+          [X(x1), py, zB],
+          [X(x1), py, zA],
+          [X(x), py, zA],
+        ],
+        [0, upperHigher ? -1 : 1, 0],
+        [
+          [U(x), v],
+          [U(x1), v],
+          [U(x1), v],
+          [U(x), v],
+        ],
+        [
+          [U(x), vLow],
+          [U(x1), vLow],
+          [U(x1), vLow],
+          [U(x), vLow],
+        ],
+      );
       x = x1;
     }
   }
@@ -284,6 +271,7 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute("uv1", new THREE.Float32BufferAttribute(uvs1, 2));
   geometry.setIndex(indices);
   // group 0: front faces (full material incl. normal map)
   // group 1: step side faces (their UVs are degenerate in one direction, which
@@ -291,5 +279,79 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   geometry.addGroup(0, frontIndexCount, 0);
   geometry.addGroup(frontIndexCount, indices.length - frontIndexCount, 1);
 
-  return { geometry, triangles: indices.length / 3, levelCount, baked };
+  const cellZ = new Float32Array(gw * gh);
+  for (let i = 0; i < cellZ.length; i++) cellZ[i] = levelZ(q[i]);
+  const aoMap = createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
+
+  return { geometry, aoMap, triangles: indices.length / 3, levelCount, baked };
+}
+
+// Horizon-based ambient occlusion over the relief's height field: for each
+// cell, march 8 directions up to `radius` cells, find the steepest rise
+// toward the neighbors, and count how much of the sky it blocks
+// (sin of the horizon angle). Crevices between tall steps come out dark, open
+// flat surfaces stay at 1.
+function computeAmbientOcclusion(
+  z: Float32Array,
+  w: number,
+  h: number,
+  cellW: number,
+  cellH: number,
+  radius: number,
+): Float32Array {
+  const DIRS = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
+  ];
+  const ao = new Float32Array(w * h);
+  const r = Math.max(1, Math.round(radius));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const z0 = z[y * w + x];
+      let occlusion = 0;
+      for (const [dx, dy] of DIRS) {
+        let maxSlope = 0;
+        for (let s = 1; s <= r; s++) {
+          // clamp at the map edge: the neighboring wall panel continues the
+          // same surface there
+          const xx = Math.min(w - 1, Math.max(0, x + dx * s));
+          const yy = Math.min(h - 1, Math.max(0, y + dy * s));
+          const dist = Math.hypot(dx * s * cellW, dy * s * cellH);
+          const slope = (z[yy * w + xx] - z0) / dist;
+          if (slope > maxSlope) maxSlope = slope;
+        }
+        occlusion += maxSlope / Math.sqrt(1 + maxSlope * maxSlope);
+      }
+      ao[y * w + x] = 1 - occlusion / DIRS.length;
+    }
+  }
+  return ao;
+}
+
+function createAoTexture(ao: Float32Array, w: number, h: number): THREE.DataTexture {
+  const data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    // DataTexture rows run bottom-up (no flipY), grid rows top-down
+    const row = h - 1 - y;
+    for (let x = 0; x < w; x++) {
+      const v = Math.round(ao[y * w + x] * 255);
+      const o = (row * w + x) * 4;
+      data[o] = data[o + 1] = data[o + 2] = v;
+      data[o + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  // per-texel, like the rest of the voxel look
+  tex.magFilter = THREE.NearestFilter;
+  // the relief geometry's second UV set: front faces map it like `uv`, step
+  // sides sample the cell at the foot of the step
+  tex.channel = 1;
+  tex.needsUpdate = true;
+  return tex;
 }

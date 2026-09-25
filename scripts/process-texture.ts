@@ -31,7 +31,10 @@ const USAGE = `Usage: npm run texture:process -- --diffuse <file> --depth <file>
   [--min-island 3]        depth regions smaller than this many pixels get merged away (1 = off)
   [--min-level-gap 0.1]   depth levels closer than this fraction of the range get merged (0 = off)
   [--fill-gaps 2]         fill dark outlines up to this many pixels wide between two raised parts (0 = off)
-  [--normal-strength 1.5] normal map bumpiness`;
+  [--normal-strength 3]   normal map bumpiness
+  [--normal-source levels] "levels" (follows the relief steps) or "smooth" (original depth shape)
+  [--normal-bevel 2]      rounds edges over about this many pixels before deriving normals (0 = sharp),
+                          which gives pipes and ledges round, light-catching top and bottom halves`;
 
 const { values: args } = parseArgs({
   options: {
@@ -44,7 +47,9 @@ const { values: args } = parseArgs({
     "min-island": { type: "string", default: "3" },
     "min-level-gap": { type: "string", default: "0.1" },
     "fill-gaps": { type: "string", default: "2" },
-    "normal-strength": { type: "string", default: "1.5" },
+    "normal-strength": { type: "string", default: "3" },
+    "normal-source": { type: "string", default: "levels" },
+    "normal-bevel": { type: "string", default: "2" },
   },
 });
 
@@ -308,6 +313,29 @@ function nearest(centers: number[], v: number): number {
   return best;
 }
 
+// separable box blur with clamped edges
+function boxBlur(src: Float32Array, w: number, h: number, radius: number): Float32Array {
+  if (radius <= 0) return src;
+  const tmp = new Float32Array(src.length);
+  const out = new Float32Array(src.length);
+  const n = radius * 2 + 1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      for (let d = -radius; d <= radius; d++) sum += src[y * w + Math.min(w - 1, Math.max(0, x + d))];
+      tmp[y * w + x] = sum / n;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      for (let d = -radius; d <= radius; d++) sum += tmp[Math.min(h - 1, Math.max(0, y + d)) * w + x];
+      out[y * w + x] = sum / n;
+    }
+  }
+  return out;
+}
+
 function normalMapFromHeight(height: Float32Array, w: number, h: number, strength: number): Buffer {
   const at = (x: number, y: number) =>
     height[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))] / 255;
@@ -348,6 +376,7 @@ async function main() {
   const minIsland = parseInt(args["min-island"]!, 10);
   const minLevelGap = parseFloat(args["min-level-gap"]!);
   const fillGaps = parseInt(args["fill-gaps"]!, 10);
+  const normalBevel = parseInt(args["normal-bevel"]!, 10);
   const normalStrength = parseFloat(args["normal-strength"]!);
 
   const meta = await sharp(args.diffuse).metadata();
@@ -390,7 +419,14 @@ async function main() {
     .png({ compressionLevel: 9 })
     .toFile(path.join(outDir, "depth.png"));
 
-  const normal = normalMapFromHeight(smooth, outW, outH, normalStrength);
+  // "levels": normals from the same stepped heights the relief geometry is
+  // built from, so shading rims line up with the voxel steps; "smooth": from
+  // the pre-quantization depth (softer, can drift a pixel off the steps).
+  // A bevel blurs the heights first, widening each rim into a rounded
+  // chamfer of about that many pixels.
+  const normalSource = args["normal-source"] === "smooth" ? smooth : Float32Array.from(depth);
+  const bevelled = boxBlur(boxBlur(normalSource, outW, outH, normalBevel), outW, outH, normalBevel);
+  const normal = normalMapFromHeight(bevelled, outW, outH, normalStrength);
   await sharp(normal, { raw: { width: outW, height: outH, channels: 3 } })
     .png({ compressionLevel: 9 })
     .toFile(path.join(outDir, "normal.png"));

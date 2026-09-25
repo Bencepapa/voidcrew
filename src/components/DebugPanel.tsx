@@ -43,6 +43,15 @@ const RELIEF_SLIDERS: SliderConfig[] = [
   { key: "reliefDepth", label: "Relief depth", min: 0.005, max: 0.12, step: 0.005 },
   { key: "reliefLevels", label: "Relief height levels", min: 2, max: 16, step: 1 },
   { key: "reliefMinIsland", label: "Min feature size (px, 1 = off)", min: 1, max: 16, step: 1 },
+  { key: "aoIntensity", label: "AO strength (ambient)", min: 0, max: 1.5, step: 0.05 },
+  { key: "aoDirect", label: "AO on direct light", min: 0, max: 1, step: 0.05 },
+  { key: "aoRadius", label: "AO radius (px)", min: 1, max: 16, step: 1 },
+];
+
+const MATERIAL_SLIDERS: SliderConfig[] = [
+  { key: "roughness", label: "Roughness", min: 0.05, max: 1, step: 0.05 },
+  { key: "metalness", label: "Metalness", min: 0, max: 1, step: 0.05 },
+  { key: "normalStrength", label: "Normal map strength", min: 0, max: 3, step: 0.1 },
 ];
 
 const SLIDERS: SliderConfig[] = [
@@ -127,6 +136,7 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
 
       {beveled && BEVEL_SLIDERS.map(slider)}
       {relief ? RELIEF_SLIDERS.map(slider) : slider(DISPLACEMENT_SLIDER)}
+      {MATERIAL_SLIDERS.map(slider)}
 
       {stats && (
         <div className="text-[10px] text-neutral-500 flex flex-col">

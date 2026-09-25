@@ -27,6 +27,14 @@ export interface ViewportSettings {
   reliefLevels: number;
   reliefMinIsland: number;
   mapLightIntensity: number;
+  roughness: number;
+  metalness: number;
+  normalStrength: number;
+  // ambient occlusion (relief walls only): strength on ambient light, how
+  // much it also darkens direct lights, and how far it looks for occluders
+  aoIntensity: number;
+  aoDirect: number;
+  aoRadius: number;
 }
 
 export interface ReliefStats {
@@ -51,8 +59,8 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   cameraPullback: 0.3,
   moveDurationMs: 220,
   fov: 72,
-  pointLightIntensity: 3.5,
-  ambientIntensity: 0.7,
+  pointLightIntensity: 1.6,
+  ambientIntensity: 0.35,
   bobEnabled: true,
   bevelFraction: 0.2,
   bevelAngleDeg: 30,
@@ -60,8 +68,34 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   reliefDepth: 0.04,
   reliefLevels: 6,
   reliefMinIsland: 3,
-  mapLightIntensity: 1,
+  mapLightIntensity: 1.6,
+  roughness: 0.55,
+  metalness: 0.45,
+  normalStrength: 1,
+  aoIntensity: 1,
+  aoDirect: 0.6,
+  aoRadius: 6,
 };
+
+// three.js applies aoMap to ambient/indirect light only, so crevices facing a
+// point light still light up fully. This extends the same occlusion term to
+// direct light by `uCavity` (0 = physically standard, 1 = full) - a common
+// stylization that makes cracks and step feet read as dark.
+function addDirectLightOcclusion(material: THREE.MeshStandardMaterial, cavity: { value: number }) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uCavity = cavity;
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform float uCavity;")
+      .replace(
+        "#include <aomap_fragment>",
+        `#include <aomap_fragment>
+#ifdef USE_AOMAP
+  reflectedLight.directDiffuse *= mix( 1.0, ambientOcclusion, uCavity );
+  reflectedLight.directSpecular *= mix( 1.0, ambientOcclusion, uCavity );
+#endif`,
+      );
+  };
+}
 
 // A flat wall panel with the top/bottom edges beveled, like the classic
 // sci-fi corridor look: floor and ceiling stay flush with the grid boundary,
@@ -385,11 +419,19 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       // relief walls already carry the depth as real geometry
       displacementMap: isRelief ? null : depthMap,
       displacementScale: settings.displacementScale,
-      roughness: 0.85,
-      metalness: 0.25,
+      roughness: settings.roughness,
+      metalness: settings.metalness,
     });
     // relief step sides: same texture, no normal map (see reliefMesh.ts groups)
-    const reliefSideMat = new THREE.MeshStandardMaterial({ map: diffuse, roughness: 0.85, metalness: 0.25 });
+    const reliefSideMat = new THREE.MeshStandardMaterial({
+      map: diffuse,
+      roughness: settings.roughness,
+      metalness: settings.metalness,
+    });
+    const cavity = { value: settings.aoDirect };
+    addDirectLightOcclusion(wallMat, cavity);
+    addDirectLightOcclusion(reliefSideMat, cavity);
+    let aoMap: THREE.Texture | null = null;
     const doorMat = new THREE.MeshStandardMaterial({ color: DOOR_COLOR, roughness: 0.6 });
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
@@ -491,8 +533,15 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
             depth: settings.reliefDepth,
             levels: settings.reliefLevels,
             minIsland: settings.reliefMinIsland,
+            aoRadius: settings.aoRadius,
           });
           geometries.push(relief.geometry);
+          aoMap = relief.aoMap;
+          for (const mat of [wallMat, reliefSideMat]) {
+            mat.aoMap = relief.aoMap;
+            mat.aoMapIntensity = settingsRef.current.aoIntensity;
+            mat.needsUpdate = true;
+          }
           reliefStats = { trianglesPerWall: relief.triangles, levelCount: relief.levelCount, baked: relief.baked };
           placeWalls(relief.geometry, [wallMat, reliefSideMat]);
         })
@@ -621,6 +670,13 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
 
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.pointLightIntensity;
+      for (const mat of [wallMat, reliefSideMat]) {
+        mat.roughness = s.roughness;
+        mat.metalness = s.metalness;
+        mat.aoMapIntensity = s.aoIntensity;
+      }
+      wallMat.normalScale.set(s.normalStrength, s.normalStrength);
+      cavity.value = s.aoDirect;
       // a headlamp-like light orbiting the camera; the small radius keeps it
       // well inside the side walls of the current cell - a light that slips
       // behind a wall plane lights the back of its front faces and only the
@@ -658,6 +714,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       floorMat.dispose();
       ceilMat.dispose();
       for (const mat of fixtureMats.values()) mat.dispose();
+      aoMap?.dispose();
       diffuse.dispose();
       normalMap.dispose();
       depthMap.dispose();
@@ -674,6 +731,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     settings.reliefDepth,
     settings.reliefLevels,
     settings.reliefMinIsland,
+    settings.aoRadius,
     textureVersion,
   ]);
 
