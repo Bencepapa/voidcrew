@@ -260,6 +260,9 @@ interface TextureSetPaths {
   pixelArt: boolean;
   // mask of the parts that glow when lit (a ceiling light panel)
   emissive?: string;
+  // a grate floor: its lowest this many height levels are the slots, cut
+  // open where it's a bridge deck (see through it)
+  grateLevels?: number;
 }
 
 const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
@@ -306,6 +309,7 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     normal: `${import.meta.env.BASE_URL}textures/floor1/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/floor1/depth.png`,
     pixelArt: true,
+    grateLevels: 2,
   },
   // diamond plate with a raised frame
   floor2: {
@@ -418,6 +422,8 @@ interface WallSlot {
 // depth map).
 interface WallKit {
   depthUrl: string;
+  // see TextureSetPaths
+  grateLevels?: number;
   wallMat: THREE.MeshStandardMaterial;
   // relief step sides: same texture, no normal map (see reliefMesh.ts groups)
   sideMat: THREE.MeshStandardMaterial;
@@ -516,6 +522,8 @@ const LADDER_NECK = 0.12;
 // the low plate along a bridge deck's edges (world units): as tall as the
 // hazard stripe band
 const BRIDGE_KICK = 16 / TRIM_TEXELS;
+// the beams along a see-through deck's edges, under it
+const BRIDGE_STRINGER = 0.04;
 
 // a peek eases back to center once its input has been idle this long...
 const PEEK_IDLE_MS = 300;
@@ -855,7 +863,7 @@ export function GameViewport({
         addDirectLightOcclusion(litMat, cavity);
       }
 
-      return { depthUrl: paths.depth + bust, wallMat, sideMat, litMat, textures, slots: [] };
+      return { depthUrl: paths.depth + bust, grateLevels: paths.grateLevels, wallMat, sideMat, litMat, textures, slots: [] };
     }
 
     // most walls use the main texture set; a stable, position-based share of
@@ -913,8 +921,9 @@ export function GameViewport({
       return kit;
     };
     const doorCells: { x: number; z: number; spec: DoorSpec; key: string }[] = [];
-    // panel materials with a stenciled label, one per labeled door
-    const labelMaterials: THREE.MeshStandardMaterial[] = [];
+    // materials made beside the kits' (labeled door panels, see-through
+    // bridge decks), kept in step with the material settings like theirs
+    const ownMaterials: THREE.MeshStandardMaterial[] = [];
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
 
@@ -1098,7 +1107,14 @@ export function GameViewport({
     // if the scene was torn down meanwhile
     async function buildRelief(
       kit: WallKit,
-      shape: { width?: number; height: number; flushEdges: boolean; holeBackZ?: number; rows?: [number, number] },
+      shape: {
+        width?: number;
+        height: number;
+        flushEdges: boolean;
+        holeBackZ?: number;
+        rows?: [number, number];
+        holeLevels?: number;
+      },
     ) {
       let gridPromise = heightGrids.get(kit.depthUrl);
       if (!gridPromise) {
@@ -1117,6 +1133,7 @@ export function GameViewport({
         flushEdges: shape.flushEdges,
         holeBackZ: shape.holeBackZ,
         rows: shape.rows,
+        holeLevels: shape.holeLevels,
       });
       geometries.push(relief.geometry);
       if (shape.rows) {
@@ -1330,7 +1347,7 @@ export function GameViewport({
         metalness: settingsRef.current.metalness,
       });
       addDirectLightOcclusion(material, cavity);
-      labelMaterials.push(material);
+      ownMaterials.push(material);
       kit.textures.push(map);
       return material;
     }
@@ -1422,9 +1439,24 @@ export function GameViewport({
       group.add(ladderGroup);
     }
 
-    // --- bridges: a strip of the cell's floor texture as the deck, on a
-    // steel body, with a low yellow kick plate along each edge ---
+    // --- bridges: a strip of the cell's floor texture as the deck, with a
+    // low hazard-striped kick plate along each edge. A grate deck has its
+    // slots cut open, seen from both sides, resting on two slim stringers;
+    // any other deck sits on a solid steel body. ---
     const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.5, metalness: 0.6 });
+    // a see-through deck is seen from below as well
+    const doubleSided = (src: THREE.MeshStandardMaterial) => {
+      const mat = new THREE.MeshStandardMaterial({
+        map: src.map,
+        normalMap: src.normalMap,
+        roughness: settings.roughness,
+        metalness: settings.metalness,
+        side: THREE.DoubleSide,
+      });
+      ownMaterials.push(mat);
+      return mat;
+    };
+    const grateMats = new Map<WallKit, THREE.MeshStandardMaterial[]>();
     for (const bridge of map.bridges ?? []) {
       const { x, y } = bridge.cell;
       const deckY = bridge.height * wallHeight;
@@ -1438,7 +1470,6 @@ export function GameViewport({
         mesh.position.set(px, py, pz);
         bridgeGroup.add(mesh);
       };
-      box(1, BRIDGE_THICKNESS, BRIDGE_WIDTH, 0, -BRIDGE_THICKNESS / 2 - 0.002, 0, bridgeMat);
       for (const side of [-1, 1]) {
         const kick = new THREE.Mesh(trimBox(1, BRIDGE_KICK, LADDER_RAIL), hazardMat);
         kick.position.set(0, BRIDGE_KICK / 2 - 0.01, side * (BRIDGE_WIDTH / 2));
@@ -1449,19 +1480,39 @@ export function GameViewport({
       // the walking surface: the middle band of the floor tile, as wide as
       // the deck, so its texels stay square
       const kit = floorKitAt(x, y);
+      const grate = isRelief && kit?.grateLevels ? kit.grateLevels : 0;
+      if (grate) {
+        for (const side of [-1, 1]) {
+          const z = side * (BRIDGE_WIDTH / 2 - BRIDGE_STRINGER / 2);
+          box(1, BRIDGE_THICKNESS, BRIDGE_STRINGER, 0, -BRIDGE_THICKNESS / 2 - 0.02, z, bridgeMat);
+        }
+      } else {
+        box(1, BRIDGE_THICKNESS, BRIDGE_WIDTH, 0, -BRIDGE_THICKNESS / 2 - 0.002, 0, bridgeMat);
+      }
       if (!kit) {
         box(1, 0.004, BRIDGE_WIDTH, 0, 0, 0, floorMat);
         continue;
       }
       const rows: [number, number] = [(1 - BRIDGE_WIDTH) / 2, (1 + BRIDGE_WIDTH) / 2];
       const deckGeometry = isRelief
-        ? buildRelief(kit, { height: BRIDGE_WIDTH, flushEdges: false, rows }).then((relief) => relief?.geometry ?? null)
+        ? buildRelief(kit, { height: BRIDGE_WIDTH, flushEdges: false, rows, holeLevels: grate }).then(
+            (relief) => relief?.geometry ?? null,
+          )
         : Promise.resolve(createBandPlane(BRIDGE_WIDTH, rows));
       deckGeometry
         .then((geo) => {
           if (!geo) return;
           if (!isRelief) geometries.push(geo);
-          const deck = new THREE.Mesh(geo, isRelief ? [kit.wallMat, kit.sideMat] : kit.wallMat);
+          let mats: THREE.Material | THREE.Material[] = isRelief ? [kit.wallMat, kit.sideMat] : kit.wallMat;
+          if (grate) {
+            let own = grateMats.get(kit);
+            if (!own) {
+              own = [doubleSided(kit.wallMat), doubleSided(kit.sideMat)];
+              grateMats.set(kit, own);
+            }
+            mats = own;
+          }
+          const deck = new THREE.Mesh(geo, mats);
           // laid flat facing up; local X (the band's length) along the bridge
           deck.rotation.x = -Math.PI / 2;
           bridgeGroup.add(deck);
@@ -1661,7 +1712,7 @@ export function GameViewport({
         kit.wallMat.normalScale.set(s.normalStrength, s.normalStrength);
         kit.litMat?.normalScale.set(s.normalStrength, s.normalStrength);
       }
-      for (const mat of labelMaterials) {
+      for (const mat of ownMaterials) {
         mat.roughness = s.roughness;
         mat.metalness = s.metalness;
         mat.aoMapIntensity = s.aoIntensity;
@@ -1739,7 +1790,7 @@ export function GameViewport({
         kit.litMat?.dispose();
         for (const tex of kit.textures) tex.dispose();
       }
-      for (const mat of labelMaterials) mat.dispose();
+      for (const mat of ownMaterials) mat.dispose();
       floorMat.dispose();
       paintMat.dispose();
       hazardMat.dispose();

@@ -46,6 +46,9 @@ export interface ReliefOptions {
   // the whole texture, so a partial panel shares the full panel's materials
   // and AO map.
   rows?: [number, number];
+  // cut this many of the lowest levels out as holes - a grate's slots, to
+  // see through
+  holeLevels?: number;
 }
 
 export interface HoleBounds {
@@ -153,11 +156,13 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   const Y = (y: number) => opts.wallHeight / 2 - y * cellH;
   const U = (x: number) => x / gw;
   const V = (y: number) => 1 - (y + r0) / fullH;
-  // Per-cell key: its level, or HOLE for a transparent cell. Holes get no
-  // front face; the side faces around them reach back to `holeBackZ`.
+  // Per-cell key: its level, or HOLE for a transparent cell (or one on the
+  // lowest `holeLevels`). Holes get no front face; the side faces around
+  // them reach back to `holeBackZ`.
   const HOLE = -1;
   const key = new Int16Array(gw * gh);
-  for (let i = 0; i < key.length; i++) key[i] = solid && !solid[i] ? HOLE : q[i];
+  const holeLevels = opts.holeLevels ?? 0;
+  for (let i = 0; i < key.length; i++) key[i] = (solid && !solid[i]) || q[i] < holeLevels ? HOLE : q[i];
   const holeBackZ = opts.holeBackZ ?? levelZ(0);
   const zOf = (k: number) => (k === HOLE ? holeBackZ : levelZ(k));
   // outside the map counts as base level, so recesses touching the top/bottom
