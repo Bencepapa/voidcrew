@@ -6,7 +6,7 @@ import type { Direction, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights } from "../game/lights";
 
-export type TextureSetId = "wall1" | "wall2" | "wall3" | "wall4" | "wall5";
+export type TextureSetId = "wall1" | "wall2" | "wall3" | "wall4" | "wall5" | "floor1" | "floor2";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -14,6 +14,9 @@ export interface ViewportSettings {
   // a second texture set used on a share of the walls
   accentTextureSet: TextureSetId | "none";
   accentRatio: number;
+  // "map" = per cell, as the map specifies (GameMap.floorAt); a set id
+  // forces that floor everywhere; "none" = plain dark floor
+  floorTextureSet: TextureSetId | "map" | "none";
   wallProfile: WallProfileId;
   eyeHeight: number;
   wallHeight: number;
@@ -58,6 +61,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   textureSet: "wall4",
   accentTextureSet: "wall5",
   accentRatio: 0.35,
+  floorTextureSet: "map",
   wallProfile: "relief",
   eyeHeight: 0.5,
   wallHeight: 1.0,
@@ -257,7 +261,28 @@ const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; dept
     depth: `${import.meta.env.BASE_URL}textures/wall5/depth.png`,
     pixelArt: true,
   },
+  // one floor tile per cell: a grate with recessed slots
+  floor1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/floor1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/floor1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/floor1/depth.png`,
+    pixelArt: true,
+  },
+  // diamond plate with a raised frame
+  floor2: {
+    diffuse: `${import.meta.env.BASE_URL}textures/floor2/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/floor2/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/floor2/depth.png`,
+    pixelArt: true,
+  },
 };
+
+// floor used where the map doesn't specify one
+const DEFAULT_FLOOR: TextureSetId = "floor1";
+
+function isTextureSetId(id: string | undefined): id is TextureSetId {
+  return id !== undefined && id in TEXTURE_SETS;
+}
 
 interface WallSlot {
   x: number;
@@ -265,8 +290,9 @@ interface WallSlot {
   rotY: number;
 }
 
-// Everything the walls of one texture set need: its own materials and, for
-// relief walls, its own geometry (built from that set's depth map).
+// Everything the walls (or floors) of one texture set need: its own
+// materials and, in relief mode, its own geometry (built from that set's
+// depth map).
 interface WallKit {
   depthUrl: string;
   wallMat: THREE.MeshStandardMaterial;
@@ -441,7 +467,9 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     const wallHeight = settings.wallHeight;
     const cavity = { value: settings.aoDirect };
 
-    function createWallKit(setId: TextureSetId): WallKit {
+    // `displace`: whether flat/beveled geometry gets the depth map as
+    // displacement - not for floors, whose single quad would only tilt
+    function createWallKit(setId: TextureSetId, displace = true): WallKit {
       const paths = TEXTURE_SETS[setId];
       const diffuse = loader.load(paths.diffuse + bust);
       const normalMap = loader.load(paths.normal + bust);
@@ -457,7 +485,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
         map: diffuse,
         normalMap,
         // relief walls already carry the depth as real geometry
-        displacementMap: isRelief ? null : depthMap,
+        displacementMap: isRelief || !displace ? null : depthMap,
         displacementScale: settings.displacementScale,
         roughness: settings.roughness,
         metalness: settings.metalness,
@@ -482,6 +510,20 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
         ? createWallKit(settings.accentTextureSet)
         : null;
     const kits = accentKit ? [primaryKit, accentKit] : [primaryKit];
+    // floor kits are created on demand, one per floor texture actually used
+    const floorKits = new Map<TextureSetId, WallKit>();
+    function floorKitAt(x: number, y: number): WallKit | null {
+      const choice = settings.floorTextureSet;
+      if (choice === "none") return null;
+      const fromMap = map.floorAt?.(x, y);
+      const setId = choice !== "map" ? choice : isTextureSetId(fromMap) ? fromMap : DEFAULT_FLOOR;
+      let kit = floorKits.get(setId);
+      if (!kit) {
+        kit = createWallKit(setId, false);
+        floorKits.set(setId, kit);
+      }
+      return kit;
+    }
 
     const doorMat = new THREE.MeshStandardMaterial({ color: DOOR_COLOR, roughness: 0.6 });
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
@@ -527,14 +569,29 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       }
     }
 
+    // wall-style geometry (facing +Z) laid flat, facing up
+    function placeFloors(geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], slots: WallSlot[]) {
+      for (const slot of slots) {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(slot.x, 0, slot.z);
+        group.add(mesh);
+      }
+    }
+
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         if (cellAt(map, x, y) === "wall") continue;
 
-        const floor = new THREE.Mesh(floorGeo, floorMat);
-        floor.rotation.x = -Math.PI / 2;
-        floor.position.set(x, 0, y);
-        group.add(floor);
+        const floorKit = floorKitAt(x, y);
+        if (floorKit) {
+          floorKit.slots.push({ x, z: y, rotY: 0 });
+        } else {
+          const floor = new THREE.Mesh(floorGeo, floorMat);
+          floor.rotation.x = -Math.PI / 2;
+          floor.position.set(x, 0, y);
+          group.add(floor);
+        }
 
         const ceiling = new THREE.Mesh(floorGeo, ceilMat);
         ceiling.rotation.x = Math.PI / 2;
@@ -562,45 +619,78 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       }
     }
 
+    // floor glow fixtures, lifted above the floor relief once it's built
+    const floorStrips: THREE.Mesh[] = [];
+
+    // a height map caught mid-save by an image editor (hot reload) or
+    // fetched while the dev server restarts fails to decode - retry briefly
+    const loadWithRetry = async (url: string, attempts: number): Promise<Awaited<ReturnType<typeof loadHeightGrid>>> => {
+      try {
+        return await loadHeightGrid(url);
+      } catch (err) {
+        if (attempts <= 1 || disposed) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        return loadWithRetry(url, attempts - 1);
+      }
+    };
+
+    // builds a kit's relief geometry from its depth map and hooks up its AO;
+    // resolves to null if the scene was torn down meanwhile
+    async function buildRelief(kit: WallKit, height: number, flushEdges: boolean) {
+      const grid = await loadWithRetry(kit.depthUrl, 4);
+      if (disposed) return null;
+      const relief = createReliefWallGeometry(grid, {
+        wallWidth: 1,
+        wallHeight: height,
+        depth: settings.reliefDepth,
+        levels: settings.reliefLevels,
+        minIsland: settings.reliefMinIsland,
+        aoRadius: settings.aoRadius,
+        flushEdges,
+      });
+      geometries.push(relief.geometry);
+      kit.textures.push(relief.aoMap);
+      for (const mat of [kit.wallMat, kit.sideMat]) {
+        mat.aoMap = relief.aoMap;
+        mat.aoMapIntensity = settingsRef.current.aoIntensity;
+        mat.needsUpdate = true;
+      }
+      return relief;
+    }
+
     if (wallGeo) {
       for (const kit of kits) placeWalls(wallGeo, kit.wallMat, kit.slots);
     } else {
-      // a height map caught mid-save by an image editor (hot reload) or
-      // fetched while the dev server restarts fails to decode - retry briefly
-      const loadWithRetry = async (url: string, attempts: number): Promise<Awaited<ReturnType<typeof loadHeightGrid>>> => {
-        try {
-          return await loadHeightGrid(url);
-        } catch (err) {
-          if (attempts <= 1 || disposed) throw err;
-          await new Promise((resolve) => setTimeout(resolve, 400));
-          return loadWithRetry(url, attempts - 1);
-        }
-      };
       for (const kit of kits) {
-        loadWithRetry(kit.depthUrl, 4)
-          .then((grid) => {
-            if (disposed) return;
-            const relief = createReliefWallGeometry(grid, {
-              wallWidth: 1,
-              wallHeight,
-              depth: settings.reliefDepth,
-              levels: settings.reliefLevels,
-              minIsland: settings.reliefMinIsland,
-              aoRadius: settings.aoRadius,
-            });
-            geometries.push(relief.geometry);
-            kit.textures.push(relief.aoMap);
-            for (const mat of [kit.wallMat, kit.sideMat]) {
-              mat.aoMap = relief.aoMap;
-              mat.aoMapIntensity = settingsRef.current.aoIntensity;
-              mat.needsUpdate = true;
-            }
+        buildRelief(kit, wallHeight, true)
+          .then((relief) => {
+            if (!relief) return;
             if (kit === primaryKit) {
               reliefStats = { trianglesPerWall: relief.triangles, levelCount: relief.levelCount, baked: relief.baked };
             }
             placeWalls(relief.geometry, [kit.wallMat, kit.sideMat], kit.slots);
           })
           .catch((err) => console.error("Relief wall build failed:", err));
+      }
+    }
+
+    // every kit, for per-frame material updates and disposal
+    const allKits = [...kits, ...floorKits.values()];
+
+    let floorTop = 0;
+    for (const floorKit of floorKits.values()) {
+      if (isRelief) {
+        buildRelief(floorKit, 1, false)
+          .then((relief) => {
+            if (!relief) return;
+            placeFloors(relief.geometry, [floorKit.wallMat, floorKit.sideMat], floorKit.slots);
+            // keep the strips above the highest floor relief
+            floorTop = Math.max(floorTop, relief.maxZ);
+            for (const strip of floorStrips) strip.position.y = floorTop + 0.003;
+          })
+          .catch((err) => console.error("Relief floor build failed:", err));
+      } else {
+        placeFloors(floorGeo, floorKit.wallMat, floorKit.slots);
       }
     }
 
@@ -632,6 +722,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
         strip.rotation.set(-Math.PI / 2, 0, v.x !== 0 ? Math.PI / 2 : 0);
         strip.position.set(light.x + v.x * 0.1, 0.003, light.z + v.y * 0.1);
         group.add(strip);
+        floorStrips.push(strip);
       }
       // wall glows have no fixture - the light itself reads as a lit patch
     }
@@ -725,7 +816,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
 
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.pointLightIntensity;
-      for (const kit of kits) {
+      for (const kit of allKits) {
         for (const mat of [kit.wallMat, kit.sideMat]) {
           mat.roughness = s.roughness;
           mat.metalness = s.metalness;
@@ -781,7 +872,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
       resizeObserver.disconnect();
       container.removeChild(renderer.domElement);
       for (const geo of geometries) geo.dispose();
-      for (const kit of kits) {
+      for (const kit of allKits) {
         kit.wallMat.dispose();
         kit.sideMat.dispose();
         for (const tex of kit.textures) tex.dispose();
@@ -797,6 +888,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     settings.textureSet,
     settings.accentTextureSet,
     settings.accentRatio,
+    settings.floorTextureSet,
     settings.wallProfile,
     settings.wallHeight,
     settings.bevelFraction,

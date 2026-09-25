@@ -30,6 +30,10 @@ export interface ReliefOptions {
   minIsland: number;
   // how far (in height-map cells) ambient occlusion looks for occluders
   aoRadius: number;
+  // force the left/right edges back to the base level so perpendicular
+  // walls meet cleanly at corners (see below); floors tile edge to edge on a
+  // single plane and don't need it
+  flushEdges?: boolean;
 }
 
 export interface ReliefResult {
@@ -39,6 +43,8 @@ export interface ReliefResult {
   triangles: number;
   levelCount: number;
   baked: boolean;
+  // how far the highest level sticks out of the base plane
+  maxZ: number;
 }
 
 // Relief geometry is built per height-map cell; larger maps are box-filtered
@@ -95,7 +101,7 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   // beveled profile uses with its taper.
   const cellW = opts.wallWidth / gw;
   const cellH = opts.wallHeight / gh;
-  const margin = Math.min(Math.floor(gw / 2), Math.ceil(maxAbsZ / cellW - 1e-6));
+  const margin = opts.flushEdges === false ? 0 : Math.min(Math.floor(gw / 2), Math.ceil(maxAbsZ / cellW - 1e-6));
   for (let y = 0; y < gh; y++) {
     for (let x = 0; x < margin; x++) {
       q[y * gw + x] = base;
@@ -283,7 +289,7 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   for (let i = 0; i < cellZ.length; i++) cellZ[i] = levelZ(q[i]);
   const aoMap = createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
 
-  return { geometry, aoMap, triangles: indices.length / 3, levelCount, baked };
+  return { geometry, aoMap, triangles: indices.length / 3, levelCount, baked, maxZ: levelZ(levelCount - 1) };
 }
 
 // Horizon-based ambient occlusion over the relief's height field: for each

@@ -16,6 +16,9 @@ export interface GameMap {
   height: number;
   cells: CellType[][];
   name: string;
+  // floor texture set of a walkable cell (a renderer texture set id);
+  // omitted = the renderer's default floor
+  floorAt?: (x: number, y: number) => string;
 }
 
 export interface Crewmate {

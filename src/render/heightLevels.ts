@@ -16,11 +16,12 @@ export interface HeightLevels {
 }
 
 // `data` holds 0..1 heights. Baked maps (few distinct grays, e.g. painted in
-// Aseprite or produced by process-texture) keep their exact levels and
-// relative spacing; continuous maps are split into `levels` even steps after
-// stretching the 0.5%..99.5% percentile range to 0..1, so a map using only a
-// narrow band of grays still spreads over all levels and a few stray
-// white/black pixels don't compress the rest.
+// Aseprite or produced by process-texture) keep their exact levels at their
+// absolute gray (black..white = the full relief depth), so the steps keep
+// the proportions they were drawn with; continuous maps are split into
+// `levels` even steps after stretching the 0.5%..99.5% percentile range to
+// 0..1, so a map using only a narrow band of grays still spreads over all
+// levels and a few stray white/black pixels don't compress the rest.
 export function quantizeHeights(data: Float32Array, levels: number): HeightLevels {
   const distinct = new Set<number>();
   for (let i = 0; i < data.length && distinct.size <= MAX_BAKED_LEVELS; i++) {
@@ -30,11 +31,9 @@ export function quantizeHeights(data: Float32Array, levels: number): HeightLevel
   if (distinct.size <= MAX_BAKED_LEVELS) {
     const grays = [...distinct].sort((a, b) => a - b);
     const index = new Map(grays.map((g, i) => [g, i]));
-    const lo = grays[0];
-    const range = grays[grays.length - 1] - lo || 1;
     const q = new Uint8Array(data.length);
     for (let i = 0; i < q.length; i++) q[i] = index.get(Math.round(data[i] * 255))!;
-    return { q, heights: grays.map((g) => (g - lo) / range), baked: true };
+    return { q, heights: grays.map((g) => g / 255), baked: true };
   }
 
   const n = Math.max(2, Math.round(levels));

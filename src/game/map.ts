@@ -28,6 +28,8 @@ export const deck2Engineering: GameMap = {
   width: LAYOUT[0].length,
   height: LAYOUT.length,
   cells: parseLayout(LAYOUT),
+  // grate floor up top, diamond plate in the bottom corridors
+  floorAt: (_x, y) => (y > 5 ? "floor2" : "floor1"),
 };
 
 export function cellAt(map: GameMap, x: number, y: number): CellType {

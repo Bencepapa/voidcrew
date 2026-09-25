@@ -254,11 +254,19 @@ function mostCommonValue(values: Float32Array): number {
   return best;
 }
 
-// 1D k-means; returns sorted, de-duplicated centers
+// 1D k-means; returns sorted, de-duplicated centers. Starts from centers
+// spread evenly over the value range rather than over quantiles: one
+// dominant plateau (a floor plate covering 60% of the map) would otherwise
+// grab most starting centers, leaving small but distinct features (bolts,
+// raised treads) to be swallowed by a neighboring level.
 function kmeans1d(values: Float32Array, k: number): number[] {
-  const sorted = Float32Array.from(values).sort();
-  let centers = Array.from({ length: k }, (_, i) => sorted[Math.floor(((i + 0.5) / k) * sorted.length)]);
-  centers = [...new Set(centers)];
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  let centers = Array.from({ length: k }, (_, i) => lo + ((i + 0.5) / k) * (hi - lo));
 
   for (let iter = 0; iter < 50; iter++) {
     const sums = new Float64Array(centers.length);
@@ -286,7 +294,9 @@ function mergeCloseLevels(centers: number[], values: Float32Array, minGap: numbe
     const c = centers[nearest(centers, v)];
     counts.set(c, (counts.get(c) ?? 0) + 1);
   }
-  let levels = centers.map((c) => ({ value: c, count: counts.get(c) ?? 0 }));
+  // centers that ended up with no pixels (possible with evenly spread
+  // starting centers) aren't levels at all
+  let levels = centers.map((c) => ({ value: c, count: counts.get(c) ?? 0 })).filter((l) => l.count > 0);
   const gap = (levels[levels.length - 1].value - levels[0].value) * minGap;
 
   for (;;) {
@@ -404,11 +414,19 @@ async function main() {
   for (let i = 0; i < q.length; i++) q[i] = nearest(centers, smooth[i]);
   q = removeSmallIslands(q, outW, outH, minIsland);
 
-  // stretch the levels to the full 0..255 range (keeping their relative
-  // spacing) so the map is easy to read and paint over in an image editor
-  const lo = centers[0];
-  const range = centers[centers.length - 1] - lo || 1;
-  const grays = centers.map((c) => (centers.length > 1 ? Math.round(((c - lo) / range) * 255) : 128));
+  // Stretch the source's full darkest..brightest range to 0..255 so the map is
+  // easy to read and paint over - relative to the source, not to the outer
+  // levels: if the extreme levels got merged away (tiny bolts absorbed into
+  // the treads next to them), stretching the remaining levels would inflate
+  // every step's height relative to the others.
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of smooth) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  const range = hi - lo || 1;
+  const grays = centers.map((c) => Math.round(((c - lo) / range) * 255));
   const depth = Buffer.alloc(outW * outH);
   const perLevel = new Uint32Array(centers.length);
   for (let i = 0; i < q.length; i++) {
