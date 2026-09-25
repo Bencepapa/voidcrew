@@ -88,7 +88,8 @@ export function useViewControls(opts: ViewControlsOptions) {
       if (!o.grid) {
         if (e.pointerType === "mouse") {
           lockTarget.current = e.currentTarget;
-          e.currentTarget.requestPointerLock?.();
+          // refused in some embedded/hidden pages - mouselook just stays off
+          Promise.resolve(e.currentTarget.requestPointerLock?.()).catch(() => {});
         }
         return;
       }

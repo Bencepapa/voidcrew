@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { deck2Engineering, cellAt, doorAt } from "./map";
 import { behindOf, leftOf, rightOf, stepForward } from "./movement";
-import { passage } from "./heights";
+import { CLIMB_MS_PER_HEIGHT, passage } from "./heights";
 import type { Direction, Vec2 } from "./types";
 import { initialCrew } from "./crew";
 
@@ -13,6 +13,9 @@ export interface LogEntry {
 let logId = 0;
 
 const DOOR_ANIM_MS = 450;
+// roughly the walk to and from a ladder around the climb itself (the
+// viewport's move duration)
+const CLIMB_WALK_MS = 250;
 
 const BLOCKED_MESSAGES: Record<"wall" | "ledge" | "low", string> = {
   wall: "A bulkhead blocks the way.",
@@ -101,8 +104,16 @@ export function useGameState() {
     });
   }, []);
 
-  const turnL = useCallback(() => setDir((d) => leftOf(d)), []);
-  const turnR = useCallback(() => setDir((d) => rightOf(d)), []);
+  // no moving or turning until a ladder climb (its animation) is over
+  const busyUntilRef = useRef(0);
+  const busy = () => performance.now() < busyUntilRef.current;
+
+  const turnL = useCallback(() => {
+    if (!busy()) setDir((d) => leftOf(d));
+  }, []);
+  const turnR = useCallback(() => {
+    if (!busy()) setDir((d) => rightOf(d));
+  }, []);
 
   const startOpening = useCallback(
     (cell: Vec2) => {
@@ -115,7 +126,7 @@ export function useGameState() {
 
   // steps one cell in `moveDir` while keeping the current facing
   const step = useCallback((moveDir: Direction) => {
-    if (openingDoor) return;
+    if (openingDoor || busy()) return;
 
     const next = stepForward(pos, moveDir);
     const target = cellAt(map, next.x, next.y);
@@ -126,6 +137,16 @@ export function useGameState() {
       return;
     }
     if (way.kind === "drop") pushLog(way.height > 0.5 ? "You jump down." : "You hop down.");
+    if (way.kind === "climb") {
+      // up only facing the ladder; down either way (backing down it faces
+      // the ladder, like climbing down a real one)
+      if (way.up && moveDir !== dir) {
+        pushLog("Face the ladder to climb it.");
+        return;
+      }
+      pushLog(way.up ? "You climb up the ladder." : "You climb down the ladder.");
+      busyUntilRef.current = performance.now() + CLIMB_MS_PER_HEIGHT * way.height + CLIMB_WALK_MS;
+    }
 
     if (target === "door" && !openDoors.has(doorCellKey(next))) {
       startOpening(next);
@@ -137,7 +158,7 @@ export function useGameState() {
     }
 
     setPos(next);
-  }, [pos, map, pushLog, openingDoor, openDoors, startOpening]);
+  }, [pos, dir, map, pushLog, openingDoor, openDoors, startOpening]);
 
   const moveForward = useCallback(() => step(dir), [step, dir]);
   const moveBackward = useCallback(() => step(behindOf(dir)), [step, dir]);

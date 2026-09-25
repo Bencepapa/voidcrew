@@ -22,7 +22,7 @@ Maps are JSON files in `src/maps/` (parsed by `src/game/mapFormat.ts`): a `layou
 - `ceiling` - ceiling height (default: floor + 1; a door cell is always one panel tall)
 - `floorTexture`, `wallTexture` - texture sets per cell
 
-Heights are in wall heights (one wall panel), in steps of 0.25. Where neighboring cells' heights differ, the renderer walls off the difference: a step face below a higher floor, a strip above a lower ceiling, and tall walls stack panels (a part-height panel shows the top or bottom band of the texture). The party steps up or down 0.25 freely, jumps down anything deeper, and can't climb 0.5 or more (ladders will come later); a passage needs 0.75 of headroom. `doors`, `decals` and the `start` pose complete the file.
+Heights are in wall heights (one wall panel), in steps of 0.25. Where neighboring cells' heights differ, the renderer walls off the difference: a step face below a higher floor, a strip above a lower ceiling, and tall walls stack panels (a part-height panel shows the top or bottom band of the texture). The party steps up or down 0.25 freely, jumps down anything deeper, and can't climb 0.5 or more without a ladder; a passage needs 0.75 of headroom. `ladders` (`{ "x", "y", "wall" }`: the lower cell and its side toward the ledge) stand against a step face: in grid movement, step toward one to climb it (up only while facing it; backing down is fine), in free movement push toward it to climb and away to climb down, and walking over the ledge above one gets onto it. `doors`, `decals` and the `start` pose complete the file.
 
 ## Decals
 

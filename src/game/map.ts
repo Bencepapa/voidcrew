@@ -1,4 +1,5 @@
-import type { CellType, DoorSpec, GameMap } from "./types";
+import { DIR_VECTOR } from "./movement";
+import type { CellType, DoorSpec, GameMap, LadderSpec, Vec2 } from "./types";
 import { parseMap } from "./mapFormat";
 import type { MapFile } from "./mapFormat";
 import deck2File from "../maps/deck2-engineering.json";
@@ -27,4 +28,14 @@ export function floorHeight(map: GameMap, x: number, y: number): number {
 
 export function ceilingHeight(map: GameMap, x: number, y: number): number {
   return map.ceilingHeights[y]?.[x] ?? 1;
+}
+
+// the ladder on the edge between two neighboring cells, if there is one
+export function ladderBetween(map: GameMap, a: Vec2, b: Vec2): LadderSpec | undefined {
+  return map.ladders?.find((l) => {
+    const v = DIR_VECTOR[l.wall];
+    const top = { x: l.cell.x + v.x, y: l.cell.y + v.y };
+    const at = (p: Vec2, q: Vec2) => p.x === q.x && p.y === q.y;
+    return (at(l.cell, a) && at(top, b)) || (at(l.cell, b) && at(top, a));
+  });
 }

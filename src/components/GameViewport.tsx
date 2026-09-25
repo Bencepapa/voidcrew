@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
-import { cellAt, ceilingHeight, doorAt, floorHeight } from "../game/map";
-import { MAX_STEP } from "../game/heights";
+import { cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween } from "../game/map";
+import { CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
@@ -496,6 +496,18 @@ const DOOR_PANEL_HALF_DEPTH = 0.02;
 const DOOR_PANEL_OVERLAP = 0.03;
 const DOOR_OPEN_MS = 400;
 
+// Ladders (world units): safety yellow, like the hazard paint
+const LADDER_COLOR = 0xb08a2e;
+const LADDER_HALF_WIDTH = 0.16;
+const LADDER_RAIL = 0.03;
+const LADDER_RUNG = 0.022;
+// in front of the step face, clear of its relief
+const LADDER_STANDOFF = 0.09;
+// the rails reach this far above the ledge (wall heights)...
+const LADDER_HANDHOLD = 0.3;
+// ...and come down onto it this far back from the edge
+const LADDER_NECK = 0.12;
+
 // a peek eases back to center once its input has been idle this long...
 const PEEK_IDLE_MS = 300;
 // ...with this time constant (s)
@@ -536,6 +548,52 @@ function computeTarget(map: GameMap, pos: Vec2, dir: Direction): CamTarget {
 const FALL_GRAVITY = 12;
 // a fall starts this far into the step off the ledge
 const FALL_START = 0.4;
+// ladder rungs are this far apart (wall heights); a climb pulls up rung by
+// rung
+const RUNG_SPACING = 0.125;
+
+// The camera along a ladder move: walk to the ladder, climb, walk off. Up:
+// to the cell edge (the pulled-back eye then sits just in front of the step
+// face), up, and on over the ledge. Down: out over the edge into the lower
+// cell (the eye just beyond the step face), then down.
+function climbPose(from: CamTarget, to: CamTarget, elapsed: number, moveMs: number): { cam: CamTarget; done: boolean } {
+  const up = to.y > from.y;
+  const height = Math.abs(to.y - from.y);
+  const climbMs = CLIMB_MS_PER_HEIGHT * height;
+  const at = up ? { x: (from.x + to.x) / 2, z: (from.z + to.z) / 2 } : { x: to.x, z: to.z };
+  const walkIn = up ? moveMs * 0.5 : moveMs;
+  const walkOut = up ? moveMs * 0.5 : 0;
+  const total = walkIn + climbMs + walkOut;
+
+  let x: number;
+  let z: number;
+  let y: number;
+  if (elapsed < walkIn) {
+    const e = easeInOutQuad(elapsed / walkIn);
+    x = lerp(from.x, at.x, e);
+    z = lerp(from.z, at.z, e);
+    y = from.y;
+  } else if (elapsed < walkIn + climbMs) {
+    const c = (elapsed - walkIn) / climbMs;
+    // speeding up and slowing down once per rung
+    const rungs = Math.max(1, Math.round(height / RUNG_SPACING));
+    const p = c - (Math.sin(2 * Math.PI * c * rungs) / (2 * Math.PI * rungs)) * 0.8;
+    x = at.x;
+    z = at.z;
+    y = lerp(from.y, to.y, p);
+  } else {
+    const e = walkOut ? easeOutQuad(Math.min(1, (elapsed - walkIn - climbMs) / walkOut)) : 1;
+    x = lerp(at.x, to.x, e);
+    z = lerp(at.z, to.z, e);
+    y = to.y;
+  }
+  // the facing (normally unchanged by a move) blends over the whole climb
+  const k = Math.min(1, elapsed / total);
+  return {
+    cam: { x, z, y, tx: x + lerp(from.tx - from.x, to.tx - to.x, k), tz: z + lerp(from.tz - from.z, to.tz - to.z, k) },
+    done: elapsed >= total,
+  };
+}
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -543,6 +601,10 @@ function lerp(a: number, b: number, t: number): number {
 
 function easeOutQuad(t: number): number {
   return 1 - (1 - t) * (1 - t);
+}
+
+function easeInOutQuad(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
 }
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -585,7 +647,8 @@ export function GameViewport({
   // continuously-updated "where the camera actually is right now", read and
   // written every animation frame, whether mid-transition or settled
   const liveRef = useRef<CamTarget>(computeTarget(map, pos, dir));
-  const animRef = useRef<{ from: CamTarget; to: CamTarget; start: number } | null>(null);
+  // `climb`: the move goes up or down a ladder
+  const animRef = useRef<{ from: CamTarget; to: CamTarget; start: number; climb?: boolean } | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -607,7 +670,11 @@ export function GameViewport({
       liveRef.current = computeTarget(map, pos, dir);
       return;
     }
-    animRef.current = { from: { ...liveRef.current }, to: computeTarget(map, pos, dir), start: performance.now() };
+    const from = { ...liveRef.current };
+    const to = computeTarget(map, pos, dir);
+    const fromCell = { x: Math.round(from.x), y: Math.round(from.z) };
+    const climb = Math.abs(to.y - from.y) > MAX_STEP + 1e-6 && !!ladderBetween(map, fromCell, pos);
+    animRef.current = { from, to, start: performance.now(), climb };
   }, [pos, dir]);
 
   const freeTickRef = useRef(freeTick);
@@ -1199,6 +1266,44 @@ export function GameViewport({
       return material;
     }
 
+    // --- ladders: rails and rungs standing against the step face, the rails
+    // reaching above the ledge and bending over onto it as handholds ---
+    const ladderMat = new THREE.MeshStandardMaterial({ color: LADDER_COLOR, roughness: 0.6, metalness: 0.35 });
+    const ladderBox = new THREE.BoxGeometry(1, 1, 1);
+    geometries.push(ladderBox);
+    for (const ladder of map.ladders ?? []) {
+      const v = DIR_VECTOR[ladder.wall];
+      const { x, y } = ladder.cell;
+      const bottom = floorY(x, y);
+      const h = floorY(x + v.x, y + v.y) - bottom;
+      const reach = h + LADDER_HANDHOLD * wallHeight;
+      const z = LADDER_STANDOFF;
+      const ladderGroup = new THREE.Group();
+      // like the wall panel it stands against: local +Z faces the foot's cell
+      ladderGroup.position.set(x + v.x * 0.5, bottom, y + v.y * 0.5);
+      ladderGroup.rotation.y = WALL_ROTATION[ladder.wall];
+      const bar = (w: number, bh: number, d: number, px: number, py: number, pz: number) => {
+        const mesh = new THREE.Mesh(ladderBox, ladderMat);
+        mesh.scale.set(w, bh, d);
+        mesh.position.set(px, py, pz);
+        ladderGroup.add(mesh);
+      };
+      for (const side of [-1, 1]) {
+        const rx = side * LADDER_HALF_WIDTH;
+        bar(LADDER_RAIL, reach, LADDER_RAIL, rx, reach / 2, z);
+        // over the edge and down onto the floor above
+        bar(LADDER_RAIL, LADDER_RAIL, z + LADDER_NECK, rx, reach, (z - LADDER_NECK) / 2);
+        bar(LADDER_RAIL, reach - h, LADDER_RAIL, rx, h + (reach - h) / 2, -LADDER_NECK);
+        // brackets holding it off the wall
+        for (const by of [0.12 * wallHeight, h - 0.08 * wallHeight]) bar(LADDER_RAIL, LADDER_RAIL, z, rx, by, z / 2);
+      }
+      const spacing = RUNG_SPACING * wallHeight;
+      for (let ry = spacing; ry <= h + 1e-6; ry += spacing) {
+        bar(LADDER_HALF_WIDTH * 2, LADDER_RUNG, LADDER_RUNG, 0, ry, z);
+      }
+      group.add(ladderGroup);
+    }
+
     // --- map lights: small glowing fixtures + the shared point-light pool ---
     const ceilingFixtureGeo = new THREE.PlaneGeometry(0.26, 0.26);
     const floorFixtureGeo = new THREE.PlaneGeometry(0.3, 0.05);
@@ -1295,6 +1400,10 @@ export function GameViewport({
         cam = { x: pose.x, z: pose.z, tx: pose.x + f.x, tz: pose.z + f.z, y: pose.y };
         animRef.current = null;
         pullback = 0;
+      } else if (anim?.climb) {
+        const { cam: climbCam, done } = climbPose(anim.from, anim.to, now - anim.start, s.moveDurationMs);
+        cam = climbCam;
+        if (done) animRef.current = null;
       } else if (anim) {
         const elapsed = now - anim.start;
         const p = Math.min(1, elapsed / s.moveDurationMs);
@@ -1463,6 +1572,7 @@ export function GameViewport({
       }
       for (const mat of labelMaterials) mat.dispose();
       floorMat.dispose();
+      ladderMat.dispose();
       ceilMat.dispose();
       for (const mat of fixtureMats.values()) mat.dispose();
       decals.dispose();

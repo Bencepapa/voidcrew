@@ -31,6 +31,17 @@ export interface GameMap {
   decals?: DecalSpec[];
   // door cells that aren't plain standard doors
   doors?: DoorSpec[];
+  ladders?: LadderSpec[];
+}
+
+// A ladder up a step face too high to climb otherwise: it stands in the
+// lower cell against its wall toward the higher neighbor, and takes the
+// party up onto that ledge or back down.
+export interface LadderSpec {
+  // the lower cell (the ladder's foot)
+  cell: Vec2;
+  // the side of it the ladder is on, toward the higher cell
+  wall: Direction;
 }
 
 export interface DoorSpec {
