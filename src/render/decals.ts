@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
-import type { DecalSpec } from "../game/types";
+import type { DecalSpec, Vec2 } from "../game/types";
 import { coplanarSurfaces, surfaceFrame, surfaceKey } from "./surfaces";
+import type { CellLevels } from "./surfaces";
 
 // Projected decals: each decal's texture is projected along the surface
 // normal onto the actual (relief) geometry with three.js DecalGeometry, so
@@ -40,8 +41,10 @@ interface Projection {
 export class DecalLibrary {
   private manifest: Promise<Record<string, DecalManifestEntry>>;
   private assets = new Map<string, Promise<DecalAsset>>();
-  private surfaces = new Map<string, THREE.Mesh>();
-  private pending: Projection[] = [];
+  // a surface can be several meshes (a tall wall's stacked panels), and they
+  // may arrive at different times (each relief variant builds on its own)
+  private surfaces = new Map<string, THREE.Mesh[]>();
+  private projections = new Map<string, Projection[]>();
   // surface keys each decal landed on (for debugging)
   readonly built: { decal: string; key: string; triangles: number }[] = [];
   private disposables: { dispose(): void }[] = [];
@@ -54,6 +57,8 @@ export class DecalLibrary {
       bust: string;
       loader: THREE.TextureLoader;
       wallHeight: number;
+      // world heights of a cell's floor and ceiling
+      levels: (cell: Vec2) => CellLevels;
       parent: THREE.Object3D;
     },
   ) {
@@ -62,15 +67,19 @@ export class DecalLibrary {
     );
   }
 
-  // queue decals; each is built as soon as its asset has loaded and the
-  // surfaces it lands on exist
+  // queue decals; each lands on its surfaces as soon as its asset has loaded
+  // and they exist
   add(specs: DecalSpec[]) {
     for (const spec of specs) {
       this.asset(spec.decal)
         .then((asset) => {
           if (this.disposed) return;
-          this.pending.push(...this.projections(spec, asset));
-          this.flush();
+          for (const p of this.project(spec, asset)) {
+            const list = this.projections.get(p.key) ?? [];
+            list.push(p);
+            this.projections.set(p.key, list);
+            for (const mesh of this.surfaces.get(p.key) ?? []) this.build(p, mesh);
+          }
         })
         .catch((err) => console.warn(`Decal "${spec.decal}" skipped:`, err));
     }
@@ -78,8 +87,11 @@ export class DecalLibrary {
 
   // a surface panel has been placed in the scene
   registerSurface(key: string, mesh: THREE.Mesh) {
-    this.surfaces.set(key, mesh);
-    this.flush();
+    if (this.disposed) return;
+    const list = this.surfaces.get(key) ?? [];
+    list.push(mesh);
+    this.surfaces.set(key, list);
+    for (const p of this.projections.get(key) ?? []) this.build(p, mesh);
   }
 
   dispose() {
@@ -122,8 +134,8 @@ export class DecalLibrary {
   }
 
   // the projector for a decal, and every surface it may land on
-  private projections(spec: DecalSpec, asset: DecalAsset): Projection[] {
-    const frame = surfaceFrame(spec.cell, spec.surface, this.opts.wallHeight);
+  private project(spec: DecalSpec, asset: DecalAsset): Projection[] {
+    const frame = surfaceFrame(spec.cell, spec.surface, this.opts.wallHeight, this.opts.levels(spec.cell));
     const texelW = frame.width / SURFACE_PIXELS;
     const texelH = frame.height / SURFACE_PIXELS;
     const w = asset.width * texelW;
@@ -156,22 +168,17 @@ export class DecalLibrary {
     }));
   }
 
-  private flush() {
-    if (this.disposed) return;
-    this.pending = this.pending.filter((p) => {
-      const mesh = this.surfaces.get(p.key);
-      if (!mesh) return true;
-      mesh.updateWorldMatrix(true, false);
-      const geometry = new DecalGeometry(mesh, p.position, p.orientation, p.size);
-      if (geometry.getAttribute("position").count === 0) {
-        // this neighbor is out of the decal's reach after all
-        geometry.dispose();
-      } else {
-        this.disposables.push(geometry);
-        this.opts.parent.add(new THREE.Mesh(geometry, p.material));
-        this.built.push({ decal: p.decal, key: p.key, triangles: geometry.getAttribute("position").count / 3 });
-      }
-      return false;
-    });
+  private build(p: Projection, mesh: THREE.Mesh) {
+    mesh.updateWorldMatrix(true, false);
+    const geometry = new DecalGeometry(mesh, p.position, p.orientation, p.size);
+    const triangles = geometry.getAttribute("position").count / 3;
+    if (triangles === 0) {
+      // this panel is out of the decal's reach after all
+      geometry.dispose();
+      return;
+    }
+    this.disposables.push(geometry);
+    this.opts.parent.add(new THREE.Mesh(geometry, p.material));
+    this.built.push({ decal: p.decal, key: p.key, triangles });
   }
 }

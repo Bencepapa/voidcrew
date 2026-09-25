@@ -1,4 +1,5 @@
-import { cellAt } from "./map";
+import { cellAt, ceilingHeight, floorHeight } from "./map";
+import { MAX_STEP, MIN_HEADROOM } from "./heights";
 import type { Direction, GameMap, Vec2 } from "./types";
 
 // Free (non-grid) movement: a continuous pose with circle-vs-grid collision.
@@ -9,6 +10,11 @@ export interface FreePose {
   // world position in grid units (cell centers on integers)
   x: number;
   z: number;
+  // height of the feet (wall heights): the floor underfoot, or on the way
+  // down to it after stepping off a ledge
+  y: number;
+  // falling speed (wall heights per second), 0 when standing
+  fallSpeed: number;
   // heading, radians clockwise from north
   yaw: number;
 }
@@ -28,6 +34,10 @@ export interface DoorState {
 export const FREE_MOVE_SPEED = 1.6; // cells per second
 export const FREE_TURN_SPEED = 2.4; // radians per second
 const PLAYER_RADIUS = 0.2;
+// stepping up onto a higher floor (wall heights per second)
+const STEP_UP_SPEED = 1.5;
+// wall heights per second squared (matches the grid movement's fall)
+const FALL_GRAVITY = 12;
 // an open door frame (see GameViewport's door): a slab this thick around
 // the cell's center plane, open only this far either side of the middle
 const DOOR_FRAME_HALF_DEPTH = 0.08;
@@ -65,19 +75,25 @@ function circleHitsBox(x: number, z: number, r: number, b: Box): boolean {
   return dx * dx + dz * dz < r * r;
 }
 
-// Solid boxes of one cell. A door stands across the middle of its cell (see
-// GameViewport): closed, the whole door slab blocks; open, only its frame's
-// two side pieces around the opening do. Either way the half-cell alcoves on
-// both sides stay walkable.
-function cellBoxes(map: GameMap, cx: number, cy: number, doors: DoorState): Box[] {
+// Solid boxes of one cell, for feet at height `feet`. A wall, a floor too high
+// to step onto and a ceiling too low to pass under block the whole cell (a
+// lower floor doesn't: walking over its edge is a fall). A door stands
+// across the middle of its cell (see GameViewport): closed, the whole door
+// slab blocks; open, only its frame's two side pieces around the opening do.
+// Either way the half-cell alcoves on both sides stay walkable.
+function cellBoxes(map: GameMap, cx: number, cy: number, feet: number, doors: DoorState): Box[] {
   const type = cellAt(map, cx, cy);
-  if (type === "wall") return [{ minX: cx - 0.5, maxX: cx + 0.5, minZ: cy - 0.5, maxZ: cy + 0.5 }];
+  const whole = { minX: cx - 0.5, maxX: cx + 0.5, minZ: cy - 0.5, maxZ: cy + 0.5 };
+  if (type === "wall") return [whole];
+  const floor = floorHeight(map, cx, cy);
+  if (floor > feet + MAX_STEP + 1e-6) return [whole];
+  if (ceilingHeight(map, cx, cy) - Math.max(feet, floor) < MIN_HEADROOM - 1e-6) return [whole];
   if (type !== "door") return [];
 
   const northSouth = cellAt(map, cx, cy - 1) !== "wall" || cellAt(map, cx, cy + 1) !== "wall";
   const d = DOOR_FRAME_HALF_DEPTH;
   const o = doors.isOpen({ x: cx, y: cy }) ? DOOR_OPENING_HALF_WIDTH : 0;
-  const pieces = northSouth
+  return northSouth
     ? [
         { minX: cx - 0.5, maxX: cx - o, minZ: cy - d, maxZ: cy + d },
         { minX: cx + o, maxX: cx + 0.5, minZ: cy - d, maxZ: cy + d },
@@ -86,15 +102,14 @@ function cellBoxes(map: GameMap, cx: number, cy: number, doors: DoorState): Box[
         { minX: cx - d, maxX: cx + d, minZ: cy - 0.5, maxZ: cy - o },
         { minX: cx - d, maxX: cx + d, minZ: cy + o, maxZ: cy + 0.5 },
       ];
-  return pieces;
 }
 
 // first blocking cell for a circle at (x, z), or null if the spot is free
-function blockingCell(map: GameMap, x: number, z: number, doors: DoorState): Vec2 | null {
+function blockingCell(map: GameMap, x: number, z: number, feet: number, doors: DoorState): Vec2 | null {
   const r = PLAYER_RADIUS;
   for (let cy = Math.round(z - r); cy <= Math.round(z + r); cy++) {
     for (let cx = Math.round(x - r); cx <= Math.round(x + r); cx++) {
-      if (cellBoxes(map, cx, cy, doors).some((b) => circleHitsBox(x, z, r, b))) return { x: cx, y: cy };
+      if (cellBoxes(map, cx, cy, feet, doors).some((b) => circleHitsBox(x, z, r, b))) return { x: cx, y: cy };
     }
   }
   return null;
@@ -123,7 +138,7 @@ export function stepFreePose(
   let z = pose.z;
   let bumpedDoor: Vec2 | null = null;
   const tryMove = (nx: number, nz: number) => {
-    const hit = blockingCell(map, nx, nz, doors);
+    const hit = blockingCell(map, nx, nz, pose.y, doors);
     if (!hit) return true;
     if (cellAt(map, hit.x, hit.y) === "door" && !doors.isOpen(hit)) bumpedDoor = hit;
     return false;
@@ -131,5 +146,18 @@ export function stepFreePose(
   if (dx && tryMove(x + dx, z)) x += dx;
   if (dz && tryMove(x, z + dz)) z += dz;
 
-  return { pose: { x, z, yaw }, bumpedDoor };
+  // the floor under the player's center: step up onto it, or fall to it
+  const ground = floorHeight(map, Math.round(x), Math.round(z));
+  let y = pose.y;
+  let fallSpeed = pose.fallSpeed;
+  if (y < ground) {
+    y = Math.min(ground, y + STEP_UP_SPEED * dt);
+    fallSpeed = 0;
+  } else if (y > ground) {
+    fallSpeed += FALL_GRAVITY * dt;
+    y = Math.max(ground, y - fallSpeed * dt);
+    if (y === ground) fallSpeed = 0;
+  }
+
+  return { pose: { x, z, y, fallSpeed, yaw }, bumpedDoor };
 }

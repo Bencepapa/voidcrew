@@ -1,4 +1,4 @@
-import { cellAt } from "./map";
+import { cellAt, ceilingHeight, floorHeight } from "./map";
 import { DIR_VECTOR } from "./movement";
 import type { Direction, GameMap } from "./types";
 
@@ -9,8 +9,8 @@ export interface LightSpec {
   // world position in grid units (x = column, z = row, cell centers on integers)
   x: number;
   z: number;
-  // height as a fraction of the wall height
-  elevation: number;
+  // height in wall heights (the map's floor/ceiling units)
+  y: number;
   color: number;
   intensity: number;
   // light range in world units (three.js PointLight `distance`)
@@ -57,23 +57,30 @@ function floorCells(map: GameMap, inRegion: (x: number, y: number) => boolean): 
 }
 
 // Hand-tuned mood lighting for the demo deck:
-// - top-left 6x6 area: white ceiling lights on every second walkable cell
+// - top-left 6x6 area and tall rooms: white ceiling lights on every second
+//   walkable cell
 // - right side (x > 5): a couple of red glows low against a wall
 // - bottom-left (x < 6, y > 4): a few faint blue glows on the wall, mid-height
 export function generateLights(map: GameMap): LightSpec[] {
   const random = seededRandom(map.name);
   const lights: LightSpec[] = [];
 
-  const ceilingLight = (x: number, y: number): LightSpec => ({
-    kind: "ceiling",
-    x,
-    z: y,
-    elevation: 0.9,
-    color: 0xfff4e0,
-    intensity: 1.6,
-    range: 2.4,
-  });
-  for (const { x, y } of floorCells(map, (x, y) => x <= 5 && y <= 5 && x % 2 === 1 && y % 2 === 1)) {
+  // a light in a taller room reaches further, to light its floor as well
+  const ceilingLight = (x: number, y: number): LightSpec => {
+    const extra = ceilingHeight(map, x, y) - floorHeight(map, x, y) - 1;
+    return {
+      kind: "ceiling",
+      x,
+      z: y,
+      y: ceilingHeight(map, x, y) - 0.1,
+      color: 0xfff4e0,
+      intensity: 1.6 + extra * 0.8,
+      range: 2.4 + extra * 1.2,
+    };
+  };
+  // tall rooms anywhere get them too
+  const tall = (x: number, y: number) => ceilingHeight(map, x, y) - floorHeight(map, x, y) >= 1.5;
+  for (const { x, y } of floorCells(map, (x, y) => ((x <= 5 && y <= 5) || tall(x, y)) && x % 2 === 1 && y % 2 === 1)) {
     lights.push(ceilingLight(x, y));
   }
   // every lift cabin (the cell behind a lift door) is always lit
@@ -95,7 +102,7 @@ export function generateLights(map: GameMap): LightSpec[] {
       kind: "floorGlow",
       x: x + v.x * 0.36,
       z: y + v.y * 0.36,
-      elevation: 0.06,
+      y: floorHeight(map, x, y) + 0.06,
       color: 0xff2a14,
       intensity: 2.2,
       range: 1.8,
@@ -114,7 +121,7 @@ export function generateLights(map: GameMap): LightSpec[] {
       kind: "wallGlow",
       x: x + v.x * 0.4,
       z: y + v.y * 0.4,
-      elevation: 0.5,
+      y: floorHeight(map, x, y) + 0.5,
       color: 0x3a6bff,
       intensity: 0.7,
       range: 1.4,

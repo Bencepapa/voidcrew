@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
-import { cellAt, doorAt } from "../game/map";
+import { cellAt, ceilingHeight, doorAt, floorHeight } from "../game/map";
+import { MAX_STEP } from "../game/heights";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
@@ -354,10 +355,57 @@ function isTextureSetId(id: string | undefined): id is TextureSetId {
   return id !== undefined && id in TEXTURE_SETS;
 }
 
+// A wall panel is a whole texture tall, or - where a wall's height isn't a
+// whole number of panels - a band of the texture: its top ("t") or bottom
+// ("b") rows, this fraction of it high.
+type PanelVariant = "full" | `t${number}` | `b${number}`;
+
+function variantRows(variant: PanelVariant): [number, number] | undefined {
+  if (variant === "full") return undefined;
+  const fraction = Number(variant.slice(1));
+  return variant[0] === "t" ? [0, fraction] : [1 - fraction, 1];
+}
+
+function variantHeight(variant: PanelVariant): number {
+  return variant === "full" ? 1 : Number(variant.slice(1));
+}
+
+// Splits the vertical span of a wall (in wall heights) into panels: whole
+// ones stacked from the anchored end, plus a band for the rest. A wall
+// standing on a floor continues upward into its texture's top rows; a step
+// face (a riser) shorter than a panel shows the bottom rows, like the foot
+// of a wall; a strip hanging from a ceiling (a header) the top rows.
+function wallPanels(bottom: number, top: number, anchor: "bottom" | "top"): { bottom: number; variant: PanelVariant }[] {
+  const length = top - bottom;
+  const whole = Math.floor(length + 1e-6);
+  const rest = Math.round((length - whole) * 4) / 4;
+  const panels: { bottom: number; variant: PanelVariant }[] = [];
+  if (anchor === "bottom") {
+    for (let i = 0; i < whole; i++) panels.push({ bottom: bottom + i, variant: "full" });
+    if (rest > 0) panels.push({ bottom: bottom + whole, variant: whole > 0 ? `t${rest}` : `b${rest}` });
+  } else {
+    for (let i = 0; i < whole; i++) panels.push({ bottom: top - 1 - i, variant: "full" });
+    if (rest > 0) panels.push({ bottom, variant: whole > 0 ? `b${rest}` : `t${rest}` });
+  }
+  return panels;
+}
+
+// a flat panel showing only a band of its texture (see PanelVariant)
+function createBandPlane(height: number, [top, bottom]: [number, number]): THREE.BufferGeometry {
+  const geo = new THREE.PlaneGeometry(1, height);
+  const uv = geo.getAttribute("uv");
+  for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - bottom + uv.getY(i) * (bottom - top));
+  return geo;
+}
+
 interface WallSlot {
   x: number;
   z: number;
+  // world height of the panel's center (walls) or plane (floors, ceilings)
+  y: number;
   rotY: number;
+  // walls only
+  variant?: PanelVariant;
   // ceiling tile under a ceiling light: use the kit's glowing material
   lit?: boolean;
   // surfaceKey of the panel, for decals to find it
@@ -474,12 +522,20 @@ interface CamTarget {
   z: number;
   tx: number;
   tz: number;
+  // height of the floor under the camera (wall heights)
+  y: number;
 }
 
-function computeTarget(pos: Vec2, dir: Direction): CamTarget {
+function computeTarget(map: GameMap, pos: Vec2, dir: Direction): CamTarget {
   const fwd = DIR_VECTOR[dir];
-  return { x: pos.x, z: pos.y, tx: pos.x + fwd.x, tz: pos.y + fwd.y };
+  return { x: pos.x, z: pos.y, tx: pos.x + fwd.x, tz: pos.y + fwd.y, y: floorHeight(map, pos.x, pos.y) };
 }
+
+// how fast a fall off a ledge speeds up (wall heights per second squared;
+// stylized - a wall is ~2.5 m, so real gravity would be ~4)
+const FALL_GRAVITY = 12;
+// a fall starts this far into the step off the ledge
+const FALL_START = 0.4;
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -528,7 +584,7 @@ export function GameViewport({
   }, []);
   // continuously-updated "where the camera actually is right now", read and
   // written every animation frame, whether mid-transition or settled
-  const liveRef = useRef<CamTarget>(computeTarget(pos, dir));
+  const liveRef = useRef<CamTarget>(computeTarget(map, pos, dir));
   const animRef = useRef<{ from: CamTarget; to: CamTarget; start: number } | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -548,10 +604,10 @@ export function GameViewport({
       peek.offset -= (peek.pendingTurn * Math.PI) / 2;
       peek.pendingTurn = 0;
       animRef.current = null;
-      liveRef.current = computeTarget(pos, dir);
+      liveRef.current = computeTarget(map, pos, dir);
       return;
     }
-    animRef.current = { from: { ...liveRef.current }, to: computeTarget(pos, dir), start: performance.now() };
+    animRef.current = { from: { ...liveRef.current }, to: computeTarget(map, pos, dir), start: performance.now() };
   }, [pos, dir]);
 
   const freeTickRef = useRef(freeTick);
@@ -561,7 +617,7 @@ export function GameViewport({
   // onto the current cell and facing
   useEffect(() => {
     if (freeMode) return;
-    animRef.current = { from: { ...liveRef.current }, to: computeTarget(pos, dir), start: performance.now() };
+    animRef.current = { from: { ...liveRef.current }, to: computeTarget(map, pos, dir), start: performance.now() };
     // only on the mode switch - pos/dir changes are handled above
   }, [freeMode]);
 
@@ -753,7 +809,18 @@ export function GameViewport({
 
     // decals land on surface panels as they get placed (relief ones arrive
     // asynchronously)
-    const decals = new DecalLibrary({ baseUrl: import.meta.env.BASE_URL, bust, loader, wallHeight, parent: group });
+    // world heights of a walkable cell's floor and ceiling
+    const floorY = (x: number, y: number) => floorHeight(map, x, y) * wallHeight;
+    const ceilingY = (x: number, y: number) => ceilingHeight(map, x, y) * wallHeight;
+
+    const decals = new DecalLibrary({
+      baseUrl: import.meta.env.BASE_URL,
+      bust,
+      loader,
+      wallHeight,
+      levels: (cell) => ({ floor: floorY(cell.x, cell.y), ceiling: ceilingY(cell.x, cell.y) }),
+      parent: group,
+    });
     if (settings.decalsEnabled) decals.add(map.decals ?? []);
     // dev-only: inspect from the console
     if (import.meta.env.DEV) Object.assign(window, { __voidcrewDecals: decals });
@@ -763,7 +830,7 @@ export function GameViewport({
     function placeWalls(geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], slots: WallSlot[]) {
       for (const slot of slots) {
         const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(slot.x, wallHeight / 2, slot.z);
+        mesh.position.set(slot.x, slot.y, slot.z);
         mesh.rotation.y = slot.rotY;
         group.add(mesh);
         decals.registerSurface(slot.key, mesh);
@@ -775,7 +842,7 @@ export function GameViewport({
       for (const slot of slots) {
         const mesh = new THREE.Mesh(geo, mat);
         mesh.rotation.x = -Math.PI / 2;
-        mesh.position.set(slot.x, 0, slot.z);
+        mesh.position.set(slot.x, slot.y, slot.z);
         group.add(mesh);
         decals.registerSurface(slot.key, mesh);
       }
@@ -788,7 +855,7 @@ export function GameViewport({
         const front = slot.lit && kit.litMat ? kit.litMat : kit.wallMat;
         const mesh = new THREE.Mesh(geo, relief ? [front, kit.sideMat] : front);
         mesh.rotation.x = Math.PI / 2;
-        mesh.position.set(slot.x, wallHeight, slot.z);
+        mesh.position.set(slot.x, slot.y, slot.z);
         group.add(mesh);
         decals.registerSurface(slot.key, mesh);
       }
@@ -797,39 +864,70 @@ export function GameViewport({
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         if (cellAt(map, x, y) === "wall") continue;
+        const floor = floorHeight(map, x, y);
+        const ceiling = ceilingHeight(map, x, y);
 
         const floorKit = floorKitAt(x, y);
         if (floorKit) {
-          floorKit.slots.push({ x, z: y, rotY: 0, key: surfaceKey({ x, y }, "floor") });
+          floorKit.slots.push({ x, z: y, y: floor * wallHeight, rotY: 0, key: surfaceKey({ x, y }, "floor") });
         } else {
-          const floor = new THREE.Mesh(floorGeo, floorMat);
-          floor.rotation.x = -Math.PI / 2;
-          floor.position.set(x, 0, y);
-          group.add(floor);
-          decals.registerSurface(surfaceKey({ x, y }, "floor"), floor);
+          const mesh = new THREE.Mesh(floorGeo, floorMat);
+          mesh.rotation.x = -Math.PI / 2;
+          mesh.position.set(x, floor * wallHeight, y);
+          group.add(mesh);
+          decals.registerSurface(surfaceKey({ x, y }, "floor"), mesh);
         }
 
         if (ceilingKit) {
-          ceilingKit.slots.push({ x, z: y, rotY: 0, lit: litCells.has(`${x},${y}`), key: surfaceKey({ x, y }, "ceiling") });
+          ceilingKit.slots.push({
+            x,
+            z: y,
+            y: ceiling * wallHeight,
+            rotY: 0,
+            lit: litCells.has(`${x},${y}`),
+            key: surfaceKey({ x, y }, "ceiling"),
+          });
         } else {
-          const ceiling = new THREE.Mesh(floorGeo, ceilMat);
-          ceiling.rotation.x = Math.PI / 2;
-          ceiling.position.set(x, wallHeight, y);
-          group.add(ceiling);
-          decals.registerSurface(surfaceKey({ x, y }, "ceiling"), ceiling);
+          const mesh = new THREE.Mesh(floorGeo, ceilMat);
+          mesh.rotation.x = Math.PI / 2;
+          mesh.position.set(x, ceiling * wallHeight, y);
+          group.add(mesh);
+          decals.registerSurface(surfaceKey({ x, y }, "ceiling"), mesh);
         }
 
+        // The walls around the cell: wherever the cell's open span (floor to
+        // ceiling) isn't matched by its neighbor's. A solid neighbor walls
+        // off all of it; an open one with a higher floor leaves a step face
+        // (riser) below its floor, one with a lower ceiling a strip (header)
+        // above it.
         const wallOverride = map.wallTextureAt?.(x, y);
         (Object.keys(DIR_VECTOR) as Direction[]).forEach((d) => {
           const v = DIR_VECTOR[d];
-          if (cellAt(map, x + v.x, y + v.y) !== "wall") return;
-          const slot = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d], key: surfaceKey({ x, y }, d) };
+          const nx = x + v.x;
+          const ny = y + v.y;
+          const spans: { bottom: number; top: number; anchor: "bottom" | "top" }[] = [];
+          if (cellAt(map, nx, ny) === "wall") {
+            spans.push({ bottom: floor, top: ceiling, anchor: "bottom" });
+          } else {
+            const nFloor = floorHeight(map, nx, ny);
+            const nCeiling = ceilingHeight(map, nx, ny);
+            if (nFloor > floor) spans.push({ bottom: floor, top: Math.min(ceiling, nFloor), anchor: "bottom" });
+            if (nCeiling < ceiling) spans.push({ bottom: Math.max(floor, nCeiling), top: ceiling, anchor: "top" });
+          }
+          if (!spans.length) return;
+
+          const face = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d], key: surfaceKey({ x, y }, d) };
           const kit = isTextureSetId(wallOverride)
             ? wallKitFor(wallOverride)
-            : accentKit && wallVariantRoll(slot.x, slot.z) < settings.accentRatio
+            : accentKit && wallVariantRoll(face.x, face.z) < settings.accentRatio
               ? accentKit
               : primaryKit;
-          kit.slots.push(slot);
+          for (const span of spans) {
+            for (const panel of wallPanels(span.bottom, span.top, span.anchor)) {
+              const y = (panel.bottom + variantHeight(panel.variant) / 2) * wallHeight;
+              kit.slots.push({ ...face, y, variant: panel.variant });
+            }
+          }
         });
 
         if (cellAt(map, x, y) === "door") {
@@ -856,13 +954,22 @@ export function GameViewport({
       }
     };
 
-    // builds a kit's relief geometry from its depth map and hooks up its AO;
-    // resolves to null if the scene was torn down meanwhile
+    // height maps by URL, each loaded once per scene
+    const heightGrids = new Map<string, ReturnType<typeof loadWithRetry>>();
+
+    // builds a kit's relief geometry from its depth map and hooks up its AO
+    // (a partial panel - `rows` - shares the whole panel's); resolves to null
+    // if the scene was torn down meanwhile
     async function buildRelief(
       kit: WallKit,
-      shape: { width?: number; height: number; flushEdges: boolean; holeBackZ?: number },
+      shape: { width?: number; height: number; flushEdges: boolean; holeBackZ?: number; rows?: [number, number] },
     ) {
-      const grid = await loadWithRetry(kit.depthUrl, 4);
+      let gridPromise = heightGrids.get(kit.depthUrl);
+      if (!gridPromise) {
+        gridPromise = loadWithRetry(kit.depthUrl, 4);
+        heightGrids.set(kit.depthUrl, gridPromise);
+      }
+      const grid = await gridPromise;
       if (disposed) return null;
       const relief = createReliefWallGeometry(grid, {
         wallWidth: shape.width ?? 1,
@@ -873,8 +980,13 @@ export function GameViewport({
         aoRadius: settings.aoRadius,
         flushEdges: shape.flushEdges,
         holeBackZ: shape.holeBackZ,
+        rows: shape.rows,
       });
       geometries.push(relief.geometry);
+      if (shape.rows) {
+        relief.aoMap.dispose();
+        return relief;
+      }
       kit.textures.push(relief.aoMap);
       for (const mat of kitMaterials(kit)) {
         mat.aoMap = relief.aoMap;
@@ -884,19 +996,52 @@ export function GameViewport({
       return relief;
     }
 
-    if (wallGeo) {
-      for (const kit of kits) placeWalls(wallGeo, kit.wallMat, kit.slots);
-    } else {
-      for (const kit of kits) {
-        buildRelief(kit, { height: wallHeight, flushEdges: true })
-          .then((relief) => {
-            if (!relief) return;
+    // a kit's wall panel geometry per variant, built once
+    const wallGeometries = new Map<WallKit, Map<PanelVariant, Promise<THREE.BufferGeometry | null>>>();
+    function wallGeometry(kit: WallKit, variant: PanelVariant): Promise<THREE.BufferGeometry | null> {
+      let byVariant = wallGeometries.get(kit);
+      if (!byVariant) {
+        byVariant = new Map();
+        wallGeometries.set(kit, byVariant);
+      }
+      let geo = byVariant.get(variant);
+      if (!geo) {
+        const rows = variantRows(variant);
+        const height = variantHeight(variant) * wallHeight;
+        if (wallGeo) {
+          // flat/beveled walls: partial panels are flat bands
+          const band = rows ? createBandPlane(height, rows) : wallGeo;
+          if (rows) geometries.push(band);
+          geo = Promise.resolve(band);
+        } else if (!rows) {
+          geo = buildRelief(kit, { height, flushEdges: true }).then((relief) => {
+            if (!relief) return null;
             if (kit === primaryKit) {
               reliefStats = { trianglesPerWall: relief.triangles, levelCount: relief.levelCount, baked: relief.baked };
             }
-            placeWalls(relief.geometry, [kit.wallMat, kit.sideMat], kit.slots);
-          })
-          .catch((err) => console.error("Relief wall build failed:", err));
+            return relief.geometry;
+          });
+        } else {
+          // after the whole panel, whose AO map the band borrows
+          geo = wallGeometry(kit, "full")
+            .then((full) => (full ? buildRelief(kit, { height, flushEdges: true, rows }) : null))
+            .then((relief) => relief?.geometry ?? null);
+        }
+        byVariant.set(variant, geo);
+      }
+      return geo;
+    }
+
+    for (const kit of kits) {
+      const byVariant = new Map<PanelVariant, WallSlot[]>();
+      for (const slot of kit.slots) {
+        const variant = slot.variant ?? "full";
+        byVariant.set(variant, [...(byVariant.get(variant) ?? []), slot]);
+      }
+      for (const [variant, slots] of byVariant) {
+        wallGeometry(kit, variant)
+          .then((geo) => geo && placeWalls(geo, wallGeo ? kit.wallMat : [kit.wallMat, kit.sideMat], slots))
+          .catch((err) => console.error("Wall build failed:", err));
       }
     }
 
@@ -928,7 +1073,7 @@ export function GameViewport({
             placeFloors(relief.geometry, [floorKit.wallMat, floorKit.sideMat], floorKit.slots);
             // keep the strips above the highest floor relief
             floorTop = Math.max(floorTop, relief.maxZ);
-            for (const strip of floorStrips) strip.position.y = floorTop + 0.003;
+            for (const strip of floorStrips) strip.position.y = strip.userData.floorY + floorTop + 0.003;
           })
           .catch((err) => console.error("Relief floor build failed:", err));
       } else {
@@ -965,7 +1110,7 @@ export function GameViewport({
         for (const cell of doorCells) {
           const { spec } = cell;
           const door = new THREE.Group();
-          door.position.set(cell.x, 0, cell.z);
+          door.position.set(cell.x, floorY(cell.x, cell.z), cell.z);
           // local +Z = the side the door faces
           door.rotation.y = FACING_ROTATION[spec.facing];
 
@@ -1074,14 +1219,15 @@ export function GameViewport({
         if (ceilingKit?.litMat) continue;
         const panel = new THREE.Mesh(ceilingFixtureGeo, fixtureMat(light.color));
         panel.rotation.x = Math.PI / 2;
-        panel.position.set(light.x, wallHeight - 0.002, light.z);
+        panel.position.set(light.x, ceilingY(Math.round(light.x), Math.round(light.z)) - 0.002, light.z);
         group.add(panel);
       } else if (light.kind === "floorGlow" && light.wall) {
         // a thin strip on the floor along the foot of the wall
         const v = DIR_VECTOR[light.wall];
         const strip = new THREE.Mesh(floorFixtureGeo, fixtureMat(light.color));
         strip.rotation.set(-Math.PI / 2, 0, v.x !== 0 ? Math.PI / 2 : 0);
-        strip.position.set(light.x + v.x * 0.1, 0.003, light.z + v.y * 0.1);
+        strip.userData.floorY = floorY(Math.round(light.x), Math.round(light.z));
+        strip.position.set(light.x + v.x * 0.1, strip.userData.floorY + floorTop + 0.003, light.z + v.y * 0.1);
         group.add(strip);
         floorStrips.push(strip);
       }
@@ -1094,9 +1240,9 @@ export function GameViewport({
       return light;
     });
 
-    function updateLightPool(camX: number, camZ: number, intensityScale: number) {
+    function updateLightPool(camX: number, camY: number, camZ: number, intensityScale: number) {
       const ranked = mapLights
-        .map((light) => ({ light, dist: Math.hypot(light.x - camX, light.z - camZ) }))
+        .map((light) => ({ light, dist: Math.hypot(light.x - camX, light.y * wallHeight - camY, light.z - camZ) }))
         .sort((a, b) => a.dist - b.dist);
       lightPool.forEach((slot, i) => {
         const entry = ranked[i];
@@ -1105,7 +1251,7 @@ export function GameViewport({
           return;
         }
         slot.color.setHex(entry.light.color);
-        slot.position.set(entry.light.x, entry.light.elevation * wallHeight, entry.light.z);
+        slot.position.set(entry.light.x, entry.light.y * wallHeight, entry.light.z);
         slot.distance = entry.light.range;
         slot.intensity =
           entry.light.intensity * intensityScale * (1 - smoothstep(LIGHT_FADE_START, LIGHT_FADE_END, entry.dist));
@@ -1146,19 +1292,32 @@ export function GameViewport({
       if (freeTick) {
         const pose = freeTick(dt);
         const f = forwardOf(pose.yaw);
-        cam = { x: pose.x, z: pose.z, tx: pose.x + f.x, tz: pose.z + f.z };
+        cam = { x: pose.x, z: pose.z, tx: pose.x + f.x, tz: pose.z + f.z, y: pose.y };
         animRef.current = null;
         pullback = 0;
       } else if (anim) {
-        const p = Math.min(1, (now - anim.start) / s.moveDurationMs);
+        const elapsed = now - anim.start;
+        const p = Math.min(1, elapsed / s.moveDurationMs);
         const e = easeOutQuad(p);
+        // stepping off a ledge: walk out over the edge, then fall -
+        // accelerating, so the landing reads as a drop rather than a slide
+        const drop = anim.from.y - anim.to.y;
+        let y = lerp(anim.from.y, anim.to.y, e);
+        let done = p >= 1;
+        if (drop > MAX_STEP + 1e-6) {
+          const fallMs = 1000 * Math.sqrt((2 * drop) / FALL_GRAVITY);
+          const f = Math.min(1, Math.max(0, (elapsed - s.moveDurationMs * FALL_START) / fallMs));
+          y = anim.from.y - drop * f * f;
+          done = done && f >= 1;
+        }
         cam = {
           x: lerp(anim.from.x, anim.to.x, e),
           z: lerp(anim.from.z, anim.to.z, e),
           tx: lerp(anim.from.tx, anim.to.tx, e),
           tz: lerp(anim.from.tz, anim.to.tz, e),
+          y,
         };
-        if (p >= 1) animRef.current = null;
+        if (done) animRef.current = null;
       } else {
         cam = liveRef.current;
       }
@@ -1208,8 +1367,9 @@ export function GameViewport({
       // dev-only: the view's actual heading, for checking turn continuity
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewViewYaw: Math.atan2(lookX, -lookZ) });
 
-      camera.position.set(camX, s.eyeHeight + bobY, camZ);
-      camera.lookAt(camX + lookX, s.eyeHeight + bobY, camZ + lookZ);
+      const eyeY = cam.y * wallHeight + s.eyeHeight + bobY;
+      camera.position.set(camX, eyeY, camZ);
+      camera.lookAt(camX + lookX, eyeY, camZ + lookZ);
       camera.rotateZ(bobRoll);
 
       ambient.intensity = s.ambientIntensity;
@@ -1234,13 +1394,15 @@ export function GameViewport({
       // well inside the side walls of the current cell - a light that slips
       // behind a wall plane lights the back of its front faces and only the
       // step sides of relief walls
+      const camCell = { x: Math.round(camX), y: Math.round(camZ) };
+      const ceilingHere = cellAt(map, camCell.x, camCell.y) === "wall" ? eyeY + 0.5 : ceilingY(camCell.x, camCell.y);
       pointLight.position.set(
         camX + Math.cos(t * 0.5) * 0.15,
         // above the eyes, but never through the ceiling
-        Math.min(s.eyeHeight + 0.3, s.wallHeight - 0.08),
+        Math.min(eyeY - bobY + 0.3, ceilingHere - 0.08),
         camZ + Math.sin(t * 0.5) * 0.15,
       );
-      updateLightPool(camX, camZ, s.mapLightIntensity);
+      updateLightPool(camX, eyeY, camZ, s.mapLightIntensity);
 
       renderer.render(scene, camera);
 

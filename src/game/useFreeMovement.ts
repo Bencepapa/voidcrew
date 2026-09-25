@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { nearestDirection, poseCell, stepFreePose, yawOf } from "./freeMovement";
 import type { FreeInput, FreePose } from "./freeMovement";
 import { doorCellKey } from "./useGameState";
+import { floorHeight } from "./map";
 import type { Direction, GameMap, Vec2 } from "./types";
 
 interface FreeMovementOptions {
@@ -17,6 +18,11 @@ interface FreeMovementOptions {
 
 const clampAxis = (v: number) => Math.max(-1, Math.min(1, v));
 
+// standing in a cell's center, facing a grid direction
+function gridPose(map: GameMap, pos: Vec2, dir: Direction): FreePose {
+  return { x: pos.x, z: pos.y, y: floorHeight(map, pos.x, pos.y), fallSpeed: 0, yaw: yawOf(dir) };
+}
+
 // Free movement driver. The viewport calls `tick(dt)` every frame; it reads
 // the keyboard (W/S or up/down: move, A/D: strafe, Q/E or left/right: turn),
 // the virtual joysticks (`axesRef`) and mouselook (`addYaw`), advances the
@@ -24,7 +30,7 @@ const clampAxis = (v: number) => Math.max(-1, Math.min(1, v));
 // state on the nearest cell and facing.
 export function useFreeMovement(opts: FreeMovementOptions) {
   const { enabled } = opts;
-  const poseRef = useRef<FreePose>({ x: opts.pos.x, z: opts.pos.y, yaw: yawOf(opts.dir) });
+  const poseRef = useRef<FreePose>(gridPose(opts.map, opts.pos, opts.dir));
   // virtual joystick input, written by the VirtualJoysticks overlay
   const axesRef = useRef<FreeInput>({ moveX: 0, moveY: 0, turn: 0 });
   const keysRef = useRef(new Set<string>());
@@ -37,8 +43,8 @@ export function useFreeMovement(opts: FreeMovementOptions) {
   // entering free mode starts from where the grid movement left the player
   useEffect(() => {
     if (!enabled) return;
-    const { pos, dir } = latest.current;
-    poseRef.current = { x: pos.x, z: pos.y, yaw: yawOf(dir) };
+    const { map, pos, dir } = latest.current;
+    poseRef.current = gridPose(map, pos, dir);
     lastSyncRef.current = "";
   }, [enabled]);
 

@@ -14,9 +14,19 @@ A first-person, grid-based crew dungeon crawler set aboard a derelict spaceship 
 3. Run the app:
    `npm run dev`
 
+## Maps
+
+Maps are JSON files in `src/maps/` (parsed by `src/game/mapFormat.ts`): a `layout` grid (`W` wall, `.` floor, `D` door) plus optional per-cell layers, each a grid of characters with a `legend` (characters not in it, like `.`, take the layer's default):
+
+- `floor` - floor height (default 0)
+- `ceiling` - ceiling height (default: floor + 1; a door cell is always one panel tall)
+- `floorTexture`, `wallTexture` - texture sets per cell
+
+Heights are in wall heights (one wall panel), in steps of 0.25. Where neighboring cells' heights differ, the renderer walls off the difference: a step face below a higher floor, a strip above a lower ceiling, and tall walls stack panels (a part-height panel shows the top or bottom band of the texture). The party steps up or down 0.25 freely, jumps down anything deeper, and can't climb 0.5 or more (ladders will come later); a passage needs 0.75 of headroom. `doors`, `decals` and the `start` pose complete the file.
+
 ## Decals
 
-Bullet holes, stains, stencils and signs are projected onto the walls, floors and ceilings (three.js `DecalGeometry`), so they follow the relief steps; a decal wider than its wall panel continues onto the next panels of a straight wall. They're placed per map in `src/game/map.ts` (`decals`), in surface pixels (256 per cell, row 0 at the top), and live in `public/decals/<name>/` (`diffuse.png` with alpha, optional `normal.png`), listed in `public/decals/index.json`.
+Bullet holes, stains, stencils and signs are projected onto the walls, floors and ceilings (three.js `DecalGeometry`), so they follow the relief steps; a decal wider than its wall panel continues onto the next panels of a straight wall. They're placed per map (`decals` in the map file: the cell, the surface - a wall direction, `floor` or `ceiling` - and `px`/`py` in surface pixels, 256 per cell, row 0 at the top of the wall's first panel above the floor), and live in `public/decals/<name>/` (`diffuse.png` with alpha, optional `normal.png`), listed in `public/decals/index.json`.
 
 - `npm run decals:text -- --text "ENGINE ROOM" --name text_engine_room` - stenciled text from a built-in 5x7 pixel font (spelled right, unlike AI lettering), in the walls' dark red by default
 - `npm run decals:import -- --sheet sheet.png [--depth sheet_depth.png] [--flat a,b] --grid 3x3 --names a,b,... --sizes 16,48,...` - cuts a grid sheet drawn on flat magenta into decals; sizes are the in-game widths in surface pixels, `-` skips a cell; `--flat` decals (paint, stains) get no normal map from the depth sheet
@@ -56,7 +66,8 @@ On phones (narrow or short screens) the game fills the screen with translucent o
 
 ## Project layout
 
-- `src/game/` — map data, movement, and game state
+- `src/maps/` — map files (JSON, see Maps above)
+- `src/game/` — map loading, movement rules, and game state
 - `src/components/GameViewport.tsx` — the Three.js first-person renderer
 - `src/render/reliefMesh.ts` — builds stepped wall geometry from a height map (the "Relief mesh" wall type)
 - `src/components/DebugPanel.tsx` — in-game panel for switching wall texture sets and tuning rendering settings live

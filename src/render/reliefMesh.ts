@@ -40,6 +40,12 @@ export interface ReliefOptions {
   // z the side faces around holes reach back to (default: the lowest
   // level) - e.g. a door frame's back plane, so its opening gets deep jambs
   holeBackZ?: number;
+  // build only this band of the map's rows, as fractions of its height from
+  // the top - a partial panel, e.g. [0, 0.25] = the top quarter, stretched to
+  // wallHeight. Levels come from the whole map and the UVs keep pointing into
+  // the whole texture, so a partial panel shares the full panel's materials
+  // and AO map.
+  rows?: [number, number];
 }
 
 export interface HoleBounds {
@@ -68,9 +74,14 @@ export interface ReliefResult {
 const MAX_GRID = 256;
 
 export async function loadHeightGrid(url: string): Promise<HeightGrid> {
+  // onload rather than img.decode(): decode() can stall while the page is
+  // hidden (a background tab), leaving the walls unbuilt
   const img = new Image();
-  img.src = url;
-  await img.decode();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error(`failed to load ${url}`));
+    img.src = url;
+  });
 
   const factor = Math.max(1, Math.ceil(Math.max(img.naturalWidth, img.naturalHeight) / MAX_GRID));
   const width = Math.max(1, Math.floor(img.naturalWidth / factor));
@@ -99,10 +110,10 @@ export async function loadHeightGrid(url: string): Promise<HeightGrid> {
 }
 
 export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
-  const { width: gw, height: gh } = grid;
+  const { width: gw, height: fullH } = grid;
 
   const { q: quantized, heights, baked } = quantizeHeights(grid.data, opts.levels);
-  const q = removeSmallIslands(quantized, gw, gh, Math.round(opts.minIsland));
+  const fullQ = removeSmallIslands(quantized, gw, fullH, Math.round(opts.minIsland));
   const levelCount = heights.length;
 
   // The most common level (usually the flat panel surface) sits exactly on
@@ -110,8 +121,15 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   // into the room. Keeping the dominant surface at z=0 lines it up with the
   // floor/ceiling edges.
   // (counted over solid cells only - a door frame is mostly hole)
-  const solid = grid.solid;
-  const base = mostCommonLevel(solid ? q.filter((_, i) => solid[i]) : q, levelCount);
+  const fullSolid = grid.solid;
+  const base = mostCommonLevel(fullSolid ? fullQ.filter((_, i) => fullSolid[i]) : fullQ, levelCount);
+
+  // the band of rows this geometry covers (all of them unless opts.rows)
+  const r0 = opts.rows ? Math.round(opts.rows[0] * fullH) : 0;
+  const r1 = opts.rows ? Math.round(opts.rows[1] * fullH) : fullH;
+  const gh = r1 - r0;
+  const q = fullQ.subarray(r0 * gw, r1 * gw);
+  const solid = fullSolid?.subarray(r0 * gw, r1 * gw);
   const levelZ = (l: number) => (heights[l] - heights[base]) * opts.depth;
   const maxAbsZ = Math.max(Math.abs(levelZ(0)), Math.abs(levelZ(levelCount - 1)));
 
@@ -134,7 +152,7 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   const X = (x: number) => -opts.wallWidth / 2 + x * cellW;
   const Y = (y: number) => opts.wallHeight / 2 - y * cellH;
   const U = (x: number) => x / gw;
-  const V = (y: number) => 1 - y / gh;
+  const V = (y: number) => 1 - (y + r0) / fullH;
   // Per-cell key: its level, or HOLE for a transparent cell. Holes get no
   // front face; the side faces around them reach back to `holeBackZ`.
   const HOLE = -1;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { deck2Engineering, cellAt, doorAt } from "./map";
 import { behindOf, leftOf, rightOf, stepForward } from "./movement";
+import { passage } from "./heights";
 import type { Direction, Vec2 } from "./types";
 import { initialCrew } from "./crew";
 
@@ -12,6 +13,12 @@ export interface LogEntry {
 let logId = 0;
 
 const DOOR_ANIM_MS = 450;
+
+const BLOCKED_MESSAGES: Record<"wall" | "ledge" | "low", string> = {
+  wall: "A bulkhead blocks the way.",
+  ledge: "The ledge is too high to climb.",
+  low: "The passage is too low.",
+};
 // a lift door shuts this long after the last time someone passed through it
 const LIFT_DOOR_CLOSE_MS = 15000;
 
@@ -22,8 +29,8 @@ export function doorCellKey(cell: Vec2): string {
 export function useGameState() {
   const [map] = useState(deck2Engineering);
   // arriving in the lift, facing its door
-  const [pos, setPos] = useState<Vec2>({ x: 1, y: 1 });
-  const [dir, setDir] = useState<Direction>("E");
+  const [pos, setPos] = useState<Vec2>(map.start.cell);
+  const [dir, setDir] = useState<Direction>(map.start.facing);
   const [crew] = useState(initialCrew);
   const [log, setLog] = useState<LogEntry[]>([
     { id: logId++, text: "You board the USV Horizon, Deck 2 - Engineering." },
@@ -82,6 +89,18 @@ export function useGameState() {
     return () => timers.forEach((t) => clearTimeout(t));
   }, []);
 
+  // dev-only: jump anywhere from the console, e.g. __voidcrewTeleport(6, 3, "S")
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    Object.assign(window, {
+      __voidcrewTeleport: (x: number, y: number, facing: Direction) => {
+        setPos({ x, y });
+        setDir(facing);
+      },
+      __voidcrewPos: () => ({ ...posRef.current }),
+    });
+  }, []);
+
   const turnL = useCallback(() => setDir((d) => leftOf(d)), []);
   const turnR = useCallback(() => setDir((d) => rightOf(d)), []);
 
@@ -101,10 +120,12 @@ export function useGameState() {
     const next = stepForward(pos, moveDir);
     const target = cellAt(map, next.x, next.y);
 
-    if (target === "wall") {
-      pushLog("A bulkhead blocks the way.");
+    const way = passage(map, pos, next);
+    if (way.kind === "blocked") {
+      pushLog(BLOCKED_MESSAGES[way.reason]);
       return;
     }
+    if (way.kind === "drop") pushLog(way.height > 0.5 ? "You jump down." : "You hop down.");
 
     if (target === "door" && !openDoors.has(doorCellKey(next))) {
       startOpening(next);

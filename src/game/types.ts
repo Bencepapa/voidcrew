@@ -16,6 +16,12 @@ export interface GameMap {
   height: number;
   cells: CellType[][];
   name: string;
+  // where the player arrives
+  start: { cell: Vec2; facing: Direction };
+  // per cell, in wall heights (1 = one wall panel), multiples of 0.25: the
+  // floor's level and the ceiling's. Unused for wall cells.
+  floorHeights: number[][];
+  ceilingHeights: number[][];
   // floor texture set of a walkable cell (a renderer texture set id);
   // omitted = the renderer's default floor
   floorAt?: (x: number, y: number) => string;

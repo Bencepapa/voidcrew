@@ -29,19 +29,27 @@ export interface SurfaceFrame {
   height: number;
 }
 
-export function surfaceFrame(cell: Vec2, surface: Surface, wallHeight: number): SurfaceFrame {
+// world heights of a cell's floor and ceiling
+export interface CellLevels {
+  floor: number;
+  ceiling: number;
+}
+
+// The frame of a cell's surface. A wall's frame is its first panel: the one
+// standing on the cell's floor (a taller wall stacks more panels above it).
+export function surfaceFrame(cell: Vec2, surface: Surface, wallHeight: number, levels: CellLevels): SurfaceFrame {
   const euler = new THREE.Euler();
   const position = new THREE.Vector3();
   if (surface === "floor") {
     euler.set(-Math.PI / 2, 0, 0);
-    position.set(cell.x, 0, cell.y);
+    position.set(cell.x, levels.floor, cell.y);
   } else if (surface === "ceiling") {
     euler.set(Math.PI / 2, 0, 0);
-    position.set(cell.x, wallHeight, cell.y);
+    position.set(cell.x, levels.ceiling, cell.y);
   } else {
     const v = DIR_VECTOR[surface];
     euler.set(0, WALL_ROTATION[surface], 0);
-    position.set(cell.x + v.x * 0.5, wallHeight / 2, cell.y + v.y * 0.5);
+    position.set(cell.x + v.x * 0.5, levels.floor + wallHeight / 2, cell.y + v.y * 0.5);
   }
   return {
     position,
@@ -53,7 +61,9 @@ export function surfaceFrame(cell: Vec2, surface: Surface, wallHeight: number): 
 
 // Surfaces lying in the same plane as `surface` of `cell`, within `reach`
 // cells: the next panels along a straight wall, or the neighboring floor
-// (ceiling) tiles. A decal overhanging its own panel continues onto these.
+// (ceiling) tiles. A decal overhanging its own panel continues onto these
+// (onto a floor tile only if it's level with the decal's own: the projection
+// box is shallow).
 export function coplanarSurfaces(cell: Vec2, surface: Surface, reach: number): Vec2[] {
   const cells: Vec2[] = [];
   if (surface === "floor" || surface === "ceiling") {
