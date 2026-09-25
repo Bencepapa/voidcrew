@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { nearestDirection, poseCell, stepFreePose, yawOf } from "./freeMovement";
 import type { FreeInput, FreePose } from "./freeMovement";
 import { doorCellKey } from "./useGameState";
-import { floorHeight } from "./map";
+import { standingHeight } from "./heights";
 import type { Direction, GameMap, Vec2 } from "./types";
 
 interface FreeMovementOptions {
@@ -10,17 +10,20 @@ interface FreeMovementOptions {
   map: GameMap;
   pos: Vec2;
   dir: Direction;
+  // the height stood at (a cell's floor, or a bridge)
+  elevation: number;
   openDoors: ReadonlySet<string>;
   openingDoor: Vec2 | null;
-  syncPose: (cell: Vec2, facing: Direction) => void;
+  // `height`: of the surface underfoot
+  syncPose: (cell: Vec2, facing: Direction, height: number) => void;
   openDoorAt: (cell: Vec2) => void;
 }
 
 const clampAxis = (v: number) => Math.max(-1, Math.min(1, v));
 
 // standing in a cell's center, facing a grid direction
-function gridPose(map: GameMap, pos: Vec2, dir: Direction): FreePose {
-  return { x: pos.x, z: pos.y, y: floorHeight(map, pos.x, pos.y), fallSpeed: 0, yaw: yawOf(dir) };
+function gridPose(pos: Vec2, dir: Direction, elevation: number): FreePose {
+  return { x: pos.x, z: pos.y, y: elevation, fallSpeed: 0, yaw: yawOf(dir) };
 }
 
 // Free movement driver. The viewport calls `tick(dt)` every frame; it reads
@@ -30,7 +33,7 @@ function gridPose(map: GameMap, pos: Vec2, dir: Direction): FreePose {
 // state on the nearest cell and facing.
 export function useFreeMovement(opts: FreeMovementOptions) {
   const { enabled } = opts;
-  const poseRef = useRef<FreePose>(gridPose(opts.map, opts.pos, opts.dir));
+  const poseRef = useRef<FreePose>(gridPose(opts.pos, opts.dir, opts.elevation));
   // virtual joystick input, written by the VirtualJoysticks overlay
   const axesRef = useRef<FreeInput>({ moveX: 0, moveY: 0, turn: 0 });
   const keysRef = useRef(new Set<string>());
@@ -43,8 +46,8 @@ export function useFreeMovement(opts: FreeMovementOptions) {
   // entering free mode starts from where the grid movement left the player
   useEffect(() => {
     if (!enabled) return;
-    const { map, pos, dir } = latest.current;
-    poseRef.current = gridPose(map, pos, dir);
+    const { pos, dir, elevation } = latest.current;
+    poseRef.current = gridPose(pos, dir, elevation);
     lastSyncRef.current = "";
   }, [enabled]);
 
@@ -95,10 +98,11 @@ export function useFreeMovement(opts: FreeMovementOptions) {
 
     const cell = poseCell(pose);
     const facing = nearestDirection(pose.yaw);
-    const sync = `${cell.x},${cell.y},${facing}`;
+    const standing = standingHeight(o.map, cell, pose.y);
+    const sync = `${cell.x},${cell.y},${facing},${standing}`;
     if (sync !== lastSyncRef.current) {
       lastSyncRef.current = sync;
-      o.syncPose(cell, facing);
+      o.syncPose(cell, facing, standing);
     }
     return pose;
   }, []);

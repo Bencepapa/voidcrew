@@ -1,5 +1,5 @@
-import { cellAt, ceilingHeight, floorHeight } from "./map";
-import { CLIMB_SPEED, MAX_STEP, MIN_HEADROOM } from "./heights";
+import { bridgeAt, cellAt, ceilingHeight, floorHeight } from "./map";
+import { BRIDGE_WIDTH, CLIMB_SPEED, MAX_STEP, MIN_HEADROOM } from "./heights";
 import { DIR_VECTOR } from "./movement";
 import type { Direction, GameMap, Vec2 } from "./types";
 
@@ -105,6 +105,19 @@ function cellBoxes(map: GameMap, cx: number, cy: number, feet: number, doors: Do
       ];
 }
 
+// What's underfoot at (x, z) for feet at height y: a bridge's deck while
+// on it (within its width, and not below it), else the cell's floor. Off
+// the deck's side it's the floor - walking off a bridge is a jump down.
+function groundUnder(map: GameMap, x: number, z: number, y: number): number {
+  const cx = Math.round(x);
+  const cy = Math.round(z);
+  const floor = floorHeight(map, cx, cy);
+  const bridge = bridgeAt(map, cx, cy);
+  if (!bridge || y < bridge.height - MAX_STEP - 1e-6) return floor;
+  const across = bridge.axis === "NS" ? x - cx : z - cy;
+  return Math.abs(across) <= BRIDGE_WIDTH / 2 ? bridge.height : floor;
+}
+
 // how close to a ladder's step face the player can hold on to it
 const LADDER_REACH = PLAYER_RADIUS + 0.2;
 // cells per second
@@ -198,9 +211,9 @@ export function stepFreePose(
     if (dz && tryMove(x, z + dz)) z += dz;
   }
 
-  // the floor under the player's center: step up onto it, or fall to it
-  // (unless holding on to a ladder)
-  const ground = floorHeight(map, Math.round(x), Math.round(z));
+  // the floor (or deck) under the player's center: step up onto it, or fall
+  // to it (unless holding on to a ladder)
+  const ground = groundUnder(map, x, z, y);
   const holding = ladderInReach(map, x, z);
   if (y < ground) {
     y = Math.min(ground, y + STEP_UP_SPEED * dt);

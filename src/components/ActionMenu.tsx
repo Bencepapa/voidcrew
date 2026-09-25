@@ -4,6 +4,8 @@ interface ActionMenuProps {
   onBack?: () => void;
   onTurnLeft?: () => void;
   onTurnRight?: () => void;
+  // only while standing on a bridge
+  onJumpDown?: () => void;
   // translucent variant for the mobile overlay layout
   compact?: boolean;
 }
@@ -13,6 +15,7 @@ const ACTIONS = [
   "Step Back",
   "Turn Left",
   "Turn Right",
+  "Jump Down",
   "Use",
   "Open",
   "Inspect",
@@ -22,12 +25,13 @@ const ACTIONS = [
   "Rest",
 ] as const;
 
-export function ActionMenu({ onForward, onBack, onTurnLeft, onTurnRight, compact }: ActionMenuProps) {
+export function ActionMenu({ onForward, onBack, onTurnLeft, onTurnRight, onJumpDown, compact }: ActionMenuProps) {
   const handlers: Partial<Record<(typeof ACTIONS)[number], () => void>> = {
     Forward: onForward,
     "Step Back": onBack,
     "Turn Left": onTurnLeft,
     "Turn Right": onTurnRight,
+    "Jump Down": onJumpDown,
   };
 
   return (

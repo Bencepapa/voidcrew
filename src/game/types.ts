@@ -32,6 +32,19 @@ export interface GameMap {
   // door cells that aren't plain standard doors
   doors?: DoorSpec[];
   ladders?: LadderSpec[];
+  bridges?: BridgeSpec[];
+  // hand-placed ceiling lights, on top of the generated mood lighting
+  lights?: Vec2[];
+}
+
+// A catwalk across a tall cell at `height`, walkable along its axis: an
+// upper passage crosses over whatever runs along the cell's floor. Stepping
+// off its side (or jumping down) drops to the floor.
+export interface BridgeSpec {
+  cell: Vec2;
+  // deck height (wall heights)
+  height: number;
+  axis: "NS" | "EW";
 }
 
 // A ladder up a step face too high to climb otherwise: it stands in the

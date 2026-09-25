@@ -12,7 +12,9 @@ import type { CellType, DecalSpec, Direction, DoorSpec, GameMap } from "./types"
 //   wallTexture   texture set of the walls around the cell (default: the
 //                 renderer's mix)
 //
-// `ladders` stand in a cell against its wall toward a higher neighbor.
+// `ladders` stand in a cell against its wall toward a higher neighbor;
+// `bridges` span a cell at a height along an axis; `lights` add ceiling
+// lights.
 //
 // Heights are in wall heights (1 = one wall panel), multiples of 0.25.
 
@@ -35,6 +37,8 @@ export interface MapFile {
   doors?: { x: number; y: number; kind: DoorSpec["kind"]; facing: Direction; label?: string }[];
   // x, y: the lower cell; wall: its side toward the higher one
   ladders?: { x: number; y: number; wall: Direction }[];
+  bridges?: { x: number; y: number; height: number; axis: "NS" | "EW" }[];
+  lights?: { x: number; y: number }[];
   decals?: {
     decal: string;
     x: number;
@@ -103,6 +107,16 @@ export function parseMap(file: MapFile): GameMap {
     return { cell: { x: l.x, y: l.y }, wall: l.wall };
   });
 
+  const bridges = (file.bridges ?? []).map((b) => {
+    const at = `bridge at ${b.x},${b.y}`;
+    if (cells[b.y]?.[b.x] !== "floor") throw new Error(`${at} isn't in a floor cell`);
+    checkHeight(b.height, at);
+    if (b.height <= floorHeights[b.y][b.x] || b.height >= ceilingHeights[b.y][b.x]) {
+      throw new Error(`${at} isn't between the cell's floor and ceiling`);
+    }
+    return { cell: { x: b.x, y: b.y }, height: b.height, axis: b.axis };
+  });
+
   const floorTextures = readLayer(file.layers?.floorTexture, width, height, "floorTexture");
   const wallTextures = readLayer(file.layers?.wallTexture, width, height, "wallTexture");
 
@@ -123,6 +137,8 @@ export function parseMap(file: MapFile): GameMap {
       label: d.label,
     })),
     ladders,
+    bridges,
+    lights: (file.lights ?? []).map((l) => ({ x: l.x, y: l.y })),
     decals: (file.decals ?? []).map((d) => ({
       decal: d.decal,
       cell: { x: d.x, y: d.y },

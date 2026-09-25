@@ -1,5 +1,5 @@
 import { DIR_VECTOR } from "./movement";
-import type { CellType, DoorSpec, GameMap, LadderSpec, Vec2 } from "./types";
+import type { BridgeSpec, CellType, DoorSpec, GameMap, LadderSpec, Vec2 } from "./types";
 import { parseMap } from "./mapFormat";
 import type { MapFile } from "./mapFormat";
 import deck2File from "../maps/deck2-engineering.json";
@@ -28,6 +28,10 @@ export function floorHeight(map: GameMap, x: number, y: number): number {
 
 export function ceilingHeight(map: GameMap, x: number, y: number): number {
   return map.ceilingHeights[y]?.[x] ?? 1;
+}
+
+export function bridgeAt(map: GameMap, x: number, y: number): BridgeSpec | undefined {
+  return map.bridges?.find((b) => b.cell.x === x && b.cell.y === y);
 }
 
 // the ladder on the edge between two neighboring cells, if there is one

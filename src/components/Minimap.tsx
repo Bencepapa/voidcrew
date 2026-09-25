@@ -13,6 +13,7 @@ const ARROW: Record<Direction, string> = { N: "▲", E: "▶", S: "▼", W: "◀
 // box-shadow x/y offsets that draw an inset line along one side
 const LADDER_EDGE: Record<Direction, string> = { N: "0 2px", S: "0 -2px", E: "-2px 0", W: "2px 0" };
 const LADDER_EDGE_COLOR = "#d4a72c";
+const BRIDGE_COLOR = "rgba(120, 190, 130, 0.8)";
 
 export function Minimap({ map, pos, dir, compact }: MinimapProps) {
   // raised floors show lighter, sunken ones darker
@@ -29,6 +30,13 @@ export function Minimap({ map, pos, dir, compact }: MinimapProps) {
       .filter((l) => l.cell.x === x && l.cell.y === y)
       .map((l) => `inset ${LADDER_EDGE[l.wall]} 0 ${LADDER_EDGE_COLOR}`)
       .join(", ") || undefined;
+  // a bridge: a band along its axis across the cell
+  const bridgeStripe = (x: number, y: number) => {
+    const bridge = map.bridges?.find((b) => b.cell.x === x && b.cell.y === y);
+    if (!bridge) return undefined;
+    const across = bridge.axis === "EW" ? "to bottom" : "to right";
+    return `linear-gradient(${across}, transparent 30%, ${BRIDGE_COLOR} 30%, ${BRIDGE_COLOR} 70%, transparent 70%)`;
+  };
   return (
     <div className={`border border-green-800 ${compact ? "bg-black/25 p-1" : "bg-black/60 p-2"}`}>
       <div
@@ -45,6 +53,7 @@ export function Minimap({ map, pos, dir, compact }: MinimapProps) {
                 style={{
                   background: cell === "wall" ? "transparent" : cell === "door" ? door : floor(x, y),
                   boxShadow: ladderEdges(x, y),
+                  backgroundImage: bridgeStripe(x, y),
                   color: "#4ade80",
                 }}
               >

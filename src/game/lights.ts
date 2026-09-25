@@ -83,6 +83,12 @@ export function generateLights(map: GameMap): LightSpec[] {
   for (const { x, y } of floorCells(map, (x, y) => ((x <= 5 && y <= 5) || tall(x, y)) && x % 2 === 1 && y % 2 === 1)) {
     lights.push(ceilingLight(x, y));
   }
+  // the map's own ceiling lights
+  for (const cell of map.lights ?? []) {
+    if (!lights.some((l) => l.kind === "ceiling" && l.x === cell.x && l.z === cell.y)) {
+      lights.push(ceilingLight(cell.x, cell.y));
+    }
+  }
   // every lift cabin (the cell behind a lift door) is always lit
   for (const door of map.doors ?? []) {
     if (door.kind !== "lift") continue;

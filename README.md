@@ -22,7 +22,7 @@ Maps are JSON files in `src/maps/` (parsed by `src/game/mapFormat.ts`): a `layou
 - `ceiling` - ceiling height (default: floor + 1; a door cell is always one panel tall)
 - `floorTexture`, `wallTexture` - texture sets per cell
 
-Heights are in wall heights (one wall panel), in steps of 0.25. Where neighboring cells' heights differ, the renderer walls off the difference: a step face below a higher floor, a strip above a lower ceiling, and tall walls stack panels (a part-height panel shows the top or bottom band of the texture). The party steps up or down 0.25 freely, jumps down anything deeper, and can't climb 0.5 or more without a ladder; a passage needs 0.75 of headroom. `ladders` (`{ "x", "y", "wall" }`: the lower cell and its side toward the ledge) stand against a step face: in grid movement, step toward one to climb it (up only while facing it; backing down is fine), in free movement push toward it to climb and away to climb down, and walking over the ledge above one gets onto it. `doors`, `decals` and the `start` pose complete the file.
+Heights are in wall heights (one wall panel), in steps of 0.25. Where neighboring cells' heights differ, the renderer walls off the difference: a step face below a higher floor, a strip above a lower ceiling, and tall walls stack panels (a part-height panel shows the top or bottom band of the texture). The party steps up or down 0.25 freely, jumps down anything deeper, and can't climb 0.5 or more without a ladder; a passage needs 0.75 of headroom. `ladders` (`{ "x", "y", "wall" }`: the lower cell and its side toward the ledge) stand against a step face: in grid movement, step toward one to climb it (up only while facing it; backing down is fine), in free movement push toward it to climb and away to climb down, and walking over the ledge above one gets onto it. `bridges` (`{ "x", "y", "height", "axis": "NS" | "EW" }`) span a tall cell at a height, System Shock style: an upper passage crosses over whatever runs along the cell's floor; you step onto one only from its ends, and jump down off it (`X` / Jump Down in grid movement, or just walk off its side in free movement). `lights` add ceiling lights; `doors`, `decals` and the `start` pose complete the file.
 
 ## Decals
 
@@ -31,6 +31,7 @@ Bullet holes, stains, stencils and signs are projected onto the walls, floors an
 - `npm run decals:text -- --text "ENGINE ROOM" --name text_engine_room` - stenciled text from a built-in 5x7 pixel font (spelled right, unlike AI lettering), in the walls' dark red by default
 - `npm run decals:import -- --sheet sheet.png [--depth sheet_depth.png] [--flat a,b] --grid 3x3 --names a,b,... --sizes 16,48,...` - cuts a grid sheet drawn on flat magenta into decals; sizes are the in-game widths in surface pixels, `-` skips a cell; `--flat` decals (paint, stains) get no normal map from the depth sheet
 - `npm run decals:test` - regenerates the map's stenciled number and text decals
+- `npm run textures:trim` - cuts the repeating trim textures from the decals: worn yellow paint for ladders (`public/textures/trim_paint`) and hazard stripes for bridge edges (`trim_hazard`); replace either `diffuse.png` with a dedicated texture any time
 
 Painted decals read best on walls and the flat diamond plate: seen at the low angle of a floor, the grate floor's slots cut them to pieces.
 
@@ -50,7 +51,7 @@ Gemini prompt for a sheet (then, in a fresh chat with the sheet attached, the de
 
 Grid movement (default):
 
-- Keyboard: `W`/`↑` forward, `S`/`↓` step back, `A`/`←` turn left, `D`/`→` turn right
+- Keyboard: `W`/`↑` forward, `S`/`↓` step back, `A`/`←` turn left, `D`/`→` turn right, `X` jump down off a bridge
 - Mouse: moving it glances left/right (up to 60°); the view drifts back to center when the mouse rests
 - Mouse drag, or touch on the right half: drag sideways to glance around; let go while looking well to one side to turn that way (the turn carries on from where you let go), or back near the middle to not turn. Up/down drags step
 - Touch, left half of the view: drag up = forward, down = step back; drag left/right turns as if grabbing the view (drag left = turn right)

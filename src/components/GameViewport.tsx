@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
-import { cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween } from "../game/map";
-import { CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
+import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween } from "../game/map";
+import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
+import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
@@ -496,8 +497,13 @@ const DOOR_PANEL_HALF_DEPTH = 0.02;
 const DOOR_PANEL_OVERLAP = 0.03;
 const DOOR_OPEN_MS = 400;
 
-// Ladders (world units): safety yellow, like the hazard paint
-const LADDER_COLOR = 0xb08a2e;
+// trim textures cut from the decals (scripts/make-trim-textures.ts), mapped
+// at the walls' density: texels per world unit
+const TRIM_PAINT_URL = `${import.meta.env.BASE_URL}textures/trim_paint/diffuse.png`;
+const TRIM_HAZARD_URL = `${import.meta.env.BASE_URL}textures/trim_hazard/diffuse.png`;
+const TRIM_TEXELS = 256;
+
+// Ladders (world units), in the worn yellow paint
 const LADDER_HALF_WIDTH = 0.16;
 const LADDER_RAIL = 0.03;
 const LADDER_RUNG = 0.022;
@@ -507,6 +513,9 @@ const LADDER_STANDOFF = 0.09;
 const LADDER_HANDHOLD = 0.3;
 // ...and come down onto it this far back from the edge
 const LADDER_NECK = 0.12;
+// the low plate along a bridge deck's edges (world units): as tall as the
+// hazard stripe band
+const BRIDGE_KICK = 16 / TRIM_TEXELS;
 
 // a peek eases back to center once its input has been idle this long...
 const PEEK_IDLE_MS = 300;
@@ -517,6 +526,8 @@ interface GameViewportProps {
   map: GameMap;
   pos: Vec2;
   dir: Direction;
+  // the height stood at: the cell's floor, or a bridge (wall heights)
+  elevation: number;
   // door cells ("x,y") that are open
   openDoors: ReadonlySet<string>;
   // free movement: called every frame with the frame time (s), returns the
@@ -534,13 +545,52 @@ interface CamTarget {
   z: number;
   tx: number;
   tz: number;
-  // height of the floor under the camera (wall heights)
+  // height of the surface under the camera (wall heights)
   y: number;
 }
 
-function computeTarget(map: GameMap, pos: Vec2, dir: Direction): CamTarget {
+function computeTarget(pos: Vec2, dir: Direction, elevation: number): CamTarget {
   const fwd = DIR_VECTOR[dir];
-  return { x: pos.x, z: pos.y, tx: pos.x + fwd.x, tz: pos.y + fwd.y, y: floorHeight(map, pos.x, pos.y) };
+  return { x: pos.x, z: pos.y, tx: pos.x + fwd.x, tz: pos.y + fwd.y, y: elevation };
+}
+
+// Jumping off a bridge: a step sideways off the deck (`side`, from the
+// cell's center), the fall, and back under the bridge to the cell's center.
+function jumpPose(
+  from: CamTarget,
+  to: CamTarget,
+  side: Vec2,
+  elapsed: number,
+  moveMs: number,
+): { cam: CamTarget; done: boolean } {
+  const drop = from.y - to.y;
+  const off = { x: from.x + side.x * JUMP_CLEARANCE, z: from.z + side.y * JUMP_CLEARANCE };
+  const fallMs = 1000 * Math.sqrt((2 * drop) / FALL_GRAVITY);
+  const t1 = moveMs * 0.6;
+  const t2 = t1 + fallMs;
+  const t3 = t2 + moveMs;
+  let x = to.x;
+  let z = to.z;
+  let y = to.y;
+  if (elapsed < t1) {
+    const e = easeInOutQuad(elapsed / t1);
+    x = lerp(from.x, off.x, e);
+    z = lerp(from.z, off.z, e);
+    y = from.y;
+  } else if (elapsed < t2) {
+    const f = (elapsed - t1) / fallMs;
+    x = off.x;
+    z = off.z;
+    y = from.y - drop * f * f;
+  } else if (elapsed < t3) {
+    const e = easeInOutQuad((elapsed - t2) / moveMs);
+    x = lerp(off.x, to.x, e);
+    z = lerp(off.z, to.z, e);
+  }
+  return {
+    cam: { x, z, y, tx: x + (to.tx - to.x), tz: z + (to.tz - to.z) },
+    done: elapsed >= t3,
+  };
 }
 
 // how fast a fall off a ledge speeds up (wall heights per second squared;
@@ -551,6 +601,8 @@ const FALL_START = 0.4;
 // ladder rungs are this far apart (wall heights); a climb pulls up rung by
 // rung
 const RUNG_SPACING = 0.125;
+// how far from a bridge's middle line a jump off it clears the deck
+const JUMP_CLEARANCE = BRIDGE_WIDTH / 2 + 0.15;
 
 // The camera along a ladder move: walk to the ladder, climb, walk off. Up:
 // to the cell edge (the pulled-back eye then sits just in front of the step
@@ -623,6 +675,7 @@ export function GameViewport({
   map,
   pos,
   dir,
+  elevation,
   openDoors,
   freeTick,
   peekRef,
@@ -646,9 +699,16 @@ export function GameViewport({
   }, []);
   // continuously-updated "where the camera actually is right now", read and
   // written every animation frame, whether mid-transition or settled
-  const liveRef = useRef<CamTarget>(computeTarget(map, pos, dir));
-  // `climb`: the move goes up or down a ladder
-  const animRef = useRef<{ from: CamTarget; to: CamTarget; start: number; climb?: boolean } | null>(null);
+  const liveRef = useRef<CamTarget>(computeTarget(pos, dir, elevation));
+  // `climb`: the move goes up or down a ladder; `jumpSide`: it's a jump off
+  // a bridge, stepping off to that side
+  const animRef = useRef<{
+    from: CamTarget;
+    to: CamTarget;
+    start: number;
+    climb?: boolean;
+    jumpSide?: Vec2;
+  } | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -667,15 +727,24 @@ export function GameViewport({
       peek.offset -= (peek.pendingTurn * Math.PI) / 2;
       peek.pendingTurn = 0;
       animRef.current = null;
-      liveRef.current = computeTarget(map, pos, dir);
+      liveRef.current = computeTarget(pos, dir, elevation);
       return;
     }
     const from = { ...liveRef.current };
-    const to = computeTarget(map, pos, dir);
+    const to = computeTarget(pos, dir, elevation);
     const fromCell = { x: Math.round(from.x), y: Math.round(from.z) };
+    const sameCell = fromCell.x === pos.x && fromCell.y === pos.y;
     const climb = Math.abs(to.y - from.y) > MAX_STEP + 1e-6 && !!ladderBetween(map, fromCell, pos);
-    animRef.current = { from, to, start: performance.now(), climb };
-  }, [pos, dir]);
+    // down off a bridge in the same cell: step off its side - to the right
+    // when facing along it, else straight ahead
+    const bridge = bridgeAt(map, pos.x, pos.y);
+    let jumpSide: Vec2 | undefined;
+    if (sameCell && bridge && from.y - to.y > MAX_STEP + 1e-6) {
+      const alongBridge = (bridge.axis === "NS") === (dir === "N" || dir === "S");
+      jumpSide = DIR_VECTOR[alongBridge ? rightOf(dir) : dir];
+    }
+    animRef.current = { from, to, start: performance.now(), climb, jumpSide };
+  }, [pos, dir, elevation]);
 
   const freeTickRef = useRef(freeTick);
   freeTickRef.current = freeTick;
@@ -684,7 +753,7 @@ export function GameViewport({
   // onto the current cell and facing
   useEffect(() => {
     if (freeMode) return;
-    animRef.current = { from: { ...liveRef.current }, to: computeTarget(map, pos, dir), start: performance.now() };
+    animRef.current = { from: { ...liveRef.current }, to: computeTarget(pos, dir, elevation), start: performance.now() };
     // only on the mode switch - pos/dir changes are handled above
   }, [freeMode]);
 
@@ -1266,9 +1335,59 @@ export function GameViewport({
       return material;
     }
 
+    // --- trim: worn yellow paint (ladders) and hazard stripes (bridge
+    // edges), repeating at the walls' pixel density on boxes of any size ---
+    function trimTexture(url: string, wrap: THREE.Wrapping): THREE.Texture {
+      const tex = loader.load(url + bust, (t) => {
+        // the boxes' UVs count texels (trimBox): one repeat per image size
+        const img = t.image as HTMLImageElement;
+        t.repeat.set(1 / img.width, 1 / img.height);
+      });
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.magFilter = THREE.NearestFilter;
+      tex.wrapS = tex.wrapT = wrap;
+      return tex;
+    }
+    const trimTextures = [
+      // mirrored: a patch cut from a decal tiles without seams that way
+      trimTexture(TRIM_PAINT_URL, THREE.MirroredRepeatWrapping),
+      // already a whole number of stripe periods wide
+      trimTexture(TRIM_HAZARD_URL, THREE.RepeatWrapping),
+    ];
+    const [paintMat, hazardMat] = trimTextures.map(
+      (map) => new THREE.MeshStandardMaterial({ map, roughness: 0.6, metalness: 0.3 }),
+    );
+    // a box whose UVs run in texels (TRIM_TEXELS per world unit) on every
+    // face; one per size
+    const trimBoxes = new Map<string, THREE.BoxGeometry>();
+    function trimBox(w: number, h: number, d: number): THREE.BoxGeometry {
+      const key = `${w.toFixed(4)},${h.toFixed(4)},${d.toFixed(4)}`;
+      let geo = trimBoxes.get(key);
+      if (!geo) {
+        geo = new THREE.BoxGeometry(w, h, d);
+        // BoxGeometry faces (+x, -x, +y, -y, +z, -z), 4 vertices each, and
+        // the box dimensions their u and v run along
+        const spans = [
+          [d, h],
+          [d, h],
+          [w, d],
+          [w, d],
+          [w, h],
+          [w, h],
+        ];
+        const uv = geo.getAttribute("uv");
+        for (let i = 0; i < uv.count; i++) {
+          const [su, sv] = spans[Math.floor(i / 4)];
+          uv.setXY(i, uv.getX(i) * su * TRIM_TEXELS, uv.getY(i) * sv * TRIM_TEXELS);
+        }
+        trimBoxes.set(key, geo);
+        geometries.push(geo);
+      }
+      return geo;
+    }
+
     // --- ladders: rails and rungs standing against the step face, the rails
     // reaching above the ledge and bending over onto it as handholds ---
-    const ladderMat = new THREE.MeshStandardMaterial({ color: LADDER_COLOR, roughness: 0.6, metalness: 0.35 });
     const ladderBox = new THREE.BoxGeometry(1, 1, 1);
     geometries.push(ladderBox);
     for (const ladder of map.ladders ?? []) {
@@ -1283,8 +1402,7 @@ export function GameViewport({
       ladderGroup.position.set(x + v.x * 0.5, bottom, y + v.y * 0.5);
       ladderGroup.rotation.y = WALL_ROTATION[ladder.wall];
       const bar = (w: number, bh: number, d: number, px: number, py: number, pz: number) => {
-        const mesh = new THREE.Mesh(ladderBox, ladderMat);
-        mesh.scale.set(w, bh, d);
+        const mesh = new THREE.Mesh(trimBox(w, bh, d), paintMat);
         mesh.position.set(px, py, pz);
         ladderGroup.add(mesh);
       };
@@ -1302,6 +1420,53 @@ export function GameViewport({
         bar(LADDER_HALF_WIDTH * 2, LADDER_RUNG, LADDER_RUNG, 0, ry, z);
       }
       group.add(ladderGroup);
+    }
+
+    // --- bridges: a strip of the cell's floor texture as the deck, on a
+    // steel body, with a low yellow kick plate along each edge ---
+    const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.5, metalness: 0.6 });
+    for (const bridge of map.bridges ?? []) {
+      const { x, y } = bridge.cell;
+      const deckY = bridge.height * wallHeight;
+      const bridgeGroup = new THREE.Group();
+      bridgeGroup.position.set(x, deckY, y);
+      // built running east-west (local X)
+      if (bridge.axis === "NS") bridgeGroup.rotation.y = Math.PI / 2;
+      const box = (w: number, h: number, d: number, px: number, py: number, pz: number, mat: THREE.Material) => {
+        const mesh = new THREE.Mesh(ladderBox, mat);
+        mesh.scale.set(w, h, d);
+        mesh.position.set(px, py, pz);
+        bridgeGroup.add(mesh);
+      };
+      box(1, BRIDGE_THICKNESS, BRIDGE_WIDTH, 0, -BRIDGE_THICKNESS / 2 - 0.002, 0, bridgeMat);
+      for (const side of [-1, 1]) {
+        const kick = new THREE.Mesh(trimBox(1, BRIDGE_KICK, LADDER_RAIL), hazardMat);
+        kick.position.set(0, BRIDGE_KICK / 2 - 0.01, side * (BRIDGE_WIDTH / 2));
+        bridgeGroup.add(kick);
+      }
+      group.add(bridgeGroup);
+
+      // the walking surface: the middle band of the floor tile, as wide as
+      // the deck, so its texels stay square
+      const kit = floorKitAt(x, y);
+      if (!kit) {
+        box(1, 0.004, BRIDGE_WIDTH, 0, 0, 0, floorMat);
+        continue;
+      }
+      const rows: [number, number] = [(1 - BRIDGE_WIDTH) / 2, (1 + BRIDGE_WIDTH) / 2];
+      const deckGeometry = isRelief
+        ? buildRelief(kit, { height: BRIDGE_WIDTH, flushEdges: false, rows }).then((relief) => relief?.geometry ?? null)
+        : Promise.resolve(createBandPlane(BRIDGE_WIDTH, rows));
+      deckGeometry
+        .then((geo) => {
+          if (!geo) return;
+          if (!isRelief) geometries.push(geo);
+          const deck = new THREE.Mesh(geo, isRelief ? [kit.wallMat, kit.sideMat] : kit.wallMat);
+          // laid flat facing up; local X (the band's length) along the bridge
+          deck.rotation.x = -Math.PI / 2;
+          bridgeGroup.add(deck);
+        })
+        .catch((err) => console.error("Bridge build failed:", err));
     }
 
     // --- map lights: small glowing fixtures + the shared point-light pool ---
@@ -1400,6 +1565,10 @@ export function GameViewport({
         cam = { x: pose.x, z: pose.z, tx: pose.x + f.x, tz: pose.z + f.z, y: pose.y };
         animRef.current = null;
         pullback = 0;
+      } else if (anim?.jumpSide) {
+        const { cam: jumpCam, done } = jumpPose(anim.from, anim.to, anim.jumpSide, now - anim.start, s.moveDurationMs);
+        cam = jumpCam;
+        if (done) animRef.current = null;
       } else if (anim?.climb) {
         const { cam: climbCam, done } = climbPose(anim.from, anim.to, now - anim.start, s.moveDurationMs);
         cam = climbCam;
@@ -1572,7 +1741,10 @@ export function GameViewport({
       }
       for (const mat of labelMaterials) mat.dispose();
       floorMat.dispose();
-      ladderMat.dispose();
+      paintMat.dispose();
+      hazardMat.dispose();
+      for (const tex of trimTextures) tex.dispose();
+      bridgeMat.dispose();
       ceilMat.dispose();
       for (const mat of fixtureMats.values()) mat.dispose();
       decals.dispose();

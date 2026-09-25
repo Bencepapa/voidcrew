@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { deck2Engineering, cellAt, doorAt } from "./map";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { deck2Engineering, cellAt, doorAt, floorHeight } from "./map";
 import { behindOf, leftOf, rightOf, stepForward } from "./movement";
-import { CLIMB_MS_PER_HEIGHT, passage } from "./heights";
+import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
 import type { Direction, Vec2 } from "./types";
 import { initialCrew } from "./crew";
 
@@ -34,6 +34,8 @@ export function useGameState() {
   // arriving in the lift, facing its door
   const [pos, setPos] = useState<Vec2>(map.start.cell);
   const [dir, setDir] = useState<Direction>(map.start.facing);
+  // the height the party stands at: the cell's floor, or a bridge above it
+  const [elevation, setElevation] = useState(() => floorHeight(map, map.start.cell.x, map.start.cell.y));
   const [crew] = useState(initialCrew);
   const [log, setLog] = useState<LogEntry[]>([
     { id: logId++, text: "You board the USV Horizon, Deck 2 - Engineering." },
@@ -96,9 +98,11 @@ export function useGameState() {
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     Object.assign(window, {
-      __voidcrewTeleport: (x: number, y: number, facing: Direction) => {
+      // `height`: stand on a bridge instead of the floor
+      __voidcrewTeleport: (x: number, y: number, facing: Direction, height?: number) => {
         setPos({ x, y });
         setDir(facing);
+        setElevation(height ?? floorHeight(map, x, y));
       },
       __voidcrewPos: () => ({ ...posRef.current }),
     });
@@ -131,7 +135,7 @@ export function useGameState() {
     const next = stepForward(pos, moveDir);
     const target = cellAt(map, next.x, next.y);
 
-    const way = passage(map, pos, next);
+    const way = passage(map, pos, elevation, next, moveDir);
     if (way.kind === "blocked") {
       pushLog(BLOCKED_MESSAGES[way.reason]);
       return;
@@ -152,22 +156,36 @@ export function useGameState() {
       startOpening(next);
       setTimeout(() => {
         setPos(next);
+        setElevation(way.y);
         setOpeningDoor(null);
       }, DOOR_ANIM_MS);
       return;
     }
 
     setPos(next);
-  }, [pos, dir, map, pushLog, openingDoor, openDoors, startOpening]);
+    setElevation(way.y);
+  }, [pos, dir, elevation, map, pushLog, openingDoor, openDoors, startOpening]);
 
   const moveForward = useCallback(() => step(dir), [step, dir]);
   const moveBackward = useCallback(() => step(behindOf(dir)), [step, dir]);
 
-  // free movement: the continuous pose drives the grid state (nearest cell
-  // and facing), which the minimap and door logic read
-  const syncPose = useCallback((cell: Vec2, facing: Direction) => {
+  // off a bridge, down onto the floor below it (null: not on one)
+  const jump = useMemo(() => {
+    const fall = jumpDown(map, pos, elevation);
+    if (fall === null) return null;
+    return () => {
+      if (openingDoor || busy()) return;
+      pushLog("You jump down from the bridge.");
+      setElevation(floorHeight(map, pos.x, pos.y));
+    };
+  }, [map, pos, elevation, openingDoor, pushLog]);
+
+  // free movement: the continuous pose drives the grid state (nearest cell,
+  // facing and the surface underfoot), which the minimap and door logic read
+  const syncPose = useCallback((cell: Vec2, facing: Direction, height: number) => {
     setPos((p) => (p.x === cell.x && p.y === cell.y ? p : cell));
     setDir(facing);
+    setElevation(height);
   }, []);
 
   // free movement: bumping into a closed door opens it
@@ -184,6 +202,8 @@ export function useGameState() {
     map,
     pos,
     dir,
+    elevation,
+    jumpDown: jump,
     crew,
     log,
     moveForward,

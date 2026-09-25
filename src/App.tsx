@@ -20,6 +20,8 @@ export default function App() {
     map,
     pos,
     dir,
+    elevation,
+    jumpDown,
     crew,
     log,
     moveForward,
@@ -37,7 +39,7 @@ export default function App() {
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");
-  const free = useFreeMovement({ enabled: !grid, map, pos, dir, openDoors, openingDoor, syncPose, openDoorAt });
+  const free = useFreeMovement({ enabled: !grid, map, pos, dir, elevation, openDoors, openingDoor, syncPose, openDoorAt });
   const view = useViewControls({
     grid,
     onForward: moveForward,
@@ -82,16 +84,18 @@ export default function App() {
       if (e.key === "ArrowDown" || e.key === "s") moveBackward();
       if (e.key === "ArrowLeft" || e.key === "a") turnL();
       if (e.key === "ArrowRight" || e.key === "d") turnR();
+      if (e.key === "x") jumpDown?.();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [grid, moveForward, moveBackward, turnL, turnR]);
+  }, [grid, moveForward, moveBackward, turnL, turnR, jumpDown]);
 
   const viewport = (
     <GameViewport
       map={map}
       pos={pos}
       dir={dir}
+      elevation={elevation}
       openDoors={openDoors}
       freeTick={grid ? undefined : free.tick}
       peekRef={view.peekRef}
@@ -113,7 +117,14 @@ export default function App() {
     </>
   );
   const actionMenu = grid ? (
-    <ActionMenu onForward={moveForward} onBack={moveBackward} onTurnLeft={turnL} onTurnRight={turnR} compact={compact} />
+    <ActionMenu
+      onForward={moveForward}
+      onBack={moveBackward}
+      onTurnLeft={turnL}
+      onTurnRight={turnR}
+      onJumpDown={jumpDown ?? undefined}
+      compact={compact}
+    />
   ) : (
     <ActionMenu compact={compact} />
   );
