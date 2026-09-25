@@ -29,7 +29,10 @@ export type TextureSetId =
   | "doorframe1"
   | "liftdoor1"
   | "ceiling1"
-  | "window1";
+  | "window1"
+  | "window1_left"
+  | "window1_mid"
+  | "window1_right";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -346,6 +349,26 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     diffuse: `${import.meta.env.BASE_URL}textures/window1/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/window1/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/window1/depth.png`,
+    pixelArt: true,
+  },
+  // the pieces of a wider window (scripts/make-window-strip.ts): its ends
+  // and a middle that repeats, split by mullions on the seams
+  window1_left: {
+    diffuse: `${import.meta.env.BASE_URL}textures/window1_left/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/window1_left/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/window1_left/depth.png`,
+    pixelArt: true,
+  },
+  window1_mid: {
+    diffuse: `${import.meta.env.BASE_URL}textures/window1_mid/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/window1_mid/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/window1_mid/depth.png`,
+    pixelArt: true,
+  },
+  window1_right: {
+    diffuse: `${import.meta.env.BASE_URL}textures/window1_right/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/window1_right/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/window1_right/depth.png`,
     pixelArt: true,
   },
   // ceiling tile; its center panel glows in cells with a ceiling light
@@ -927,8 +950,23 @@ export function GameViewport({
 
     const frameKit = createWallKit(DOOR_FRAME_SET, false);
     // window panels (see the wall loop), by their wall's surface key
-    const windowFaces = new Set(windowPanels(map).map((p) => surfaceKey(p.cell, p.wall)));
-    const windowKit = windowFaces.size ? createWallKit(WINDOW_SET, false) : null;
+    // and the frame panel each takes: a one-panel window its own, a wider
+    // one a left end, middle pieces and a right end
+    const windowFaces = new Map(
+      windowPanels(map).map((p) => {
+        const part = p.width === 1 ? "" : p.index === 0 ? "_left" : p.index === p.width - 1 ? "_right" : "_mid";
+        return [surfaceKey(p.cell, p.wall), `${WINDOW_SET}${part}` as TextureSetId] as const;
+      }),
+    );
+    const windowKits = new Map<TextureSetId, WallKit>();
+    const windowKitFor = (setId: TextureSetId) => {
+      let kit = windowKits.get(setId);
+      if (!kit) {
+        kit = createWallKit(setId, false);
+        windowKits.set(setId, kit);
+      }
+      return kit;
+    };
     // door panel kits by door kind, created on demand
     const panelKits = new Map<DoorSpec["kind"], WallKit>();
     const panelKitFor = (kind: DoorSpec["kind"]) => {
@@ -1090,9 +1128,8 @@ export function GameViewport({
             for (const panel of wallPanels(span.bottom, span.top, span.anchor)) {
               const y = (panel.bottom + variantHeight(panel.variant) / 2) * wallHeight;
               // a window takes the first whole panel above the floor
-              const isWindow =
-                windowKit && windowFaces.has(face.key) && panel.bottom === floor && panel.variant === "full";
-              (isWindow ? windowKit : kit).slots.push({ ...face, y, variant: panel.variant });
+              const windowSet = panel.bottom === floor && panel.variant === "full" ? windowFaces.get(face.key) : undefined;
+              (windowSet ? windowKitFor(windowSet) : kit).slots.push({ ...face, y, variant: panel.variant });
             }
           }
         });
@@ -1227,7 +1264,7 @@ export function GameViewport({
       frameKit,
       ...panelKits.values(),
       ...(ceilingKit ? [ceilingKit] : []),
-      ...(windowKit ? [windowKit] : []),
+      ...windowKits.values(),
     ];
 
     // Windows are always relief too: the frame panel with its opening cut
@@ -1255,8 +1292,10 @@ export function GameViewport({
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    if (windowKit?.slots.length) {
-      buildRelief(windowKit, { height: wallHeight, flushEdges: true, holeBackZ: -WINDOW_DEPTH })
+    for (const [setId, windowKit] of windowKits) {
+      // a wide window's pieces continue each other: no flush edge margins
+      // (they'd flatten the mullions on the seams)
+      buildRelief(windowKit, { height: wallHeight, flushEdges: setId === WINDOW_SET, holeBackZ: -WINDOW_DEPTH })
         .then((frame) => {
           if (!frame) return;
           const hole = frame.holeBounds ?? { minX: -0.3, maxX: 0.3, minY: -0.13 * wallHeight, maxY: 0.22 * wallHeight };
