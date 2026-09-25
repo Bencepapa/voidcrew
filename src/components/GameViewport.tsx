@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { cellAt } from "../game/map";
@@ -511,12 +511,17 @@ export function GameViewport({
   const peekRefRef = useRef(peekRef);
   peekRefRef.current = peekRef;
 
-  useEffect(() => {
+  // a layout effect: it has to take effect before the next frame is drawn,
+  // or that frame would show the old facing (see pendingTurn below)
+  useLayoutEffect(() => {
     const peek = peekRefRef.current?.current;
-    if (peek?.snapTurn) {
-      // a peek turned into this turn: the peek offset already carries the
-      // view across, so jump the facing instead of swinging it again
-      peek.snapTurn = false;
+    if (peek?.pendingTurn) {
+      // a released peek turned into this turn: jump the facing and take the
+      // same 90 degrees off the peek in one step, so the view doesn't move
+      // at all here - it just carries on easing to center from the released
+      // angle instead of swinging through the whole turn again
+      peek.offset -= (peek.pendingTurn * Math.PI) / 2;
+      peek.pendingTurn = 0;
       animRef.current = null;
       liveRef.current = computeTarget(pos, dir);
       return;
@@ -1061,6 +1066,9 @@ export function GameViewport({
       const sin = Math.sin(peekYaw);
       const lookX = fx * cos - fz * sin;
       const lookZ = fz * cos + fx * sin;
+
+      // dev-only: the view's actual heading, for checking turn continuity
+      if (import.meta.env.DEV) Object.assign(window, { __voidcrewViewYaw: Math.atan2(lookX, -lookZ) });
 
       camera.position.set(camX, s.eyeHeight + bobY, camZ);
       camera.lookAt(camX + lookX, s.eyeHeight + bobY, camZ + lookZ);

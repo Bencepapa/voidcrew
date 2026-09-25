@@ -19,9 +19,9 @@ A first-person, grid-based crew dungeon crawler set aboard a derelict spaceship 
 Grid movement (default):
 
 - Keyboard: `W`/`↑` forward, `S`/`↓` step back, `A`/`←` turn left, `D`/`→` turn right
-- Mouse: moving it glances left/right (up to 60°); the view drifts back to center when the mouse rests. Dragging works like touch swipes
+- Mouse: moving it glances left/right (up to 60°); the view drifts back to center when the mouse rests
+- Mouse drag, or touch on the right half: drag sideways to glance around; let go while looking well to one side to turn that way (the turn carries on from where you let go), or back near the middle to not turn. Up/down drags step
 - Touch, left half of the view: drag up = forward, down = step back; drag left/right turns as if grabbing the view (drag left = turn right)
-- Touch, right half: drag sideways to glance around; let go while looking well to one side to turn that way, or back near the middle to not turn
 
 Free movement (untick "Grid movement" in the debug panel):
 

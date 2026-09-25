@@ -11,9 +11,11 @@ export interface PeekState {
   lastInputAt: number;
   // a finger is still dragging it - don't ease back yet
   held: boolean;
-  // the next facing change should snap the camera instead of animating (a
-  // peek that turned into a turn already shows most of the new direction)
-  snapTurn: boolean;
+  // a released peek committed to a turn (+1 right, -1 left): the viewport,
+  // when it sees the facing change, snaps the camera to it and takes 90
+  // degrees off the offset in the same step, so the view carries on from
+  // the released angle instead of restarting the turn
+  pendingTurn: number;
 }
 
 export const MAX_PEEK = Math.PI / 3; // 60 degrees
@@ -41,18 +43,19 @@ const clampPeek = (v: number) => Math.max(-MAX_PEEK, Math.min(MAX_PEEK, v));
 //
 // Grid movement:
 // - mouse, no button: glance around (peek) up to +-60 degrees
-// - mouse drag, or touch on the left half: one action per swipe - up/down
-//   steps forward/back, sideways turns as if grabbing the view (drag left =
-//   turn right)
-// - touch on the right half: sideways drag peeks, following the finger;
-//   released far enough to one side it commits to a turn that way, released
-//   back near the middle it doesn't. Up/down still steps.
+// - touch on the left half: one action per swipe - up/down steps
+//   forward/back, sideways turns as if grabbing the view (drag left = turn
+//   right)
+// - mouse drag, or touch on the right half: sideways drag peeks, following
+//   the pointer; released far enough to one side it commits to a turn that
+//   way, continuing from the released angle, released back near the middle
+//   it doesn't. Up/down still steps.
 //
 // Free movement: clicking the view with the mouse captures it (pointer lock)
 // for mouselook; touches are left to the VirtualJoysticks overlay.
 export function useViewControls(opts: ViewControlsOptions) {
-  const peekRef = useRef<PeekState>({ offset: 0, lastInputAt: 0, held: false, snapTurn: false });
-  const drag = useRef<{ id: number; x: number; y: number; peek: boolean } | null>(null);
+  const peekRef = useRef<PeekState>({ offset: 0, lastInputAt: 0, held: false, pendingTurn: 0 });
+  const drag = useRef<{ id: number; x: number; y: number; peek: boolean; startOffset: number } | null>(null);
   const lockTarget = useRef<HTMLElement | null>(null);
   const [mouseLocked, setMouseLocked] = useState(false);
   const latest = useRef(opts);
@@ -90,8 +93,9 @@ export function useViewControls(opts: ViewControlsOptions) {
         return;
       }
       const rect = e.currentTarget.getBoundingClientRect();
-      const peek = e.pointerType !== "mouse" && e.clientX - rect.left >= rect.width / 2;
-      drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, peek };
+      // a mouse drag always peeks; a touch peeks on the right half only
+      const peek = e.pointerType === "mouse" || e.clientX - rect.left >= rect.width / 2;
+      drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, peek, startOffset: peekRef.current.offset };
       if (peek) peekRef.current.held = true;
       try {
         // keep receiving the pointer even if the drag leaves the element
@@ -108,7 +112,9 @@ export function useViewControls(opts: ViewControlsOptions) {
       const d = drag.current;
       if (d && d.id === e.pointerId) {
         if (d.peek) {
-          peek.offset = clampPeek(-(e.clientX - d.x) * TOUCH_PEEK_PER_PX);
+          // grab the view: dragging left looks right; continues from any
+          // glance already in progress
+          peek.offset = clampPeek(d.startOffset - (e.clientX - d.x) * TOUCH_PEEK_PER_PX);
           peek.lastInputAt = performance.now();
         }
         return;
@@ -138,11 +144,11 @@ export function useViewControls(opts: ViewControlsOptions) {
         }
         if (Math.abs(peek.offset) >= PEEK_TURN_THRESHOLD) {
           // hand the view over to the new facing without a jump: what was
-          // a +40 degree peek becomes -50 degrees off the turned facing,
-          // which then eases back to center
+          // a +40 degree peek becomes -50 degrees off the turned facing
+          // (applied by the viewport together with the facing change),
+          // which then eases back to center right away
           const right = peek.offset > 0;
-          peek.offset -= right ? Math.PI / 2 : -Math.PI / 2;
-          peek.snapTurn = true;
+          peek.pendingTurn = right ? 1 : -1;
           peek.lastInputAt = 0;
           if (right) o.onTurnRight();
           else o.onTurnLeft();
