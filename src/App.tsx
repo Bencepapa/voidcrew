@@ -30,13 +30,11 @@ export default function App() {
       voidcrew: {
         set: (patch: Partial<ViewportSettings>) => setSettings((s) => ({ ...s, ...patch })),
         async capture(name: string) {
-          const canvas = document.querySelector("canvas");
-          if (!canvas) throw new Error("no game canvas");
-          // read the WebGL canvas in the frame right after it was drawn, before
-          // the browser presents and clears it
-          const dataUrl = await new Promise<string>((resolve) =>
-            requestAnimationFrame(() => resolve(canvas.toDataURL("image/jpeg", 0.9))),
-          );
+          // GameViewport exposes this in dev: renders a frame and reads it back
+          // before the browser can present and clear the WebGL canvas
+          const snapshot = (window as { __voidcrewSnapshot?: () => string }).__voidcrewSnapshot;
+          if (!snapshot) throw new Error("no game view to capture");
+          const dataUrl = snapshot();
           const res = await fetch(`${import.meta.env.BASE_URL}__voidcrew/capture?name=${encodeURIComponent(name)}`, {
             method: "POST",
             body: dataUrl,

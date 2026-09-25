@@ -6,11 +6,14 @@ import type { Direction, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights } from "../game/lights";
 
-export type TextureSetId = "wall1" | "wall2" | "wall3" | "wall4";
+export type TextureSetId = "wall1" | "wall2" | "wall3" | "wall4" | "wall5";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
   textureSet: TextureSetId;
+  // a second texture set used on a share of the walls
+  accentTextureSet: TextureSetId | "none";
+  accentRatio: number;
   wallProfile: WallProfileId;
   eyeHeight: number;
   wallHeight: number;
@@ -53,6 +56,8 @@ export interface ViewportStats {
 
 export const DEFAULT_SETTINGS: ViewportSettings = {
   textureSet: "wall4",
+  accentTextureSet: "wall5",
+  accentRatio: 0.35,
   wallProfile: "relief",
   eyeHeight: 0.5,
   wallHeight: 1.0,
@@ -246,7 +251,40 @@ const TEXTURE_SETS: Record<TextureSetId, { diffuse: string; normal: string; dept
     depth: `${import.meta.env.BASE_URL}textures/wall4/depth.png`,
     pixelArt: true,
   },
+  wall5: {
+    diffuse: `${import.meta.env.BASE_URL}textures/wall5/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/wall5/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/wall5/depth.png`,
+    pixelArt: true,
+  },
 };
+
+interface WallSlot {
+  x: number;
+  z: number;
+  rotY: number;
+}
+
+// Everything the walls of one texture set need: its own materials and, for
+// relief walls, its own geometry (built from that set's depth map).
+interface WallKit {
+  depthUrl: string;
+  wallMat: THREE.MeshStandardMaterial;
+  // relief step sides: same texture, no normal map (see reliefMesh.ts groups)
+  sideMat: THREE.MeshStandardMaterial;
+  // disposed with the scene (incl. the relief AO map once built)
+  textures: THREE.Texture[];
+  slots: WallSlot[];
+}
+
+// Stable pseudo-random 0..1 per wall face, from its position (face centers
+// sit on half-cell coordinates, so doubled they're integers). Keeps the
+// accent texture on the same walls across reloads and setting changes.
+function wallVariantRoll(x: number, z: number): number {
+  let h = Math.imul(Math.round(x * 2), 374761393) ^ Math.imul(Math.round(z * 2), 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
 
 // custom HMR event sent by the texture hot-reload plugin in vite.config.ts
 const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
@@ -397,41 +435,54 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     const pointLight = new THREE.PointLight(0xfff2d9, settings.pointLightIntensity, 8, 2);
     scene.add(pointLight);
 
-    const texturePaths = TEXTURE_SETS[settings.textureSet];
     const bust = textureVersion ? `?v=${textureVersion}` : "";
     const loader = new THREE.TextureLoader();
-    const diffuse = loader.load(texturePaths.diffuse + bust);
-    const normalMap = loader.load(texturePaths.normal + bust);
-    const depthMap = loader.load(texturePaths.depth + bust);
-    diffuse.colorSpace = THREE.SRGBColorSpace;
-    if (texturePaths.pixelArt) {
-      // crisp texels up close instead of bilinear blur; minification keeps
-      // mipmaps so distant walls don't shimmer
-      diffuse.magFilter = THREE.NearestFilter;
-      normalMap.magFilter = THREE.NearestFilter;
-    }
-
     const isRelief = settings.wallProfile === "relief";
     const wallHeight = settings.wallHeight;
-    const wallMat = new THREE.MeshStandardMaterial({
-      map: diffuse,
-      normalMap,
-      // relief walls already carry the depth as real geometry
-      displacementMap: isRelief ? null : depthMap,
-      displacementScale: settings.displacementScale,
-      roughness: settings.roughness,
-      metalness: settings.metalness,
-    });
-    // relief step sides: same texture, no normal map (see reliefMesh.ts groups)
-    const reliefSideMat = new THREE.MeshStandardMaterial({
-      map: diffuse,
-      roughness: settings.roughness,
-      metalness: settings.metalness,
-    });
     const cavity = { value: settings.aoDirect };
-    addDirectLightOcclusion(wallMat, cavity);
-    addDirectLightOcclusion(reliefSideMat, cavity);
-    let aoMap: THREE.Texture | null = null;
+
+    function createWallKit(setId: TextureSetId): WallKit {
+      const paths = TEXTURE_SETS[setId];
+      const diffuse = loader.load(paths.diffuse + bust);
+      const normalMap = loader.load(paths.normal + bust);
+      const depthMap = loader.load(paths.depth + bust);
+      diffuse.colorSpace = THREE.SRGBColorSpace;
+      if (paths.pixelArt) {
+        // crisp texels up close instead of bilinear blur; minification keeps
+        // mipmaps so distant walls don't shimmer
+        diffuse.magFilter = THREE.NearestFilter;
+        normalMap.magFilter = THREE.NearestFilter;
+      }
+      const wallMat = new THREE.MeshStandardMaterial({
+        map: diffuse,
+        normalMap,
+        // relief walls already carry the depth as real geometry
+        displacementMap: isRelief ? null : depthMap,
+        displacementScale: settings.displacementScale,
+        roughness: settings.roughness,
+        metalness: settings.metalness,
+      });
+      const sideMat = new THREE.MeshStandardMaterial({
+        map: diffuse,
+        roughness: settings.roughness,
+        metalness: settings.metalness,
+      });
+      addDirectLightOcclusion(wallMat, cavity);
+      addDirectLightOcclusion(sideMat, cavity);
+      return { depthUrl: paths.depth + bust, wallMat, sideMat, textures: [diffuse, normalMap, depthMap], slots: [] };
+    }
+
+    // most walls use the main texture set; a stable, position-based share of
+    // them gets the accent set for variety
+    const primaryKit = createWallKit(settings.textureSet);
+    const accentKit =
+      settings.accentTextureSet !== "none" &&
+      settings.accentTextureSet !== settings.textureSet &&
+      settings.accentRatio > 0
+        ? createWallKit(settings.accentTextureSet)
+        : null;
+    const kits = accentKit ? [primaryKit, accentKit] : [primaryKit];
+
     const doorMat = new THREE.MeshStandardMaterial({ color: DOOR_COLOR, roughness: 0.6 });
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
@@ -465,11 +516,10 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     scene.add(group);
     doorMeshesRef.current.clear();
 
-    const wallSlots: { x: number; z: number; rotY: number }[] = [];
     let reliefStats: ReliefStats | null = null;
 
-    function placeWalls(geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[]) {
-      for (const slot of wallSlots) {
+    function placeWalls(geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], slots: WallSlot[]) {
+      for (const slot of slots) {
         const mesh = new THREE.Mesh(geo, mat);
         mesh.position.set(slot.x, wallHeight / 2, slot.z);
         mesh.rotation.y = slot.rotY;
@@ -497,7 +547,9 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
           if (neighborType !== "wall" && neighborType !== "door") return;
 
           if (neighborType === "wall") {
-            wallSlots.push({ x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d] });
+            const slot = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d] };
+            const kit = accentKit && wallVariantRoll(slot.x, slot.z) < settings.accentRatio ? accentKit : primaryKit;
+            kit.slots.push(slot);
             return;
           }
 
@@ -511,41 +563,45 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     }
 
     if (wallGeo) {
-      placeWalls(wallGeo, wallMat);
+      for (const kit of kits) placeWalls(wallGeo, kit.wallMat, kit.slots);
     } else {
       // a height map caught mid-save by an image editor (hot reload) or
       // fetched while the dev server restarts fails to decode - retry briefly
-      const loadWithRetry = async (attempts: number): Promise<Awaited<ReturnType<typeof loadHeightGrid>>> => {
+      const loadWithRetry = async (url: string, attempts: number): Promise<Awaited<ReturnType<typeof loadHeightGrid>>> => {
         try {
-          return await loadHeightGrid(texturePaths.depth + bust);
+          return await loadHeightGrid(url);
         } catch (err) {
           if (attempts <= 1 || disposed) throw err;
           await new Promise((resolve) => setTimeout(resolve, 400));
-          return loadWithRetry(attempts - 1);
+          return loadWithRetry(url, attempts - 1);
         }
       };
-      loadWithRetry(4)
-        .then((grid) => {
-          if (disposed) return;
-          const relief = createReliefWallGeometry(grid, {
-            wallWidth: 1,
-            wallHeight,
-            depth: settings.reliefDepth,
-            levels: settings.reliefLevels,
-            minIsland: settings.reliefMinIsland,
-            aoRadius: settings.aoRadius,
-          });
-          geometries.push(relief.geometry);
-          aoMap = relief.aoMap;
-          for (const mat of [wallMat, reliefSideMat]) {
-            mat.aoMap = relief.aoMap;
-            mat.aoMapIntensity = settingsRef.current.aoIntensity;
-            mat.needsUpdate = true;
-          }
-          reliefStats = { trianglesPerWall: relief.triangles, levelCount: relief.levelCount, baked: relief.baked };
-          placeWalls(relief.geometry, [wallMat, reliefSideMat]);
-        })
-        .catch((err) => console.error("Relief wall build failed:", err));
+      for (const kit of kits) {
+        loadWithRetry(kit.depthUrl, 4)
+          .then((grid) => {
+            if (disposed) return;
+            const relief = createReliefWallGeometry(grid, {
+              wallWidth: 1,
+              wallHeight,
+              depth: settings.reliefDepth,
+              levels: settings.reliefLevels,
+              minIsland: settings.reliefMinIsland,
+              aoRadius: settings.aoRadius,
+            });
+            geometries.push(relief.geometry);
+            kit.textures.push(relief.aoMap);
+            for (const mat of [kit.wallMat, kit.sideMat]) {
+              mat.aoMap = relief.aoMap;
+              mat.aoMapIntensity = settingsRef.current.aoIntensity;
+              mat.needsUpdate = true;
+            }
+            if (kit === primaryKit) {
+              reliefStats = { trianglesPerWall: relief.triangles, levelCount: relief.levelCount, baked: relief.baked };
+            }
+            placeWalls(relief.geometry, [kit.wallMat, kit.sideMat], kit.slots);
+          })
+          .catch((err) => console.error("Relief wall build failed:", err));
+      }
     }
 
     // --- map lights: small glowing fixtures + the shared point-light pool ---
@@ -619,8 +675,7 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
     const startedAt = performance.now();
     let lastStatsAt = 0;
 
-    function animate() {
-      if (disposed) return;
+    function renderFrame() {
       const s = settingsRef.current;
       const now = performance.now();
       const t = (now - startedAt) / 1000;
@@ -670,12 +725,14 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
 
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.pointLightIntensity;
-      for (const mat of [wallMat, reliefSideMat]) {
-        mat.roughness = s.roughness;
-        mat.metalness = s.metalness;
-        mat.aoMapIntensity = s.aoIntensity;
+      for (const kit of kits) {
+        for (const mat of [kit.wallMat, kit.sideMat]) {
+          mat.roughness = s.roughness;
+          mat.metalness = s.metalness;
+          mat.aoMapIntensity = s.aoIntensity;
+        }
+        kit.wallMat.normalScale.set(s.normalStrength, s.normalStrength);
       }
-      wallMat.normalScale.set(s.normalStrength, s.normalStrength);
       cavity.value = s.aoDirect;
       // a headlamp-like light orbiting the camera; the small radius keeps it
       // well inside the side walls of the current cell - a light that slips
@@ -698,31 +755,48 @@ export function GameViewport({ map, pos, dir, openingDoor, settings, onStats }: 
         });
       }
 
+    }
+
+    function animate() {
+      if (disposed) return;
+      renderFrame();
       raf = requestAnimationFrame(animate);
     }
     animate();
 
+    // dev-only: render a frame on demand and return it as an image, for the
+    // voidcrew.capture() console helper - works even when the browser has
+    // paused requestAnimationFrame (hidden tab/pane)
+    const snapshot = () => {
+      renderFrame();
+      return renderer.domElement.toDataURL("image/jpeg", 0.9);
+    };
+    if (import.meta.env.DEV) Object.assign(window, { __voidcrewSnapshot: snapshot });
+
     return () => {
       disposed = true;
+      const w = window as { __voidcrewSnapshot?: () => string };
+      if (w.__voidcrewSnapshot === snapshot) delete w.__voidcrewSnapshot;
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
       container.removeChild(renderer.domElement);
       for (const geo of geometries) geo.dispose();
-      wallMat.dispose();
-      reliefSideMat.dispose();
+      for (const kit of kits) {
+        kit.wallMat.dispose();
+        kit.sideMat.dispose();
+        for (const tex of kit.textures) tex.dispose();
+      }
       doorMat.dispose();
       floorMat.dispose();
       ceilMat.dispose();
       for (const mat of fixtureMats.values()) mat.dispose();
-      aoMap?.dispose();
-      diffuse.dispose();
-      normalMap.dispose();
-      depthMap.dispose();
       renderer.dispose();
     };
   }, [
     map,
     settings.textureSet,
+    settings.accentTextureSet,
+    settings.accentRatio,
     settings.wallProfile,
     settings.wallHeight,
     settings.bevelFraction,

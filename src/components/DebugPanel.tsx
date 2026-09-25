@@ -14,7 +14,16 @@ const TEXTURE_SET_OPTIONS: { id: TextureSetId; label: string }[] = [
   { id: "wall2", label: "wall2 - pixel art" },
   { id: "wall3", label: "wall3 - pixel art (5x)" },
   { id: "wall4", label: "wall4 - pixel art (processed)" },
+  { id: "wall5", label: "wall5 - pixel art (processed)" },
 ];
+
+const ACCENT_RATIO_SLIDER: SliderConfig = {
+  key: "accentRatio",
+  label: "Accent share of walls",
+  min: 0,
+  max: 1,
+  step: 0.05,
+};
 
 const WALL_PROFILE_OPTIONS: { id: WallProfileId; label: string }[] = [
   { id: "flat", label: "Flat" },
@@ -118,6 +127,23 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
           </label>
         ))}
       </div>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] text-neutral-500">Accent texture (some walls)</span>
+        <select
+          value={settings.accentTextureSet}
+          onChange={(e) => set("accentTextureSet", e.target.value as ViewportSettings["accentTextureSet"])}
+          className="bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm"
+        >
+          <option value="none">none</option>
+          {TEXTURE_SET_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {settings.accentTextureSet !== "none" && slider(ACCENT_RATIO_SLIDER)}
 
       <div className="flex flex-col gap-1">
         <div className="text-[10px] text-neutral-500">Wall type</div>
