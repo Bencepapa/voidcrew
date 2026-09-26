@@ -82,9 +82,12 @@ async function button(deck: number, up: boolean) {
 }
 
 async function main() {
-  // deck 2 (engineering) goes up to deck 1 (medical), and back down
+  // deck 2 (engineering) goes up to deck 1 (medical), and back down;
+  // deck 1 goes up to deck 0 (crew quarters), and back down
   await button(2, true);
   await button(1, false);
+  await button(1, true);
+  await button(0, false);
 }
 
 main().catch((err) => {

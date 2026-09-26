@@ -7,7 +7,7 @@ import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
-import { generateLights } from "../game/lights";
+import { generateLights, lampColor } from "../game/lights";
 import { PROP_TYPES, propPlacement } from "../game/props";
 import { cellKey, visibleCells } from "../game/visibility";
 import type { PropType } from "../game/props";
@@ -49,6 +49,7 @@ export type TextureSetId =
   | "lift1"
   | "liftceil1"
   | "medwall1"
+  | "crewwall1"
   | "medfloor1"
   | "medceil1"
   | "meddoor1"
@@ -387,6 +388,13 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
   },
   // the medical deck (generated from concept/medical_concept.png): sterile
   // light grey plates with medical-green accents
+  // crew quarters wall panel
+  crewwall1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/crewwall1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/crewwall1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/crewwall1/depth.png`,
+    pixelArt: true,
+  },
   medwall1: {
     diffuse: `${import.meta.env.BASE_URL}textures/medwall1/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/medwall1/normal.png`,
@@ -518,8 +526,7 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
   },
 };
 
-// warm white of a lit ceiling panel (matches the ceiling light color)
-const LIGHT_PANEL_COLOR = 0xfff4e0;
+// a lit ceiling panel glows in its deck's lamp color (see lampColor)
 const LIGHT_PANEL_INTENSITY = 1.6;
 
 // floor used where the map doesn't specify one
@@ -1163,7 +1170,7 @@ export function GameViewport({
           normalMap,
           roughness: settings.roughness,
           metalness: settings.metalness,
-          emissive: LIGHT_PANEL_COLOR,
+          emissive: lampColor(map),
           emissiveMap,
           emissiveIntensity: LIGHT_PANEL_INTENSITY,
         });

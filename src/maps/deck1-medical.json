@@ -11,51 +11,52 @@
     "window": "medwindow1"
   },
   "labelColor": "#1f8f45",
+  "lightColor": "#d6e4ff",
   "start": { "x": 1, "y": 1, "facing": "E" },
   "layout": [
-    "WWWWWWWWWW",
-    "W.D......W",
-    "WWW.WWWW.W",
-    "W.....W..W",
-    "W.....D..W",
-    "W.....W..W",
-    "WWWWWWWWWW"
+    "WWWWWWWWWWWW",
+    "W.D......WWW",
+    "WWW.WWWW.WWW",
+    "W.....W..D.W",
+    "W.....D..WWW",
+    "W.....W..WWW",
+    "WWWWWWWWWWWW"
   ],
   "layers": {
     "floorTexture": {
       "legend": { "L": "lift1" },
       "rows": [
-        "..........",
-        ".L........",
-        "..........",
-        "..........",
-        "..........",
-        "..........",
-        ".........."
+        "............",
+        ".L..........",
+        "............",
+        "..........L.",
+        "............",
+        "............",
+        "............"
       ]
     },
     "ceilingTexture": {
       "legend": { "L": "liftceil1" },
       "rows": [
-        "..........",
-        ".L........",
-        "..........",
-        "..........",
-        "..........",
-        "..........",
-        ".........."
+        "............",
+        ".L..........",
+        "............",
+        "..........L.",
+        "............",
+        "............",
+        "............"
       ]
     },
     "wallTexture": {
       "legend": { "1": "lift1" },
       "rows": [
-        "..........",
-        ".1........",
-        "..........",
-        "..........",
-        "..........",
-        "..........",
-        ".........."
+        "............",
+        ".1..........",
+        "............",
+        "..........1.",
+        "............",
+        "............",
+        "............"
       ]
     }
   },
@@ -64,15 +65,22 @@
     { "prop": "medbed1", "x": 4, "y": 5, "at": "S" },
     { "prop": "medbed1", "x": 5, "y": 3, "at": "E", "rotation": 90 }
   ],
-  "lifts": [{ "x": 1, "y": 1, "button": "S", "to": "deck2-engineering" }],
+  "lifts": [
+    { "x": 1, "y": 1, "button": "S", "to": "deck2-engineering" },
+    { "x": 10, "y": 3, "button": "N", "to": "deck0-crew" }
+  ],
   "lights": [{ "x": 8, "y": 4 }],
   "windows": [
     { "x": 4, "y": 1, "wall": "N", "width": 4 },
     { "x": 1, "y": 4, "wall": "W" }
   ],
-  "doors": [{ "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "MEDICAL", "labelVertical": true }],
+  "doors": [
+    { "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "MEDICAL", "labelVertical": true },
+    { "x": 9, "y": 3, "kind": "lift", "facing": "W", "label": "MEDICAL", "labelVertical": true }
+  ],
   "decals": [
     { "decal": "lift_btn_1_down", "x": 1, "y": 1, "surface": "S", "px": 40, "py": 66, "action": "lift" },
+    { "decal": "lift_btn_1_up", "x": 10, "y": 3, "surface": "N", "px": 40, "py": 66, "action": "lift" },
     { "decal": "text_medical", "x": 5, "y": 1, "surface": "S", "px": 60, "py": 40 },
     { "decal": "patch_plate", "x": 5, "y": 5, "surface": "S", "px": 150, "py": 140 },
     { "decal": "warning", "x": 8, "y": 3, "surface": "E", "px": 80, "py": 50 },

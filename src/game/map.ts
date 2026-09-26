@@ -13,7 +13,10 @@ export const MAPS: Record<string, GameMap> = Object.fromEntries(
 );
 
 // the deck the game starts on: in its lift, (1,1), behind its door at (2,1)
-export const START_MAP = MAPS["deck2-engineering"];
+// the deck the game starts on; ?map=<id> in the URL starts on another
+// (for testing a deck without riding the lifts there)
+const requestedMap = typeof location !== "undefined" ? new URLSearchParams(location.search).get("map") : null;
+export const START_MAP = (requestedMap && MAPS[requestedMap]) || MAPS["deck2-engineering"];
 
 // the door spec of a door cell; unlisted door cells are standard doors
 // whose front faces along the passage

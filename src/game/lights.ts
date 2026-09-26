@@ -21,6 +21,12 @@ export interface LightSpec {
 
 const DIRECTIONS = Object.keys(DIR_VECTOR) as Direction[];
 const LIFT_LIGHT_INTENSITY = 0.8;
+const DEFAULT_LAMP_COLOR = 0xfff4e0;
+
+// the color of a map's ceiling lights (and their glowing panels)
+export function lampColor(map: GameMap): number {
+  return map.lightColor ? parseInt(map.lightColor.replace("#", ""), 16) : DEFAULT_LAMP_COLOR;
+}
 
 // Deterministic PRNG (mulberry32) seeded from the map name, so "random"
 // placement stays the same on every load instead of reshuffling.
@@ -65,6 +71,8 @@ function floorCells(map: GameMap, inRegion: (x: number, y: number) => boolean): 
 export function generateLights(map: GameMap): LightSpec[] {
   const random = seededRandom(map.name);
   const lights: LightSpec[] = [];
+  const auto = map.autoLights !== false;
+  const color = lampColor(map);
 
   // a light in a taller room reaches further, to light its floor as well
   const ceilingLight = (x: number, y: number): LightSpec => {
@@ -74,14 +82,15 @@ export function generateLights(map: GameMap): LightSpec[] {
       x,
       z: y,
       y: ceilingHeight(map, x, y) - 0.1,
-      color: 0xfff4e0,
+      color,
       intensity: 1.6 + extra * 0.8,
       range: 2.4 + extra * 1.2,
     };
   };
   // tall rooms anywhere get them too
   const tall = (x: number, y: number) => ceilingHeight(map, x, y) - floorHeight(map, x, y) >= 1.5;
-  for (const { x, y } of floorCells(map, (x, y) => ((x <= 5 && y <= 5) || tall(x, y)) && x % 2 === 1 && y % 2 === 1)) {
+  const autoCells = auto ? floorCells(map, (x, y) => ((x <= 5 && y <= 5) || tall(x, y)) && x % 2 === 1 && y % 2 === 1) : [];
+  for (const { x, y } of autoCells) {
     lights.push(ceilingLight(x, y));
   }
   // the map's own ceiling lights
@@ -117,7 +126,9 @@ export function generateLights(map: GameMap): LightSpec[] {
     });
   }
 
-  const redCandidates =floorCells(map, (x) => x > 5).filter(({ x, y }) => adjacentWalls(map, x, y).length > 0);
+  if (!auto) return lights;
+
+  const redCandidates = floorCells(map, (x) => x > 5).filter(({ x, y }) => adjacentWalls(map, x, y).length > 0);
   for (const { x, y } of pick(redCandidates, 2, random)) {
     const walls = adjacentWalls(map, x, y);
     const wall = walls[Math.floor(random() * walls.length)];

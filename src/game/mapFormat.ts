@@ -42,6 +42,8 @@ export interface MapFile {
     window?: string;
   };
   labelColor?: string;
+  lightColor?: string;
+  autoLights?: boolean;
   start: { x: number; y: number; facing: Direction };
   layout: string[];
   layers?: {
@@ -171,6 +173,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
     deck: file.deck,
     textures: file.textures,
     labelColor: file.labelColor,
+    lightColor: file.lightColor,
+    autoLights: file.autoLights,
     name: file.name,
     width,
     height,

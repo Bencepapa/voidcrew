@@ -48,6 +48,11 @@ export interface GameMap {
   };
   // the paint of the deck's door labels and numbers (hex, e.g. "#1f8f45")
   labelColor?: string;
+  // the deck's ceiling lights (hex, e.g. "#ffd08a"); default a neutral warm white
+  lightColor?: string;
+  // false: no generated mood lights (the demo deck's extra lamps and colored
+  // glows) - only the map's own lights, lifts' and windows'
+  autoLights?: boolean;
   decals?: DecalSpec[];
   // door cells that aren't plain standard doors
   doors?: DoorSpec[];

@@ -1,0 +1,107 @@
+{
+  "name": "Deck 0 - Crew Quarters",
+  "deck": 0,
+  "textures": {
+    "wall": "crewwall1",
+    "floor": "medfloor1",
+    "ceiling": "medceil1"
+  },
+  "labelColor": "#c8901e",
+  "lightColor": "#ffcf87",
+  "autoLights": false,
+  "start": { "x": 1, "y": 4, "facing": "E" },
+  "layout": [
+    "WWWWWWWWWWWWWWWWW",
+    "WWWW...W...W...WW",
+    "WWWW...W...W...WW",
+    "WWWWWDWWWDWWWDWWW",
+    "W.D.............W",
+    "WWWWWDWWWDWWWDWWW",
+    "WWWW...W...W...WW",
+    "WWWW...W...W...WW",
+    "WWWWWWWWWWWWWWWWW"
+  ],
+  "layers": {
+    "floorTexture": {
+      "legend": { "L": "lift1" },
+      "rows": [
+        ".................",
+        ".................",
+        ".................",
+        ".................",
+        ".L...............",
+        ".................",
+        ".................",
+        ".................",
+        "................."
+      ]
+    },
+    "ceilingTexture": {
+      "legend": { "L": "liftceil1" },
+      "rows": [
+        ".................",
+        ".................",
+        ".................",
+        ".................",
+        ".L...............",
+        ".................",
+        ".................",
+        ".................",
+        "................."
+      ]
+    },
+    "wallTexture": {
+      "legend": { "1": "lift1" },
+      "rows": [
+        ".................",
+        ".................",
+        ".................",
+        ".................",
+        ".1...............",
+        ".................",
+        ".................",
+        ".................",
+        "................."
+      ]
+    }
+  },
+  "lifts": [{ "x": 1, "y": 4, "button": "S", "to": "deck1-medical" }],
+  "lights": [
+    { "x": 3, "y": 4 },
+    { "x": 6, "y": 4 },
+    { "x": 9, "y": 4 },
+    { "x": 12, "y": 4 },
+    { "x": 15, "y": 4 },
+    { "x": 5, "y": 1 },
+    { "x": 9, "y": 1 },
+    { "x": 13, "y": 1 },
+    { "x": 5, "y": 7 },
+    { "x": 9, "y": 7 },
+    { "x": 13, "y": 7 }
+  ],
+  "windows": [
+    { "x": 5, "y": 1, "wall": "N" },
+    { "x": 9, "y": 1, "wall": "N" },
+    { "x": 13, "y": 1, "wall": "N" },
+    { "x": 5, "y": 7, "wall": "S" },
+    { "x": 9, "y": 7, "wall": "S" },
+    { "x": 13, "y": 7, "wall": "S" }
+  ],
+  "props": [
+    { "prop": "crate1", "x": 4, "y": 2, "at": "SW" },
+    { "prop": "crate1", "x": 10, "y": 6, "at": "NE", "rotation": 10 },
+    { "prop": "crate1", "x": 15, "y": 4, "at": "NE" }
+  ],
+  "doors": [
+    { "x": 2, "y": 4, "kind": "lift", "facing": "E", "label": "CREW", "labelVertical": true },
+    { "x": 5, "y": 3, "kind": "standard", "facing": "S", "label": "C1" },
+    { "x": 9, "y": 3, "kind": "standard", "facing": "S", "label": "C2" },
+    { "x": 13, "y": 3, "kind": "standard", "facing": "S", "label": "C3" },
+    { "x": 5, "y": 5, "kind": "standard", "facing": "N", "label": "C4" },
+    { "x": 9, "y": 5, "kind": "standard", "facing": "N", "label": "C5" },
+    { "x": 13, "y": 5, "kind": "standard", "facing": "N", "label": "C6" }
+  ],
+  "decals": [
+    { "decal": "lift_btn_0_down", "x": 1, "y": 4, "surface": "S", "px": 40, "py": 66, "action": "lift" }
+  ]
+}
