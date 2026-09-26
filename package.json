@@ -16,7 +16,8 @@
     "decals:import": "tsx scripts/import-decals.ts",
     "decals:text": "tsx scripts/make-text-decal.ts",
     "textures:trim": "tsx scripts/make-trim-textures.ts",
-    "texture:window-strip": "tsx scripts/make-window-strip.ts"
+    "texture:window-strip": "tsx scripts/make-window-strip.ts",
+    "decals:lift-buttons": "tsx scripts/make-lift-buttons.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

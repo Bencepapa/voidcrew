@@ -22,6 +22,10 @@ export default function App() {
     dir,
     elevation,
     jumpDown,
+    use,
+    touch,
+    inLift,
+    ride,
     crew,
     log,
     moveForward,
@@ -39,7 +43,18 @@ export default function App() {
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");
-  const free = useFreeMovement({ enabled: !grid, map, pos, dir, elevation, openDoors, openingDoor, syncPose, openDoorAt });
+  const free = useFreeMovement({
+    enabled: !grid,
+    frozen: inLift,
+    map,
+    pos,
+    dir,
+    elevation,
+    openDoors,
+    openingDoor,
+    syncPose,
+    openDoorAt,
+  });
   const view = useViewControls({
     grid,
     onForward: moveForward,
@@ -90,6 +105,15 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [grid, moveForward, moveBackward, turnL, turnR, jumpDown]);
 
+  // Use (Space or Enter) works in both movement modes
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === " " || e.key === "Enter") use();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [use]);
+
   const viewport = (
     <GameViewport
       map={map}
@@ -97,6 +121,8 @@ export default function App() {
       dir={dir}
       elevation={elevation}
       openDoors={openDoors}
+      ride={ride}
+      onTouch={touch}
       freeTick={grid ? undefined : free.tick}
       peekRef={view.peekRef}
       settings={settings}
@@ -123,10 +149,11 @@ export default function App() {
       onTurnLeft={turnL}
       onTurnRight={turnR}
       onJumpDown={jumpDown ?? undefined}
+      onUse={use}
       compact={compact}
     />
   ) : (
-    <ActionMenu compact={compact} />
+    <ActionMenu onUse={use} compact={compact} />
   );
 
   if (compact) {
@@ -177,7 +204,7 @@ export default function App() {
           <Minimap map={map} pos={pos} dir={dir} />
           <div className="text-[10px] text-neutral-500 px-1">
             <div>{map.name}</div>
-            <div>Deck 2 &middot; Day 17</div>
+            <div>Deck {map.deck} &middot; Day 17</div>
           </div>
           <div className="flex-1 min-h-0">
             <LogPanel log={log} />

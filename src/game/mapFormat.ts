@@ -26,6 +26,8 @@ interface LayerFile<T> {
 
 export interface MapFile {
   name: string;
+  // deck number (lower = higher up the ship)
+  deck: number;
   start: { x: number; y: number; facing: Direction };
   layout: string[];
   layers?: {
@@ -34,7 +36,16 @@ export interface MapFile {
     floorTexture?: LayerFile<string>;
     wallTexture?: LayerFile<string>;
   };
-  doors?: { x: number; y: number; kind: DoorSpec["kind"]; facing: Direction; label?: string }[];
+  doors?: {
+    x: number;
+    y: number;
+    kind: DoorSpec["kind"];
+    facing: Direction;
+    label?: string;
+    labelVertical?: boolean;
+  }[];
+  // x, y: the cabin; button: the wall its button decal is on; to: map id
+  lifts?: { x: number; y: number; button: Direction; to: string }[];
   // x, y: the lower cell; wall: its side toward the higher one
   ladders?: { x: number; y: number; wall: Direction }[];
   bridges?: { x: number; y: number; height: number; axis: "NS" | "EW" }[];
@@ -49,6 +60,7 @@ export interface MapFile {
     px: number;
     py: number;
     rotation?: number;
+    action?: string;
   }[];
 }
 
@@ -71,7 +83,7 @@ function checkHeight(value: number, what: string) {
   }
 }
 
-export function parseMap(file: MapFile): GameMap {
+export function parseMap(id: string, file: MapFile): GameMap {
   const height = file.layout.length;
   const width = file.layout[0]?.length ?? 0;
   const cells = file.layout.map((row, y) => {
@@ -137,6 +149,8 @@ export function parseMap(file: MapFile): GameMap {
   const wallTextures = readLayer(file.layers?.wallTexture, width, height, "wallTexture");
 
   return {
+    id,
+    deck: file.deck,
     name: file.name,
     width,
     height,
@@ -151,11 +165,16 @@ export function parseMap(file: MapFile): GameMap {
       kind: d.kind,
       facing: d.facing,
       label: d.label,
+      labelVertical: d.labelVertical,
     })),
     ladders,
     bridges,
     lights: (file.lights ?? []).map((l) => ({ x: l.x, y: l.y })),
     windows,
+    lifts: (file.lifts ?? []).map((l) => {
+      if (cells[l.y]?.[l.x] !== "floor") throw new Error(`lift at ${l.x},${l.y} isn't a floor cell`);
+      return { cell: { x: l.x, y: l.y }, button: l.button, to: l.to };
+    }),
     decals: (file.decals ?? []).map((d) => ({
       decal: d.decal,
       cell: { x: d.x, y: d.y },
@@ -163,6 +182,7 @@ export function parseMap(file: MapFile): GameMap {
       x: d.px,
       y: d.py,
       rotation: d.rotation,
+      action: d.action,
     })),
   };
 }

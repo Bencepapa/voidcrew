@@ -58,7 +58,7 @@ export function Minimap({ map, pos, dir, compact }: MinimapProps) {
                 key={`${x}-${y}`}
                 className="aspect-square flex items-center justify-center text-[8px] leading-none"
                 style={{
-                  background: cell === "wall" ? "transparent" : cell === "door" ? door : floor(x, y),
+                  backgroundColor: cell === "wall" ? "transparent" : cell === "door" ? door : floor(x, y),
                   boxShadow: ladderEdges(x, y),
                   backgroundImage: bridgeStripe(x, y),
                   color: "#4ade80",

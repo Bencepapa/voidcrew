@@ -31,6 +31,8 @@ interface DecalAsset {
 
 interface Projection {
   decal: string;
+  // DecalSpec.action
+  action?: string;
   key: string;
   position: THREE.Vector3;
   orientation: THREE.Euler;
@@ -160,6 +162,7 @@ export class DecalLibrary {
     const reach = Math.ceil(Math.hypot(w, h));
     return coplanarSurfaces(spec.cell, spec.surface, reach).map((cell) => ({
       decal: spec.decal,
+      action: spec.action,
       key: surfaceKey(cell, spec.surface),
       position,
       orientation,
@@ -178,7 +181,10 @@ export class DecalLibrary {
       return;
     }
     this.disposables.push(geometry);
-    this.opts.parent.add(new THREE.Mesh(geometry, p.material));
+    const decal = new THREE.Mesh(geometry, p.material);
+    // an interactive decal: the viewport finds it by this when touched
+    if (p.action) decal.userData.action = p.action;
+    this.opts.parent.add(decal);
     this.built.push({ decal: p.decal, key: p.key, triangles });
   }
 }

@@ -7,6 +7,8 @@ import type { Direction, GameMap, Vec2 } from "./types";
 
 interface FreeMovementOptions {
   enabled: boolean;
+  // no moving or turning (riding a lift)
+  frozen: boolean;
   map: GameMap;
   pos: Vec2;
   dir: Direction;
@@ -43,13 +45,14 @@ export function useFreeMovement(opts: FreeMovementOptions) {
   const latest = useRef(opts);
   latest.current = opts;
 
-  // entering free mode starts from where the grid movement left the player
+  // entering free mode starts from where the grid movement left the player,
+  // and a new map (a lift ride) from where the game state put them in it
   useEffect(() => {
     if (!enabled) return;
     const { pos, dir, elevation } = latest.current;
     poseRef.current = gridPose(pos, dir, elevation);
     lastSyncRef.current = "";
-  }, [enabled]);
+  }, [enabled, opts.map]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -74,11 +77,14 @@ export function useFreeMovement(opts: FreeMovementOptions) {
     const keys = keysRef.current;
     const held = (...names: string[]) => (names.some((n) => keys.has(n)) ? 1 : 0);
     const axes = axesRef.current;
-    const input = {
-      moveY: clampAxis(axes.moveY + held("w", "arrowup") - held("s", "arrowdown")),
-      moveX: clampAxis(axes.moveX + held("d") - held("a")),
-      turn: clampAxis(axes.turn + held("e", "arrowright") - held("q", "arrowleft")),
-    };
+    const input = o.frozen
+      ? { moveY: 0, moveX: 0, turn: 0 }
+      : {
+          moveY: clampAxis(axes.moveY + held("w", "arrowup") - held("s", "arrowdown")),
+          moveX: clampAxis(axes.moveX + held("d") - held("a")),
+          turn: clampAxis(axes.turn + held("e", "arrowright") - held("q", "arrowleft")),
+        };
+    if (o.frozen) pendingYawRef.current = 0;
     if (pendingYawRef.current) {
       poseRef.current = { ...poseRef.current, yaw: poseRef.current.yaw + pendingYawRef.current };
       pendingYawRef.current = 0;

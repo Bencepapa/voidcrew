@@ -12,6 +12,10 @@ export interface MapCell {
 }
 
 export interface GameMap {
+  // the map file's name (src/maps/<id>.json)
+  id: string;
+  // deck number: lower decks are higher up the ship (deck 1 above deck 2)
+  deck: number;
   width: number;
   height: number;
   cells: CellType[][];
@@ -36,6 +40,16 @@ export interface GameMap {
   // hand-placed ceiling lights, on top of the generated mood lighting
   lights?: Vec2[];
   windows?: WindowSpec[];
+  lifts?: LiftSpec[];
+}
+
+// A lift cabin: the cell behind a lift door. Its button (a decal with the
+// "lift" action on the `button` wall) takes it to another map's lift.
+export interface LiftSpec {
+  cell: Vec2;
+  button: Direction;
+  // the map id it goes to; it arrives in that map's lift leading back here
+  to: string;
 }
 
 // A window onto space in a wall of a walkable cell, `width` panels wide:
@@ -76,6 +90,8 @@ export interface DoorSpec {
   facing: Direction;
   // stenciled onto the panel; "\n" stacks lines (e.g. "EN\nGI\nNE")
   label?: string;
+  // run the label down the panel, turned 90 degrees clockwise
+  labelVertical?: boolean;
 }
 
 // A decal (bullet hole, stencil, stain...) projected onto one surface of a
@@ -94,6 +110,8 @@ export interface DecalSpec {
   y: number;
   // degrees, clockwise as seen looking at the surface
   rotation?: number;
+  // touching (clicking, tapping) the decal does this - e.g. "lift"
+  action?: string;
 }
 
 export interface Crewmate {

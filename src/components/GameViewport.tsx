@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
-import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween, windowPanels } from "../game/map";
+import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween, liftDoorOf, windowPanels } from "../game/map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
@@ -12,6 +12,7 @@ import { doorCellKey } from "../game/useGameState";
 import { forwardOf } from "../game/freeMovement";
 import type { FreePose } from "../game/freeMovement";
 import type { PeekState } from "./useViewControls";
+import type { LiftRide } from "../game/useGameState";
 import { WALL_ROTATION, surfaceKey } from "../render/surfaces";
 import { DecalLibrary } from "../render/decals";
 import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
@@ -520,6 +521,17 @@ const WINDOW_DEPTH = 0.1;
 const GLASS_TINT = 0xdfe8ff;
 // how strongly lights glint on the glass
 const GLASS_SHEEN = 0.25;
+
+// Lift rides: the cabin lights dip this long either side of the deck swap;
+// a shaft light passes every SHAFT_LIGHT_PERIOD_MS, sweeping this far above
+// and below the eyes
+const LIFT_DIP_MS = 350;
+const SHAFT_LIGHT_COLOR = 0xffe2b0;
+const SHAFT_LIGHT_INTENSITY = 3.5;
+const SHAFT_LIGHT_PERIOD_MS = 700;
+const SHAFT_LIGHT_SWEEP = 1.2;
+// how far away an interactive decal can be touched (world units)
+const TOUCH_REACH = 1.4;
 const DOOR_PANEL_SETS: Record<DoorSpec["kind"], TextureSetId> = {
   standard: "door1",
   lift: "liftdoor1",
@@ -585,6 +597,11 @@ interface GameViewportProps {
   elevation: number;
   // door cells ("x,y") that are open
   openDoors: ReadonlySet<string>;
+  // a lift ride in progress: the cabin shakes, the shaft's lights sweep by
+  ride?: LiftRide | null;
+  // an interactive decal (DecalSpec.action) was clicked or tapped within
+  // reach
+  onTouch?: (action: string) => void;
   // free movement: called every frame with the frame time (s), returns the
   // camera pose; when absent the camera follows pos/dir on the grid
   freeTick?: (dt: number) => FreePose;
@@ -710,6 +727,21 @@ function easeOutQuad(t: number): number {
   return 1 - (1 - t) * (1 - t);
 }
 
+// an RGBA image turned 90 degrees clockwise (text reading top to bottom)
+function turnClockwise(img: { width: number; height: number; rgba: Uint8Array }) {
+  const { width: w, height: h } = img;
+  const rgba = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // (x, y) -> (h - 1 - y, x) in the w-tall, h-wide result
+      const src = (y * w + x) * 4;
+      const dst = (x * h + (h - 1 - y)) * 4;
+      rgba.set(img.rgba.subarray(src, src + 4), dst);
+    }
+  }
+  return { width: h, height: w, rgba };
+}
+
 function easeInOutQuad(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
 }
@@ -732,6 +764,8 @@ export function GameViewport({
   dir,
   elevation,
   openDoors,
+  ride,
+  onTouch,
   freeTick,
   peekRef,
   settings,
@@ -769,6 +803,12 @@ export function GameViewport({
 
   const peekRefRef = useRef(peekRef);
   peekRefRef.current = peekRef;
+  const rideRef = useRef(ride);
+  rideRef.current = ride;
+  const onTouchRef = useRef(onTouch);
+  onTouchRef.current = onTouch;
+  // a new map (a lift ride's arrival) places the camera outright
+  const cameraMapRef = useRef(map);
 
   // a layout effect: it has to take effect before the next frame is drawn,
   // or that frame would show the old facing (see pendingTurn below)
@@ -781,6 +821,13 @@ export function GameViewport({
       // angle instead of swinging through the whole turn again
       peek.offset -= (peek.pendingTurn * Math.PI) / 2;
       peek.pendingTurn = 0;
+      animRef.current = null;
+      liveRef.current = computeTarget(pos, dir, elevation);
+      return;
+    }
+    if (cameraMapRef.current !== map) {
+      // arrived on another map: no glide from wherever the old one had us
+      cameraMapRef.current = map;
       animRef.current = null;
       liveRef.current = computeTarget(pos, dir, elevation);
       return;
@@ -799,7 +846,7 @@ export function GameViewport({
       jumpSide = DIR_VECTOR[alongBridge ? rightOf(dir) : dir];
     }
     animRef.current = { from, to, start: performance.now(), climb, jumpSide };
-  }, [pos, dir, elevation]);
+  }, [pos, dir, elevation, map]);
 
   const freeTickRef = useRef(freeTick);
   freeTickRef.current = freeTick;
@@ -854,6 +901,11 @@ export function GameViewport({
     scene.add(ambient);
     const pointLight = new THREE.PointLight(0xfff2d9, settings.pointLightIntensity, 8, 2);
     scene.add(pointLight);
+    // a lift ride's shaft lights: sweeping past the outside of the cabin
+    // (lights shine through walls here - that's what makes it read as
+    // light leaking in around the door as the cabin moves)
+    const shaftLight = new THREE.PointLight(SHAFT_LIGHT_COLOR, 0, 2.2, 2);
+    scene.add(shaftLight);
 
     const bust = textureVersion ? `?v=${textureVersion}` : "";
     const loader = new THREE.TextureLoader();
@@ -1444,9 +1496,14 @@ export function GameViewport({
       const area = DOOR_LABEL_AREA;
       const random = seededRandom(spec.label!);
       // the biggest stencil that fits the field, up to a readable maximum
-      let label = renderText(spec.label!, 1, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, random);
+      // (turned to run down the panel if it's a vertical label)
+      const stencil = (scale: number, rnd: () => number) => {
+        const text = renderText(spec.label!, scale, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, rnd);
+        return spec.labelVertical ? turnClockwise(text) : text;
+      };
+      let label = stencil(1, random);
       for (let scale = DOOR_LABEL_MAX_SCALE; scale >= 1; scale--) {
-        label = renderText(spec.label!, scale, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, seededRandom(spec.label!));
+        label = stencil(scale, seededRandom(spec.label!));
         if (label.width <= area.w && label.height <= area.h) break;
       }
       const ox = area.x + Math.floor((area.w - label.width) / 2);
@@ -1719,6 +1776,35 @@ export function GameViewport({
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
 
+    // Touching an interactive decal: a click or tap (not a drag) whose ray
+    // meets one within reach, in front of whatever else it meets. The press
+    // starts on the canvas; the release is heard on the window, since the
+    // view controls capture the pointer.
+    const raycaster = new THREE.Raycaster();
+    raycaster.far = TOUCH_REACH + settings.cameraPullback;
+    let press: { x: number; y: number; at: number } | null = null;
+    const onPress = (e: PointerEvent) => {
+      press = { x: e.clientX, y: e.clientY, at: performance.now() };
+    };
+    const onRelease = (e: PointerEvent) => {
+      const p = press;
+      press = null;
+      if (!p || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8 || performance.now() - p.at > 500) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      // pointer-locked (free mouselook): aim with the screen's center
+      const ndc = document.pointerLockElement
+        ? new THREE.Vector2(0, 0)
+        : new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObjects(group.children, true);
+      if (!hits.length) return;
+      // a decal lies on its wall: count it if it's as near as the nearest hit
+      const touched = hits.find((h) => h.object.userData.action && h.distance <= hits[0].distance + 0.02);
+      if (touched) onTouchRef.current?.(touched.object.userData.action);
+    };
+    renderer.domElement.addEventListener("pointerdown", onPress);
+    window.addEventListener("pointerup", onRelease);
+
     const startedAt = performance.now();
     let lastFrameAt = startedAt;
     let lastStatsAt = 0;
@@ -1787,8 +1873,22 @@ export function GameViewport({
         if (p >= 1) doorAnimsRef.current.delete(key);
       }
 
-      const bobY = s.bobEnabled ? Math.sin((t * 2 * Math.PI) / 3.2) * 0.035 : 0;
-      const bobRoll = s.bobEnabled ? Math.cos((t * 2 * Math.PI) / 1.6) * 0.015 : 0;
+      // A lift ride: the cabin shakes (easing in and out), its lights dip
+      // while the next deck is swapped in, and shaft lights sweep past
+      // outside the door - downward while riding up, upward riding down.
+      const ride = rideRef.current;
+      let shake = 0;
+      let rideDip = 1;
+      let rideElapsed = 0;
+      if (ride) {
+        rideElapsed = now - ride.start;
+        const p = rideElapsed / ride.duration;
+        shake = smoothstep(0, 0.1, p) * (1 - smoothstep(0.85, 1, p));
+        rideDip = 1 - 0.85 * (1 - smoothstep(0, LIFT_DIP_MS, Math.abs(rideElapsed - ride.swapAt)));
+      }
+      const shakeY = shake * (Math.sin(t * 37) * 0.006 + Math.sin(t * 23.3) * 0.004);
+      const bobY = (s.bobEnabled ? Math.sin((t * 2 * Math.PI) / 3.2) * 0.035 : 0) + shakeY;
+      const bobRoll = (s.bobEnabled ? Math.cos((t * 2 * Math.PI) / 1.6) * 0.015 : 0) + shake * Math.sin(t * 29) * 0.004;
 
       const fwdX = cam.tx - cam.x;
       const fwdZ = cam.tz - cam.z;
@@ -1830,7 +1930,7 @@ export function GameViewport({
       camera.rotateZ(bobRoll);
 
       ambient.intensity = s.ambientIntensity;
-      pointLight.intensity = s.pointLightIntensity;
+      pointLight.intensity = s.pointLightIntensity * rideDip;
       for (const kit of allKits) {
         for (const mat of kitMaterials(kit)) {
           mat.roughness = s.roughness;
@@ -1859,7 +1959,18 @@ export function GameViewport({
         Math.min(eyeY - bobY + 0.3, ceilingHere - 0.08),
         camZ + Math.sin(t * 0.5) * 0.15,
       );
-      updateLightPool(camX, eyeY, camZ, s.mapLightIntensity);
+      updateLightPool(camX, eyeY, camZ, s.mapLightIntensity * rideDip);
+
+      const liftDoor = ride ? liftDoorOf(map, { x: Math.round(cam.x), y: Math.round(cam.z) }) : undefined;
+      if (ride && liftDoor) {
+        const v = DIR_VECTOR[liftDoor.facing];
+        const phase = (rideElapsed / SHAFT_LIGHT_PERIOD_MS) % 1;
+        const offset = (ride.up ? 1 - 2 * phase : 2 * phase - 1) * SHAFT_LIGHT_SWEEP;
+        shaftLight.position.set(liftDoor.cell.x + v.x * 0.3, eyeY + offset, liftDoor.cell.y + v.y * 0.3);
+        shaftLight.intensity = SHAFT_LIGHT_INTENSITY * shake * (1 - Math.abs(offset) / SHAFT_LIGHT_SWEEP) ** 2;
+      } else {
+        shaftLight.intensity = 0;
+      }
 
       renderer.render(scene, camera);
 
@@ -1910,6 +2021,8 @@ export function GameViewport({
       if (w.__voidcrewSnapshot === snapshot) delete w.__voidcrewSnapshot;
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
+      renderer.domElement.removeEventListener("pointerdown", onPress);
+      window.removeEventListener("pointerup", onRelease);
       container.removeChild(renderer.domElement);
       for (const geo of geometries) geo.dispose();
       for (const kit of allKits) {

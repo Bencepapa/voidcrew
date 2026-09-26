@@ -1,11 +1,19 @@
 import { DIR_VECTOR, rightOf } from "./movement";
-import type { BridgeSpec, CellType, Direction, DoorSpec, GameMap, LadderSpec, Vec2 } from "./types";
+import type { BridgeSpec, CellType, Direction, DoorSpec, GameMap, LadderSpec, LiftSpec, Vec2 } from "./types";
 import { parseMap } from "./mapFormat";
 import type { MapFile } from "./mapFormat";
-import deck2File from "../maps/deck2-engineering.json";
 
-// (1,1) is the lift the player arrives in, (2,1) its door
-export const deck2Engineering: GameMap = parseMap(deck2File as MapFile);
+// every map in src/maps/, by id (its file name)
+const files = import.meta.glob<MapFile>("../maps/*.json", { eager: true, import: "default" });
+export const MAPS: Record<string, GameMap> = Object.fromEntries(
+  Object.entries(files).map(([path, file]) => {
+    const id = path.replace(/^.*\/(.+)\.json$/, "$1");
+    return [id, parseMap(id, file)];
+  }),
+);
+
+// the deck the game starts on: in its lift, (1,1), behind its door at (2,1)
+export const START_MAP = MAPS["deck2-engineering"];
 
 // the door spec of a door cell; unlisted door cells are standard doors
 // whose front faces along the passage
@@ -46,6 +54,18 @@ export function windowPanels(map: GameMap): { cell: Vec2; wall: Direction; index
 
 export function bridgeAt(map: GameMap, x: number, y: number): BridgeSpec | undefined {
   return map.bridges?.find((b) => b.cell.x === x && b.cell.y === y);
+}
+
+export function liftAt(map: GameMap, cell: Vec2): LiftSpec | undefined {
+  return map.lifts?.find((l) => l.cell.x === cell.x && l.cell.y === cell.y);
+}
+
+// the lift door of a lift cabin: the lift door facing away from it
+export function liftDoorOf(map: GameMap, cabin: Vec2): DoorSpec | undefined {
+  return map.doors?.find((d) => {
+    const v = DIR_VECTOR[d.facing];
+    return d.kind === "lift" && d.cell.x - v.x === cabin.x && d.cell.y - v.y === cabin.y;
+  });
 }
 
 // the ladder on the edge between two neighboring cells, if there is one

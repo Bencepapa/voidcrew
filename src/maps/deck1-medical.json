@@ -1,0 +1,55 @@
+{
+  "name": "Deck 1 - Medical",
+  "deck": 1,
+  "start": { "x": 1, "y": 1, "facing": "E" },
+  "layout": [
+    "WWWWWWWWWW",
+    "W.D......W",
+    "WWW.WWWW.W",
+    "W.....W..W",
+    "W.....D..W",
+    "W.....W..W",
+    "WWWWWWWWWW"
+  ],
+  "layers": {
+    "floorTexture": {
+      "legend": { "1": "floor1", "2": "floor2", "L": "lift1" },
+      "default": "floor1",
+      "rows": [
+        "..........",
+        ".L........",
+        "..........",
+        ".22222....",
+        ".22222....",
+        ".22222....",
+        ".........."
+      ]
+    },
+    "wallTexture": {
+      "legend": { "1": "lift1" },
+      "rows": [
+        "..........",
+        ".1........",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        ".........."
+      ]
+    }
+  },
+  "lifts": [{ "x": 1, "y": 1, "button": "S", "to": "deck2-engineering" }],
+  "lights": [{ "x": 8, "y": 4 }],
+  "windows": [
+    { "x": 4, "y": 1, "wall": "N", "width": 4 },
+    { "x": 1, "y": 4, "wall": "W" }
+  ],
+  "doors": [{ "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "MEDICAL", "labelVertical": true }],
+  "decals": [
+    { "decal": "lift_btn_2_down", "x": 1, "y": 1, "surface": "S", "px": 108, "py": 66, "action": "lift" },
+    { "decal": "text_medical", "x": 5, "y": 1, "surface": "S", "px": 60, "py": 40 },
+    { "decal": "patch_plate", "x": 5, "y": 5, "surface": "S", "px": 150, "py": 140 },
+    { "decal": "warning", "x": 8, "y": 3, "surface": "E", "px": 80, "py": 50 },
+    { "decal": "claw_marks", "x": 7, "y": 5, "surface": "S", "px": 60, "py": 90 }
+  ]
+}

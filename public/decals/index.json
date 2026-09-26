@@ -14,6 +14,12 @@
   "hazard_stripes": {
     "normal": false
   },
+  "lift_btn_1_up": {
+    "normal": false
+  },
+  "lift_btn_2_down": {
+    "normal": false
+  },
   "num_07": {
     "normal": false
   },
@@ -33,6 +39,9 @@
     "normal": false
   },
   "text_lift": {
+    "normal": false
+  },
+  "text_medical": {
     "normal": false
   },
   "warning": {
