@@ -29,6 +29,9 @@ export interface MapFile {
   name: string;
   // deck number (lower = higher up the ship)
   deck: number;
+  // default texture sets for the deck (see GameMap.textures)
+  textures?: { wall?: string; floor?: string; ceiling?: string; door?: string; liftDoor?: string };
+  labelColor?: string;
   start: { x: number; y: number; facing: Direction };
   layout: string[];
   layers?: {
@@ -154,6 +157,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
   return {
     id,
     deck: file.deck,
+    textures: file.textures,
+    labelColor: file.labelColor,
     name: file.name,
     width,
     height,

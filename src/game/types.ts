@@ -34,6 +34,11 @@ export interface GameMap {
   wallTextureAt?: (x: number, y: number) => string | undefined;
   // ceiling texture set of a walkable cell; omitted = the renderer's choice
   ceilingTextureAt?: (x: number, y: number) => string | undefined;
+  // the deck's own look: its default texture sets (renderer ids) - any
+  // omitted falls back to the renderer's settings
+  textures?: { wall?: string; floor?: string; ceiling?: string; door?: string; liftDoor?: string };
+  // the paint of the deck's door labels and numbers (hex, e.g. "#1f8f45")
+  labelColor?: string;
   decals?: DecalSpec[];
   // door cells that aren't plain standard doors
   doors?: DoorSpec[];

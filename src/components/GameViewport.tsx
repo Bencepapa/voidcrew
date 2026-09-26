@@ -35,7 +35,12 @@ export type TextureSetId =
   | "window1_mid"
   | "window1_right"
   | "lift1"
-  | "liftceil1";
+  | "liftceil1"
+  | "medwall1"
+  | "medfloor1"
+  | "medceil1"
+  | "meddoor1"
+  | "medliftdoor1";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -360,6 +365,39 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     normal: `${import.meta.env.BASE_URL}textures/liftceil1/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/liftceil1/depth.png`,
     emissive: `${import.meta.env.BASE_URL}textures/liftceil1/emissive.png`,
+    pixelArt: true,
+  },
+  // the medical deck (generated from concept/medical_concept.png): sterile
+  // light grey plates with medical-green accents
+  medwall1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medwall1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medwall1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medwall1/depth.png`,
+    pixelArt: true,
+  },
+  medfloor1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medfloor1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medfloor1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medfloor1/depth.png`,
+    pixelArt: true,
+  },
+  medceil1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medceil1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medceil1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medceil1/depth.png`,
+    emissive: `${import.meta.env.BASE_URL}textures/medceil1/emissive.png`,
+    pixelArt: true,
+  },
+  meddoor1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/meddoor1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/meddoor1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/meddoor1/depth.png`,
+    pixelArt: true,
+  },
+  medliftdoor1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medliftdoor1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medliftdoor1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medliftdoor1/depth.png`,
     pixelArt: true,
   },
   // wall panel with a window frame; its opening is transparent
@@ -1031,8 +1069,12 @@ export function GameViewport({
 
     // most walls use the main texture set; a stable, position-based share of
     // them gets the accent set for variety
-    const primaryKit = createWallKit(settings.textureSet);
+    // (a deck with its own wall set uses just that - its look is uniform)
+    const deckWall = isTextureSetId(map.textures?.wall) ? map.textures.wall : undefined;
+    const primarySet = deckWall ?? settings.textureSet;
+    const primaryKit = createWallKit(primarySet);
     const accentKit =
+      !deckWall &&
       settings.accentTextureSet !== "none" &&
       settings.accentTextureSet !== settings.textureSet &&
       settings.accentRatio > 0
@@ -1040,7 +1082,7 @@ export function GameViewport({
         : null;
     // wall kits by texture set: the default mix plus any the map asks for
     // (map.wallTextureAt), created on demand
-    const wallKits = new Map<TextureSetId, WallKit>([[settings.textureSet, primaryKit]]);
+    const wallKits = new Map<TextureSetId, WallKit>([[primarySet, primaryKit]]);
     if (accentKit) wallKits.set(settings.accentTextureSet as TextureSetId, accentKit);
     function wallKitFor(setId: TextureSetId): WallKit {
       let kit = wallKits.get(setId);
@@ -1056,7 +1098,8 @@ export function GameViewport({
       const choice = settings.floorTextureSet;
       if (choice === "none") return null;
       const fromMap = map.floorAt?.(x, y);
-      const setId = choice !== "map" ? choice : isTextureSetId(fromMap) ? fromMap : DEFAULT_FLOOR;
+      const deckFloor = isTextureSetId(map.textures?.floor) ? map.textures.floor : DEFAULT_FLOOR;
+      const setId = choice !== "map" ? choice : isTextureSetId(fromMap) ? fromMap : deckFloor;
       let kit = floorKits.get(setId);
       if (!kit) {
         kit = createWallKit(setId, false);
@@ -1071,7 +1114,8 @@ export function GameViewport({
     function ceilingKitAt(x: number, y: number): WallKit | null {
       if (settings.ceilingTextureSet === "none") return null;
       const fromMap = map.ceilingTextureAt?.(x, y);
-      const setId = isTextureSetId(fromMap) ? fromMap : settings.ceilingTextureSet;
+      const deckCeiling = isTextureSetId(map.textures?.ceiling) ? map.textures.ceiling : undefined;
+      const setId = isTextureSetId(fromMap) ? fromMap : (deckCeiling ?? settings.ceilingTextureSet);
       let kit = ceilingKits.get(setId);
       if (!kit) {
         kit = createWallKit(setId, false);
@@ -1105,11 +1149,23 @@ export function GameViewport({
       return kit;
     };
     // door panel kits by door kind, created on demand
+    // a deck's own door panels and label paint, else the defaults
+    const panelSetFor = (kind: DoorSpec["kind"]): TextureSetId => {
+      const own = kind === "lift" ? map.textures?.liftDoor : map.textures?.door;
+      return isTextureSetId(own) ? own : DOOR_PANEL_SETS[kind];
+    };
+    const labelHex = /^#?([0-9a-f]{6})$/i.exec(map.labelColor ?? "")?.[1];
+    const labelPaint: [number, number, number] = labelHex
+      ? [0, 2, 4].map((i) => parseInt(labelHex.slice(i, i + 2), 16)) as [number, number, number]
+      : LABEL_PAINT;
+    const labelPaintDark: [number, number, number] = labelHex
+      ? labelPaint.map((c) => Math.round(c * 0.85)) as [number, number, number]
+      : LABEL_PAINT_DARK;
     const panelKits = new Map<DoorSpec["kind"], WallKit>();
     const panelKitFor = (kind: DoorSpec["kind"]) => {
       let kit = panelKits.get(kind);
       if (!kit) {
-        kit = createWallKit(DOOR_PANEL_SETS[kind], false);
+        kit = createWallKit(panelSetFor(kind), false);
         panelKits.set(kind, kit);
       }
       return kit;
@@ -1563,7 +1619,7 @@ export function GameViewport({
     // a copy of the kit's panel material whose diffuse has the door's label
     // stenciled into the panel's label field
     async function labeledPanelMaterial(spec: DoorSpec, kit: WallKit): Promise<THREE.MeshStandardMaterial> {
-      const setPaths = TEXTURE_SETS[DOOR_PANEL_SETS[spec.kind]];
+      const setPaths = TEXTURE_SETS[panelSetFor(spec.kind)];
       const image = (await loader.loadAsync(setPaths.diffuse + bust)).image as HTMLImageElement;
       const canvas = document.createElement("canvas");
       canvas.width = image.width;
@@ -1588,7 +1644,7 @@ export function GameViewport({
       // a lift door shows its deck's number at the top of the field, upright
       const field = { ...DOOR_LABEL_AREA };
       if (spec.kind === "lift") {
-        const number = renderText(String(map.deck), DOOR_LABEL_MAX_SCALE, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, seededRandom(String(map.deck)));
+        const number = renderText(String(map.deck), DOOR_LABEL_MAX_SCALE, labelPaint, labelPaintDark, 0.06, seededRandom(String(map.deck)));
         paint(number, field.x + Math.floor((field.w - number.width) / 2), field.y);
         field.y += number.height + DOOR_NUMBER_GAP;
         field.h -= number.height + DOOR_NUMBER_GAP;
@@ -1597,7 +1653,7 @@ export function GameViewport({
         // the biggest stencil that fits the rest of the field, up to a
         // readable maximum (turned to run down the panel if it's vertical)
         const stencil = (scale: number) => {
-          const text = renderText(spec.label!, scale, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, seededRandom(spec.label!));
+          const text = renderText(spec.label!, scale, labelPaint, labelPaintDark, 0.06, seededRandom(spec.label!));
           return spec.labelVertical ? turnClockwise(text) : text;
         };
         let label = stencil(1);

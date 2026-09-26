@@ -1,6 +1,8 @@
 {
   "name": "Deck 1 - Medical",
   "deck": 1,
+  "textures": { "wall": "medwall1", "floor": "medfloor1", "ceiling": "medceil1", "door": "meddoor1", "liftDoor": "medliftdoor1" },
+  "labelColor": "#1f8f45",
   "start": { "x": 1, "y": 1, "facing": "E" },
   "layout": [
     "WWWWWWWWWW",
@@ -13,15 +15,14 @@
   ],
   "layers": {
     "floorTexture": {
-      "legend": { "1": "floor1", "2": "floor2", "L": "lift1" },
-      "default": "floor1",
+      "legend": { "L": "lift1" },
       "rows": [
         "..........",
         ".L........",
         "..........",
-        ".22222....",
-        ".22222....",
-        ".22222....",
+        "..........",
+        "..........",
+        "..........",
         ".........."
       ]
     },
