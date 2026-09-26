@@ -1,6 +1,7 @@
 import { bridgeAt, cellAt, ceilingHeight, floorHeight } from "./map";
 import { BRIDGE_WIDTH, CLIMB_SPEED, MAX_STEP, MIN_HEADROOM } from "./heights";
 import { DIR_VECTOR } from "./movement";
+import { propBoxes } from "./props";
 import type { Direction, GameMap, Vec2 } from "./types";
 
 // Free (non-grid) movement: a continuous pose with circle-vs-grid collision.
@@ -81,7 +82,8 @@ function circleHitsBox(x: number, z: number, r: number, b: Box): boolean {
 // lower floor doesn't: walking over its edge is a fall). A door stands
 // across the middle of its cell (see GameViewport): closed, the whole door
 // slab blocks; open, only its frame's two side pieces around the opening do.
-// Either way the half-cell alcoves on both sides stay walkable.
+// Either way the half-cell alcoves on both sides stay walkable. A prop
+// blocks its footprint.
 function cellBoxes(map: GameMap, cx: number, cy: number, feet: number, doors: DoorState): Box[] {
   const type = cellAt(map, cx, cy);
   const whole = { minX: cx - 0.5, maxX: cx + 0.5, minZ: cy - 0.5, maxZ: cy + 0.5 };
@@ -89,7 +91,8 @@ function cellBoxes(map: GameMap, cx: number, cy: number, feet: number, doors: Do
   const floor = floorHeight(map, cx, cy);
   if (floor > feet + MAX_STEP + 1e-6) return [whole];
   if (ceilingHeight(map, cx, cy) - Math.max(feet, floor) < MIN_HEADROOM - 1e-6) return [whole];
-  if (type !== "door") return [];
+  // props block feet below their top (not a bridge crossing above them)
+  if (type !== "door") return propBoxes(map, cx, cy).filter((b) => feet < floor + b.height - 1e-6);
 
   const northSouth = cellAt(map, cx, cy - 1) !== "wall" || cellAt(map, cx, cy + 1) !== "wall";
   const d = DOOR_FRAME_HALF_DEPTH;

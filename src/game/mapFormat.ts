@@ -1,5 +1,6 @@
 import { DIR_VECTOR, rightOf } from "./movement";
-import type { CellType, DecalSpec, Direction, DoorSpec, GameMap } from "./types";
+import { PROP_TYPES } from "./props";
+import type { CellType, DecalSpec, Direction, DoorSpec, GameMap, PropAnchor } from "./types";
 
 // Map files (src/maps/*.json): a character grid for the cells plus optional
 // per-cell layers, each its own character grid with a legend. Characters
@@ -15,7 +16,7 @@ import type { CellType, DecalSpec, Direction, DoorSpec, GameMap } from "./types"
 //
 // `ladders` stand in a cell against its wall toward a higher neighbor;
 // `bridges` span a cell at a height along an axis; `lights` add ceiling
-// lights; `windows` look out of a wall onto space.
+// lights; `windows` look out of a wall onto space; `props` stand in cells.
 //
 // Heights are in wall heights (1 = one wall panel), multiples of 0.25.
 
@@ -66,6 +67,8 @@ export interface MapFile {
   lights?: { x: number; y: number }[];
   // x, y: the (leftmost) cell; wall: the wall it's in; width: panels
   windows?: { x: number; y: number; wall: Direction; width?: number }[];
+  // at: where in the cell (default "center"); rotation: degrees
+  props?: { prop: string; x: number; y: number; at?: PropAnchor; rotation?: number }[];
   decals?: {
     decal: string;
     x: number;
@@ -189,6 +192,11 @@ export function parseMap(id: string, file: MapFile): GameMap {
     bridges,
     lights: (file.lights ?? []).map((l) => ({ x: l.x, y: l.y })),
     windows,
+    props: (file.props ?? []).map((p) => {
+      if (!PROP_TYPES[p.prop]) throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);
+      if (cells[p.y]?.[p.x] !== "floor") throw new Error(`prop at ${p.x},${p.y} isn't in a floor cell`);
+      return { prop: p.prop, cell: { x: p.x, y: p.y }, at: p.at ?? "center", rotation: p.rotation };
+    }),
     lifts: (file.lifts ?? []).map((l) => {
       if (cells[l.y]?.[l.x] !== "floor") throw new Error(`lift at ${l.x},${l.y} isn't a floor cell`);
       return { cell: { x: l.x, y: l.y }, button: l.button, to: l.to };

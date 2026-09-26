@@ -8,6 +8,7 @@ import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights } from "../game/lights";
+import { PROP_TYPES, propPlacement } from "../game/props";
 import { doorCellKey } from "../game/useGameState";
 import { forwardOf } from "../game/freeMovement";
 import type { FreePose } from "../game/freeMovement";
@@ -38,6 +39,8 @@ export type TextureSetId =
   | "medwindow1_left"
   | "medwindow1_mid"
   | "medwindow1_right"
+  | "crate1"
+  | "crate1_top"
   | "lift1"
   | "liftceil1"
   | "medwall1"
@@ -463,6 +466,19 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     depth: `${import.meta.env.BASE_URL}textures/medwindow1_right/depth.png`,
     pixelArt: true,
   },
+  // a prop crate's sides and top (see src/game/props.ts)
+  crate1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/crate1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/crate1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/crate1/depth.png`,
+    pixelArt: true,
+  },
+  crate1_top: {
+    diffuse: `${import.meta.env.BASE_URL}textures/crate1_top/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/crate1_top/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/crate1_top/depth.png`,
+    pixelArt: true,
+  },
   // ceiling tile; its center panel glows in cells with a ceiling light
   ceiling1: {
     diffuse: `${import.meta.env.BASE_URL}textures/ceiling1/diffuse.png`,
@@ -601,6 +617,8 @@ const DOOR_FRAME_SET: TextureSetId = "doorframe1";
 // (the glass sits at the back), and the glass's slight cool tint
 const WINDOW_SET: TextureSetId = "window1";
 const WINDOW_DEPTH = 0.1;
+// props are small: a shallower relief than the walls'
+const PROP_RELIEF_SCALE = 0.6;
 const GLASS_TINT = 0xdfe8ff;
 // how strongly lights glint on the glass
 const GLASS_SHEEN = 0.25;
@@ -1185,6 +1203,23 @@ export function GameViewport({
       }
       return kit;
     };
+    // prop side/top kits by texture set, created on demand
+    const propKits = new Map<TextureSetId, WallKit>();
+    const propKitFor = (setId: TextureSetId) => {
+      let kit = propKits.get(setId);
+      if (!kit) {
+        kit = createWallKit(setId, false);
+        propKits.set(setId, kit);
+      }
+      return kit;
+    };
+    const propTypes = [...new Set((map.props ?? []).map((p) => p.prop))].filter(
+      (name) => isTextureSetId(PROP_TYPES[name].side) && isTextureSetId(PROP_TYPES[name].top),
+    );
+    for (const name of propTypes) {
+      propKitFor(PROP_TYPES[name].side as TextureSetId);
+      propKitFor(PROP_TYPES[name].top as TextureSetId);
+    }
     // door panel kits by door kind, created on demand
     // a deck's own door panels and label paint, else the defaults
     const panelSetFor = (kind: DoorSpec["kind"]): TextureSetId => {
@@ -1404,6 +1439,8 @@ export function GameViewport({
         holeBackZ?: number;
         rows?: [number, number];
         holeLevels?: number;
+        // relief depth (default: the settings')
+        depth?: number;
       },
     ) {
       let gridPromise = heightGrids.get(kit.depthUrl);
@@ -1416,7 +1453,7 @@ export function GameViewport({
       const relief = createReliefWallGeometry(grid, {
         wallWidth: shape.width ?? 1,
         wallHeight: shape.height,
-        depth: settings.reliefDepth,
+        depth: shape.depth ?? settings.reliefDepth,
         levels: settings.reliefLevels,
         minIsland: settings.reliefMinIsland,
         aoRadius: settings.aoRadius,
@@ -1496,6 +1533,7 @@ export function GameViewport({
       ...panelKits.values(),
       ...ceilingKits.values(),
       ...windowKits.values(),
+      ...propKits.values(),
     ];
 
     // Windows are always relief too: the frame panel with its opening cut
@@ -1651,6 +1689,44 @@ export function GameViewport({
           doorPanelsRef.current.set(cell.key, slider);
         }
       }).catch((err) => console.error("Door build failed:", err));
+    }
+
+    // Props are relief boxes, whatever the wall type: four side faces and a
+    // top, each a relief panel facing out. Their reliefs aren't flushed at
+    // the edges, so a raised rim leaves a small notch along each edge - it
+    // reads as the box's worn edge.
+    for (const name of propTypes) {
+      const type = PROP_TYPES[name];
+      const sideKit = propKitFor(type.side as TextureSetId);
+      const topKit = propKitFor(type.top as TextureSetId);
+      const size = type.size;
+      const height = type.height * wallHeight;
+      const depth = settings.reliefDepth * PROP_RELIEF_SCALE;
+      track(async () => {
+        const side = await buildRelief(sideKit, { width: size, height, flushEdges: false, depth });
+        const top = await buildRelief(topKit, { width: size, height: size, flushEdges: false, depth });
+        if (!side || !top) return;
+        for (const spec of map.props ?? []) {
+          if (spec.prop !== name) continue;
+          const { x, z, yaw } = propPlacement(spec);
+          const prop = new THREE.Group();
+          prop.position.set(x, floorY(spec.cell.x, spec.cell.y), z);
+          prop.rotation.y = -yaw;
+          for (let i = 0; i < 4; i++) {
+            const face = new THREE.Group();
+            face.rotation.y = (i * Math.PI) / 2;
+            const mesh = new THREE.Mesh(side.geometry, [sideKit.wallMat, sideKit.sideMat]);
+            mesh.position.set(0, height / 2, size / 2);
+            face.add(mesh);
+            prop.add(face);
+          }
+          const lid = new THREE.Mesh(top.geometry, [topKit.wallMat, topKit.sideMat]);
+          lid.rotation.x = -Math.PI / 2;
+          lid.position.y = height;
+          prop.add(lid);
+          group.add(prop);
+        }
+      }).catch((err) => console.error("Prop build failed:", err));
     }
 
     // a copy of the kit's panel material whose diffuse has the door's label

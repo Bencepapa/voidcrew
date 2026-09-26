@@ -57,6 +57,20 @@ export interface GameMap {
   lights?: Vec2[];
   windows?: WindowSpec[];
   lifts?: LiftSpec[];
+  props?: PropSpec[];
+}
+
+// A 3D prop (see props.ts) in a walkable cell, pushed toward `at`: a side,
+// a corner or the center of the cell.
+export type PropAnchor = Direction | "NE" | "NW" | "SE" | "SW" | "center";
+
+export interface PropSpec {
+  // a props.ts PROP_TYPES name, e.g. "crate1"
+  prop: string;
+  cell: Vec2;
+  at: PropAnchor;
+  // degrees, clockwise seen from above
+  rotation?: number;
 }
 
 // A lift cabin: the cell behind a lift door. Its button (a decal with the

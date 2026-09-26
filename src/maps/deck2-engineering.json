@@ -101,6 +101,11 @@
     { "x": 11, "y": 3, "wall": "E" }
   ],
   "lifts": [{ "x": 1, "y": 1, "button": "S", "to": "deck1-medical" }],
+  "props": [
+    { "prop": "crate1", "x": 3, "y": 1, "at": "NE" },
+    { "prop": "crate1", "x": 1, "y": 3, "at": "SW", "rotation": 12 },
+    { "prop": "crate1", "x": 9, "y": 7, "at": "N" }
+  ],
   "doors": [{ "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "ENGINE", "labelVertical": true }],
   "decals": [
     { "decal": "lift_btn_2_up", "x": 1, "y": 1, "surface": "S", "px": 40, "py": 66, "action": "lift" },
