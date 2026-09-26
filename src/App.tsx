@@ -34,6 +34,7 @@ export default function App() {
     turnR,
     openingDoor,
     openDoors,
+    sceneReady,
     syncPose,
     openDoorAt,
   } = useGameState();
@@ -123,6 +124,7 @@ export default function App() {
       openDoors={openDoors}
       ride={ride}
       onTouch={touch}
+      onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
       peekRef={view.peekRef}
       settings={settings}

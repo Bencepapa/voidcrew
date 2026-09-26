@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import type { ReactElement } from "react";
 import { floorHeight, windowPanels } from "../game/map";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 
@@ -9,67 +11,127 @@ interface MinimapProps {
   compact?: boolean;
 }
 
-const ARROW: Record<Direction, string> = { N: "▲", E: "▶", S: "▼", W: "◀" };
-// box-shadow x/y offsets that draw an inset line along one side
-const LADDER_EDGE: Record<Direction, string> = { N: "0 2px", S: "0 -2px", E: "-2px 0", W: "2px 0" };
-const LADDER_EDGE_COLOR = "#d4a72c";
-const WINDOW_EDGE_COLOR = "#9fc4ff";
-const BRIDGE_COLOR = "rgba(120, 190, 130, 0.8)";
+// how many cells the window shows either side of the player
+const RADIUS = 5;
+const RADIUS_COMPACT = 4;
 
+const FACING_DEGREES: Record<Direction, number> = { N: 0, E: 90, S: 180, W: 270 };
+// a side of a cell as a line, in cell units from its top-left corner
+const EDGE: Record<Direction, [number, number, number, number]> = {
+  N: [0.08, 0.1, 0.92, 0.1],
+  S: [0.08, 0.9, 0.92, 0.9],
+  E: [0.9, 0.08, 0.9, 0.92],
+  W: [0.1, 0.08, 0.1, 0.92],
+};
+const LADDER_COLOR = "#d4a72c";
+const WINDOW_COLOR = "#9fc4ff";
+const BRIDGE_COLOR = "rgba(120, 190, 130, 0.85)";
+const DOOR_COLOR = "#5a2626";
+const PLAYER_COLOR = "#7dffa8";
+
+// A window onto the map around the player (who stays in its middle, the
+// map sliding past), drawn as SVG in cell units: floors shaded by height,
+// doors, ladders (yellow) and windows (blue) on their cell's side, bridges
+// as a band along their axis, and the party as an arrow turning smoothly.
 export function Minimap({ map, pos, dir, compact }: MinimapProps) {
+  const radius = compact ? RADIUS_COMPACT : RADIUS;
+  const span = radius * 2 + 1;
+
+  // turn the arrow the short way round: keep a running angle
+  const angleRef = useRef(FACING_DEGREES[dir]);
+  const target = FACING_DEGREES[dir];
+  const delta = ((((target - angleRef.current) % 360) + 540) % 360) - 180;
+  angleRef.current += delta;
+
   // raised floors show lighter, sunken ones darker
   const floor = (x: number, y: number) => {
     const h = floorHeight(map, x, y);
     const g = Math.round(Math.max(18, Math.min(110, 42 + h * 90)));
     const r = Math.round(Math.max(4, 10 + h * 20));
-    return compact ? `rgba(${r}, ${g}, 18, 0.55)` : `rgb(${r}, ${g}, 18)`;
+    return `rgb(${r}, ${g}, 18)`;
   };
-  const door = compact ? "rgba(58, 31, 31, 0.7)" : "#3a1f1f";
-  // a ladder shows as a yellow edge on its foot cell's side, a window as a
-  // pale blue one
-  const panes = windowPanels(map);
-  const ladderEdges = (x: number, y: number) =>
-    [
-      ...(map.ladders ?? [])
-        .filter((l) => l.cell.x === x && l.cell.y === y)
-        .map((l) => `inset ${LADDER_EDGE[l.wall]} 0 ${LADDER_EDGE_COLOR}`),
-      ...panes
-        .filter((p) => p.cell.x === x && p.cell.y === y)
-        .map((p) => `inset ${LADDER_EDGE[p.wall]} 0 ${WINDOW_EDGE_COLOR}`),
-    ].join(", ") || undefined;
-  // a bridge: a band along its axis across the cell
-  const bridgeStripe = (x: number, y: number) => {
-    const bridge = map.bridges?.find((b) => b.cell.x === x && b.cell.y === y);
-    if (!bridge) return undefined;
-    const across = bridge.axis === "EW" ? "to bottom" : "to right";
-    return `linear-gradient(${across}, transparent 30%, ${BRIDGE_COLOR} 30%, ${BRIDGE_COLOR} 70%, transparent 70%)`;
+
+  const cells: ReactElement[] = [];
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      const cell = map.cells[y][x];
+      if (cell === "wall") continue;
+      cells.push(
+        <rect
+          key={`c${x},${y}`}
+          x={x + 0.04}
+          y={y + 0.04}
+          width={0.92}
+          height={0.92}
+          fill={cell === "door" ? DOOR_COLOR : floor(x, y)}
+        />,
+      );
+    }
+  }
+  const bridges = (map.bridges ?? []).map((b) => (
+    <rect
+      key={`b${b.cell.x},${b.cell.y}`}
+      x={b.cell.x + (b.axis === "EW" ? 0 : 0.3)}
+      y={b.cell.y + (b.axis === "EW" ? 0.3 : 0)}
+      width={b.axis === "EW" ? 1 : 0.4}
+      height={b.axis === "EW" ? 0.4 : 1}
+      fill={BRIDGE_COLOR}
+    />
+  ));
+  const edge = (key: string, cell: Vec2, side: Direction, color: string) => {
+    const [x1, y1, x2, y2] = EDGE[side];
+    return (
+      <line
+        key={key}
+        x1={cell.x + x1}
+        y1={cell.y + y1}
+        x2={cell.x + x2}
+        y2={cell.y + y2}
+        stroke={color}
+        strokeWidth={0.14}
+        strokeLinecap="round"
+      />
+    );
   };
+  const ladders = (map.ladders ?? []).map((l) => edge(`l${l.cell.x},${l.cell.y},${l.wall}`, l.cell, l.wall, LADDER_COLOR));
+  const windows = windowPanels(map).map((p) => edge(`w${p.cell.x},${p.cell.y},${p.wall}`, p.cell, p.wall, WINDOW_COLOR));
+
   return (
     <div className={`border border-green-800 ${compact ? "bg-black/25 p-1" : "bg-black/60 p-2"}`}>
-      <div
-        className="grid gap-[1px]"
-        style={{ gridTemplateColumns: `repeat(${map.width}, 1fr)` }}
+      <svg
+        viewBox={`0 0 ${span} ${span}`}
+        className="block w-full aspect-square"
+        style={{ opacity: compact ? 0.8 : 1 }}
+        aria-label={`Map: ${map.name}`}
       >
-        {map.cells.map((row, y) =>
-          row.map((cell, x) => {
-            const isPlayer = pos.x === x && pos.y === y;
-            return (
-              <div
-                key={`${x}-${y}`}
-                className="aspect-square flex items-center justify-center text-[8px] leading-none"
-                style={{
-                  backgroundColor: cell === "wall" ? "transparent" : cell === "door" ? door : floor(x, y),
-                  boxShadow: ladderEdges(x, y),
-                  backgroundImage: bridgeStripe(x, y),
-                  color: "#4ade80",
-                }}
-              >
-                {isPlayer ? ARROW[dir] : ""}
-              </div>
-            );
-          }),
-        )}
-      </div>
+        {/* the map, slid so the player's cell sits in the middle */}
+        <g
+          style={{
+            transform: `translate(${radius - pos.x}px, ${radius - pos.y}px)`,
+            transition: "transform 180ms ease-out",
+          }}
+        >
+          {cells}
+          {bridges}
+          {ladders}
+          {windows}
+        </g>
+        {/* the party: an arrowhead with a notched tail, pointing its way */}
+        <g
+          style={{
+            transform: `translate(${radius + 0.5}px, ${radius + 0.5}px) rotate(${angleRef.current}deg)`,
+            transition: "transform 180ms ease-out",
+          }}
+        >
+          <polygon
+            points="0,-0.42 0.34,0.34 0,0.16 -0.34,0.34"
+            fill={PLAYER_COLOR}
+            stroke="#062b12"
+            strokeWidth={0.07}
+            strokeLinejoin="round"
+          />
+        </g>
+      </svg>
     </div>
   );
 }

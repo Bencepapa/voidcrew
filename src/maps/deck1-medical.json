@@ -46,7 +46,7 @@
   ],
   "doors": [{ "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "MEDICAL", "labelVertical": true }],
   "decals": [
-    { "decal": "lift_btn_2_down", "x": 1, "y": 1, "surface": "S", "px": 108, "py": 66, "action": "lift" },
+    { "decal": "lift_btn_1_down", "x": 1, "y": 1, "surface": "S", "px": 40, "py": 66, "action": "lift" },
     { "decal": "text_medical", "x": 5, "y": 1, "surface": "S", "px": 60, "py": 40 },
     { "decal": "patch_plate", "x": 5, "y": 5, "surface": "S", "px": 150, "py": 140 },
     { "decal": "warning", "x": 8, "y": 3, "surface": "E", "px": 80, "py": 50 },

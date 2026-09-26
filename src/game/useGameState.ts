@@ -30,6 +30,8 @@ const CLIMB_WALK_MS = 250;
 const LIFT_CLOSE_MS = 600;
 const LIFT_RIDE_MS = 3600;
 const LIFT_SWAP_AT = 1700;
+// after a slow load, the cabin sits still this long before the doors open
+const LIFT_SETTLE_MS = 700;
 
 const BLOCKED_MESSAGES: Record<"wall" | "ledge" | "low", string> = {
   wall: "A bulkhead blocks the way.",
@@ -121,9 +123,24 @@ export function useGameState() {
     return () => timers.forEach((t) => clearTimeout(t));
   }, []);
 
-  // no moving or turning until a ladder climb or a lift ride is over
+  // the map whose scene the viewport has built and shows (see sceneReady);
+  // nothing moves while the current one is still loading
+  const readyMapRef = useRef<string | null>(null);
+  // a lift arrival waiting for its deck to load
+  const pendingArrivalRef = useRef<{ mapId: string; arrive: () => void } | null>(null);
+  const sceneReady = useCallback((mapId: string) => {
+    readyMapRef.current = mapId;
+    const pending = pendingArrivalRef.current;
+    if (pending?.mapId === mapId) {
+      pendingArrivalRef.current = null;
+      pending.arrive();
+    }
+  }, []);
+
+  // no moving or turning until a ladder climb or a lift ride is over, or
+  // while the map loads
   const busyUntilRef = useRef(0);
-  const busy = () => performance.now() < busyUntilRef.current;
+  const busy = () => performance.now() < busyUntilRef.current || readyMapRef.current !== mapRef.current.id;
 
   const turnL = useCallback(() => {
     if (!busy()) setDir((d) => leftOf(d));
@@ -179,24 +196,30 @@ export function useGameState() {
       closeTimers.current.forEach((t) => clearTimeout(t));
       closeTimers.current.clear();
       prevPosRef.current = arrival.cell;
+      readyMapRef.current = null;
       setMap(to);
       setPos(arrival.cell);
       setElevation(floorHeight(to, arrival.cell.x, arrival.cell.y));
       setOpenDoors(new Set());
     }, LIFT_CLOSE_MS + LIFT_SWAP_AT);
 
-    setTimeout(() => {
+    // arrive when the ride is over and the deck has loaded (its loading
+    // screen gone for a moment)
+    // (the door stays shut until the party opens it)
+    const arrive = () => {
       setRide(null);
       setInLift(false);
+      busyUntilRef.current = 0;
       pushLog(`The lift arrives at ${to.name}.`);
       const arrivalDoor = liftDoorOf(to, arrival.cell);
-      if (!arrivalDoor) return;
-      const facing = directionTo(arrival.cell, arrivalDoor.cell);
+      const facing = arrivalDoor && directionTo(arrival.cell, arrivalDoor.cell);
       if (facing) setDir(facing);
-      startOpening(arrivalDoor.cell);
-      setTimeout(() => setOpeningDoor(null), DOOR_ANIM_MS);
+    };
+    setTimeout(() => {
+      if (readyMapRef.current === to.id) arrive();
+      else pendingArrivalRef.current = { mapId: to.id, arrive: () => setTimeout(arrive, LIFT_SETTLE_MS) };
     }, LIFT_CLOSE_MS + LIFT_RIDE_MS);
-  }, [openingDoor, pushLog, startOpening]);
+  }, [openingDoor, pushLog]);
 
   // steps one cell in `moveDir` while keeping the current facing
   const step = useCallback((moveDir: Direction) => {
@@ -324,6 +347,7 @@ export function useGameState() {
     pushLog,
     openingDoor,
     openDoors,
+    sceneReady,
     syncPose,
     openDoorAt,
   };

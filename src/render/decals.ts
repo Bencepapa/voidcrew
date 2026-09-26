@@ -71,8 +71,10 @@ export class DecalLibrary {
 
   // queue decals; each lands on its surfaces as soon as its asset has loaded
   // and they exist
-  add(specs: DecalSpec[]) {
-    for (const spec of specs) {
+  // (resolves once every decal's asset is in and it's on the surfaces there
+  // are so far)
+  add(specs: DecalSpec[]): Promise<void> {
+    const loads = specs.map((spec) =>
       this.asset(spec.decal)
         .then((asset) => {
           if (this.disposed) return;
@@ -83,8 +85,9 @@ export class DecalLibrary {
             for (const mesh of this.surfaces.get(p.key) ?? []) this.build(p, mesh);
           }
         })
-        .catch((err) => console.warn(`Decal "${spec.decal}" skipped:`, err));
-    }
+        .catch((err) => console.warn(`Decal "${spec.decal}" skipped:`, err)),
+    );
+    return Promise.all(loads).then(() => undefined);
   }
 
   // a surface panel has been placed in the scene

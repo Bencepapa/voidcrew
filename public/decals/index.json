@@ -14,10 +14,10 @@
   "hazard_stripes": {
     "normal": false
   },
-  "lift_btn_1_up": {
+  "lift_btn_1_down": {
     "normal": false
   },
-  "lift_btn_2_down": {
+  "lift_btn_2_up": {
     "normal": false
   },
   "num_07": {

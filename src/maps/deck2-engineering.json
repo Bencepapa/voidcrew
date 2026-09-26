@@ -87,9 +87,9 @@
     { "x": 11, "y": 3, "wall": "E" }
   ],
   "lifts": [{ "x": 1, "y": 1, "button": "S", "to": "deck1-medical" }],
-  "doors": [{ "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "EN\nGI\nNE" }],
+  "doors": [{ "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "ENGINE", "labelVertical": true }],
   "decals": [
-    { "decal": "lift_btn_1_up", "x": 1, "y": 1, "surface": "S", "px": 108, "py": 66, "action": "lift" },
+    { "decal": "lift_btn_2_up", "x": 1, "y": 1, "surface": "S", "px": 40, "py": 66, "action": "lift" },
     { "decal": "bullet_holes", "x": 3, "y": 1, "surface": "N", "px": 140, "py": 50 },
     { "decal": "bullet_hole", "x": 3, "y": 1, "surface": "N", "px": 212, "py": 100, "rotation": 70 },
     { "decal": "arrow", "x": 4, "y": 1, "surface": "S", "px": 80, "py": 90, "rotation": 270 },

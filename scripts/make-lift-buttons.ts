@@ -5,7 +5,7 @@ import { DECALS_DIR, registerDecal } from "./decal-manifest";
 import { renderText, seededRandom } from "../src/render/pixelFont";
 
 // Lift call panels: a small steel plate with a dark screen showing an arrow
-// (up or down) and the deck the lift goes to, in lit yellow:
+// (up or down: where the lift goes) and the deck it's on, in lit yellow:
 //   npm run decals:lift-buttons
 // -> lift_btn_<deck>_<up|down> for every combination below.
 
@@ -82,8 +82,9 @@ async function button(deck: number, up: boolean) {
 }
 
 async function main() {
-  await button(1, true);
-  await button(2, false);
+  // deck 2 (engineering) goes up to deck 1 (medical), and back down
+  await button(2, true);
+  await button(1, false);
 }
 
 main().catch((err) => {

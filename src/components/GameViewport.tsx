@@ -550,6 +550,8 @@ const DOOR_LABEL_AREA = { x: 14, y: 8, w: 78, h: 240 };
 // label letters are at most this many texture pixels per font pixel (a 5x7
 // letter at 4 = 20x28 of the panel's 256px)
 const DOOR_LABEL_MAX_SCALE = 4;
+// a lift door's deck number sits this far (panel pixels) above its label
+const DOOR_NUMBER_GAP = 12;
 // the dark red of the walls' painted stripes
 const LABEL_PAINT: [number, number, number] = [156, 27, 26];
 const LABEL_PAINT_DARK: [number, number, number] = [133, 22, 24];
@@ -602,6 +604,8 @@ interface GameViewportProps {
   // an interactive decal (DecalSpec.action) was clicked or tapped within
   // reach
   onTouch?: (action: string) => void;
+  // a map's scene is fully built and shown (after the loading screen)
+  onReady?: (mapId: string) => void;
   // free movement: called every frame with the frame time (s), returns the
   // camera pose; when absent the camera follows pos/dir on the grid
   freeTick?: (dt: number) => FreePose;
@@ -766,6 +770,7 @@ export function GameViewport({
   openDoors,
   ride,
   onTouch,
+  onReady,
   freeTick,
   peekRef,
   settings,
@@ -807,6 +812,12 @@ export function GameViewport({
   rideRef.current = ride;
   const onTouchRef = useRef(onTouch);
   onTouchRef.current = onTouch;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  // the loading screen, up while a new map's scene is built; the map last
+  // shown (a rebuild of the same map - a settings change - skips it)
+  const [loading, setLoading] = useState<{ title: string; progress: number } | null>({ title: map.name, progress: 0 });
+  const shownMapRef = useRef<string | null>(null);
   // a new map (a lift ride's arrival) places the camera outright
   const cameraMapRef = useRef(map);
 
@@ -908,7 +919,51 @@ export function GameViewport({
     scene.add(shaftLight);
 
     const bust = textureVersion ? `?v=${textureVersion}` : "";
-    const loader = new THREE.TextureLoader();
+
+    // Loading: every texture goes through `manager`, every geometry build
+    // and decal batch through track(). Once both are idle the shaders are
+    // compiled and the scene is shown - behind the loading screen until then
+    // on a new map, so walls never pop in piece by piece.
+    const manager = new THREE.LoadingManager();
+    const loader = new THREE.TextureLoader(manager);
+    let texturesLoaded = 0;
+    let texturesTotal = 0;
+    let buildsPending = 0;
+    let buildsTotal = 0;
+    let ready = false;
+    const newMap = shownMapRef.current !== map.id;
+    if (newMap) setLoading({ title: map.name, progress: 0 });
+    const checkReady = () => {
+      if (disposed || ready) return;
+      const progress = (texturesLoaded + buildsTotal - buildsPending) / Math.max(1, texturesTotal + buildsTotal);
+      if (newMap) setLoading({ title: map.name, progress });
+      if (buildsPending > 0 || texturesLoaded < texturesTotal) return;
+      // let the builds' own .then()s (placing the meshes) run first
+      setTimeout(() => {
+        if (disposed || ready || buildsPending > 0 || texturesLoaded < texturesTotal) return;
+        ready = true;
+        renderer.compile(scene, camera);
+        shownMapRef.current = map.id;
+        setLoading(null);
+        onReadyRef.current?.(map.id);
+      }, 0);
+    };
+    manager.onStart = manager.onProgress = (_url, loaded, total) => {
+      texturesLoaded = loaded;
+      texturesTotal = total;
+      checkReady();
+    };
+    manager.onLoad = checkReady;
+    function track<T>(work: Promise<T> | (() => Promise<T>)): Promise<T> {
+      const promise = typeof work === "function" ? work() : work;
+      buildsPending++;
+      buildsTotal++;
+      promise.finally(() => {
+        buildsPending--;
+        checkReady();
+      }).catch(() => {});
+      return promise;
+    }
     const isRelief = settings.wallProfile === "relief";
     const wallHeight = settings.wallHeight;
     const cavity = { value: settings.aoDirect };
@@ -1083,7 +1138,7 @@ export function GameViewport({
       levels: (cell) => ({ floor: floorY(cell.x, cell.y), ceiling: ceilingY(cell.x, cell.y) }),
       parent: group,
     });
-    if (settings.decalsEnabled) decals.add(map.decals ?? []);
+    if (settings.decalsEnabled) track(decals.add(map.decals ?? []));
     // dev-only: inspect from the console
     if (import.meta.env.DEV) Object.assign(window, { __voidcrewDecals: decals });
 
@@ -1311,7 +1366,7 @@ export function GameViewport({
         byVariant.set(variant, [...(byVariant.get(variant) ?? []), slot]);
       }
       for (const [variant, slots] of byVariant) {
-        wallGeometry(kit, variant)
+        track(wallGeometry(kit, variant))
           .then((geo) => geo && placeWalls(geo, wallGeo ? kit.wallMat : [kit.wallMat, kit.sideMat], slots))
           .catch((err) => console.error("Wall build failed:", err));
       }
@@ -1355,7 +1410,7 @@ export function GameViewport({
     for (const [setId, windowKit] of windowKits) {
       // a wide window's pieces continue each other: no flush edge margins
       // (they'd flatten the mullions on the seams)
-      buildRelief(windowKit, { height: wallHeight, flushEdges: setId === WINDOW_SET, holeBackZ: -WINDOW_DEPTH })
+      track(buildRelief(windowKit, { height: wallHeight, flushEdges: setId === WINDOW_SET, holeBackZ: -WINDOW_DEPTH }))
         .then((frame) => {
           if (!frame) return;
           const hole = frame.holeBounds ?? { minX: -0.3, maxX: 0.3, minY: -0.13 * wallHeight, maxY: 0.22 * wallHeight };
@@ -1389,7 +1444,7 @@ export function GameViewport({
 
     if (ceilingKit) {
       if (isRelief) {
-        buildRelief(ceilingKit, { height: 1, flushEdges: false })
+        track(buildRelief(ceilingKit, { height: 1, flushEdges: false }))
           .then((relief) => relief && placeCeilings(relief.geometry, ceilingKit, true))
           .catch((err) => console.error("Relief ceiling build failed:", err));
       } else {
@@ -1400,7 +1455,7 @@ export function GameViewport({
     let floorTop = 0;
     for (const floorKit of floorKits.values()) {
       if (isRelief) {
-        buildRelief(floorKit, { height: 1, flushEdges: false })
+        track(buildRelief(floorKit, { height: 1, flushEdges: false }))
           .then((relief) => {
             if (!relief) return;
             placeFloors(relief.geometry, [floorKit.wallMat, floorKit.sideMat], floorKit.slots);
@@ -1418,7 +1473,7 @@ export function GameViewport({
     // the wall type. The frame is built first: the panel is sized to fit its
     // opening.
     if (doorCells.length) {
-      (async () => {
+      track(async () => {
         const frame = await buildRelief(frameKit, {
           height: wallHeight,
           flushEdges: false,
@@ -1456,7 +1511,7 @@ export function GameViewport({
           }
 
           const kit = panelKits.get(spec.kind)!;
-          const front = spec.label ? await labeledPanelMaterial(spec, kit) : kit.wallMat;
+          const front = spec.label || spec.kind === "lift" ? await labeledPanelMaterial(spec, kit) : kit.wallMat;
           if (disposed) return;
           const slider = new THREE.Group();
           for (const side of [1, -1]) {
@@ -1479,7 +1534,7 @@ export function GameViewport({
           group.add(door);
           doorPanelsRef.current.set(cell.key, slider);
         }
-      })().catch((err) => console.error("Door build failed:", err));
+      }).catch((err) => console.error("Door build failed:", err));
     }
 
     // a copy of the kit's panel material whose diffuse has the door's label
@@ -1493,39 +1548,49 @@ export function GameViewport({
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(image, 0, 0);
 
-      const area = DOOR_LABEL_AREA;
-      const random = seededRandom(spec.label!);
-      // the biggest stencil that fits the field, up to a readable maximum
-      // (turned to run down the panel if it's a vertical label)
-      const stencil = (scale: number, rnd: () => number) => {
-        const text = renderText(spec.label!, scale, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, rnd);
-        return spec.labelVertical ? turnClockwise(text) : text;
-      };
-      let label = stencil(1, random);
-      for (let scale = DOOR_LABEL_MAX_SCALE; scale >= 1; scale--) {
-        label = stencil(scale, seededRandom(spec.label!));
-        if (label.width <= area.w && label.height <= area.h) break;
-      }
-      const ox = area.x + Math.floor((area.w - label.width) / 2);
-      const oy = area.y + Math.floor((area.h - label.height) / 2);
       const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      for (let y = 0; y < label.height; y++) {
-        for (let x = 0; x < label.width; x++) {
-          const i = (y * label.width + x) * 4;
-          if (!label.rgba[i + 3]) continue;
-          const o = ((oy + y) * canvas.width + ox + x) * 4;
-          pixels.data[o] = label.rgba[i];
-          pixels.data[o + 1] = label.rgba[i + 1];
-          pixels.data[o + 2] = label.rgba[i + 2];
+      const paint = (img: { width: number; height: number; rgba: Uint8Array }, ox: number, oy: number) => {
+        for (let y = 0; y < img.height; y++) {
+          for (let x = 0; x < img.width; x++) {
+            const i = (y * img.width + x) * 4;
+            if (!img.rgba[i + 3]) continue;
+            const o = ((oy + y) * canvas.width + ox + x) * 4;
+            pixels.data[o] = img.rgba[i];
+            pixels.data[o + 1] = img.rgba[i + 1];
+            pixels.data[o + 2] = img.rgba[i + 2];
+          }
         }
+      };
+
+      // a lift door shows its deck's number at the top of the field, upright
+      const field = { ...DOOR_LABEL_AREA };
+      if (spec.kind === "lift") {
+        const number = renderText(String(map.deck), DOOR_LABEL_MAX_SCALE, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, seededRandom(String(map.deck)));
+        paint(number, field.x + Math.floor((field.w - number.width) / 2), field.y);
+        field.y += number.height + DOOR_NUMBER_GAP;
+        field.h -= number.height + DOOR_NUMBER_GAP;
+      }
+      if (spec.label) {
+        // the biggest stencil that fits the rest of the field, up to a
+        // readable maximum (turned to run down the panel if it's vertical)
+        const stencil = (scale: number) => {
+          const text = renderText(spec.label!, scale, LABEL_PAINT, LABEL_PAINT_DARK, 0.06, seededRandom(spec.label!));
+          return spec.labelVertical ? turnClockwise(text) : text;
+        };
+        let label = stencil(1);
+        for (let scale = DOOR_LABEL_MAX_SCALE; scale >= 1; scale--) {
+          label = stencil(scale);
+          if (label.width <= field.w && label.height <= field.h) break;
+        }
+        paint(label, field.x + Math.floor((field.w - label.width) / 2), field.y + Math.floor((field.h - label.height) / 2));
       }
       ctx.putImageData(pixels, 0, 0);
 
-      const map = new THREE.CanvasTexture(canvas);
-      map.colorSpace = THREE.SRGBColorSpace;
-      map.magFilter = THREE.NearestFilter;
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.magFilter = THREE.NearestFilter;
       const material = new THREE.MeshStandardMaterial({
-        map,
+        map: texture,
         normalMap: kit.wallMat.normalMap,
         aoMap: kit.wallMat.aoMap,
         roughness: settingsRef.current.roughness,
@@ -1533,7 +1598,7 @@ export function GameViewport({
       });
       addDirectLightOcclusion(material, cavity);
       ownMaterials.push(material);
-      kit.textures.push(map);
+      kit.textures.push(texture);
       return material;
     }
 
@@ -1684,7 +1749,7 @@ export function GameViewport({
             (relief) => relief?.geometry ?? null,
           )
         : Promise.resolve(createBandPlane(BRIDGE_WIDTH, rows));
-      deckGeometry
+      track(deckGeometry)
         .then((geo) => {
           if (!geo) return;
           if (!isRelief) geometries.push(geo);
@@ -1775,6 +1840,8 @@ export function GameViewport({
     resize();
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
+    // everything to wait for is queued by now: nothing may be pending at all
+    checkReady();
 
     // Touching an interactive decal: a click or tap (not a drag) whose ray
     // meets one within reach, in front of whatever else it meets. The press
@@ -2065,5 +2132,31 @@ export function GameViewport({
     textureVersion,
   ]);
 
-  return <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-black" />;
+  return (
+    <div className="relative w-full h-full overflow-hidden bg-black">
+      <div ref={containerRef} className="absolute inset-0" />
+      <LoadingScreen loading={loading} inLift={!!ride} />
+    </div>
+  );
+}
+
+// Shown over the view while a map's scene loads: the deck's name and a
+// progress bar, fading out once it's all built.
+function LoadingScreen({ loading, inLift }: { loading: { title: string; progress: number } | null; inLift: boolean }) {
+  // keep the last title while fading out
+  const [shown, setShown] = useState(loading);
+  useEffect(() => {
+    if (loading) setShown(loading);
+  }, [loading]);
+  return (
+    <div
+      className={`absolute inset-0 bg-black flex flex-col items-center justify-center gap-3 font-mono transition-opacity duration-500 ${loading ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+    >
+      <div className="text-[10px] tracking-[0.3em] text-green-700">{inLift ? "LIFT IN TRANSIT" : "USV HORIZON"}</div>
+      <div className="text-sm tracking-[0.2em] text-green-400 uppercase">{shown?.title}</div>
+      <div className="w-48 h-1 bg-green-950 overflow-hidden">
+        <div className="h-full bg-green-500 transition-[width] duration-200" style={{ width: `${Math.round((shown?.progress ?? 1) * 100)}%` }} />
+      </div>
+    </div>
+  );
 }
