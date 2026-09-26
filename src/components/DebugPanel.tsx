@@ -189,6 +189,19 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
         </select>
       </label>
 
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] text-neutral-500">Geometry view</span>
+        <select
+          value={settings.geometryView}
+          onChange={(e) => set("geometryView", e.target.value as ViewportSettings["geometryView"])}
+          className="bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm"
+        >
+          <option value="textured">textured</option>
+          <option value="faces">faces only (colored by direction)</option>
+          <option value="wireframe">wireframe</option>
+        </select>
+      </label>
+
       <div className="flex flex-col gap-1">
         <div className="text-[10px] text-neutral-500">Wall type</div>
         {WALL_PROFILE_OPTIONS.map((opt) => (

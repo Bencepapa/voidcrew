@@ -9,6 +9,7 @@ import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights } from "../game/lights";
 import { PROP_TYPES, propPlacement } from "../game/props";
+import { cellKey, visibleCells } from "../game/visibility";
 import type { PropType } from "../game/props";
 import { doorCellKey } from "../game/useGameState";
 import { forwardOf } from "../game/freeMovement";
@@ -54,6 +55,9 @@ export type TextureSetId =
   | "medliftdoor1"
   | "meddoorframe1";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
+// debug: draw every surface with its textures, or just its polygons -
+// flat-shaded faces colored by their direction, or a wireframe
+export type GeometryViewId = "textured" | "faces" | "wireframe";
 
 export interface ViewportSettings {
   textureSet: TextureSetId;
@@ -70,6 +74,7 @@ export interface ViewportSettings {
   // the map's decals (bullet holes, stencils...)
   decalsEnabled: boolean;
   wallProfile: WallProfileId;
+  geometryView: GeometryViewId;
   eyeHeight: number;
   wallHeight: number;
   cameraPullback: number;
@@ -118,6 +123,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   gridMovement: true,
   decalsEnabled: true,
   wallProfile: "relief",
+  geometryView: "textured",
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
@@ -617,13 +623,25 @@ const FOG_NEAR = 1.6;
 const FOG_FAR = 5.5;
 
 // Map lights are served by a fixed pool of point lights reassigned to the
-// nearest sources every frame: three.js compiles the light count into its
+// best sources every frame: three.js compiles the light count into its
 // shaders, so a constant pool avoids recompiles, and the per-pixel lighting
-// cost stays bounded however many lights the map has. Lights fade out with
-// distance so a source dropping out of the pool doesn't pop visibly.
-const LIGHT_POOL_SIZE = 6;
-const LIGHT_FADE_START = 3.5;
-const LIGHT_FADE_END = 5;
+// cost stays bounded however many lights the map has. Only sources in
+// cells the party can see (or next to one - their light spills through
+// doorways) compete, nearest first, those ahead of the camera favored.
+// Lights fade out with distance, about where the fog closes, and a slot
+// fades its light in and out instead of popping.
+const LIGHT_POOL_SIZE = 8;
+const LIGHT_FADE_START = 4.5;
+const LIGHT_FADE_END = 6;
+// how far the pool looks for lights (cells)
+const LIGHT_SIGHT = 7;
+// a source behind the camera ranks as if this much further away
+const LIGHT_BEHIND_PENALTY = 0.35;
+// a source already in the pool keeps its slot until a rival ranks this
+// much nearer (a fraction of its distance), so near-ties don't flicker
+const LIGHT_KEEP_BIAS = 0.85;
+// how fast a slot's light fades in or out (per second, 0..1)
+const LIGHT_SLOT_FADE = 4;
 
 // settings.fov is applied to the screen's shorter side; on a portrait screen
 // that makes the vertical FOV large, capped here to limit distortion
@@ -845,6 +863,17 @@ function climbPose(from: CamTarget, to: CamTarget, elapsed: number, moveMs: numb
     cam: { x, z, y, tx: x + lerp(from.tx - from.x, to.tx - to.x, k), tz: z + lerp(from.tz - from.z, to.tz - to.z, k) },
     done: elapsed >= total,
   };
+}
+
+// shared by every scene, never disposed (see GeometryViewId)
+const GEOMETRY_VIEW_MATERIALS: Partial<Record<GeometryViewId, THREE.Material>> = {};
+function geometryViewMaterial(view: GeometryViewId): THREE.Material | null {
+  if (view === "textured") return null;
+  GEOMETRY_VIEW_MATERIALS[view] ??=
+    view === "faces"
+      ? new THREE.MeshNormalMaterial({ flatShading: true, side: THREE.DoubleSide })
+      : new THREE.MeshBasicMaterial({ color: 0x4dff88, wireframe: true, fog: true });
+  return GEOMETRY_VIEW_MATERIALS[view];
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -2077,25 +2106,69 @@ export function GameViewport({
     const lightPool = Array.from({ length: LIGHT_POOL_SIZE }, () => {
       const light = new THREE.PointLight(0xffffff, 0, 1, 2);
       scene.add(light);
-      return light;
+      // the map light it serves (index into mapLights), and how faded in
+      return { light, source: -1, level: 0 };
     });
+    // the cells seen from the party's cell, redone when it changes cell or
+    // a door opens or shuts
+    let sight = { key: "", cells: new Set<string>() };
+    const lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
+    const litNear = (key: string, cells: Set<string>) => {
+      if (cells.has(key)) return true;
+      const [x, y] = key.split(",").map(Number);
+      return cells.has(cellKey(x + 1, y)) || cells.has(cellKey(x - 1, y)) || cells.has(cellKey(x, y + 1)) || cells.has(cellKey(x, y - 1));
+    };
 
-    function updateLightPool(camX: number, camY: number, camZ: number, intensityScale: number) {
+    function updateLightPool(
+      party: { x: number; z: number },
+      cam: { x: number; y: number; z: number; fwdX: number; fwdZ: number },
+      intensityScale: number,
+      dt: number,
+    ) {
+      const doors = openDoorsRef.current;
+      const sightKey = `${Math.round(party.x)},${Math.round(party.z)}|${[...doors].sort().join(";")}`;
+      if (sightKey !== sight.key) {
+        sight = { key: sightKey, cells: visibleCells(map, party.x, party.z, LIGHT_SIGHT, (k) => doors.has(k)) };
+      }
+
+      const score = (i: number) => {
+        const l = mapLights[i];
+        const dx = l.x - cam.x;
+        const dz = l.z - cam.z;
+        const dist = Math.hypot(dx, l.y * wallHeight - cam.y, dz);
+        const ahead = (dx * cam.fwdX + dz * cam.fwdZ) / (Math.hypot(dx, dz) || 1);
+        return { dist, rank: dist + LIGHT_BEHIND_PENALTY * Math.max(0, -ahead) * dist };
+      };
+      const current = new Set(lightPool.map((slot) => slot.source));
       const ranked = mapLights
-        .map((light) => ({ light, dist: Math.hypot(light.x - camX, light.y * wallHeight - camY, light.z - camZ) }))
-        .sort((a, b) => a.dist - b.dist);
-      lightPool.forEach((slot, i) => {
-        const entry = ranked[i];
-        if (!entry) {
-          slot.intensity = 0;
-          return;
+        .map((_, i) => ({ i, ...score(i) }))
+        .filter((c) => c.dist < LIGHT_FADE_END && litNear(lightCells[c.i], sight.cells))
+        .map((c) => ({ ...c, rank: current.has(c.i) ? c.rank * LIGHT_KEEP_BIAS : c.rank }))
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, LIGHT_POOL_SIZE);
+      const wanted = new Map(ranked.map((c) => [c.i, c]));
+
+      // slots keep their source while it's wanted; freed slots fade out
+      // before taking a new one
+      const unassigned = ranked.filter((c) => !lightPool.some((slot) => slot.source === c.i));
+      for (const slot of lightPool) {
+        const keep = wanted.get(slot.source);
+        if (!keep && slot.level <= 0 && unassigned.length) {
+          slot.source = unassigned.shift()!.i;
         }
-        slot.color.setHex(entry.light.color);
-        slot.position.set(entry.light.x, entry.light.y * wallHeight, entry.light.z);
-        slot.distance = entry.light.range;
-        slot.intensity =
-          entry.light.intensity * intensityScale * (1 - smoothstep(LIGHT_FADE_START, LIGHT_FADE_END, entry.dist));
-      });
+        const target = wanted.get(slot.source);
+        slot.level = Math.min(1, Math.max(0, slot.level + (target ? 1 : -1) * LIGHT_SLOT_FADE * dt));
+        if (slot.source < 0) {
+          slot.light.intensity = 0;
+          continue;
+        }
+        const l = mapLights[slot.source];
+        const dist = target?.dist ?? score(slot.source).dist;
+        slot.light.color.setHex(l.color);
+        slot.light.position.set(l.x, l.y * wallHeight, l.z);
+        slot.light.distance = l.range;
+        slot.light.intensity = l.intensity * intensityScale * slot.level * (1 - smoothstep(LIGHT_FADE_START, LIGHT_FADE_END, dist));
+      }
     }
 
     function resize() {
@@ -2295,7 +2368,12 @@ export function GameViewport({
         Math.min(eyeY - bobY + 0.3, ceilingHere - 0.08),
         camZ + Math.sin(t * 0.5) * 0.15,
       );
-      updateLightPool(camX, eyeY, camZ, s.mapLightIntensity * rideDip);
+      updateLightPool(
+        { x: cam.x, z: cam.z },
+        { x: camX, y: eyeY, z: camZ, fwdX: fwdX / fwdLen, fwdZ: fwdZ / fwdLen },
+        s.mapLightIntensity * rideDip,
+        dt,
+      );
 
       const liftDoor = ride ? liftDoorOf(map, { x: Math.round(cam.x), y: Math.round(cam.z) }) : undefined;
       if (ride && liftDoor) {
@@ -2308,6 +2386,7 @@ export function GameViewport({
         shaftLight.intensity = 0;
       }
 
+      scene.overrideMaterial = geometryViewMaterial(s.geometryView);
       renderer.render(scene, camera);
 
       if (now - lastStatsAt > 500) {
