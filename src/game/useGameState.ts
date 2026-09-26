@@ -33,10 +33,11 @@ const LIFT_SWAP_AT = 1700;
 // after a slow load, the cabin sits still this long before the doors open
 const LIFT_SETTLE_MS = 700;
 
-const BLOCKED_MESSAGES: Record<"wall" | "ledge" | "low", string> = {
+const BLOCKED_MESSAGES: Record<"wall" | "ledge" | "low" | "prop", string> = {
   wall: "A bulkhead blocks the way.",
   ledge: "The ledge is too high to climb.",
   low: "The passage is too low.",
+  prop: "Something is in the way.",
 };
 // a lift door shuts this long after the last time someone passed through it
 const LIFT_DOOR_CLOSE_MS = 15000;

@@ -9,6 +9,7 @@ import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights } from "../game/lights";
 import { PROP_TYPES, propPlacement } from "../game/props";
+import type { PropType } from "../game/props";
 import { doorCellKey } from "../game/useGameState";
 import { forwardOf } from "../game/freeMovement";
 import type { FreePose } from "../game/freeMovement";
@@ -41,6 +42,9 @@ export type TextureSetId =
   | "medwindow1_right"
   | "crate1"
   | "crate1_top"
+  | "medbed1_front"
+  | "medbed1_side"
+  | "medbed1_top"
   | "lift1"
   | "liftceil1"
   | "medwall1"
@@ -477,6 +481,25 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     diffuse: `${import.meta.env.BASE_URL}textures/crate1_top/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/crate1_top/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/crate1_top/depth.png`,
+    pixelArt: true,
+  },
+  // a prop's orthographic views (see src/game/props.ts)
+  medbed1_front: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medbed1_front/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medbed1_front/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medbed1_front/depth.png`,
+    pixelArt: true,
+  },
+  medbed1_side: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medbed1_side/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medbed1_side/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medbed1_side/depth.png`,
+    pixelArt: true,
+  },
+  medbed1_top: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medbed1_top/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medbed1_top/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medbed1_top/depth.png`,
     pixelArt: true,
   },
   // ceiling tile; its center panel glows in cells with a ceiling light
@@ -1213,13 +1236,12 @@ export function GameViewport({
       }
       return kit;
     };
-    const propTypes = [...new Set((map.props ?? []).map((p) => p.prop))].filter(
-      (name) => isTextureSetId(PROP_TYPES[name].side) && isTextureSetId(PROP_TYPES[name].top),
+    // a prop type's texture sets: a box's side and top, or its views
+    const propSets = (type: PropType): string[] =>
+      type.kind === "box" ? [type.side, type.top] : ["front", "side", "top"].map((v) => `${type.views}_${v}`);
+    const propTypes = [...new Set((map.props ?? []).map((p) => p.prop))].filter((name) =>
+      propSets(PROP_TYPES[name]).every(isTextureSetId),
     );
-    for (const name of propTypes) {
-      propKitFor(PROP_TYPES[name].side as TextureSetId);
-      propKitFor(PROP_TYPES[name].top as TextureSetId);
-    }
     // door panel kits by door kind, created on demand
     // a deck's own door panels and label paint, else the defaults
     const panelSetFor = (kind: DoorSpec["kind"]): TextureSetId => {
@@ -1438,6 +1460,7 @@ export function GameViewport({
         flushEdges: boolean;
         holeBackZ?: number;
         rows?: [number, number];
+        cols?: [number, number];
         holeLevels?: number;
         // relief depth (default: the settings')
         depth?: number;
@@ -1460,6 +1483,7 @@ export function GameViewport({
         flushEdges: shape.flushEdges,
         holeBackZ: shape.holeBackZ,
         rows: shape.rows,
+        cols: shape.cols,
         holeLevels: shape.holeLevels,
       });
       geometries.push(relief.geometry);
@@ -1691,39 +1715,92 @@ export function GameViewport({
       }).catch((err) => console.error("Door build failed:", err));
     }
 
-    // Props are relief boxes, whatever the wall type: four side faces and a
-    // top, each a relief panel facing out. Their reliefs aren't flushed at
-    // the edges, so a raised rim leaves a small notch along each edge - it
-    // reads as the box's worn edge.
+    // Props are relief, whatever the wall type. A box prop: four side faces
+    // and a top, each a relief panel facing out. A views prop: box parts
+    // whose faces are cut out of its orthographic views' reliefs (see
+    // props.ts) - a face shows the part of the view it covers. Reliefs
+    // aren't flushed at the edges, so a raised rim leaves a small notch
+    // along an edge - it reads as a worn edge. One template per prop type,
+    // cloned per instance (sharing geometry and materials).
+    async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
+      const [length, height, depth] = type.size;
+      const relief = settings.reliefDepth * PROP_RELIEF_SCALE;
+      const template = new THREE.Group();
+      const face = (
+        geo: THREE.BufferGeometry,
+        kit: WallKit,
+        pos: [number, number, number],
+        rot: [number, number],
+        mirror = false,
+      ) => {
+        const mesh = new THREE.Mesh(geo, [kit.wallMat, kit.sideMat]);
+        mesh.position.set(...pos);
+        mesh.rotation.set(rot[0], rot[1], 0);
+        if (mirror) mesh.scale.x = -1;
+        template.add(mesh);
+      };
+
+      if (type.kind === "box") {
+        const sideKit = propKitFor(type.side as TextureSetId);
+        const topKit = propKitFor(type.top as TextureSetId);
+        const h = height * wallHeight;
+        const side = await buildRelief(sideKit, { width: length, height: h, flushEdges: false, depth: relief });
+        const top = await buildRelief(topKit, { width: length, height: depth, flushEdges: false, depth: relief });
+        if (!side || !top) return null;
+        for (let i = 0; i < 4; i++) {
+          const a = (i * Math.PI) / 2;
+          face(side.geometry, sideKit, [(Math.sin(a) * length) / 2, h / 2, (Math.cos(a) * depth) / 2], [0, a]);
+        }
+        face(top.geometry, topKit, [0, h, 0], [-Math.PI / 2, 0]);
+        return template;
+      }
+
+      const [front, side, top] = propSets(type).map((id) => propKitFor(id as TextureSetId));
+      // the whole views first: their builds give the kits their AO maps
+      for (const [kit, w, h] of [
+        [front, length, height * wallHeight],
+        [side, depth, height * wallHeight],
+        [top, length, depth],
+      ] as const) {
+        if (!(await buildRelief(kit, { width: w, height: h, flushEdges: false, depth: relief }))) return null;
+      }
+      const cut = (kit: WallKit, w: number, h: number, cols: [number, number], rows: [number, number]) =>
+        buildRelief(kit, { width: w, height: h, flushEdges: false, depth: relief, cols, rows });
+      for (const { min, max } of type.parts) {
+        const [x0, y0, z0] = min;
+        const [x1, y1, z1] = max;
+        const cx = (x0 + x1) / 2;
+        const cy = ((y0 + y1) / 2) * wallHeight;
+        const cz = (z0 + z1) / 2;
+        const h = (y1 - y0) * wallHeight;
+        const rows: [number, number] = [(height - y1) / height, (height - y0) / height];
+        const alongX: [number, number] = [(x0 + length / 2) / length, (x1 + length / 2) / length];
+        const alongZ: [number, number] = [(depth / 2 - z1) / depth, (depth / 2 - z0) / depth];
+        const fromTop: [number, number] = [(z0 + depth / 2) / depth, (z1 + depth / 2) / depth];
+        const f = await cut(front, x1 - x0, h, alongX, rows);
+        const s = await cut(side, z1 - z0, h, alongZ, rows);
+        const t = await cut(top, x1 - x0, z1 - z0, alongX, fromTop);
+        if (!f || !s || !t) return null;
+        // the back and the -x end show their views mirrored
+        face(f.geometry, front, [cx, cy, z1], [0, 0]);
+        face(f.geometry, front, [cx, cy, z0], [0, Math.PI], true);
+        face(s.geometry, side, [x1, cy, cz], [0, Math.PI / 2]);
+        face(s.geometry, side, [x0, cy, cz], [0, -Math.PI / 2], true);
+        face(t.geometry, top, [cx, y1 * wallHeight, cz], [-Math.PI / 2, 0]);
+      }
+      return template;
+    }
+
     for (const name of propTypes) {
-      const type = PROP_TYPES[name];
-      const sideKit = propKitFor(type.side as TextureSetId);
-      const topKit = propKitFor(type.top as TextureSetId);
-      const size = type.size;
-      const height = type.height * wallHeight;
-      const depth = settings.reliefDepth * PROP_RELIEF_SCALE;
       track(async () => {
-        const side = await buildRelief(sideKit, { width: size, height, flushEdges: false, depth });
-        const top = await buildRelief(topKit, { width: size, height: size, flushEdges: false, depth });
-        if (!side || !top) return;
+        const template = await buildPropTemplate(PROP_TYPES[name]);
+        if (!template) return;
         for (const spec of map.props ?? []) {
           if (spec.prop !== name) continue;
           const { x, z, yaw } = propPlacement(spec);
-          const prop = new THREE.Group();
+          const prop = template.clone();
           prop.position.set(x, floorY(spec.cell.x, spec.cell.y), z);
           prop.rotation.y = -yaw;
-          for (let i = 0; i < 4; i++) {
-            const face = new THREE.Group();
-            face.rotation.y = (i * Math.PI) / 2;
-            const mesh = new THREE.Mesh(side.geometry, [sideKit.wallMat, sideKit.sideMat]);
-            mesh.position.set(0, height / 2, size / 2);
-            face.add(mesh);
-            prop.add(face);
-          }
-          const lid = new THREE.Mesh(top.geometry, [topKit.wallMat, topKit.sideMat]);
-          lid.rotation.x = -Math.PI / 2;
-          lid.position.y = height;
-          prop.add(lid);
           group.add(prop);
         }
       }).catch((err) => console.error("Prop build failed:", err));

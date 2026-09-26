@@ -1,4 +1,5 @@
 import { bridgeAt, cellAt, ceilingHeight, floorHeight, ladderBetween } from "./map";
+import { propBlocks } from "./props";
 import type { Direction, GameMap, Vec2 } from "./types";
 
 // How far up a floor can step without a ladder, and down without a fall
@@ -23,7 +24,7 @@ export type Passage =
   | { kind: "drop"; y: number; height: number }
   // up or down a ladder
   | { kind: "climb"; y: number; height: number; up: boolean }
-  | { kind: "blocked"; reason: "wall" | "ledge" | "low" };
+  | { kind: "blocked"; reason: "wall" | "ledge" | "low" | "prop" };
 
 function along(dir: Direction): "NS" | "EW" {
   return dir === "N" || dir === "S" ? "NS" : "EW";
@@ -65,6 +66,8 @@ export function passage(map: GameMap, from: Vec2, fromY: number, to: Vec2, dir: 
   const reachable = surfaces(map, to, dir).filter((s) => s <= fromY + MAX_STEP + 1e-6);
   if (!reachable.length) return { kind: "blocked", reason: "ledge" };
   const y = Math.max(...reachable);
+  // a big prop stands on the floor (not in the way of a bridge above it)
+  if (Math.abs(y - toFloor) < 1e-6 && propBlocks(map, to)) return { kind: "blocked", reason: "prop" };
   if (headroom(map, from, fromY, to, y) < MIN_HEADROOM - 1e-6) return { kind: "blocked", reason: "low" };
   if (y < fromY - MAX_STEP - 1e-6) return { kind: "drop", y, height: fromY - y };
   return { kind: "walk", y };

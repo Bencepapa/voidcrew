@@ -59,6 +59,11 @@
       ]
     }
   },
+  "props": [
+    { "prop": "medbed1", "x": 2, "y": 5, "at": "S" },
+    { "prop": "medbed1", "x": 4, "y": 5, "at": "S" },
+    { "prop": "medbed1", "x": 5, "y": 3, "at": "E", "rotation": 90 }
+  ],
   "lifts": [{ "x": 1, "y": 1, "button": "S", "to": "deck2-engineering" }],
   "lights": [{ "x": 8, "y": 4 }],
   "windows": [

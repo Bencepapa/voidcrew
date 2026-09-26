@@ -46,6 +46,8 @@ export interface ReliefOptions {
   // the whole texture, so a partial panel shares the full panel's materials
   // and AO map.
   rows?: [number, number];
+  // the same for the map's columns, as fractions of its width from the left
+  cols?: [number, number];
   // cut this many of the lowest levels out as holes - a grate's slots, to
   // see through
   holeLevels?: number;
@@ -113,10 +115,10 @@ export async function loadHeightGrid(url: string): Promise<HeightGrid> {
 }
 
 export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
-  const { width: gw, height: fullH } = grid;
+  const { width: fullW, height: fullH } = grid;
 
   const { q: quantized, heights, baked } = quantizeHeights(grid.data, opts.levels);
-  const fullQ = removeSmallIslands(quantized, gw, fullH, Math.round(opts.minIsland));
+  const fullQ = removeSmallIslands(quantized, fullW, fullH, Math.round(opts.minIsland));
   const levelCount = heights.length;
 
   // The most common level (usually the flat panel surface) sits exactly on
@@ -127,12 +129,22 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   const fullSolid = grid.solid;
   const base = mostCommonLevel(fullSolid ? fullQ.filter((_, i) => fullSolid[i]) : fullQ, levelCount);
 
-  // the band of rows this geometry covers (all of them unless opts.rows)
+  // the rectangle of the map this geometry covers (all of it unless
+  // opts.rows / opts.cols)
   const r0 = opts.rows ? Math.round(opts.rows[0] * fullH) : 0;
-  const r1 = opts.rows ? Math.round(opts.rows[1] * fullH) : fullH;
+  const r1 = opts.rows ? Math.max(r0 + 1, Math.round(opts.rows[1] * fullH)) : fullH;
+  const c0 = opts.cols ? Math.round(opts.cols[0] * fullW) : 0;
+  const c1 = opts.cols ? Math.max(c0 + 1, Math.round(opts.cols[1] * fullW)) : fullW;
   const gh = r1 - r0;
-  const q = fullQ.subarray(r0 * gw, r1 * gw);
-  const solid = fullSolid?.subarray(r0 * gw, r1 * gw);
+  const gw = c1 - c0;
+  const crop = <T extends Uint8Array | Int32Array | Uint16Array | Float32Array>(a: T): T => {
+    if (c0 === 0 && c1 === fullW) return a.subarray(r0 * fullW, r1 * fullW) as T;
+    const out = new (a.constructor as new (n: number) => T)(gw * gh);
+    for (let y = 0; y < gh; y++) out.set(a.subarray((r0 + y) * fullW + c0, (r0 + y) * fullW + c1), y * gw);
+    return out;
+  };
+  const q = crop(fullQ);
+  const solid = fullSolid ? crop(fullSolid) : undefined;
   const levelZ = (l: number) => (heights[l] - heights[base]) * opts.depth;
   const maxAbsZ = Math.max(Math.abs(levelZ(0)), Math.abs(levelZ(levelCount - 1)));
 
@@ -154,7 +166,7 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
 
   const X = (x: number) => -opts.wallWidth / 2 + x * cellW;
   const Y = (y: number) => opts.wallHeight / 2 - y * cellH;
-  const U = (x: number) => x / gw;
+  const U = (x: number) => (x + c0) / fullW;
   const V = (y: number) => 1 - (y + r0) / fullH;
   // Per-cell key: its level, or HOLE for a transparent cell (or one on the
   // lowest `holeLevels`). Holes get no front face; the side faces around
