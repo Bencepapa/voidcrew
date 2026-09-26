@@ -36,7 +36,16 @@ export interface GameMap {
   ceilingTextureAt?: (x: number, y: number) => string | undefined;
   // the deck's own look: its default texture sets (renderer ids) - any
   // omitted falls back to the renderer's settings
-  textures?: { wall?: string; floor?: string; ceiling?: string; door?: string; liftDoor?: string };
+  textures?: {
+    wall?: string;
+    floor?: string;
+    ceiling?: string;
+    door?: string;
+    liftDoor?: string;
+    doorFrame?: string;
+    // a window panel set; wider windows use its _left, _mid and _right sets
+    window?: string;
+  };
   // the paint of the deck's door labels and numbers (hex, e.g. "#1f8f45")
   labelColor?: string;
   decals?: DecalSpec[];

@@ -1,7 +1,15 @@
 {
   "name": "Deck 1 - Medical",
   "deck": 1,
-  "textures": { "wall": "medwall1", "floor": "medfloor1", "ceiling": "medceil1", "door": "meddoor1", "liftDoor": "medliftdoor1" },
+  "textures": {
+    "wall": "medwall1",
+    "floor": "medfloor1",
+    "ceiling": "medceil1",
+    "door": "meddoor1",
+    "liftDoor": "medliftdoor1",
+    "doorFrame": "meddoorframe1",
+    "window": "medwindow1"
+  },
   "labelColor": "#1f8f45",
   "start": { "x": 1, "y": 1, "facing": "E" },
   "layout": [

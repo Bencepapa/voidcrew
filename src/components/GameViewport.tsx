@@ -34,13 +34,18 @@ export type TextureSetId =
   | "window1_left"
   | "window1_mid"
   | "window1_right"
+  | "medwindow1"
+  | "medwindow1_left"
+  | "medwindow1_mid"
+  | "medwindow1_right"
   | "lift1"
   | "liftceil1"
   | "medwall1"
   | "medfloor1"
   | "medceil1"
   | "meddoor1"
-  | "medliftdoor1";
+  | "medliftdoor1"
+  | "meddoorframe1";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -394,6 +399,13 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     depth: `${import.meta.env.BASE_URL}textures/meddoor1/depth.png`,
     pixelArt: true,
   },
+  // door frame: its opening is transparent
+  meddoorframe1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/meddoorframe1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/meddoorframe1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/meddoorframe1/depth.png`,
+    pixelArt: true,
+  },
   medliftdoor1: {
     diffuse: `${import.meta.env.BASE_URL}textures/medliftdoor1/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/medliftdoor1/normal.png`,
@@ -425,6 +437,30 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     diffuse: `${import.meta.env.BASE_URL}textures/window1_right/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/window1_right/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/window1_right/depth.png`,
+    pixelArt: true,
+  },
+  medwindow1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medwindow1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medwindow1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medwindow1/depth.png`,
+    pixelArt: true,
+  },
+  medwindow1_left: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medwindow1_left/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medwindow1_left/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medwindow1_left/depth.png`,
+    pixelArt: true,
+  },
+  medwindow1_mid: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medwindow1_mid/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medwindow1_mid/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medwindow1_mid/depth.png`,
+    pixelArt: true,
+  },
+  medwindow1_right: {
+    diffuse: `${import.meta.env.BASE_URL}textures/medwindow1_right/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/medwindow1_right/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/medwindow1_right/depth.png`,
     pixelArt: true,
   },
   // ceiling tile; its center panel glows in cells with a ceiling light
@@ -1129,14 +1165,15 @@ export function GameViewport({
       mapLights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`),
     );
 
-    const frameKit = createWallKit(DOOR_FRAME_SET, false);
+    const frameKit = createWallKit(isTextureSetId(map.textures?.doorFrame) ? map.textures.doorFrame : DOOR_FRAME_SET, false);
     // window panels (see the wall loop), by their wall's surface key
     // and the frame panel each takes: a one-panel window its own, a wider
     // one a left end, middle pieces and a right end
+    const windowSet: TextureSetId = isTextureSetId(map.textures?.window) ? map.textures.window : WINDOW_SET;
     const windowFaces = new Map(
       windowPanels(map).map((p) => {
         const part = p.width === 1 ? "" : p.index === 0 ? "_left" : p.index === p.width - 1 ? "_right" : "_mid";
-        return [surfaceKey(p.cell, p.wall), `${WINDOW_SET}${part}` as TextureSetId] as const;
+        return [surfaceKey(p.cell, p.wall), `${windowSet}${part}` as TextureSetId] as const;
       }),
     );
     const windowKits = new Map<TextureSetId, WallKit>();
@@ -1489,7 +1526,7 @@ export function GameViewport({
     for (const [setId, windowKit] of windowKits) {
       // a wide window's pieces continue each other: no flush edge margins
       // (they'd flatten the mullions on the seams)
-      track(buildRelief(windowKit, { height: wallHeight, flushEdges: setId === WINDOW_SET, holeBackZ: -WINDOW_DEPTH }))
+      track(buildRelief(windowKit, { height: wallHeight, flushEdges: setId === windowSet, holeBackZ: -WINDOW_DEPTH }))
         .then((frame) => {
           if (!frame) return;
           const hole = frame.holeBounds ?? { minX: -0.3, maxX: 0.3, minY: -0.13 * wallHeight, maxY: 0.22 * wallHeight };

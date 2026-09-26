@@ -30,7 +30,16 @@ export interface MapFile {
   // deck number (lower = higher up the ship)
   deck: number;
   // default texture sets for the deck (see GameMap.textures)
-  textures?: { wall?: string; floor?: string; ceiling?: string; door?: string; liftDoor?: string };
+  textures?: {
+    wall?: string;
+    floor?: string;
+    ceiling?: string;
+    door?: string;
+    liftDoor?: string;
+    doorFrame?: string;
+    // a window panel set; wider windows use its _left, _mid and _right sets
+    window?: string;
+  };
   labelColor?: string;
   start: { x: number; y: number; facing: Direction };
   layout: string[];
