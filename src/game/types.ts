@@ -32,6 +32,8 @@ export interface GameMap {
   // wall texture set for the walls around a walkable cell (a renderer
   // texture set id); omitted = the renderer's default wall mix
   wallTextureAt?: (x: number, y: number) => string | undefined;
+  // ceiling texture set of a walkable cell; omitted = the renderer's choice
+  ceilingTextureAt?: (x: number, y: number) => string | undefined;
   decals?: DecalSpec[];
   // door cells that aren't plain standard doors
   doors?: DoorSpec[];

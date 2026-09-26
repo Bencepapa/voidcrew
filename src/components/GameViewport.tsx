@@ -34,7 +34,8 @@ export type TextureSetId =
   | "window1_left"
   | "window1_mid"
   | "window1_right"
-  | "lift1";
+  | "lift1"
+  | "liftceil1";
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 
 export interface ViewportSettings {
@@ -351,6 +352,14 @@ const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
     diffuse: `${import.meta.env.BASE_URL}textures/lift1/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/lift1/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/lift1/depth.png`,
+    pixelArt: true,
+  },
+  // lift cabin ceiling: two light strips that glow (emissive)
+  liftceil1: {
+    diffuse: `${import.meta.env.BASE_URL}textures/liftceil1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/liftceil1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/liftceil1/depth.png`,
+    emissive: `${import.meta.env.BASE_URL}textures/liftceil1/emissive.png`,
     pixelArt: true,
   },
   // wall panel with a window frame; its opening is transparent
@@ -1056,7 +1065,20 @@ export function GameViewport({
       return kit;
     }
 
-    const ceilingKit = settings.ceilingTextureSet !== "none" ? createWallKit(settings.ceilingTextureSet, false) : null;
+    // ceiling kits by texture set: the chosen one, or the map's for a cell
+    // (a lift cabin's own), created on demand; none for a plain ceiling
+    const ceilingKits = new Map<TextureSetId, WallKit>();
+    function ceilingKitAt(x: number, y: number): WallKit | null {
+      if (settings.ceilingTextureSet === "none") return null;
+      const fromMap = map.ceilingTextureAt?.(x, y);
+      const setId = isTextureSetId(fromMap) ? fromMap : settings.ceilingTextureSet;
+      let kit = ceilingKits.get(setId);
+      if (!kit) {
+        kit = createWallKit(setId, false);
+        ceilingKits.set(setId, kit);
+      }
+      return kit;
+    }
     // cells with a ceiling light: their ceiling tile's light panel glows
     const mapLights = generateLights(map);
     const litCells = new Set(
@@ -1195,6 +1217,7 @@ export function GameViewport({
           decals.registerSurface(surfaceKey({ x, y }, "floor"), mesh);
         }
 
+        const ceilingKit = ceilingKitAt(x, y);
         if (ceilingKit) {
           ceilingKit.slots.push({
             x,
@@ -1378,7 +1401,7 @@ export function GameViewport({
       ...floorKits.values(),
       frameKit,
       ...panelKits.values(),
-      ...(ceilingKit ? [ceilingKit] : []),
+      ...ceilingKits.values(),
       ...windowKits.values(),
     ];
 
@@ -1442,7 +1465,7 @@ export function GameViewport({
         .catch((err) => console.error("Window build failed:", err));
     }
 
-    if (ceilingKit) {
+    for (const ceilingKit of ceilingKits.values()) {
       if (isRelief) {
         track(buildRelief(ceilingKit, { height: 1, flushEdges: false }))
           .then((relief) => relief && placeCeilings(relief.geometry, ceilingKit, true))
@@ -1787,7 +1810,7 @@ export function GameViewport({
     for (const light of mapLights) {
       if (light.kind === "ceiling") {
         // a textured ceiling brings its own glowing light panel
-        if (ceilingKit?.litMat) continue;
+        if (ceilingKitAt(Math.round(light.x), Math.round(light.z))?.litMat) continue;
         const panel = new THREE.Mesh(ceilingFixtureGeo, fixtureMat(light.color));
         panel.rotation.x = Math.PI / 2;
         panel.position.set(light.x, ceilingY(Math.round(light.x), Math.round(light.z)) - 0.002, light.z);

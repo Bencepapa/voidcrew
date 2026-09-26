@@ -20,6 +20,7 @@ export interface LightSpec {
 }
 
 const DIRECTIONS = Object.keys(DIR_VECTOR) as Direction[];
+const LIFT_LIGHT_INTENSITY = 0.8;
 
 // Deterministic PRNG (mulberry32) seeded from the map name, so "random"
 // placement stays the same on every load instead of reshuffling.
@@ -89,14 +90,16 @@ export function generateLights(map: GameMap): LightSpec[] {
       lights.push(ceilingLight(cell.x, cell.y));
     }
   }
-  // every lift cabin (the cell behind a lift door) is always lit
+  // every lift cabin (the cell behind a lift door) is always lit - softly:
+  // its pale plates would glare under a full-strength light
   for (const door of map.doors ?? []) {
     if (door.kind !== "lift") continue;
     const v = DIR_VECTOR[door.facing];
     const cabin = { x: door.cell.x - v.x, y: door.cell.y - v.y };
-    if (!lights.some((l) => l.kind === "ceiling" && l.x === cabin.x && l.z === cabin.y)) {
-      lights.push(ceilingLight(cabin.x, cabin.y));
-    }
+    const existing = lights.findIndex((l) => l.kind === "ceiling" && l.x === cabin.x && l.z === cabin.y);
+    const light = { ...ceilingLight(cabin.x, cabin.y), intensity: LIFT_LIGHT_INTENSITY };
+    if (existing >= 0) lights[existing] = light;
+    else lights.push(light);
   }
 
   // a faint cold glow of starlight in front of each window panel

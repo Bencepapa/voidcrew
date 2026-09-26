@@ -42,7 +42,8 @@ const USAGE = `Usage: npm run texture:process -- --diffuse <file> [--depth <file
   [--flatten-paint]       flatten saturated paint (stripes, decals, rust) to the surface it's painted on
   [--paint-saturation 0.45] how saturated a color must be to count as paint
   [--paint-grow 2]        widen the paint areas by this many pixels (the depth's stripes are often wider)
-  [--emissive-panel]      also write emissive.png: the largest bright, colorless patch (a light panel)
+  [--emissive-panel]      also write emissive.png: the largest bright, colorless patch (a light panel),
+                          and any at least half its size
   [--emissive-luma 150]   how bright a pixel must be to belong to the light panel
 
 A transparent diffuse (e.g. a door frame's opening) is kept: diffuse.png and depth.png get the
@@ -538,7 +539,8 @@ function flattenPaint(q: Uint8Array, rgba: Buffer, w: number, h: number, minSatu
 
 // --emissive-panel: a mask of the largest connected patch of bright,
 // colorless diffuse pixels - e.g. the frosted light panel in the middle of a
-// ceiling tile - for the game to light up where there's a ceiling light.
+// ceiling tile - for the game to light up where there's a ceiling light;
+// and of any other patch at least half its size (a pair of light strips).
 function largestBrightPatch(rgba: Buffer, w: number, h: number, minLuma: number): { mask: Uint8Array; size: number } {
   const bright = new Uint8Array(w * h);
   for (let i = 0; i < bright.length; i++) {
@@ -551,7 +553,7 @@ function largestBrightPatch(rgba: Buffer, w: number, h: number, minLuma: number)
     bright[i] = rgba[i * 4 + 3] && luma >= minLuma && (max - min) / (max || 1) < 0.2 ? 1 : 0;
   }
   const seen = new Uint8Array(w * h);
-  let best: number[] = [];
+  const patches: number[][] = [];
   for (let start = 0; start < bright.length; start++) {
     if (!bright[start] || seen[start]) continue;
     const comp = [start];
@@ -567,10 +569,13 @@ function largestBrightPatch(rgba: Buffer, w: number, h: number, minLuma: number)
         }
       }
     }
-    if (comp.length > best.length) best = comp;
+    patches.push(comp);
   }
+  const largest = Math.max(0, ...patches.map((p) => p.length));
   const mask = new Uint8Array(w * h);
-  for (const i of best) mask[i] = 1;
+  for (const patch of patches) {
+    if (patch.length * 2 >= largest) for (const i of patch) mask[i] = 1;
+  }
 
   // fill the patch's interior holes (dark cracks, dirt) so the whole panel
   // glows: anything the outside can't reach without crossing the patch

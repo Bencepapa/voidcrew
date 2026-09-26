@@ -11,6 +11,7 @@ import type { CellType, DecalSpec, Direction, DoorSpec, GameMap } from "./types"
 //   floorTexture  floor texture set (default: "default", or the renderer's)
 //   wallTexture   texture set of the walls around the cell (default: the
 //                 renderer's mix)
+//   ceilingTexture  texture set of the ceiling (default: the renderer's)
 //
 // `ladders` stand in a cell against its wall toward a higher neighbor;
 // `bridges` span a cell at a height along an axis; `lights` add ceiling
@@ -35,6 +36,7 @@ export interface MapFile {
     ceiling?: LayerFile<number>;
     floorTexture?: LayerFile<string>;
     wallTexture?: LayerFile<string>;
+    ceilingTexture?: LayerFile<string>;
   };
   doors?: {
     x: number;
@@ -147,6 +149,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
 
   const floorTextures = readLayer(file.layers?.floorTexture, width, height, "floorTexture");
   const wallTextures = readLayer(file.layers?.wallTexture, width, height, "wallTexture");
+  const ceilingTextures = readLayer(file.layers?.ceilingTexture, width, height, "ceilingTexture");
 
   return {
     id,
@@ -160,6 +163,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     ceilingHeights,
     floorAt: file.layers?.floorTexture ? (x, y) => floorTextures[y]?.[x] ?? "" : undefined,
     wallTextureAt: (x, y) => wallTextures[y]?.[x],
+    ceilingTextureAt: (x, y) => ceilingTextures[y]?.[x],
     doors: (file.doors ?? []).map((d) => ({
       cell: { x: d.x, y: d.y },
       kind: d.kind,
