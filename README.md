@@ -14,7 +14,7 @@ A first-person, grid-based crew dungeon crawler set aboard a derelict spaceship 
 3. Run the app:
    `npm run dev`
 
-Asset pipeline, scripts, dev tools (actor editor, `?map=`, console helpers) and which files to edit when adding textures, props or actors: see [TOOLS.md](TOOLS.md).
+Asset pipeline, scripts, dev tools (actor editor, `?map=`, console helpers) and which files to edit when adding textures, props or actors: see [TOOLS.md](TOOLS.md). The combat plan and the suggested order of work: see [DESIGN.md](DESIGN.md).
 
 ## Maps
 
