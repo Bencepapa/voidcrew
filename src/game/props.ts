@@ -20,6 +20,8 @@ export type PropType = {
   // mounted on (or standing against) a wall: pushed toward a side of its
   // cell, it turns to face away from that wall, into the room
   wall?: boolean;
+  // its relief's depth, relative to props' usual (softer for fabric)
+  relief?: number;
 } & (
   | {
       // a relief box: `side` texture set on its four sides, `top` on top
@@ -39,6 +41,19 @@ export type PropType = {
       // how high above the floor it's mounted (wall heights); the parts'
       // y stays relative to the views
       elevation?: number;
+      // the views' pixel sizes (npm run props:views prints them): each view
+      // then covers its own extent at the front view's scale - an AI view
+      // sheet rarely draws the side and top exactly as big as the front
+      px?: { front: [number, number]; side: [number, number]; top: [number, number] };
+    }
+  | {
+      // a walk-in box (a shower cabin) seen into through its front: a
+      // cutout `door` (its glass see-through, with a pane of glass behind
+      // it), the `inside` of its back wall, and <views>_side / _top outside
+      kind: "cabin";
+      door: string;
+      inside: string;
+      views: string;
     }
   | {
       // one upright relief cutout (its texture's transparent pixels left
@@ -94,14 +109,15 @@ export const PROP_TYPES: Record<string, PropType> = {
   table1: {
     kind: "views",
     views: "table1",
-    size: [0.5, 0.38, 0.48],
+    size: [0.5, 0.384, 0.41],
     blocks: true,
+    px: { front: [562, 432], side: [463, 437], top: [536, 523] },
     parts: [
-      // foot, pedestal, top, and the mug on it
-      { min: [-0.2, 0, -0.19], max: [0.2, 0.04, 0.19] },
-      { min: [-0.06, 0.04, -0.05], max: [0.06, 0.3, 0.05] },
-      { min: [-0.25, 0.3, -0.24], max: [0.25, 0.335, 0.24] },
-      { min: [-0.14, 0.335, -0.14], max: [-0.07, 0.372, -0.04] },
+      // foot, pedestal, top (its edge band), and the mug on it
+      { min: [-0.14, 0, -0.14], max: [0.14, 0.092, 0.14] },
+      { min: [-0.035, 0.092, -0.035], max: [0.035, 0.25, 0.035] },
+      { min: [-0.245, 0.25, -0.2], max: [0.245, 0.3, 0.2] },
+      { min: [-0.155, 0.3, -0.14], max: [-0.07, 0.384, -0.03] },
     ],
   },
   foldtable1: {
@@ -127,12 +143,13 @@ export const PROP_TYPES: Record<string, PropType> = {
     parts: [{ min: [-0.35, 0, -0.13], max: [0.35, 0.415, 0.13] }],
   },
   shower1: {
-    kind: "views",
+    kind: "cabin",
     views: "shower1",
+    door: "shower1_door",
+    inside: "shower1_inside",
     size: [0.5, 0.91, 0.42],
     blocks: true,
     wall: true,
-    parts: [{ min: [-0.25, 0, -0.21], max: [0.25, 0.91, 0.21] }],
   },
   kitchen1: {
     kind: "views",
@@ -140,15 +157,23 @@ export const PROP_TYPES: Record<string, PropType> = {
     size: [0.9, 0.614, 0.32],
     blocks: true,
     wall: true,
+    px: { front: [739, 504], side: [263, 552], top: [744, 315] },
     parts: [
-      // cabinets and counter; microwave; kettle
-      { min: [-0.45, 0, -0.16], max: [0.45, 0.473, 0.16] },
-      { min: [-0.036, 0.473, -0.11], max: [0.27, 0.608, 0.05] },
-      { min: [0.297, 0.473, -0.11], max: [0.405, 0.546, 0.05] },
+      // cabinets with the counter; microwave; kettle
+      { min: [-0.45, 0, -0.109], max: [0.45, 0.43, 0.16] },
+      { min: [-0.063, 0.43, -0.109], max: [0.27, 0.614, 0.08] },
+      { min: [0.297, 0.43, -0.05], max: [0.405, 0.565, 0.06] },
     ],
   },
-  curtain_closed: { kind: "panel", texture: "curtain_closed", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12 },
-  curtain_open: { kind: "panel", texture: "curtain_open", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12 },
+  curtain_closed: {
+    kind: "panel",
+    texture: "curtain_closed",
+    size: [0.85, 0.75, 0.04],
+    wall: true,
+    elevation: 0.12,
+    relief: 0.3,
+  },
+  curtain_open: { kind: "panel", texture: "curtain_open", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12, relief: 0.3 },
   plant1: { kind: "cross", texture: "plant1", size: [0.3, 0.58, 0.3] },
 };
 

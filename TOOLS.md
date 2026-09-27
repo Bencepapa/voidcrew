@@ -167,10 +167,19 @@ medbed1: {
 },
 ```
 
+`px` – the views' pixel sizes as `props:views` prints them (`{ front: [w, h], side: [w, h], top: [w, h] }`):
+each view then covers its own extent at the front view's scale, since an AI view sheet rarely
+draws the side and top exactly as tall or deep as the front. Measure parts off the flat, straight-on
+parts of a view (an AI often draws a table or counter top slightly from above: leave that band out).
 `blocks: true` – grid movement can't enter its cell. `wall: true` – pushed
 against a side of its cell (`at`), it turns to face away from that wall.
 `elevation` – mounted this high above the floor (a shelf, a fold-out table).
 A part's top hidden under another part gets no face.
+
+**Cabin** (`kind: "cabin"`) – a walk-in box seen into through its front (a
+shower): a cutout `door` whose glass areas are magenta (a pane of tinted glass
+goes behind it), the `inside` of its back wall as seen through the door, and
+`<views>_side` / `_top` outside.
 
 **Cutout** (`kind: "panel"`) – one relief cutout, seen from both sides: a
 curtain in front of a window. **Crossed cutouts** (`kind: "cross"`) – two at

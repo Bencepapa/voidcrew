@@ -1320,7 +1320,9 @@ export function GameViewport({
         ? [type.side, type.top]
         : type.kind === "views"
           ? ["front", "side", "top"].map((v) => `${type.views}_${v}`)
-          : [type.texture];
+          : type.kind === "cabin"
+            ? [type.door, type.inside, `${type.views}_side`, `${type.views}_top`]
+            : [type.texture];
     const propTypes = [...new Set((map.props ?? []).map((p) => p.prop))];
     // door panel kits by door kind, created on demand
     // a deck's own door panels and label paint, else the defaults
@@ -1864,9 +1866,21 @@ export function GameViewport({
     // aren't flushed at the edges, so a raised rim leaves a small notch
     // along an edge - it reads as a worn edge. One template per prop type,
     // cloned per instance (sharing geometry and materials).
+    // a cabin prop's glass: faintly tinted, see-through, catching the lights
+    const cabinGlass = new THREE.MeshStandardMaterial({
+      color: 0xd8ecff,
+      transparent: true,
+      opacity: 0.22,
+      roughness: 0.08,
+      metalness: 0.2,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    ownMaterials.push(cabinGlass);
+
     async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
       const [length, height, depth] = type.size;
-      const relief = settings.reliefDepth * PROP_RELIEF_SCALE;
+      const relief = settings.reliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
       const template = new THREE.Group();
       const face = (
         geo: THREE.BufferGeometry,
@@ -1911,18 +1925,75 @@ export function GameViewport({
         return template;
       }
 
+      if (type.kind === "cabin") {
+        const [door, inside, side, top] = propSets(type).map((id) => propKitFor(id));
+        const h = height * wallHeight;
+        const panel = (kit: WallKit, w: number, ph: number) =>
+          buildRelief(kit, { width: w, height: ph, flushEdges: false, depth: relief, coarse: PROP_COARSE });
+        const d = await panel(door, length, h);
+        const b = await panel(inside, length, h);
+        const s = await panel(side, depth, h);
+        const t = await panel(top, length, depth);
+        if (!d || !b || !s || !t) return null;
+        const inset = 0.006;
+        // the door (and its inside), the back wall's inside
+        face(d.geometry, door, [0, h / 2, depth / 2], [0, 0]);
+        face(d.geometry, door, [0, h / 2, depth / 2], [0, Math.PI], true);
+        face(b.geometry, inside, [0, h / 2, -depth / 2 + inset], [0, 0]);
+        // the sides, outside and in; the roof, outside and in
+        face(s.geometry, side, [length / 2, h / 2, 0], [0, Math.PI / 2]);
+        face(s.geometry, side, [-length / 2, h / 2, 0], [0, -Math.PI / 2], true);
+        face(s.geometry, side, [length / 2 - inset, h / 2, 0], [0, -Math.PI / 2], true);
+        face(s.geometry, side, [-length / 2 + inset, h / 2, 0], [0, Math.PI / 2]);
+        face(t.geometry, top, [0, h, 0], [-Math.PI / 2, 0]);
+        face(t.geometry, top, [0, h - inset, 0], [Math.PI / 2, 0]);
+        // a pane of glass just behind the door's frame
+        const glassGeo = new THREE.PlaneGeometry(length, h);
+        geometries.push(glassGeo);
+        const glass = new THREE.Mesh(glassGeo, cabinGlass);
+        glass.position.set(0, h / 2, depth / 2 - 0.012);
+        template.add(glass);
+        return template;
+      }
+
       const [front, side, top] = propSets(type).map((id) => propKitFor(id));
+      // What each view covers (see PropType's px): at one pixel scale -
+      // the front view's across the prop's length - standing on the floor,
+      // centered, or for a wall prop starting at the wall (-z); without px,
+      // the prop's own extent
+      const px = type.kind === "views" ? type.px : undefined;
+      const scale = px ? length / px.front[0] : 0;
+      const frontY = px ? px.front[1] * scale : height;
+      const sideY = px ? px.side[1] * scale : height;
+      const sideZ = px ? px.side[0] * scale : depth;
+      const topX = px ? px.top[0] * scale : length;
+      const topZ = px ? px.top[1] * scale : depth;
+      const zFrom = (extent: number) => (type.wall ? -depth / 2 : -extent / 2);
+      const clampRange = ([a, b]: [number, number]): [number, number] => {
+        const lo = Math.min(1, Math.max(0, a));
+        return [lo, Math.max(lo + 1e-3, Math.min(1, b))];
+      };
       // the whole views first: their builds give the kits their AO maps
       for (const [kit, w, h] of [
-        [front, length, height * wallHeight],
-        [side, depth, height * wallHeight],
-        [top, length, depth],
+        [front, length, frontY * wallHeight],
+        [side, sideZ, sideY * wallHeight],
+        [top, topX, topZ],
       ] as const) {
         if (!(await buildRelief(kit, { width: w, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE }))) return null;
       }
       const cut = (kit: WallKit, w: number, h: number, cols: [number, number], rows: [number, number]) =>
-        buildRelief(kit, { width: w, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE, cols, rows });
-      const lift = (type.elevation ?? 0) * wallHeight;
+        buildRelief(kit, {
+          width: w,
+          height: h,
+          flushEdges: false,
+          depth: relief,
+          coarse: PROP_COARSE,
+          cols: clampRange(cols),
+          rows: clampRange(rows),
+        });
+      const lift = (type.kind === "views" ? (type.elevation ?? 0) : 0) * wallHeight;
+      const sideZ0 = zFrom(sideZ);
+      const topZ0 = zFrom(topZ);
       for (const { min, max } of type.parts) {
         const [x0, y0, z0] = min;
         const [x1, y1, z1] = max;
@@ -1930,13 +2001,16 @@ export function GameViewport({
         const cy = ((y0 + y1) / 2) * wallHeight + lift;
         const cz = (z0 + z1) / 2;
         const h = (y1 - y0) * wallHeight;
-        const rows: [number, number] = [(height - y1) / height, (height - y0) / height];
+        const frontRows: [number, number] = [(frontY - y1) / frontY, (frontY - y0) / frontY];
+        const sideRows: [number, number] = [(sideY - y1) / sideY, (sideY - y0) / sideY];
         const alongX: [number, number] = [(x0 + length / 2) / length, (x1 + length / 2) / length];
-        const alongZ: [number, number] = [(depth / 2 - z1) / depth, (depth / 2 - z0) / depth];
-        const fromTop: [number, number] = [(z0 + depth / 2) / depth, (z1 + depth / 2) / depth];
-        const f = await cut(front, x1 - x0, h, alongX, rows);
-        const s = await cut(side, z1 - z0, h, alongZ, rows);
-        const t = await cut(top, x1 - x0, z1 - z0, alongX, fromTop);
+        // the side view runs from the front (+z) on its left to the back
+        const alongZ: [number, number] = [(sideZ0 + sideZ - z1) / sideZ, (sideZ0 + sideZ - z0) / sideZ];
+        const topCols: [number, number] = [(x0 + topX / 2) / topX, (x1 + topX / 2) / topX];
+        const topRows: [number, number] = [(z0 - topZ0) / topZ, (z1 - topZ0) / topZ];
+        const f = await cut(front, x1 - x0, h, alongX, frontRows);
+        const s = await cut(side, z1 - z0, h, alongZ, sideRows);
+        const t = await cut(top, x1 - x0, z1 - z0, topCols, topRows);
         if (!f || !s || !t) return null;
         // the back and the -x end show their views mirrored
         face(f.geometry, front, [cx, cy, z1], [0, 0]);
