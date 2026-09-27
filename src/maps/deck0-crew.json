@@ -88,9 +88,32 @@
     { "x": 13, "y": 7, "wall": "S" }
   ],
   "props": [
-    { "prop": "crate1", "x": 4, "y": 2, "at": "SW" },
-    { "prop": "crate1", "x": 10, "y": 6, "at": "NE", "rotation": 10 },
-    { "prop": "crate1", "x": 15, "y": 4, "at": "NE" }
+    { "prop": "crate1", "x": 15, "y": 4, "at": "NE" },
+    { "prop": "crewbed1", "x": 4, "y": 1, "at": "N" },
+    { "prop": "curtain_open", "x": 5, "y": 1, "at": "N" },
+    { "prop": "foldtable1", "x": 6, "y": 1, "at": "E" },
+    { "prop": "shelf1", "x": 4, "y": 2, "at": "W" },
+    { "prop": "plant1", "x": 6, "y": 2, "at": "SE" },
+    { "prop": "kitchen1", "x": 8, "y": 1, "at": "W" },
+    { "prop": "curtain_closed", "x": 9, "y": 1, "at": "N" },
+    { "prop": "table1", "x": 10, "y": 1, "at": "center" },
+    { "prop": "plant1", "x": 8, "y": 2, "at": "SW" },
+    { "prop": "crewbed1", "x": 12, "y": 1, "at": "N" },
+    { "prop": "curtain_open", "x": 13, "y": 1, "at": "N" },
+    { "prop": "shower1", "x": 14, "y": 1, "at": "E" },
+    { "prop": "shelf1", "x": 12, "y": 2, "at": "W" },
+    { "prop": "crewbed1", "x": 4, "y": 7, "at": "S" },
+    { "prop": "curtain_open", "x": 5, "y": 7, "at": "S" },
+    { "prop": "plant1", "x": 6, "y": 7, "at": "SE" },
+    { "prop": "foldtable1", "x": 6, "y": 6, "at": "E" },
+    { "prop": "kitchen1", "x": 8, "y": 7, "at": "W" },
+    { "prop": "curtain_closed", "x": 9, "y": 7, "at": "S" },
+    { "prop": "table1", "x": 10, "y": 6, "at": "center" },
+    { "prop": "shelf1", "x": 10, "y": 7, "at": "E" },
+    { "prop": "shower1", "x": 12, "y": 6, "at": "W" },
+    { "prop": "curtain_closed", "x": 13, "y": 7, "at": "S" },
+    { "prop": "crewbed1", "x": 14, "y": 7, "at": "S" },
+    { "prop": "plant1", "x": 14, "y": 6, "at": "NE" }
   ],
   "doors": [
     { "x": 2, "y": 4, "kind": "lift", "facing": "E", "label": "CREW", "labelVertical": true },
@@ -102,6 +125,14 @@
     { "x": 13, "y": 5, "kind": "standard", "facing": "N", "label": "C6" }
   ],
   "decals": [
-    { "decal": "lift_btn_0_down", "x": 1, "y": 4, "surface": "S", "px": 40, "py": 66, "action": "lift" }
+    { "decal": "lift_btn_0_down", "x": 1, "y": 4, "surface": "S", "px": 40, "py": 66, "action": "lift" },
+    { "decal": "poster_home", "x": 4, "y": 2, "surface": "S", "px": 92, "py": 40 },
+    { "decal": "kid_drawing", "x": 6, "y": 2, "surface": "S", "px": 80, "py": 70 },
+    { "decal": "notice_board", "x": 10, "y": 2, "surface": "S", "px": 84, "py": 50 },
+    { "decal": "polaroids", "x": 12, "y": 2, "surface": "S", "px": 92, "py": 60 },
+    { "decal": "poster_planet", "x": 4, "y": 6, "surface": "N", "px": 92, "py": 40 },
+    { "decal": "photo_frame", "x": 8, "y": 6, "surface": "N", "px": 88, "py": 60 },
+    { "decal": "kid_drawing", "x": 14, "y": 7, "surface": "E", "px": 90, "py": 60 },
+    { "decal": "polaroids", "x": 12, "y": 7, "surface": "W", "px": 92, "py": 60 }
   ]
 }

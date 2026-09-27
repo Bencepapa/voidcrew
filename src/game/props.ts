@@ -17,6 +17,9 @@ export type PropType = {
   // extent (cells; height in wall heights): x length, y height, z depth
   size: [number, number, number];
   blocks?: boolean;
+  // mounted on (or standing against) a wall: pushed toward a side of its
+  // cell, it turns to face away from that wall, into the room
+  wall?: boolean;
 } & (
   | {
       // a relief box: `side` texture set on its four sides, `top` on top
@@ -33,9 +36,29 @@ export type PropType = {
       kind: "views";
       views: string;
       parts: PropPart[];
+      // how high above the floor it's mounted (wall heights); the parts'
+      // y stays relative to the views
+      elevation?: number;
+    }
+  | {
+      // one upright relief cutout (its texture's transparent pixels left
+      // out), `size` wide and tall, its bottom `elevation` above the floor,
+      // facing +z - a curtain before a window, a picture on a stand; seen
+      // from both sides
+      kind: "panel";
+      texture: string;
+      elevation?: number;
+    }
+  | {
+      // two such cutouts crossed at right angles (a potted plant): it reads
+      // as solid from any side
+      kind: "cross";
+      texture: string;
     }
 );
 
+// Parts are measured off the views (see npm run props:views): x across the
+// front view, y up it, z across the side view (+z = the front).
 export const PROP_TYPES: Record<string, PropType> = {
   crate1: { kind: "box", size: [0.5, 0.4, 0.5], side: "crate1", top: "crate1_top" },
   // a hospital bed, headboard at -x; parts measured off its front view
@@ -54,6 +77,79 @@ export const PROP_TYPES: Record<string, PropType> = {
       { min: [-0.35, 0.241, -0.116], max: [-0.22, 0.276, 0.12] },
     ],
   },
+
+  // crew quarters
+  crewbed1: {
+    kind: "views",
+    views: "crewbed1",
+    size: [0.9, 0.376, 0.47],
+    blocks: true,
+    wall: true,
+    parts: [
+      // headboard; frame, mattress, pillow and blanket
+      { min: [-0.45, 0, -0.235], max: [-0.37, 0.376, 0.235] },
+      { min: [-0.37, 0, -0.235], max: [0.45, 0.3, 0.235] },
+    ],
+  },
+  table1: {
+    kind: "views",
+    views: "table1",
+    size: [0.5, 0.38, 0.48],
+    blocks: true,
+    parts: [
+      // foot, pedestal, top, and the mug on it
+      { min: [-0.2, 0, -0.19], max: [0.2, 0.04, 0.19] },
+      { min: [-0.06, 0.04, -0.05], max: [0.06, 0.3, 0.05] },
+      { min: [-0.25, 0.3, -0.24], max: [0.25, 0.335, 0.24] },
+      { min: [-0.14, 0.335, -0.14], max: [-0.07, 0.372, -0.04] },
+    ],
+  },
+  foldtable1: {
+    kind: "views",
+    views: "foldtable1",
+    size: [0.7, 0.262, 0.4],
+    wall: true,
+    elevation: 0.12,
+    parts: [
+      // wall plate, table top, brackets
+      { min: [-0.22, 0, -0.2], max: [0.22, 0.262, -0.17] },
+      { min: [-0.35, 0.162, -0.17], max: [0.35, 0.192, 0.2] },
+      { min: [-0.3, 0, -0.17], max: [-0.22, 0.162, 0.1] },
+      { min: [0.22, 0, -0.17], max: [0.3, 0.162, 0.1] },
+    ],
+  },
+  shelf1: {
+    kind: "views",
+    views: "shelf1",
+    size: [0.7, 0.415, 0.26],
+    wall: true,
+    elevation: 0.4,
+    parts: [{ min: [-0.35, 0, -0.13], max: [0.35, 0.415, 0.13] }],
+  },
+  shower1: {
+    kind: "views",
+    views: "shower1",
+    size: [0.5, 0.91, 0.42],
+    blocks: true,
+    wall: true,
+    parts: [{ min: [-0.25, 0, -0.21], max: [0.25, 0.91, 0.21] }],
+  },
+  kitchen1: {
+    kind: "views",
+    views: "kitchen1",
+    size: [0.9, 0.614, 0.32],
+    blocks: true,
+    wall: true,
+    parts: [
+      // cabinets and counter; microwave; kettle
+      { min: [-0.45, 0, -0.16], max: [0.45, 0.473, 0.16] },
+      { min: [-0.036, 0.473, -0.11], max: [0.27, 0.608, 0.05] },
+      { min: [0.297, 0.473, -0.11], max: [0.405, 0.546, 0.05] },
+    ],
+  },
+  curtain_closed: { kind: "panel", texture: "curtain_closed", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12 },
+  curtain_open: { kind: "panel", texture: "curtain_open", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12 },
+  plant1: { kind: "cross", texture: "plant1", size: [0.3, 0.58, 0.3] },
 };
 
 // kept free between a prop and the walls it's pushed against (its relief
@@ -84,9 +180,14 @@ export interface PropPlacement {
   type: PropType;
 }
 
+// the turn (degrees) that makes a wall prop face away from the wall it's
+// pushed against (its front is +z, south, unturned)
+const WALL_FACING: Partial<Record<PropAnchor, number>> = { N: 0, NE: 0, NW: 0, S: 180, SE: 180, SW: 180, E: 90, W: 270 };
+
 export function propPlacement(spec: PropSpec): PropPlacement {
   const type = PROP_TYPES[spec.prop];
-  const yaw = ((spec.rotation ?? 0) * Math.PI) / 180;
+  const base = type.wall ? (WALL_FACING[spec.at] ?? 0) : 0;
+  const yaw = ((base + (spec.rotation ?? 0)) * Math.PI) / 180;
   const cos = Math.abs(Math.cos(yaw));
   const sin = Math.abs(Math.sin(yaw));
   const [length, , depth] = type.size;

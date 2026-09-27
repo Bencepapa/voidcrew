@@ -14,6 +14,9 @@
   "hazard_stripes": {
     "normal": false
   },
+  "kid_drawing": {
+    "normal": false
+  },
   "lift_btn_0_down": {
     "normal": false
   },
@@ -26,6 +29,9 @@
   "lift_btn_2_up": {
     "normal": false
   },
+  "notice_board": {
+    "normal": true
+  },
   "num_07": {
     "normal": false
   },
@@ -34,6 +40,18 @@
   },
   "patch_plate": {
     "normal": true
+  },
+  "photo_frame": {
+    "normal": true
+  },
+  "polaroids": {
+    "normal": true
+  },
+  "poster_home": {
+    "normal": false
+  },
+  "poster_planet": {
+    "normal": false
   },
   "scorch": {
     "normal": true

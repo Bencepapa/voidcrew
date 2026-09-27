@@ -6,7 +6,7 @@ import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from ".
 import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
-import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
+import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights, lampColor } from "../game/lights";
 import { PROP_TYPES, propPlacement } from "../game/props";
 import { ACTOR_TYPES } from "../game/actors";
@@ -112,8 +112,11 @@ export interface ReliefStats {
 }
 
 export interface ViewportStats {
-  // triangles actually drawn last frame (after frustum culling)
+  // triangles actually drawn last frame (after culling), and draw calls
   renderedTriangles: number;
+  drawCalls: number;
+  // cells in sight (see updateSight)
+  visibleCells: number;
   // null unless the relief wall type is active and built
   relief: ReliefStats | null;
 }
@@ -535,6 +538,12 @@ const LIGHT_PANEL_INTENSITY = 1.6;
 // floor used where the map doesn't specify one
 const DEFAULT_FLOOR: TextureSetId = "floor1";
 
+// a texture set that isn't listed: the maps in public/textures/<name>/
+function textureFolder(name: string): TextureSetPaths {
+  const base = `${import.meta.env.BASE_URL}textures/${name}/`;
+  return { diffuse: `${base}diffuse.png`, normal: `${base}normal.png`, depth: `${base}depth.png`, pixelArt: true };
+}
+
 function isTextureSetId(id: string | undefined): id is TextureSetId {
   return id !== undefined && id in TEXTURE_SETS;
 }
@@ -643,8 +652,24 @@ const FOG_FAR = 5.5;
 const LIGHT_POOL_SIZE = 8;
 const LIGHT_FADE_START = 4.5;
 const LIGHT_FADE_END = 6;
-// how far the pool looks for lights (cells)
-const LIGHT_SIGHT = 7;
+// how far the sight reaches (cells): lights and culling; the fog closes
+// at FOG_FAR
+const LIGHT_SIGHT = 6;
+// where in the party's cell the sight is taken from (offsets from its center)
+const SIGHT_POINTS: [number, number][] = [
+  [0, 0],
+  [-0.35, -0.35],
+  [0.35, -0.35],
+  [-0.35, 0.35],
+  [0.35, 0.35],
+];
+// objects wider or deeper than this (cells) are never culled
+const CULL_MAX_SIZE = 1.3;
+// Walls, floors and ceilings farther than this (world units) switch to a
+// relief built from a height grid LOD_FACTOR times coarser: a few times
+// fewer triangles, and at that distance, in the fog, it looks the same.
+const LOD_DISTANCE = 2.2;
+const LOD_FACTOR = 4;
 // a source behind the camera ranks as if this much further away
 const LIGHT_BEHIND_PENALTY = 0.35;
 // a source already in the pool keeps its slot until a rival ranks this
@@ -670,6 +695,9 @@ const WINDOW_SET: TextureSetId = "window1";
 const WINDOW_DEPTH = 0.1;
 // props are small: a shallower relief than the walls'
 const PROP_RELIEF_SCALE = 0.6;
+// ... and a coarser one: their faces are small, so a full-size height grid
+// packs several times the walls' triangles into them
+const PROP_COARSE = 2;
 const GLASS_TINT = 0xdfe8ff;
 // how strongly lights glint on the glass
 const GLASS_SHEEN = 0.25;
@@ -1072,7 +1100,10 @@ export function GameViewport({
     const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, FOG_FAR + 1);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // phones (touch screens) render at most 1.5 device pixels per CSS pixel:
+    // their 3x screens cost 4x the pixels of 1.5x, for no pixel-art detail
+    const maxPixelRatio = window.matchMedia("(pointer: coarse)").matches ? 1.5 : 2;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio));
     renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
     container.appendChild(renderer.domElement);
 
@@ -1138,8 +1169,10 @@ export function GameViewport({
 
     // `displace`: whether flat/beveled geometry gets the depth map as
     // displacement - not for floors, whose single quad would only tilt
-    function createWallKit(setId: TextureSetId, displace = true): WallKit {
-      const paths = TEXTURE_SETS[setId];
+    // `setId`: a TEXTURE_SETS entry, or (for props) any folder under
+    // public/textures/ with the usual diffuse, normal and depth maps
+    function createWallKit(setId: string, displace = true): WallKit {
+      const paths = isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
       const diffuse = loader.load(paths.diffuse + bust);
       const normalMap = loader.load(paths.normal + bust);
       const depthMap = loader.load(paths.depth + bust);
@@ -1271,8 +1304,8 @@ export function GameViewport({
       return kit;
     };
     // prop side/top kits by texture set, created on demand
-    const propKits = new Map<TextureSetId, WallKit>();
-    const propKitFor = (setId: TextureSetId) => {
+    const propKits = new Map<string, WallKit>();
+    const propKitFor = (setId: string) => {
       let kit = propKits.get(setId);
       if (!kit) {
         kit = createWallKit(setId, false);
@@ -1280,12 +1313,15 @@ export function GameViewport({
       }
       return kit;
     };
-    // a prop type's texture sets: a box's side and top, or its views
+    // a prop type's texture sets: a box's side and top, its views, or a
+    // cutout's one
     const propSets = (type: PropType): string[] =>
-      type.kind === "box" ? [type.side, type.top] : ["front", "side", "top"].map((v) => `${type.views}_${v}`);
-    const propTypes = [...new Set((map.props ?? []).map((p) => p.prop))].filter((name) =>
-      propSets(PROP_TYPES[name]).every(isTextureSetId),
-    );
+      type.kind === "box"
+        ? [type.side, type.top]
+        : type.kind === "views"
+          ? ["front", "side", "top"].map((v) => `${type.views}_${v}`)
+          : [type.texture];
+    const propTypes = [...new Set((map.props ?? []).map((p) => p.prop))];
     // door panel kits by door kind, created on demand
     // a deck's own door panels and label paint, else the defaults
     const panelSetFor = (kind: DoorSpec["kind"]): TextureSetId => {
@@ -1360,37 +1396,56 @@ export function GameViewport({
 
     let reliefStats: ReliefStats | null = null;
 
-    function placeWalls(geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], slots: WallSlot[]) {
-      for (const slot of slots) {
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(slot.x, slot.y, slot.z);
-        mesh.rotation.y = slot.rotY;
-        group.add(mesh);
-        decals.registerSurface(slot.key, mesh);
+    // A surface: its mesh - or, given a distant low-detail geometry (see
+    // LOD_FACTOR), a level-of-detail pair that switches to it past
+    // LOD_DISTANCE - placed like the slot; decals go on the detailed one.
+    function placeSurface(
+      slot: WallSlot,
+      geo: THREE.BufferGeometry,
+      farGeo: THREE.BufferGeometry | null,
+      mat: THREE.Material | THREE.Material[],
+      orient: (obj: THREE.Object3D) => void,
+    ) {
+      const mesh = new THREE.Mesh(geo, mat);
+      let obj: THREE.Object3D = mesh;
+      if (farGeo) {
+        const lod = new THREE.LOD();
+        lod.addLevel(mesh, 0);
+        lod.addLevel(new THREE.Mesh(farGeo, mat), LOD_DISTANCE);
+        obj = lod;
       }
+      obj.position.set(slot.x, slot.y, slot.z);
+      orient(obj);
+      group.add(obj);
+      obj.updateMatrixWorld(true);
+      decals.registerSurface(slot.key, mesh);
+    }
+
+    function placeWalls(
+      geo: THREE.BufferGeometry,
+      farGeo: THREE.BufferGeometry | null,
+      mat: THREE.Material | THREE.Material[],
+      slots: WallSlot[],
+    ) {
+      for (const slot of slots) placeSurface(slot, geo, farGeo, mat, (o) => (o.rotation.y = slot.rotY));
     }
 
     // wall-style geometry (facing +Z) laid flat, facing up
-    function placeFloors(geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], slots: WallSlot[]) {
-      for (const slot of slots) {
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.position.set(slot.x, slot.y, slot.z);
-        group.add(mesh);
-        decals.registerSurface(slot.key, mesh);
-      }
+    function placeFloors(
+      geo: THREE.BufferGeometry,
+      farGeo: THREE.BufferGeometry | null,
+      mat: THREE.Material | THREE.Material[],
+      slots: WallSlot[],
+    ) {
+      for (const slot of slots) placeSurface(slot, geo, farGeo, mat, (o) => (o.rotation.x = -Math.PI / 2));
     }
 
     // ... and turned to face down from the ceiling; lit slots get the kit's
     // glowing front material
-    function placeCeilings(geo: THREE.BufferGeometry, kit: WallKit, relief: boolean) {
+    function placeCeilings(geo: THREE.BufferGeometry, farGeo: THREE.BufferGeometry | null, kit: WallKit, relief: boolean) {
       for (const slot of kit.slots) {
         const front = slot.lit && kit.litMat ? kit.litMat : kit.wallMat;
-        const mesh = new THREE.Mesh(geo, relief ? [front, kit.sideMat] : front);
-        mesh.rotation.x = Math.PI / 2;
-        mesh.position.set(slot.x, slot.y, slot.z);
-        group.add(mesh);
-        decals.registerSurface(slot.key, mesh);
+        placeSurface(slot, geo, farGeo, relief ? [front, kit.sideMat] : front, (o) => (o.rotation.x = Math.PI / 2));
       }
     }
 
@@ -1492,6 +1547,7 @@ export function GameViewport({
 
     // height maps by URL, each loaded once per scene
     const heightGrids = new Map<string, ReturnType<typeof loadWithRetry>>();
+    const coarseGrids = new Map<string, Awaited<ReturnType<typeof loadWithRetry>>>();
 
     // builds a kit's relief geometry from its depth map and hooks up its AO
     // (a partial panel - `rows` - shares the whole panel's); resolves to null
@@ -1508,6 +1564,11 @@ export function GameViewport({
         holeLevels?: number;
         // relief depth (default: the settings')
         depth?: number;
+        // a low-detail version: from a grid this many times coarser (see
+        // LOD_FACTOR), without its own AO map (the full panel's is used)
+        coarse?: number;
+        // a second version of a surface whose full one set the AO map
+        lodOnly?: boolean;
       },
     ) {
       let gridPromise = heightGrids.get(kit.depthUrl);
@@ -1515,8 +1576,17 @@ export function GameViewport({
         gridPromise = loadWithRetry(kit.depthUrl, 4);
         heightGrids.set(kit.depthUrl, gridPromise);
       }
-      const grid = await gridPromise;
+      let grid = await gridPromise;
       if (disposed) return null;
+      if (shape.coarse && shape.coarse > 1) {
+        const coarseKey = `${kit.depthUrl}|${shape.coarse}`;
+        let coarse = coarseGrids.get(coarseKey);
+        if (!coarse) {
+          coarse = downsampleHeightGrid(grid, shape.coarse);
+          coarseGrids.set(coarseKey, coarse);
+        }
+        grid = coarse;
+      }
       const relief = createReliefWallGeometry(grid, {
         wallWidth: shape.width ?? 1,
         wallHeight: shape.height,
@@ -1531,7 +1601,7 @@ export function GameViewport({
         holeLevels: shape.holeLevels,
       });
       geometries.push(relief.geometry);
-      if (shape.rows) {
+      if (shape.rows || shape.lodOnly) {
         relief.aoMap.dispose();
         return relief;
       }
@@ -1579,6 +1649,24 @@ export function GameViewport({
       }
       return geo;
     }
+    // ... and its distant, low-detail relief (none for flat walls)
+    const farWallGeometries = new Map<WallKit, Map<PanelVariant, Promise<THREE.BufferGeometry | null>>>();
+    function farWallGeometry(kit: WallKit, variant: PanelVariant): Promise<THREE.BufferGeometry | null> {
+      if (wallGeo) return Promise.resolve(null);
+      let byVariant = farWallGeometries.get(kit);
+      if (!byVariant) {
+        byVariant = new Map();
+        farWallGeometries.set(kit, byVariant);
+      }
+      let geo = byVariant.get(variant);
+      if (!geo) {
+        const rows = variantRows(variant);
+        const height = variantHeight(variant) * wallHeight;
+        geo = buildRelief(kit, { height, flushEdges: true, rows, coarse: LOD_FACTOR, lodOnly: true }).then((relief) => relief?.geometry ?? null);
+        byVariant.set(variant, geo);
+      }
+      return geo;
+    }
 
     for (const kit of kits) {
       const byVariant = new Map<PanelVariant, WallSlot[]>();
@@ -1587,8 +1675,8 @@ export function GameViewport({
         byVariant.set(variant, [...(byVariant.get(variant) ?? []), slot]);
       }
       for (const [variant, slots] of byVariant) {
-        track(wallGeometry(kit, variant))
-          .then((geo) => geo && placeWalls(geo, wallGeo ? kit.wallMat : [kit.wallMat, kit.sideMat], slots))
+        track(Promise.all([wallGeometry(kit, variant), wallGeometry(kit, variant).then(() => farWallGeometry(kit, variant))]))
+          .then(([geo, far]) => geo && placeWalls(geo, far, wallGeo ? kit.wallMat : [kit.wallMat, kit.sideMat], slots))
           .catch((err) => console.error("Wall build failed:", err));
       }
     }
@@ -1666,28 +1754,38 @@ export function GameViewport({
 
     for (const ceilingKit of ceilingKits.values()) {
       if (isRelief) {
-        track(buildRelief(ceilingKit, { height: 1, flushEdges: false }))
-          .then((relief) => relief && placeCeilings(relief.geometry, ceilingKit, true))
+        track(
+          buildRelief(ceilingKit, { height: 1, flushEdges: false }).then(async (relief) => [
+            relief,
+            relief && (await buildRelief(ceilingKit, { height: 1, flushEdges: false, coarse: LOD_FACTOR, lodOnly: true })),
+          ] as const),
+        )
+          .then(([relief, far]) => relief && placeCeilings(relief.geometry, far?.geometry ?? null, ceilingKit, true))
           .catch((err) => console.error("Relief ceiling build failed:", err));
       } else {
-        placeCeilings(floorGeo, ceilingKit, false);
+        placeCeilings(floorGeo, null, ceilingKit, false);
       }
     }
 
     let floorTop = 0;
     for (const floorKit of floorKits.values()) {
       if (isRelief) {
-        track(buildRelief(floorKit, { height: 1, flushEdges: false }))
-          .then((relief) => {
+        track(
+          buildRelief(floorKit, { height: 1, flushEdges: false }).then(async (relief) => [
+            relief,
+            relief && (await buildRelief(floorKit, { height: 1, flushEdges: false, coarse: LOD_FACTOR, lodOnly: true })),
+          ] as const),
+        )
+          .then(([relief, far]) => {
             if (!relief) return;
-            placeFloors(relief.geometry, [floorKit.wallMat, floorKit.sideMat], floorKit.slots);
+            placeFloors(relief.geometry, far?.geometry ?? null, [floorKit.wallMat, floorKit.sideMat], floorKit.slots);
             // keep the strips above the highest floor relief
             floorTop = Math.max(floorTop, relief.maxZ);
             for (const strip of floorStrips) strip.position.y = strip.userData.floorY + floorTop + 0.003;
           })
           .catch((err) => console.error("Relief floor build failed:", err));
       } else {
-        placeFloors(floorGeo, floorKit.wallMat, floorKit.slots);
+        placeFloors(floorGeo, null, floorKit.wallMat, floorKit.slots);
       }
     }
 
@@ -1785,11 +1883,11 @@ export function GameViewport({
       };
 
       if (type.kind === "box") {
-        const sideKit = propKitFor(type.side as TextureSetId);
-        const topKit = propKitFor(type.top as TextureSetId);
+        const sideKit = propKitFor(type.side);
+        const topKit = propKitFor(type.top);
         const h = height * wallHeight;
-        const side = await buildRelief(sideKit, { width: length, height: h, flushEdges: false, depth: relief });
-        const top = await buildRelief(topKit, { width: length, height: depth, flushEdges: false, depth: relief });
+        const side = await buildRelief(sideKit, { width: length, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE });
+        const top = await buildRelief(topKit, { width: length, height: depth, flushEdges: false, depth: relief, coarse: PROP_COARSE });
         if (!side || !top) return null;
         for (let i = 0; i < 4; i++) {
           const a = (i * Math.PI) / 2;
@@ -1799,22 +1897,37 @@ export function GameViewport({
         return template;
       }
 
-      const [front, side, top] = propSets(type).map((id) => propKitFor(id as TextureSetId));
+      if (type.kind === "panel" || type.kind === "cross") {
+        // front and back (the back mirrored), crossed for a cross
+        const kit = propKitFor(type.texture);
+        const h = height * wallHeight;
+        const panel = await buildRelief(kit, { width: length, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE });
+        if (!panel) return null;
+        const y = (type.kind === "panel" ? (type.elevation ?? 0) * wallHeight : 0) + h / 2;
+        for (const turn of type.kind === "cross" ? [0, Math.PI / 2] : [0]) {
+          face(panel.geometry, kit, [0, y, 0], [0, turn]);
+          face(panel.geometry, kit, [0, y, 0], [0, turn + Math.PI], true);
+        }
+        return template;
+      }
+
+      const [front, side, top] = propSets(type).map((id) => propKitFor(id));
       // the whole views first: their builds give the kits their AO maps
       for (const [kit, w, h] of [
         [front, length, height * wallHeight],
         [side, depth, height * wallHeight],
         [top, length, depth],
       ] as const) {
-        if (!(await buildRelief(kit, { width: w, height: h, flushEdges: false, depth: relief }))) return null;
+        if (!(await buildRelief(kit, { width: w, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE }))) return null;
       }
       const cut = (kit: WallKit, w: number, h: number, cols: [number, number], rows: [number, number]) =>
-        buildRelief(kit, { width: w, height: h, flushEdges: false, depth: relief, cols, rows });
+        buildRelief(kit, { width: w, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE, cols, rows });
+      const lift = (type.elevation ?? 0) * wallHeight;
       for (const { min, max } of type.parts) {
         const [x0, y0, z0] = min;
         const [x1, y1, z1] = max;
         const cx = (x0 + x1) / 2;
-        const cy = ((y0 + y1) / 2) * wallHeight;
+        const cy = ((y0 + y1) / 2) * wallHeight + lift;
         const cz = (z0 + z1) / 2;
         const h = (y1 - y0) * wallHeight;
         const rows: [number, number] = [(height - y1) / height, (height - y0) / height];
@@ -1830,7 +1943,12 @@ export function GameViewport({
         face(f.geometry, front, [cx, cy, z0], [0, Math.PI], true);
         face(s.geometry, side, [x1, cy, cz], [0, Math.PI / 2]);
         face(s.geometry, side, [x0, cy, cz], [0, -Math.PI / 2], true);
-        face(t.geometry, top, [cx, y1 * wallHeight, cz], [-Math.PI / 2, 0]);
+        // a top hidden under a part above it would show that part's top
+        // view (a table's foot wearing its top's wood): left out
+        const covered = type.parts.some(
+          (o) => o.min[1] >= y1 && o.min[0] <= x0 && o.max[0] >= x1 && o.min[2] <= z0 && o.max[2] >= z1,
+        );
+        if (!covered) face(t.geometry, top, [cx, y1 * wallHeight + lift, cz], [-Math.PI / 2, 0]);
       }
       return template;
     }
@@ -2126,7 +2244,65 @@ export function GameViewport({
     });
     // the cells seen from the party's cell, redone when it changes cell or
     // a door opens or shuts
+    // The cells seen from the party's cell (see visibility.ts) - from its
+    // center and near its corners, so moving about in it (free movement)
+    // shows nothing new. Redone when the party changes cell or a door opens
+    // or shuts; picks the lights (updateLightPool) and what gets drawn
+    // (applySight).
     let sight = { key: "", cells: new Set<string>() };
+    function updateSight(party: { x: number; z: number }) {
+      const doors = openDoorsRef.current;
+      const cx = Math.round(party.x);
+      const cz = Math.round(party.z);
+      const key = `${cx},${cz}|${[...doors].sort().join(";")}`;
+      if (key === sight.key) return false;
+      const cells = new Set<string>();
+      for (const [ox, oz] of SIGHT_POINTS) {
+        for (const c of visibleCells(map, cx + ox, cz + oz, LIGHT_SIGHT, (k) => doors.has(k))) cells.add(c);
+      }
+      sight = { key, cells };
+      return true;
+    }
+
+    // Culling: the scene's small objects (a wall panel, a floor tile, a
+    // door, a prop...) each belong to the cell their bounding box centers
+    // on, and are drawn only while that cell is seen. Big or spread-out
+    // ones (a ladder's group, the sky) are always drawn. Actors are culled
+    // as they move (updateActors).
+    const cullBox = new THREE.Box3();
+    const cullCenter = new THREE.Vector3();
+    const cullSize = new THREE.Vector3();
+    const cullCells = new WeakMap<THREE.Object3D, string | null>();
+    let culledCount = -1;
+    function cellOf(obj: THREE.Object3D): string | null {
+      let key = cullCells.get(obj);
+      if (key === undefined) {
+        obj.updateMatrixWorld(true);
+        cullBox.setFromObject(obj);
+        cullBox.getSize(cullSize);
+        cullBox.getCenter(cullCenter);
+        key =
+          cullBox.isEmpty() || cullSize.x > CULL_MAX_SIZE || cullSize.z > CULL_MAX_SIZE
+            ? null
+            : cellKey(Math.round(cullCenter.x), Math.round(cullCenter.z));
+        cullCells.set(obj, key);
+      }
+      return key;
+    }
+    // dev: __voidcrewNoCull = true in the console draws everything, to compare
+    let cullingOff = false;
+    function applySight(changed: boolean) {
+      const off = import.meta.env.DEV && !!(window as { __voidcrewNoCull?: boolean }).__voidcrewNoCull;
+      // (objects are still being added while the scene builds)
+      if (!changed && group.children.length === culledCount && off === cullingOff) return;
+      culledCount = group.children.length;
+      cullingOff = off;
+      for (const obj of group.children) {
+        if (obj.userData.actor) continue;
+        const key = cellOf(obj);
+        obj.visible = off || key === null || sight.cells.has(key);
+      }
+    }
     const lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
     const litNear = (key: string, cells: Set<string>) => {
       if (cells.has(key)) return true;
@@ -2140,11 +2316,7 @@ export function GameViewport({
       intensityScale: number,
       dt: number,
     ) {
-      const doors = openDoorsRef.current;
-      const sightKey = `${Math.round(party.x)},${Math.round(party.z)}|${[...doors].sort().join(";")}`;
-      if (sightKey !== sight.key) {
-        sight = { key: sightKey, cells: visibleCells(map, party.x, party.z, LIGHT_SIGHT, (k) => doors.has(k)) };
-      }
+      applySight(updateSight(party));
 
       const score = (i: number) => {
         const l = mapLights[i];
@@ -2229,6 +2401,7 @@ export function GameViewport({
         let entry = actorMeshes.get(actor.id);
         if (!entry) {
           entry = { mesh: new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), actorMaterial(actor.type)), uvKey: "" };
+          entry.mesh.userData.actor = true;
           actorMeshes.set(actor.id, entry);
           group.add(entry.mesh);
         }
@@ -2237,6 +2410,8 @@ export function GameViewport({
         const z = lerp(actor.from.y, actor.cell.y, t);
         const y = lerp(floorY(actor.from.x, actor.from.y), floorY(actor.cell.x, actor.cell.y), t);
         const mesh = entry.mesh;
+        mesh.visible =
+          sight.cells.has(cellKey(actor.cell.x, actor.cell.y)) || sight.cells.has(cellKey(actor.from.x, actor.from.y));
         const yaw = Math.atan2(camX - x, camZ - z);
         mesh.rotation.y = yaw;
 
@@ -2496,6 +2671,8 @@ export function GameViewport({
         lastStatsAt = now;
         onStatsRef.current?.({
           renderedTriangles: renderer.info.render.triangles,
+          drawCalls: renderer.info.render.calls,
+          visibleCells: sight.cells.size,
           relief: reliefStats,
         });
       }
@@ -2531,7 +2708,12 @@ export function GameViewport({
       }
       return url;
     };
-    if (import.meta.env.DEV) Object.assign(window, { __voidcrewSnapshot: snapshot });
+    // dev-only: render a frame on demand and report what it drew
+    const renderInfo = () => {
+      snapshot();
+      return { ...renderer.info.render, cellsInSight: sight.cells.size, objects: group.children.length };
+    };
+    if (import.meta.env.DEV) Object.assign(window, { __voidcrewSnapshot: snapshot, __voidcrewRenderInfo: renderInfo, __voidcrewScene: group });
 
     return () => {
       disposed = true;

@@ -224,6 +224,8 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
       {stats && (
         <div className="text-[10px] text-neutral-500 flex flex-col">
           <span>Rendered triangles: {stats.renderedTriangles.toLocaleString()}</span>
+          <span>Draw calls: {stats.drawCalls}</span>
+          <span>Cells in sight: {stats.visibleCells}</span>
           {relief && stats.relief && (
             <>
               <span>Relief triangles / wall: {stats.relief.trianglesPerWall.toLocaleString()}</span>

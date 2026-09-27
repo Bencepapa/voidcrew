@@ -114,6 +114,31 @@ export async function loadHeightGrid(url: string): Promise<HeightGrid> {
   return { width, height, data, solid: holes ? solid : undefined };
 }
 
+// A coarser copy of a height grid (every `factor` x `factor` block averaged;
+// a block is solid when most of it is), for distant, low-detail reliefs.
+export function downsampleHeightGrid(grid: HeightGrid, factor: number): HeightGrid {
+  const width = Math.max(1, Math.floor(grid.width / factor));
+  const height = Math.max(1, Math.floor(grid.height / factor));
+  const data = new Float32Array(width * height);
+  const solid = grid.solid ? new Uint8Array(width * height) : undefined;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let solidCount = 0;
+      for (let sy = 0; sy < factor; sy++) {
+        for (let sx = 0; sx < factor; sx++) {
+          const i = (y * factor + sy) * grid.width + x * factor + sx;
+          sum += grid.data[i];
+          solidCount += grid.solid ? grid.solid[i] : 1;
+        }
+      }
+      data[y * width + x] = sum / (factor * factor);
+      if (solid) solid[y * width + x] = solidCount * 2 >= factor * factor ? 1 : 0;
+    }
+  }
+  return { width, height, data, solid };
+}
+
 export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
   const { width: fullW, height: fullH } = grid;
 

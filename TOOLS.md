@@ -12,7 +12,7 @@ there are, and which files to edit when adding something new.
 | Wide window (three-part strip) | `npm run texture:window-strip` | `<name>_left/_mid/_right` in `TEXTURE_SETS` |
 | Door frame (cut-out opening) | `npm run texture:process -- --key ff00ff --trim` | `TEXTURE_SETS`, `textures.doorFrame` in the map |
 | Decal (bullet hole, sign…) | `npm run decals:import` / `decals:text` | added to `public/decals/index.json` automatically |
-| Prop (crate, bed…) | `npm run texture:process` (per side or per view) | `PROP_TYPES` in `src/game/props.ts`, `props` in the map |
+| Prop (crate, bed…) | `npm run props:views` (furniture) / `npm run texture:process -- --key ff00ff` (cutouts) | `PROP_TYPES` in `src/game/props.ts`, `props` in the map |
 | Actor (robot, NPC) | `npm run actors:sheet` + `?editor=actors` | `ACTOR_TYPES` in `src/game/actors.ts`, fixes in `src/actors/<name>.json`, `actors` in the map |
 | New map / deck | – | a new `src/maps/<id>.json` (picked up automatically) |
 
@@ -36,6 +36,7 @@ textures (e.g. a height map edited in GIMP shows up right away).
 - Decals: on / off
 - Texture sets, wall type (flat / convex / concave / relief), relief and material sliders
 - **Geometry view**: `textured` / `faces only` (faces colored by direction) / `wireframe`
+- Stats: rendered triangles, draw calls and cells in sight
 
 ### Console helpers (dev mode only, in the browser console)
 
@@ -48,6 +49,9 @@ textures (e.g. a height map edited in GIMP shows up right away).
 | `voidcrew.set({ ambientIntensity: 0.2 })` | changes a debug setting |
 | `await voidcrew.capture("name")` | saves a screenshot to `concept/gen/captures/` |
 | `__voidcrewPose` / `__voidcrewInput` | the free movement pose and input |
+| `__voidcrewRenderInfo()` | renders a frame and returns its draw calls, triangles and cells in sight (works while the window is hidden) |
+| `__voidcrewNoCull = true` | draws everything (no sight culling), to compare |
+| `__voidcrewScene` | the scene's object group, for inspecting what gets drawn |
 
 ## The common image pipeline (ChatGPT)
 
@@ -131,7 +135,8 @@ The scripts write `public/decals/index.json` themselves. Placing one in a map:
 
 ## Props (crates, beds…)
 
-Two kinds, both in `PROP_TYPES` in `src/game/props.ts`:
+Four kinds, all in `PROP_TYPES` in `src/game/props.ts`. Their texture sets
+don't need a `TEXTURE_SETS` entry: any folder under `public/textures/` works.
 
 **Box** (`kind: "box"`) – one side texture and one top texture:
 
@@ -140,13 +145,18 @@ crate1: { kind: "box", size: [0.5, 0.4, 0.5], side: "crate1", top: "crate1_top" 
 ```
 
 **From views** (`kind: "views"`) – three orthographic views (front, from the
-+x end, from above), each on magenta with its own depth map:
++x end, from above), each on magenta with its own depth map. Ask ChatGPT for
+one "view sheet": front view top left, side view (from the right, the front
+on the left and a wall on the right) top right, top view (the front at the
+bottom) below the front one; plus a depth sheet with the same layout. Then:
 
 ```bash
-npm run texture:process -- --diffuse medbed1_front.png --depth medbed1_front_depth.png --out public/textures/medbed1_front --key ff00ff --trim
+npm run props:views -- --sheet concept/gen/crew-props/table1.png --depth concept/gen/crew-props/table1_depth.png --name table1
 ```
 
-(`_side` and `_top` likewise). Then the size and the boxes in `PROP_TYPES`,
+It cuts the views apart along the magenta gaps between them, processes them
+into `public/textures/<name>_front`, `_side` and `_top`, and prints their
+proportions. Then the size and the boxes in `PROP_TYPES`,
 measured off the front view (x length, y height, z depth, relative to the
 center of its footprint on the floor):
 
@@ -157,7 +167,23 @@ medbed1: {
 },
 ```
 
-`blocks: true` – grid movement can't enter its cell.
+`blocks: true` – grid movement can't enter its cell. `wall: true` – pushed
+against a side of its cell (`at`), it turns to face away from that wall.
+`elevation` – mounted this high above the floor (a shelf, a fold-out table).
+A part's top hidden under another part gets no face.
+
+**Cutout** (`kind: "panel"`) – one relief cutout, seen from both sides: a
+curtain in front of a window. **Crossed cutouts** (`kind: "cross"`) – two at
+right angles: a potted plant. One image on magenta plus a depth map:
+
+```bash
+npm run texture:process -- --diffuse plant1.png --depth plant1_depth.png --out public/textures/plant1 --key ff00ff --size 128
+```
+
+```ts
+curtain_open: { kind: "panel", texture: "curtain_open", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12 },
+plant1: { kind: "cross", texture: "plant1", size: [0.3, 0.58, 0.3] },
+```
 Its texture sets also go into `TEXTURE_SETS`. In a map:
 
 ```json
