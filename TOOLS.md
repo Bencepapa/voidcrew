@@ -1,101 +1,101 @@
-# Void Crew – eszközök és asset-pipeline
+# Void Crew – tools and asset pipeline
 
-Összefoglaló arról, hogyan kerül egy AI-val generált kép a játékba, milyen
-scriptek és fejlesztői eszközök vannak, és új elemnél melyik fájlt kell
-szerkeszteni.
+How an AI-generated image gets into the game, which scripts and dev tools
+there are, and which files to edit when adding something new.
 
-## Gyors áttekintés
+## At a glance
 
-| Mit akarok | Parancs / eszköz | Mit kell még szerkeszteni |
+| I want to add | Command / tool | Also edit |
 | --- | --- | --- |
-| Fal, padló, plafon, ajtó textúra | `npm run texture:process` | `TEXTURE_SETS` + `TextureSetId` a `src/components/GameViewport.tsx`-ben, a pálya `textures` blokkja |
-| Ablak (1 panel) | `npm run texture:process -- --key ff00ff` | ugyanaz, mint fent; a pályán `textures.window` |
-| Széles ablak (3 részes csík) | `npm run texture:window-strip` | `<név>_left/_mid/_right` a `TEXTURE_SETS`-ben |
-| Ajtókeret (kivágott nyílás) | `npm run texture:process -- --key ff00ff --trim` | `TEXTURE_SETS`, a pályán `textures.doorFrame` |
-| Decal (lövésnyom, felirat…) | `npm run decals:import` / `decals:text` | automatikusan bekerül a `public/decals/index.json`-ba |
-| Prop (láda, ágy…) | `npm run texture:process` (oldalanként vagy nézetenként) | `PROP_TYPES` a `src/game/props.ts`-ben, a pályán `props` |
-| Szereplő (robot, NPC) | `npm run actors:sheet` + `?editor=actors` | `ACTOR_TYPES` a `src/game/actors.ts`-ben, igazítás: `src/actors/<név>.json`, a pályán `actors` |
-| Új pálya / szint | – | új `src/maps/<id>.json` (automatikusan betöltődik) |
+| Wall, floor, ceiling or door texture | `npm run texture:process` | `TEXTURE_SETS` + `TextureSetId` in `src/components/GameViewport.tsx`, the map's `textures` block |
+| Window (one panel) | `npm run texture:process -- --key ff00ff` | as above; `textures.window` in the map |
+| Wide window (three-part strip) | `npm run texture:window-strip` | `<name>_left/_mid/_right` in `TEXTURE_SETS` |
+| Door frame (cut-out opening) | `npm run texture:process -- --key ff00ff --trim` | `TEXTURE_SETS`, `textures.doorFrame` in the map |
+| Decal (bullet hole, sign…) | `npm run decals:import` / `decals:text` | added to `public/decals/index.json` automatically |
+| Prop (crate, bed…) | `npm run texture:process` (per side or per view) | `PROP_TYPES` in `src/game/props.ts`, `props` in the map |
+| Actor (robot, NPC) | `npm run actors:sheet` + `?editor=actors` | `ACTOR_TYPES` in `src/game/actors.ts`, fixes in `src/actors/<name>.json`, `actors` in the map |
+| New map / deck | – | a new `src/maps/<id>.json` (picked up automatically) |
 
-## Fejlesztői szerver és URL-ek
+## Dev server and URLs
 
 ```bash
 npm run dev
 ```
 
-- Játék: `http://localhost:3000/voidcrew/`
-- Adott szinten indítás: `http://localhost:3000/voidcrew/?map=deck0-crew` (a `src/maps/` fájlneve kiterjesztés nélkül)
-- Szereplő-szerkesztő: `http://localhost:3000/voidcrew/?editor=actors`
-- Típusellenőrzés: `npm run lint`
+- Game: `http://localhost:3000/voidcrew/`
+- Start on a given deck: `http://localhost:3000/voidcrew/?map=deck0-crew` (a file name in `src/maps/`, without the extension)
+- Actor editor: `http://localhost:3000/voidcrew/?editor=actors`
+- Type check: `npm run lint`
 
-A `public/textures/` alatti fájlok mentésekor a futó játék újratölti a
-textúrákat (pl. GIMP-ben szerkesztett mélységtérkép azonnal látszik).
+Saving a file under `public/textures/` makes the running game reload its
+textures (e.g. a height map edited in GIMP shows up right away).
 
-### Debug panel (a játék jobb oldalán, keskeny ablakban a ☰ menüben)
+### Debug panel (right of the game view; behind the ☰ menu on narrow screens)
 
-- Grid movement: rácsos vagy szabad mozgás
-- Decals: decalok ki/be
-- Textúra-készletek, faltípus (flat / convex / concave / relief), relief- és anyagcsúszkák
-- **Geometry view**: `textured` / `faces only` (lapok irányuk szerint színezve) / `wireframe`
+- Grid movement: grid or free movement
+- Decals: on / off
+- Texture sets, wall type (flat / convex / concave / relief), relief and material sliders
+- **Geometry view**: `textured` / `faces only` (faces colored by direction) / `wireframe`
 
-### Konzol-segédek (csak fejlesztői módban, a böngésző konzoljában)
+### Console helpers (dev mode only, in the browser console)
 
-| Parancs | Mit csinál |
+| Command | What it does |
 | --- | --- |
-| `__voidcrewTeleport(x, y, "N")` | a csapat áthelyezése egy cellába (opcionális 4. paraméter: magasság, pl. híd) |
-| `__voidcrewPos()` | a csapat cellája és a pálya id-je |
-| `__voidcrewActors()` | a szereplők állapota (cella, irány, járőrcél) |
-| `__voidcrewTouch("lift")` | interaktív decal megérintése (pl. lift gomb) |
-| `voidcrew.set({ ambientIntensity: 0.2 })` | Debug-beállítás módosítása |
-| `await voidcrew.capture("név")` | képernyőkép mentése a `concept/gen/captures/` mappába |
-| `__voidcrewPose` / `__voidcrewInput` | szabad mozgás pózának, bemenetének vizsgálata |
+| `__voidcrewTeleport(x, y, "N")` | moves the party to a cell (optional 4th argument: a height, e.g. a bridge's) |
+| `__voidcrewPos()` | the party's cell and the map id |
+| `__voidcrewActors()` | the actors' state (cell, facing, patrol target) |
+| `__voidcrewTouch("lift")` | touches an interactive decal (e.g. a lift button) |
+| `voidcrew.set({ ambientIntensity: 0.2 })` | changes a debug setting |
+| `await voidcrew.capture("name")` | saves a screenshot to `concept/gen/captures/` |
+| `__voidcrewPose` / `__voidcrewInput` | the free movement pose and input |
 
-## A közös képgeneráló pipeline (ChatGPT)
+## The common image pipeline (ChatGPT)
 
-Minden asset ugyanabból a 2–3 lépésből áll. Stílusreferenciának mindig
-csatolj egy kész textúrát ugyanarról a szintről (pl. `public/textures/medwall1/diffuse.png`),
-és ha van, a szint koncepcióképét (`concept/`).
+Every asset goes through the same two or three steps. Always attach a
+finished texture from the same deck as a style reference (e.g.
+`public/textures/medwall1/diffuse.png`) and, if there is one, the deck's
+concept sheet (`concept/`).
 
-1. **Albedo** – tiszta színkép, fény és árnyék nélkül:
+1. **Albedo** – a clean color image, no light or shadow:
    > STEP 1 - CLEAN ALBEDO. … Front orthographic view, no perspective. Albedo only: no lighting, no shadows, no ambient occlusion, no highlights. Square image.
 
-   Kivágandó részek (ablaknyílás, ajtónyílás, szereplő háttere) legyenek
-   **tiszta magenta `#FF00FF`**.
-2. **Geometria (opcionális)** – ugyanaz a kép festés, kopás, matrica nélkül, egyszínű szürkével. Sokszor kihagyható.
-3. **Mélységtérkép** – pixelpontosan ugyanaz a kép néhány lapos szürke szinttel:
+   Anything to be cut out (a window opening, a door opening, an actor's
+   background) must be **pure magenta `#FF00FF`**.
+2. **Geometry (optional)** – the same image without paint, wear or decals, in plain grey. Often skippable.
+3. **Depth map** – the same image, pixel-aligned, in a few flat grey levels:
    > STEP 3 - DEPTH / HEIGHT MAP … Preserve its EXACT geometry, layout, size and framing, pixel-aligned with it. Ignore all paint … Only a few flat grey levels: main surface mid grey, raised parts lighter, recessed seams darker. Hard edges, no lighting, no shading, no gradients, no outlines.
 
-   A magenta részek maradjanak magentán.
+   Magenta areas stay magenta.
 
-A nyers képek helye: `concept/gen/<téma>/` (pl. `concept/gen/medical/`,
-`concept/gen/crew/`, `concept/gen/props/`, `concept/gen/actors/`). Ezek a
-forrásfájlok; a játék a `public/` alatti, feldolgozott változatot használja.
+Raw images live in `concept/gen/<topic>/` (e.g. `concept/gen/medical/`,
+`concept/gen/crew/`, `concept/gen/props/`, `concept/gen/actors/`). These are
+the sources; the game uses the processed versions under `public/`.
 
-## Textúrák (fal, padló, plafon, ajtó)
+## Textures (walls, floors, ceilings, doors)
 
 ```bash
 npm run texture:process -- --diffuse concept/gen/crew/crew_wall_1_albedo.png --depth concept/gen/crew/crew_wall_3_depth.png --out public/textures/crewwall1
 ```
 
-Kimenet: `public/textures/<név>/diffuse.png`, `depth.png`, `normal.png`
-(256 px széles, pixel-art palettára kvantálva, a mélység néhány szintre
-bontva). Hasznos kapcsolók (teljes lista: `npm run texture:process`):
+Output: `public/textures/<name>/diffuse.png`, `depth.png`, `normal.png`
+(256 px wide, quantized to a pixel-art palette, the depth baked into a few
+levels). Useful options (full list: `npm run texture:process`):
 
-- `--key ff00ff` – a magenta háttér átlátszó lesz (ablak, ajtókeret, decal)
-- `--trim` – levágás az átlátszatlan részre (ajtókeret)
-- `--emissive-panel` – világító panel maszk (plafonlámpa)
-- `--flatten-paint` – a festett csíkokat ne emelje ki a relief (akkor, ha a mélységtérkép nem elég tiszta)
-- `--size`, `--colors`, `--levels` – méret, palettaméret, mélységszintek
+- `--key ff00ff` – the magenta background becomes transparent (windows, door frames, decals)
+- `--trim` – crop to the opaque area (door frames)
+- `--emissive-panel` – a mask of the glowing panel (ceiling lights)
+- `--flatten-paint` – keep painted stripes out of the relief (when the depth map isn't clean enough)
+- `--size`, `--colors`, `--levels` – size, palette size, depth levels
 
-Ha a mélységtérkép el van csúszva az albedóhoz képest, előbb igazítani kell
-(befoglaló téglalap alapján átméretezni), különben a relief nem illik a képre.
+If the depth map is shifted against the albedo, align it first (rescale it
+by the two images' bounding boxes), or the relief won't match the picture.
 
-**Bekötés:**
+**Wiring it up:**
 
-1. `src/components/GameViewport.tsx`: vedd fel a nevet a `TextureSetId`
-   típusba és egy bejegyzést a `TEXTURE_SETS`-be (`diffuse`, `normal`,
-   `depth`, `pixelArt: true`, világító plafonnál `emissive`).
-2. A pálya JSON-ban (`src/maps/<id>.json`) a `textures` blokk:
+1. `src/components/GameViewport.tsx`: add the name to the `TextureSetId`
+   type and an entry to `TEXTURE_SETS` (`diffuse`, `normal`, `depth`,
+   `pixelArt: true`, plus `emissive` for a glowing ceiling).
+2. The map's `textures` block (`src/maps/<id>.json`):
    ```json
    "textures": {
      "wall": "crewwall1", "floor": "medfloor1", "ceiling": "medceil1",
@@ -103,52 +103,52 @@ Ha a mélységtérkép el van csúszva az albedóhoz képest, előbb igazítani 
      "doorFrame": "meddoorframe1", "window": "medwindow1"
    }
    ```
-   Cellánkénti eltérés: `layers.wallTexture` / `floorTexture` / `ceilingTexture` (karakterrács + legend).
+   Per-cell exceptions: `layers.wallTexture` / `floorTexture` / `ceilingTexture` (a character grid plus a legend).
 
-**Széles ablak:** 3:1-es csík három nyílással, a két osztóval 1/3-nál és 2/3-nál:
+**Wide window:** a 3:1 strip with three openings, its two mullions at 1/3 and 2/3:
 
 ```bash
 npm run texture:window-strip -- --diffuse strip.png --depth strip_depth.png --name medwindow1
 ```
 
-Ebből `medwindow1_left`, `_mid`, `_right` lesz (mindhármat fel kell venni a
-`TEXTURE_SETS`-be, az egypaneles `medwindow1` mellé).
+This makes `medwindow1_left`, `_mid` and `_right` (add all three to
+`TEXTURE_SETS`, next to the one-panel `medwindow1`).
 
-## Decalok
+## Decals
 
-- AI-lapról (rácsban, magenta háttéren): `npm run decals:import -- --sheet sheet.png --grid 3x3 --names a,b,-,c --sizes 16,64,-,48` (opcionálisan `--depth`)
-- Felirat a pixel-fontból: `npm run decals:text -- --text "ENGINE ROOM" --name text_engine_room`
-- Lift gombok: `npm run decals:lift-buttons` (a kombinációk a `scripts/make-lift-buttons.ts` végén)
+- From an AI sheet (a grid on magenta): `npm run decals:import -- --sheet sheet.png --grid 3x3 --names a,b,-,c --sizes 16,64,-,48` (optionally `--depth`)
+- Text from the pixel font: `npm run decals:text -- --text "ENGINE ROOM" --name text_engine_room`
+- Lift buttons: `npm run decals:lift-buttons` (the combinations are at the end of `scripts/make-lift-buttons.ts`)
 
-A scriptek maguk írják a `public/decals/index.json`-t. Elhelyezés a pályán:
+The scripts write `public/decals/index.json` themselves. Placing one in a map:
 
 ```json
 { "decal": "text_medical", "x": 5, "y": 1, "surface": "S", "px": 60, "py": 40 }
 ```
 
-`surface`: fal iránya (`N`/`E`/`S`/`W`), `floor` vagy `ceiling`; `px`/`py` a felület 256 px-es rácsában.
-`"action": "lift"` a lift gombja.
+`surface`: a wall's direction (`N`/`E`/`S`/`W`), `floor` or `ceiling`; `px`/`py` on the surface's 256 px grid.
+`"action": "lift"` makes it a lift button.
 
-## Propok (láda, ágy…)
+## Props (crates, beds…)
 
-Két fajta van, mindkettő a `src/game/props.ts` `PROP_TYPES` listájában:
+Two kinds, both in `PROP_TYPES` in `src/game/props.ts`:
 
-**Doboz** (`kind: "box"`) – egy oldal- és egy tetőtextúra:
+**Box** (`kind: "box"`) – one side texture and one top texture:
 
 ```ts
 crate1: { kind: "box", size: [0.5, 0.4, 0.5], side: "crate1", top: "crate1_top" },
 ```
 
-**Nézetekből** (`kind: "views"`) – három ortografikus nézet (elölről, a +x
-vég felől, felülről), mindegyik magenta háttéren, saját mélységtérképpel:
+**From views** (`kind: "views"`) – three orthographic views (front, from the
++x end, from above), each on magenta with its own depth map:
 
 ```bash
 npm run texture:process -- --diffuse medbed1_front.png --depth medbed1_front_depth.png --out public/textures/medbed1_front --key ff00ff --trim
 ```
 
-(ugyanígy `_side` és `_top`). Aztán a `PROP_TYPES`-ban a méret és a dobozok,
-az elölnézetből kimérve (x hossz, y magasság, z mélység, a padló közepéhez
-képest):
+(`_side` and `_top` likewise). Then the size and the boxes in `PROP_TYPES`,
+measured off the front view (x length, y height, z depth, relative to the
+center of its footprint on the floor):
 
 ```ts
 medbed1: {
@@ -157,36 +157,36 @@ medbed1: {
 },
 ```
 
-`blocks: true` – rácsos mozgással nem lehet belépni a cellájába.
-A textúra-készleteket itt is fel kell venni a `TEXTURE_SETS`-be. Pályán:
+`blocks: true` – grid movement can't enter its cell.
+Its texture sets also go into `TEXTURE_SETS`. In a map:
 
 ```json
 "props": [{ "prop": "medbed1", "x": 2, "y": 5, "at": "S", "rotation": 90 }]
 ```
 
-`at`: égtáj, sarok (`NE`…) vagy `center`; `rotation`: fok, felülről nézve óramutató szerint.
+`at`: a direction, a corner (`NE`…) or `center`; `rotation`: degrees, clockwise seen from above.
 
-## Szereplők (robot, NPC)
+## Actors (robots, NPCs)
 
-1. **Spritelap generálása**: 5 oszlop (nézőszög) × sorok (póz), egyforma
-   cellák, magenta háttér, a talp mindenhol azonos vonalon.
-   - Oszlopok: elöl, 45° (a kép bal oldala felé fordul), bal profil, 135° hátulról balra, hátulról. A jobb oldali nézeteket a játék tükrözi.
-   - Sorok (a `robot1`-nél): álló, bal láb elöl, jobb láb elöl.
-   - Mellé ugyanilyen elrendezésű **mélységlap**.
-   - Javítás: csak a hibás cellákat kell kicserélni ugyanarra a helyre.
-2. **Feldolgozás** (a képek: `concept/gen/actors/`):
+1. **Generate a sprite sheet**: 5 columns (viewing angle) × rows (pose),
+   equal cells, magenta background, feet on the same line everywhere.
+   - Columns: front, 45° (turned toward the image's left), left profile, 135° from behind to the left, back. The game mirrors these for the right side.
+   - Rows (for `robot1`): standing, left leg forward, right leg forward.
+   - Plus a **depth sheet** with the same layout.
+   - To fix a frame, replace just that cell, in the same place.
+2. **Process it** (images in `concept/gen/actors/`):
    ```bash
    npm run actors:sheet -- --diffuse concept/gen/actors/robot1_sheet_2.png --depth concept/gen/actors/robot1_sheet_2_depth.png --name robot1 --width 192 --height 256
    ```
-   Cellánként megkeresi a figurát (a rácsvonalakat kihagyja), egységes
-   méretre skálázza, talpra igazítja, eltünteti a magenta szegélyt, és normal
-   mapet készít. Kimenet: `public/actors/<név>/diffuse.png`, `normal.png`.
-3. **Igazítás a szerkesztőben** – `?editor=actors`:
-   - bal oldalt a lap (kattintás vagy W/A/S/D a kockák között),
-   - középen a kocka nagyítva, talp- és középvonallal, halvány „szellem” képpel (álló póz / előző / következő járásfázis); nyilak: 1 px, Shift + nyíl: 5 px,
-   - jobb oldalt előnézet: járás, körbeforgatás, vagy mindkettő,
-   - **Save** → `src/actors/<név>.json` (a futó játék azonnal átveszi), **Download JSON** → letöltés, **Reload sheet** → újratöltés feldolgozás után.
-4. **Típus** a `src/game/actors.ts` `ACTOR_TYPES` listájában:
+   Finds the figure in each cell (skipping grid lines), scales all of them
+   alike, stands them on their feet, removes the magenta rim and makes the
+   normal map. Output: `public/actors/<name>/diffuse.png`, `normal.png`.
+3. **Align it in the editor** – `?editor=actors`:
+   - left: the sheet (click, or W/A/S/D between frames),
+   - middle: the frame, zoomed, with baseline and center line over a faint "ghost" (the standing pose, or the previous / next walk frame); arrow keys: 1 px, Shift + arrow: 5 px,
+   - right: a preview – walking, turning round, or both,
+   - **Save** → `src/actors/<name>.json` (the running game picks it up), **Download JSON** → a download, **Reload sheet** → reload after reprocessing.
+4. **The type**, in `ACTOR_TYPES` in `src/game/actors.ts`:
    ```ts
    robot1: {
      name: "A combat robot", sheet: "robot1", cols: 5, rows: 3,
@@ -194,35 +194,37 @@ A textúra-készleteket itt is fel kell venni a `TEXTURE_SETS`-be. Pályán:
      idleRow: 0, walkRows: [1, 0, 2, 0],
    },
    ```
-   `height`: falmagasságban; `walkRows`: egy lépés alatti fázisok sorrendje.
-5. **Pályán**:
+   `height`: in wall heights; `walkRows`: the poses played during one step.
+5. **In a map**:
    ```json
    "actors": [{ "actor": "robot1", "x": 9, "y": 1, "facing": "W", "patrol": [[9, 1], [5, 1]] }]
    ```
-   A járőrpontok között oda-vissza jár.
+   It walks back and forth between its patrol points.
 
-Az igazító JSON (`src/actors/<név>.json`) cellánként `[dx, dy]` eltolást tárol
-a lap pixeleiben (`cell` = cellaméret). Újravágás más cellamérettel: az
-eltolásokat arányosan át kell számolni; kicserélt cellák eltolását nullázni.
+The fix file (`src/actors/<name>.json`) stores a `[dx, dy]` shift per cell,
+in sheet pixels (`cell` = the cell size). When re-cutting at another cell
+size, scale the shifts to match; reset the shifts of replaced cells.
 
-## Pályák (`src/maps/<id>.json`)
+## Maps (`src/maps/<id>.json`)
 
-A fájlok automatikusan betöltődnek; `id` = fájlnév. A formátum leírása a
-`src/game/mapFormat.ts` elején és a README „Maps” részében van. Fontosabb mezők:
+Picked up automatically; `id` = the file name. The format is described at
+the top of `src/game/mapFormat.ts` and in the README's "Maps" section. The
+main fields:
 
-| Mező | Jelentés |
+| Field | Meaning |
 | --- | --- |
-| `deck` | szint száma (kisebb = feljebb) |
-| `layout` | `W` fal, `.` padló, `D` ajtó |
-| `layers.floor` / `ceiling` | cellánkénti magasság (0,25-ös lépések) |
-| `textures`, `labelColor` | a szint textúrái, feliratszín |
-| `lightColor`, `autoLights` | lámpaszín (`"#ffcf87"`); `false`: nincs generált hangulatfény |
-| `lights` | plafonlámpák cellái |
-| `doors` | lift/sima ajtó, irány, felirat (`label`, `labelVertical`) |
-| `lifts` | liftfülke, gomb fala, célpálya (`to`) |
-| `windows`, `ladders`, `bridges` | ablak, létra, híd |
-| `props`, `actors`, `decals` | lásd fent |
+| `deck` | deck number (lower = higher up the ship) |
+| `layout` | `W` wall, `.` floor, `D` door |
+| `layers.floor` / `ceiling` | per-cell heights (steps of 0.25) |
+| `textures`, `labelColor` | the deck's texture sets, label paint |
+| `lightColor`, `autoLights` | lamp color (`"#ffcf87"`); `false`: no generated mood lights |
+| `lights` | ceiling light cells |
+| `doors` | lift / standard doors, facing, label (`label`, `labelVertical`) |
+| `lifts` | lift cabin, its button's wall, target map (`to`) |
+| `windows`, `ladders`, `bridges` | windows, ladders, bridges |
+| `props`, `actors`, `decals` | see above |
 
-Két szint összekötése liftel: mindkét pályán legyen egy `lifts` bejegyzés,
-ami a másikra mutat (`"to": "deck1-medical"`), a fülke előtt egy `kind: "lift"`
-ajtó, és a fülkében egy `lift_btn_<szint>_<up|down>` decal `"action": "lift"`-tel.
+Linking two decks with a lift: both maps need a `lifts` entry pointing at
+the other (`"to": "deck1-medical"`), a `kind: "lift"` door in front of the
+cabin, and a `lift_btn_<deck>_<up|down>` decal with `"action": "lift"` in
+the cabin.
