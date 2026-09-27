@@ -14,6 +14,8 @@ A first-person, grid-based crew dungeon crawler set aboard a derelict spaceship 
 3. Run the app:
    `npm run dev`
 
+Asset pipeline, scripts, dev tools (actor editor, `?map=`, console helpers) and which files to edit when adding textures, props or actors: see [TOOLS.md](TOOLS.md).
+
 ## Maps
 
 Maps are JSON files in `src/maps/` (parsed by `src/game/mapFormat.ts`): a `layout` grid (`W` wall, `.` floor, `D` door) plus optional per-cell layers, each a grid of characters with a `legend` (characters not in it, like `.`, take the layer's default):

@@ -1,4 +1,5 @@
 import { DIR_VECTOR, rightOf } from "./movement";
+import { ACTOR_TYPES } from "./actors";
 import { PROP_TYPES } from "./props";
 import type { CellType, DecalSpec, Direction, DoorSpec, GameMap, PropAnchor } from "./types";
 
@@ -71,6 +72,8 @@ export interface MapFile {
   windows?: { x: number; y: number; wall: Direction; width?: number }[];
   // at: where in the cell (default "center"); rotation: degrees
   props?: { prop: string; x: number; y: number; at?: PropAnchor; rotation?: number }[];
+  // patrol: the cells it walks between ([x, y] each), starting with the first
+  actors?: { actor: string; x: number; y: number; facing?: Direction; patrol?: [number, number][] }[];
   decals?: {
     decal: string;
     x: number;
@@ -200,6 +203,18 @@ export function parseMap(id: string, file: MapFile): GameMap {
       if (!PROP_TYPES[p.prop]) throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);
       if (cells[p.y]?.[p.x] !== "floor") throw new Error(`prop at ${p.x},${p.y} isn't in a floor cell`);
       return { prop: p.prop, cell: { x: p.x, y: p.y }, at: p.at ?? "center", rotation: p.rotation };
+    }),
+    actors: (file.actors ?? []).map((a) => {
+      if (!ACTOR_TYPES[a.actor]) throw new Error(`actor at ${a.x},${a.y}: unknown actor "${a.actor}"`);
+      for (const [x, y] of [[a.x, a.y], ...(a.patrol ?? [])]) {
+        if (cells[y]?.[x] !== "floor") throw new Error(`actor ${a.actor}: ${x},${y} isn't a floor cell`);
+      }
+      return {
+        actor: a.actor,
+        cell: { x: a.x, y: a.y },
+        facing: a.facing ?? "S",
+        patrol: (a.patrol ?? []).map(([x, y]) => ({ x, y })),
+      };
     }),
     lifts: (file.lifts ?? []).map((l) => {
       if (cells[l.y]?.[l.x] !== "floor") throw new Error(`lift at ${l.x},${l.y} isn't a floor cell`);

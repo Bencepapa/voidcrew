@@ -26,6 +26,7 @@ export default function App() {
     touch,
     inLift,
     ride,
+    actors,
     crew,
     log,
     moveForward,
@@ -123,6 +124,7 @@ export default function App() {
       elevation={elevation}
       openDoors={openDoors}
       ride={ride}
+      actors={actors}
       onTouch={touch}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}

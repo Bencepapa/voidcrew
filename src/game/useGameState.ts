@@ -4,6 +4,8 @@ import { DIR_VECTOR, behindOf, leftOf, rightOf, stepForward } from "./movement";
 import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
 import type { Direction, GameMap, Vec2 } from "./types";
 import { initialCrew } from "./crew";
+import { ACTOR_TYPES, actorAt, createActors, stepActors } from "./actors";
+import type { ActorState } from "./actors";
 
 export interface LogEntry {
   id: number;
@@ -39,6 +41,8 @@ const BLOCKED_MESSAGES: Record<"wall" | "ledge" | "low" | "prop", string> = {
   low: "The passage is too low.",
   prop: "Something is in the way.",
 };
+// how often the actors take their next steps
+const ACTOR_TICK_MS = 100;
 // a lift door shuts this long after the last time someone passed through it
 const LIFT_DOOR_CLOSE_MS = 15000;
 
@@ -143,6 +147,25 @@ export function useGameState() {
   const busyUntilRef = useRef(0);
   const busy = () => performance.now() < busyUntilRef.current || readyMapRef.current !== mapRef.current.id;
 
+  // the deck's actors, reset with each deck; they walk on while the deck
+  // is shown
+  const [actors, setActors] = useState<ActorState[]>(() => createActors(map, performance.now()));
+  const actorsRef = useRef(actors);
+  actorsRef.current = actors;
+  useEffect(() => {
+    setActors(createActors(map, performance.now()));
+  }, [map]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const m = mapRef.current;
+      if (readyMapRef.current !== m.id) return;
+      setActors((prev) =>
+        stepActors(m, prev, performance.now(), posRef.current, (cell) => openDoorsRef.current.has(doorCellKey(cell))),
+      );
+    }, ACTOR_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+
   const turnL = useCallback(() => {
     if (!busy()) setDir((d) => leftOf(d));
   }, []);
@@ -232,6 +255,12 @@ export function useGameState() {
     // pressing against a lift's button wall pushes the button
     if (target === "wall" && moveDir === dir && liftAt(map, pos)?.button === moveDir) {
       startLift();
+      return;
+    }
+
+    const blocker = actorAt(actorsRef.current, next, performance.now());
+    if (blocker) {
+      pushLog(`${ACTOR_TYPES[blocker.type].name} blocks the way.`);
       return;
     }
 
@@ -325,6 +354,7 @@ export function useGameState() {
         setElevation(height ?? floorHeight(mapRef.current, x, y));
       },
       __voidcrewPos: () => ({ ...posRef.current, map: mapRef.current.id }),
+      __voidcrewActors: () => actorsRef.current,
       __voidcrewTouch: (action: string) => touchRef.current(action),
     });
   }, []);
@@ -333,6 +363,7 @@ export function useGameState() {
     map,
     pos,
     dir,
+    actors,
     elevation,
     jumpDown: jump,
     use,

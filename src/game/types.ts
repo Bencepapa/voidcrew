@@ -63,6 +63,17 @@ export interface GameMap {
   windows?: WindowSpec[];
   lifts?: LiftSpec[];
   props?: PropSpec[];
+  actors?: ActorSpec[];
+}
+
+// A moving actor (see actors.ts): where it starts, which way it looks, and
+// the cells it patrols between, back and forth (empty: it stays put).
+export interface ActorSpec {
+  // an actors.ts ACTOR_TYPES name, e.g. "robot1"
+  actor: string;
+  cell: Vec2;
+  facing: Direction;
+  patrol: Vec2[];
 }
 
 // A 3D prop (see props.ts) in a walkable cell, pushed toward `at`: a side,

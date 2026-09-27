@@ -80,9 +80,44 @@ function viewCaptures(): Plugin {
   };
 }
 
+// Dev-only endpoint for the actor sprite editor (?editor=actors): saves an
+// actor sheet's per-frame placement fixes to src/actors/<name>.json, which
+// the game imports (and hot-reloads).
+function actorOffsets(): Plugin {
+  return {
+    name: "voidcrew-actor-offsets",
+    apply: "serve",
+    configureServer(server) {
+      const outDir = path.resolve(server.config.root, "src/actors");
+      server.middlewares.use(`${server.config.base}__voidcrew/actor-offsets`, (req, res) => {
+        const name = new URL(req.url ?? "", "http://x").searchParams.get("name") ?? "";
+        if (req.method !== "POST" || !/^\w+$/.test(name)) {
+          res.statusCode = 400;
+          res.end("POST with ?name=<actor sheet>");
+          return;
+        }
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk: Buffer) => chunks.push(chunk));
+        req.on("end", () => {
+          try {
+            const json = JSON.parse(Buffer.concat(chunks).toString());
+            fs.mkdirSync(outDir, { recursive: true });
+            const file = path.join(outDir, `${name}.json`);
+            fs.writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
+            res.end(path.relative(server.config.root, file));
+          } catch {
+            res.statusCode = 400;
+            res.end("expected JSON");
+          }
+        });
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: "/voidcrew/",
-  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures()],
+  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets()],
   server: {
     port: 3000,
     watch: {

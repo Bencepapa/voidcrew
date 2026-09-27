@@ -9,6 +9,9 @@ import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights, lampColor } from "../game/lights";
 import { PROP_TYPES, propPlacement } from "../game/props";
+import { ACTOR_TYPES } from "../game/actors";
+import { actorOffsets } from "../render/actorOffsets";
+import type { ActorState } from "../game/actors";
 import { cellKey, visibleCells } from "../game/visibility";
 import type { PropType } from "../game/props";
 import { doorCellKey } from "../game/useGameState";
@@ -750,6 +753,8 @@ interface GameViewportProps {
   openDoors: ReadonlySet<string>;
   // a lift ride in progress: the cabin shakes, the shaft's lights sweep by
   ride?: LiftRide | null;
+  // the deck's moving actors (drawn as sprites, see updateActors)
+  actors?: readonly ActorState[];
   // an interactive decal (DecalSpec.action) was clicked or tapped within
   // reach
   onTouch?: (action: string) => void;
@@ -929,6 +934,7 @@ export function GameViewport({
   elevation,
   openDoors,
   ride,
+  actors,
   onTouch,
   onReady,
   freeTick,
@@ -937,6 +943,8 @@ export function GameViewport({
   onStats,
 }: GameViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const actorsRef = useRef(actors ?? []);
+  actorsRef.current = actors ?? [];
   const onStatsRef = useRef(onStats);
   onStatsRef.current = onStats;
 
@@ -2178,6 +2186,93 @@ export function GameViewport({
       }
     }
 
+    // Actors are Doom-style sprites: an upright quad turned to face the
+    // camera, showing the sheet cell for its pose (standing, or the walk
+    // cycle while stepping) and for the angle it's seen from - front, 45,
+    // 90 and 135 degrees round to its left, or back; seen from its right,
+    // the left views mirrored. The sheet's normal map lights it like the
+    // walls, so a passing lamp shades it.
+    const actorMaterials = new Map<string, THREE.MeshStandardMaterial>();
+    const actorTextures: THREE.Texture[] = [];
+    const actorMeshes = new Map<number, { mesh: THREE.Mesh; uvKey: string }>();
+    const actorMaterial = (typeName: string) => {
+      let mat = actorMaterials.get(typeName);
+      if (!mat) {
+        const type = ACTOR_TYPES[typeName];
+        const base = `${import.meta.env.BASE_URL}actors/${type.sheet}/`;
+        const diffuse = loader.load(base + "diffuse.png" + bust);
+        const normalMap = loader.load(base + "normal.png" + bust);
+        diffuse.colorSpace = THREE.SRGBColorSpace;
+        for (const tex of [diffuse, normalMap]) {
+          tex.magFilter = THREE.NearestFilter;
+          actorTextures.push(tex);
+        }
+        mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap, alphaTest: 0.5, roughness: 0.6, metalness: 0.35 });
+        actorMaterials.set(typeName, mat);
+      }
+      return mat;
+    };
+    for (const name of new Set((map.actors ?? []).map((a) => a.actor))) actorMaterial(name);
+
+    function updateActors(camX: number, camZ: number, now: number) {
+      const current = actorsRef.current;
+      for (const [id, entry] of actorMeshes) {
+        if (!current.some((a) => a.id === id)) {
+          group.remove(entry.mesh);
+          entry.mesh.geometry.dispose();
+          actorMeshes.delete(id);
+        }
+      }
+      for (const actor of current) {
+        const type = ACTOR_TYPES[actor.type];
+        const h = type.height * wallHeight;
+        let entry = actorMeshes.get(actor.id);
+        if (!entry) {
+          entry = { mesh: new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), actorMaterial(actor.type)), uvKey: "" };
+          actorMeshes.set(actor.id, entry);
+          group.add(entry.mesh);
+        }
+        const t = Math.min(1, Math.max(0, (now - actor.moveStart) / type.moveMs));
+        const x = lerp(actor.from.x, actor.cell.x, t);
+        const z = lerp(actor.from.y, actor.cell.y, t);
+        const y = lerp(floorY(actor.from.x, actor.from.y), floorY(actor.cell.x, actor.cell.y), t);
+        const mesh = entry.mesh;
+        const yaw = Math.atan2(camX - x, camZ - z);
+        mesh.rotation.y = yaw;
+
+        // the angle it's seen from: 0 in front, + round to its left
+        const f = DIR_VECTOR[actor.facing];
+        const cx = camX - x;
+        const cz = camZ - z;
+        const angle = Math.atan2(cx * f.y - cz * f.x, cx * f.x + cz * f.y);
+        const col = Math.min(type.cols - 1, Math.round(Math.abs(angle) / (Math.PI / 4)));
+        const mirror = angle < 0 && col > 0 && col < type.cols - 1;
+        const row = t < 1 ? type.walkRows[Math.floor(t * type.walkRows.length) % type.walkRows.length] : type.idleRow;
+
+        // the frame's placement fix (see actorOffsets), mirrored with it
+        const fix = actorOffsets(type.sheet);
+        const [dx, dy] = fix?.offsets[row * type.cols + col] ?? [0, 0];
+        const px = fix ? h / fix.cell[1] : 0;
+        const shift = (mirror ? -dx : dx) * px;
+        mesh.position.set(x + Math.cos(yaw) * shift, y + h / 2 - dy * px, z - Math.sin(yaw) * shift);
+
+        const uvKey = `${col},${row},${mirror}`;
+        if (uvKey === entry.uvKey) continue;
+        entry.uvKey = uvKey;
+        let u0 = col / type.cols;
+        let u1 = (col + 1) / type.cols;
+        if (mirror) [u0, u1] = [u1, u0];
+        const v0 = 1 - (row + 1) / type.rows;
+        const v1 = 1 - row / type.rows;
+        const uv = mesh.geometry.getAttribute("uv") as THREE.BufferAttribute;
+        uv.setXY(0, u0, v1);
+        uv.setXY(1, u1, v1);
+        uv.setXY(2, u0, v0);
+        uv.setXY(3, u1, v0);
+        uv.needsUpdate = true;
+      }
+    }
+
     function resize() {
       const w = container!.clientWidth || 1;
       const h = container!.clientHeight || 1;
@@ -2375,6 +2470,7 @@ export function GameViewport({
         Math.min(eyeY - bobY + 0.3, ceilingHere - 0.08),
         camZ + Math.sin(t * 0.5) * 0.15,
       );
+      updateActors(camX, camZ, now);
       updateLightPool(
         { x: cam.x, z: cam.z },
         { x: camX, y: eyeY, z: camZ, fwdX: fwdX / fwdLen, fwdZ: fwdZ / fwdLen },
@@ -2454,6 +2550,9 @@ export function GameViewport({
         for (const tex of kit.textures) tex.dispose();
       }
       for (const mat of ownMaterials) mat.dispose();
+      for (const { mesh } of actorMeshes.values()) mesh.geometry.dispose();
+      for (const mat of actorMaterials.values()) mat.dispose();
+      for (const tex of actorTextures) tex.dispose();
       floorMat.dispose();
       spaceMat.dispose();
       sheenMat.dispose();

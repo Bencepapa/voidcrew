@@ -101,6 +101,7 @@
     { "x": 11, "y": 3, "wall": "E" }
   ],
   "lifts": [{ "x": 1, "y": 1, "button": "S", "to": "deck1-medical" }],
+  "actors": [{ "actor": "robot1", "x": 9, "y": 1, "facing": "W", "patrol": [[9, 1], [5, 1]] }],
   "props": [
     { "prop": "crate1", "x": 3, "y": 1, "at": "NE" },
     { "prop": "crate1", "x": 1, "y": 3, "at": "SW", "rotation": 12 },

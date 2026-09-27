@@ -626,7 +626,41 @@ async function keyOut(input: Buffer, keyHex: string, tolerance: number): Promise
       }
     }
   }
+  bleedIntoTransparent(data, info.width, info.height);
   return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
+// Keyed-out pixels still hold the key color, and the diffuse's median
+// filter and palette would mix it back into the shapes' edges (a purple
+// rim). So they take the color of an opaque neighbor instead, a few pixels
+// out from every edge.
+const BLEED_PASSES = 3;
+function bleedIntoTransparent(data: Buffer, w: number, h: number) {
+  // pixels holding a shape's color: the opaque ones, then each pass's fill
+  const known = new Uint8Array(w * h);
+  for (let p = 0; p < known.length; p++) known[p] = data[p * 4 + 3] ? 1 : 0;
+  for (let pass = 0; pass < BLEED_PASSES; pass++) {
+    const filled: [number, number][] = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (known[y * w + x]) continue;
+        const n = [
+          [x - 1, y],
+          [x + 1, y],
+          [x, y - 1],
+          [x, y + 1],
+        ].find(([nx, ny]) => nx >= 0 && ny >= 0 && nx < w && ny < h && known[ny * w + nx]);
+        if (n) filled.push([y * w + x, n[1] * w + n[0]]);
+      }
+    }
+    if (!filled.length) break;
+    for (const [p, q] of filled) {
+      data.copyWithin(p * 4, q * 4, q * 4 + 3);
+      known[p] = 1;
+    }
+  }
+  // the rest of the background: black, like the shapes' dark outlines
+  for (let p = 0; p < known.length; p++) if (!known[p]) data.fill(0, p * 4, p * 4 + 3);
 }
 
 function rgbaToRgb(rgba: Buffer): Buffer {
