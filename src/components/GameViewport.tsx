@@ -9,9 +9,12 @@ import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights, lampColor } from "../game/lights";
 import { PROP_TYPES, propPlacement } from "../game/props";
-import { ACTOR_TYPES } from "../game/actors";
+import { ACTOR_TYPES, BODY_PARTS } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
-import type { ActorState } from "../game/actors";
+import type { ActorState, BodyPart } from "../game/actors";
+import { gameClock } from "../game/clock";
+import { weaponAccuracy } from "../game/combat";
+import type { ShotResult, Weapon } from "../game/combat";
 import { cellKey, visibleCells } from "../game/visibility";
 import type { PropType } from "../game/props";
 import { doorCellKey } from "../game/useGameState";
@@ -79,6 +82,8 @@ export interface ViewportSettings {
   decalsEnabled: boolean;
   wallProfile: WallProfileId;
   geometryView: GeometryViewId;
+  // combat: aim with the crosshair mini-game (else the hit chance is rolled)
+  aimMiniGame: boolean;
   eyeHeight: number;
   wallHeight: number;
   cameraPullback: number;
@@ -111,6 +116,22 @@ export interface ReliefStats {
   baked: boolean;
 }
 
+// What the aiming overlay gets each frame: the enemies in reach, nearest
+// first, with their body parts' rectangles (view pixels) and hit chances;
+// and a way to shoot at a point of the view.
+export interface AimTarget {
+  id: number;
+  name: string;
+  distance: number;
+  parts: { part: BodyPart; label: string; rect: [number, number, number, number]; chance: number }[];
+}
+export interface AimFrame {
+  targets: AimTarget[];
+  width: number;
+  height: number;
+  shoot: (x: number, y: number) => ShotResult;
+}
+
 export interface ViewportStats {
   // triangles actually drawn last frame (after culling), and draw calls
   renderedTriangles: number;
@@ -131,6 +152,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   decalsEnabled: true,
   wallProfile: "relief",
   geometryView: "textured",
+  aimMiniGame: true,
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
@@ -663,6 +685,13 @@ const SIGHT_POINTS: [number, number][] = [
   [-0.35, 0.35],
   [0.35, 0.35],
 ];
+// actors: how long a hit flashes and a death fades (game ms)
+const ACTOR_FLASH_MS = 220;
+const ACTOR_FADE_MS = 900;
+// aiming: how often the hit chances are worked out again (real ms), and how
+// long a shot's trace lingers
+const AIM_CHANCE_REFRESH_MS = 250;
+const TRACER_MS = 220;
 // objects wider or deeper than this (cells) are never culled
 const CULL_MAX_SIZE = 1.3;
 // Walls, floors and ceilings farther than this (world units) switch to a
@@ -783,6 +812,10 @@ interface GameViewportProps {
   ride?: LiftRide | null;
   // the deck's moving actors (drawn as sprites, see updateActors)
   actors?: readonly ActorState[];
+  // a crewmate aiming this weapon: each frame fills aimFrameRef for the
+  // aiming overlay
+  aiming?: Weapon | null;
+  aimFrameRef?: MutableRefObject<AimFrame | null>;
   // an interactive decal (DecalSpec.action) was clicked or tapped within
   // reach
   onTouch?: (action: string) => void;
@@ -963,6 +996,8 @@ export function GameViewport({
   openDoors,
   ride,
   actors,
+  aiming,
+  aimFrameRef: aimFrameRefProp,
   onTouch,
   onReady,
   freeTick,
@@ -973,6 +1008,10 @@ export function GameViewport({
   const containerRef = useRef<HTMLDivElement>(null);
   const actorsRef = useRef(actors ?? []);
   actorsRef.current = actors ?? [];
+  const aimingRef = useRef(aiming ?? null);
+  aimingRef.current = aiming ?? null;
+  const ownAimFrameRef = useRef<AimFrame | null>(null);
+  const aimFrameRef = aimFrameRefProp ?? ownAimFrameRef;
   const onStatsRef = useRef(onStats);
   onStatsRef.current = onStats;
 
@@ -2037,6 +2076,7 @@ export function GameViewport({
           const prop = template.clone();
           prop.position.set(x, floorY(spec.cell.x, spec.cell.y), z);
           prop.rotation.y = -yaw;
+          prop.userData.prop = true;
           group.add(prop);
         }
       }).catch((err) => console.error("Prop build failed:", err));
@@ -2440,7 +2480,17 @@ export function GameViewport({
     // walls, so a passing lamp shades it.
     const actorMaterials = new Map<string, THREE.MeshStandardMaterial>();
     const actorTextures: THREE.Texture[] = [];
-    const actorMeshes = new Map<number, { mesh: THREE.Mesh; uvKey: string }>();
+    // each actor's quad, its own copy of its type's material (for the hit
+    // flash and the death fade) and the sheet cell it shows
+    interface ActorEntry {
+      mesh: THREE.Mesh;
+      material: THREE.MeshStandardMaterial;
+      uvKey: string;
+      col: number;
+      row: number;
+      mirror: boolean;
+    }
+    const actorMeshes = new Map<number, ActorEntry>();
     const actorMaterial = (typeName: string) => {
       let mat = actorMaterials.get(typeName);
       if (!mat) {
@@ -2460,32 +2510,48 @@ export function GameViewport({
     };
     for (const name of new Set((map.actors ?? []).map((a) => a.actor))) actorMaterial(name);
 
-    function updateActors(camX: number, camZ: number, now: number) {
+    function removeActorMesh(id: number) {
+      const entry = actorMeshes.get(id);
+      if (!entry) return;
+      group.remove(entry.mesh);
+      entry.mesh.geometry.dispose();
+      entry.material.dispose();
+      actorMeshes.delete(id);
+    }
+
+    function updateActors(camX: number, camZ: number) {
+      const now = gameClock.now();
       const current = actorsRef.current;
-      for (const [id, entry] of actorMeshes) {
-        if (!current.some((a) => a.id === id)) {
-          group.remove(entry.mesh);
-          entry.mesh.geometry.dispose();
-          actorMeshes.delete(id);
-        }
+      for (const id of [...actorMeshes.keys()]) {
+        if (!current.some((a) => a.id === id)) removeActorMesh(id);
       }
       for (const actor of current) {
         const type = ACTOR_TYPES[actor.type];
         const h = type.height * wallHeight;
         let entry = actorMeshes.get(actor.id);
         if (!entry) {
-          entry = { mesh: new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), actorMaterial(actor.type)), uvKey: "" };
-          entry.mesh.userData.actor = true;
+          const material = actorMaterial(actor.type).clone();
+          const mesh = new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), material);
+          mesh.userData.actor = true;
+          mesh.userData.actorId = actor.id;
+          entry = { mesh, material, uvKey: "", col: 0, row: 0, mirror: false };
           actorMeshes.set(actor.id, entry);
-          group.add(entry.mesh);
+          group.add(mesh);
         }
-        const t = Math.min(1, Math.max(0, (now - actor.moveStart) / type.moveMs));
+        const t = Math.min(1, Math.max(0, (now - actor.moveStart) / actor.moveMs));
         const x = lerp(actor.from.x, actor.cell.x, t);
         const z = lerp(actor.from.y, actor.cell.y, t);
         const y = lerp(floorY(actor.from.x, actor.from.y), floorY(actor.cell.x, actor.cell.y), t);
         const mesh = entry.mesh;
+        const dead = actor.diedAt !== null ? (now - actor.diedAt) / ACTOR_FADE_MS : 0;
         mesh.visible =
-          sight.cells.has(cellKey(actor.cell.x, actor.cell.y)) || sight.cells.has(cellKey(actor.from.x, actor.from.y));
+          dead < 1 &&
+          (sight.cells.has(cellKey(actor.cell.x, actor.cell.y)) || sight.cells.has(cellKey(actor.from.x, actor.from.y)));
+        // hit: a red flash; dead: it fades out
+        const flash = Math.max(0, 1 - (now - actor.hitAt) / ACTOR_FLASH_MS);
+        entry.material.emissive.setRGB(flash * 0.9, flash * 0.12, flash * 0.05);
+        entry.material.transparent = dead > 0;
+        entry.material.opacity = 1 - Math.min(1, dead);
         const yaw = Math.atan2(camX - x, camZ - z);
         mesh.rotation.y = yaw;
 
@@ -2497,6 +2563,9 @@ export function GameViewport({
         const col = Math.min(type.cols - 1, Math.round(Math.abs(angle) / (Math.PI / 4)));
         const mirror = angle < 0 && col > 0 && col < type.cols - 1;
         const row = t < 1 ? type.walkRows[Math.floor(t * type.walkRows.length) % type.walkRows.length] : type.idleRow;
+        entry.col = col;
+        entry.row = row;
+        entry.mirror = mirror;
 
         // the frame's placement fix (see actorOffsets), mirrored with it
         const fix = actorOffsets(type.sheet);
@@ -2519,6 +2588,198 @@ export function GameViewport({
         uv.setXY(2, u0, v0);
         uv.setXY(3, u1, v0);
         uv.needsUpdate = true;
+      }
+    }
+
+    // --- Aiming (see combat.ts): while a crewmate aims, each frame lists
+    // the enemies in reach with their body parts' screen rectangles and hit
+    // chances for the aiming overlay, which shoots through `shoot` ---------
+    const aimRaycaster = new THREE.Raycaster();
+    const aimNdc = new THREE.Vector2();
+    const aimVec = new THREE.Vector3();
+    const aimDir = new THREE.Vector3();
+    const chanceCache = new Map<string, number>();
+    let chanceAt = 0;
+    // each actor type's sheet alpha, to let shots through its transparent
+    // pixels
+    const sheetAlpha = new Map<string, { data: Uint8ClampedArray; width: number; height: number } | null>();
+    function alphaAt(typeName: string, u: number, v: number): number {
+      if (!sheetAlpha.has(typeName)) {
+        const image = actorMaterial(typeName).map?.image as HTMLImageElement | undefined;
+        if (!image?.width) return 255;
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(image, 0, 0);
+        sheetAlpha.set(typeName, { data: ctx.getImageData(0, 0, image.width, image.height).data, width: image.width, height: image.height });
+      }
+      const sheet = sheetAlpha.get(typeName);
+      if (!sheet) return 255;
+      const x = Math.min(sheet.width - 1, Math.max(0, Math.floor(u * sheet.width)));
+      const y = Math.min(sheet.height - 1, Math.max(0, Math.floor((1 - v) * sheet.height)));
+      return sheet.data[(y * sheet.width + x) * 4 + 3];
+    }
+    const drawnChain = (obj: THREE.Object3D | null) => {
+      for (let o = obj; o; o = o.parent) if (!o.visible) return false;
+      return true;
+    };
+    const seeThrough = (obj: THREE.Object3D) => {
+      const mat = (obj as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      const first = Array.isArray(mat) ? mat[0] : mat;
+      return !!first && first.transparent && !first.depthWrite;
+    };
+    const isProp = (obj: THREE.Object3D) => {
+      for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (o.userData.prop) return true;
+      return false;
+    };
+    // the body part at a spot of a sheet cell (fractions from its top left)
+    function partAt(typeName: string, u: number, v: number): BodyPart {
+      const parts = ACTOR_TYPES[typeName].parts;
+      for (const part of ["head", "torso", "legs", "arms"] as BodyPart[]) {
+        const [x0, y0, x1, y1] = parts[part].zone;
+        if (u >= x0 && u <= x1 && v >= y0 && v <= y1) return part;
+      }
+      let best: BodyPart = "torso";
+      let bestDist = Infinity;
+      for (const part of BODY_PARTS) {
+        const [x0, y0, x1, y1] = parts[part].zone;
+        const d = Math.hypot((x0 + x1) / 2 - u, (y0 + y1) / 2 - v);
+        if (d < bestDist) [best, bestDist] = [part, d];
+      }
+      return best;
+    }
+    // a point of an actor's quad, from a spot of its sheet cell
+    function actorPoint(entry: ActorEntry, typeName: string, u: number, v: number, out: THREE.Vector3) {
+      const type = ACTOR_TYPES[typeName];
+      const h = type.height * wallHeight;
+      const w = h * type.cellAspect;
+      return out.set((entry.mirror ? 0.5 - u : u - 0.5) * w, (0.5 - v) * h, 0).applyMatrix4(entry.mesh.matrixWorld);
+    }
+    // how much of a spot on an actor the camera sees past everything else
+    function unoccluded(target: THREE.Vector3, self: THREE.Object3D): boolean {
+      aimDir.copy(target).sub(camera.position);
+      const dist = aimDir.length();
+      aimRaycaster.set(camera.position, aimDir.normalize());
+      aimRaycaster.far = dist - 0.03;
+      for (const hit of aimRaycaster.intersectObjects(group.children, true)) {
+        if (hit.object === self || !drawnChain(hit.object) || seeThrough(hit.object)) continue;
+        if (hit.object.userData.actorId !== undefined) {
+          const other = actorMeshes.get(hit.object.userData.actorId as number);
+          const actor = actorsRef.current.find((a) => a.id === hit.object.userData.actorId);
+          if (!other || !actor || !hit.uv || alphaAt(actor.type, hit.uv.x, hit.uv.y) < 128) continue;
+        }
+        return false;
+      }
+      return true;
+    }
+    function updateAimFrame(weapon: Weapon, camX: number, camZ: number) {
+      const cw = container!.clientWidth || 1;
+      const ch = container!.clientHeight || 1;
+      const refresh = performance.now() - chanceAt > AIM_CHANCE_REFRESH_MS;
+      if (refresh) chanceAt = performance.now();
+      const sway = (weapon.sway ?? 0.03) * ch;
+      const targets: AimTarget[] = [];
+      for (const actor of actorsRef.current) {
+        const entry = actorMeshes.get(actor.id);
+        if (actor.diedAt !== null || !entry?.mesh.visible) continue;
+        const distance = Math.hypot(entry.mesh.position.x - camX, entry.mesh.position.z - camZ);
+        if (distance > (weapon.range ?? 1) + 0.5) continue;
+        entry.mesh.updateMatrixWorld();
+        const type = ACTOR_TYPES[actor.type];
+        const parts: AimTarget["parts"] = [];
+        for (const part of BODY_PARTS) {
+          const [u0, v0, u1, v1] = type.parts[part].zone;
+          let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+          let behind = false;
+          for (const [u, v] of [
+            [u0, v0],
+            [u1, v0],
+            [u0, v1],
+            [u1, v1],
+          ]) {
+            actorPoint(entry, actor.type, u, v, aimVec).project(camera);
+            if (aimVec.z > 1) behind = true;
+            const sx = ((aimVec.x + 1) / 2) * cw;
+            const sy = ((1 - aimVec.y) / 2) * ch;
+            [x0, y0, x1, y1] = [Math.min(x0, sx), Math.min(y0, sy), Math.max(x1, sx), Math.max(y1, sy)];
+          }
+          if (behind) continue;
+          const key = `${actor.id}:${part}`;
+          if (refresh || !chanceCache.has(key)) {
+            // cover: the share of a 3x3 grid of spots on the part in plain view
+            let seen = 0;
+            for (let i = 0; i < 3; i++) {
+              for (let j = 0; j < 3; j++) {
+                const u = u0 + ((u1 - u0) * (i + 0.5)) / 3;
+                const v = v0 + ((v1 - v0) * (j + 0.5)) / 3;
+                if (unoccluded(actorPoint(entry, actor.type, u, v, aimVec), entry.mesh)) seen++;
+              }
+            }
+            // a part smaller than the weapon's sway is harder to land on
+            const size = Math.min(1, Math.sqrt(((x1 - x0) * (y1 - y0)) / (Math.PI * sway * sway)));
+            chanceCache.set(key, Math.min(0.97, (seen / 9) * weaponAccuracy(weapon, distance) * size));
+          }
+          parts.push({ part, label: type.parts[part].label, rect: [x0, y0, x1, y1], chance: chanceCache.get(key)! });
+        }
+        if (parts.length) targets.push({ id: actor.id, name: type.name, distance, parts });
+      }
+      targets.sort((a, b) => a.distance - b.distance);
+      aimFrameRef.current = { targets, width: cw, height: ch, shoot };
+    }
+
+    // a shot through a point of the view: the first thing it meets there
+    // (an actor only where its sprite isn't transparent)
+    function shoot(sx: number, sy: number): ShotResult {
+      const cw = container!.clientWidth || 1;
+      const ch = container!.clientHeight || 1;
+      aimNdc.set((sx / cw) * 2 - 1, -((sy / ch) * 2 - 1));
+      aimRaycaster.setFromCamera(aimNdc, camera);
+      aimRaycaster.far = 40;
+      for (const hit of aimRaycaster.intersectObjects(group.children, true)) {
+        if (!drawnChain(hit.object) || seeThrough(hit.object)) continue;
+        const id = hit.object.userData.actorId as number | undefined;
+        if (id !== undefined) {
+          const actor = actorsRef.current.find((a) => a.id === id);
+          const entry = actorMeshes.get(id);
+          if (!actor || !entry || actor.diedAt !== null || !hit.uv) continue;
+          if (alphaAt(actor.type, hit.uv.x, hit.uv.y) < 128) continue;
+          const type = ACTOR_TYPES[actor.type];
+          const u = hit.uv.x * type.cols - entry.col;
+          const v = (1 - hit.uv.y) * type.rows - entry.row;
+          addTracer(hit.point);
+          return { kind: "actor", actor: id, part: partAt(actor.type, u, v) };
+        }
+        addTracer(hit.point);
+        return { kind: "miss", hit: isProp(hit.object) ? "prop" : "wall" };
+      }
+      addTracer(aimRaycaster.ray.at(8, aimVec).clone());
+      return { kind: "miss", hit: "nothing" };
+    }
+
+    // a shot's trace: a bright line from below the camera to where it hit,
+    // fading out
+    const tracers: { line: THREE.Line; born: number }[] = [];
+    function addTracer(to: THREE.Vector3) {
+      const from = new THREE.Vector3(0.12, -0.16, -0.3).applyMatrix4(camera.matrixWorld);
+      const geo = new THREE.BufferGeometry().setFromPoints([from, to.clone()]);
+      const mat = new THREE.LineBasicMaterial({ color: 0xffe2a0, transparent: true });
+      const line = new THREE.Line(geo, mat);
+      scene.add(line);
+      tracers.push({ line, born: performance.now() });
+    }
+    function updateTracers() {
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        const { line, born } = tracers[i];
+        const k = (performance.now() - born) / TRACER_MS;
+        if (k < 1) {
+          (line.material as THREE.LineBasicMaterial).opacity = 1 - k;
+          continue;
+        }
+        scene.remove(line);
+        line.geometry.dispose();
+        (line.material as THREE.Material).dispose();
+        tracers.splice(i, 1);
       }
     }
 
@@ -2719,7 +2980,11 @@ export function GameViewport({
         Math.min(eyeY - bobY + 0.3, ceilingHere - 0.08),
         camZ + Math.sin(t * 0.5) * 0.15,
       );
-      updateActors(camX, camZ, now);
+      updateActors(camX, camZ);
+      updateTracers();
+      const aimWeapon = aimingRef.current;
+      if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ);
+      else if (aimFrameRef.current) aimFrameRef.current = null;
       updateLightPool(
         { x: cam.x, z: cam.z },
         { x: camX, y: eyeY, z: camZ, fwdX: fwdX / fwdLen, fwdZ: fwdZ / fwdLen },
@@ -2806,7 +3071,11 @@ export function GameViewport({
         for (const tex of kit.textures) tex.dispose();
       }
       for (const mat of ownMaterials) mat.dispose();
-      for (const { mesh } of actorMeshes.values()) mesh.geometry.dispose();
+      for (const id of [...actorMeshes.keys()]) removeActorMesh(id);
+      for (const { line } of tracers) {
+        line.geometry.dispose();
+        (line.material as THREE.Material).dispose();
+      }
       for (const mat of actorMaterials.values()) mat.dispose();
       for (const tex of actorTextures) tex.dispose();
       floorMat.dispose();

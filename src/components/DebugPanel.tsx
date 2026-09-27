@@ -189,6 +189,15 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
         </select>
       </label>
 
+      <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+        <input
+          type="checkbox"
+          checked={settings.aimMiniGame}
+          onChange={(e) => set("aimMiniGame", e.target.checked)}
+        />
+        Aiming mini-game (off: chance roll)
+      </label>
+
       <label className="flex flex-col gap-1">
         <span className="text-[10px] text-neutral-500">Geometry view</span>
         <select

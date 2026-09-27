@@ -1,1 +1,14 @@
 @import "tailwindcss";
+
+/* the red flash when the crew is hit (App) */
+@keyframes hurt-flash {
+  from {
+    box-shadow: inset 0 0 120px 40px rgba(220, 30, 20, 0.75);
+  }
+  to {
+    box-shadow: inset 0 0 120px 40px rgba(220, 30, 20, 0);
+  }
+}
+.hurt-flash {
+  animation: hurt-flash 450ms ease-out forwards;
+}

@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
-import type { ViewportSettings, ViewportStats } from "./components/GameViewport";
+import type { AimFrame, ViewportSettings, ViewportStats } from "./components/GameViewport";
+import { AimOverlay } from "./components/AimOverlay";
+import { CREW_WEAPONS } from "./game/combat";
 import { Minimap } from "./components/Minimap";
 import { PartyPanel } from "./components/PartyPanel";
 import { LogPanel } from "./components/LogPanel";
@@ -27,6 +29,12 @@ export default function App() {
     inLift,
     ride,
     actors,
+    readyAt,
+    aim,
+    hurtAt,
+    fireWeapon,
+    cancelAim,
+    resolveShot,
     crew,
     log,
     moveForward,
@@ -42,12 +50,16 @@ export default function App() {
   const [settings, setSettings] = useState<ViewportSettings>(DEFAULT_SETTINGS);
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const aimFrameRef = useRef<AimFrame | null>(null);
+  const aimRef = useRef(aim);
+  aimRef.current = aim;
+  const aimWeapon = aim ? (CREW_WEAPONS[crew[aim.crew].id] ?? null) : null;
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");
   const free = useFreeMovement({
     enabled: !grid,
-    frozen: inLift,
+    frozen: inLift || aim !== null,
     map,
     pos,
     dir,
@@ -107,10 +119,27 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [grid, moveForward, moveBackward, turnL, turnR, jumpDown]);
 
+  // 1-4: a crewmate's weapon (see combat.ts); aiming needs the pointer
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const n = Number(e.key);
+      if (n >= 1 && n <= crew.length && !aim) {
+        if (document.pointerLockElement) document.exitPointerLock();
+        fireWeapon(n - 1);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [crew.length, aim, fireWeapon]);
+  const onWeapon = (index: number) => {
+    if (document.pointerLockElement) document.exitPointerLock();
+    fireWeapon(index);
+  };
+
   // Use (Space or Enter) works in both movement modes
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === " " || e.key === "Enter") use();
+      if ((e.key === " " || e.key === "Enter") && !aimRef.current) use();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -125,6 +154,8 @@ export default function App() {
       openDoors={openDoors}
       ride={ride}
       actors={actors}
+      aiming={aimWeapon}
+      aimFrameRef={aimFrameRef}
       onTouch={touch}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
@@ -134,6 +165,23 @@ export default function App() {
     />
   );
   const viewInput = view.handlers;
+  // over the view: the aiming overlay, and a red flash when the crew is hit
+  const overlays = (
+    <>
+      {aim && aimWeapon && (
+        <AimOverlay
+          key={aim.crew}
+          frameRef={aimFrameRef}
+          weapon={aimWeapon}
+          crewName={crew[aim.crew].name}
+          miniGame={settings.aimMiniGame}
+          onShot={resolveShot}
+          onCancel={cancelAim}
+        />
+      )}
+      {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
+    </>
+  );
   // free movement: touch gets twin sticks; a mouse gets a hint until it's
   // captured for mouselook
   const joysticks = grid ? null : (
@@ -169,6 +217,7 @@ export default function App() {
         <div className="absolute inset-0" {...viewInput}>
           {viewport}
           {joysticks}
+          {overlays}
         </div>
 
         <div className="absolute top-2 left-2 w-28 flex flex-col gap-1 pointer-events-none">
@@ -195,7 +244,7 @@ export default function App() {
         </div>
 
         <div className="absolute bottom-2 inset-x-2 pointer-events-none">
-          <PartyPanel crew={crew} compact />
+          <PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />
         </div>
       </div>
     );
@@ -218,6 +267,7 @@ export default function App() {
         <div className="relative flex-1 min-w-0" {...viewInput}>
           {viewport}
           {joysticks}
+          {overlays}
         </div>
 
         <div className="w-56 flex flex-col gap-2 min-h-0">
@@ -228,7 +278,7 @@ export default function App() {
         </div>
       </div>
 
-      <PartyPanel crew={crew} />
+      <PartyPanel crew={crew} readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />
     </div>
   );
 }

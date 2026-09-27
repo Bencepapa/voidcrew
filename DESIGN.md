@@ -62,8 +62,9 @@ Adapted from abstract "swing bar" designs to aiming at real enemies:
 | Orion | Android | shock emitter – light damage, stuns; later hacking |
 | Kell | Medic | stim injector – heals the most wounded crewmate |
 
-**Open question:** there's no sniper yet. Either Reese gets a long rifle
-as a second weapon, or a crewmate is swapped for a sniper.
+**Sniper rifle:** a weapon found on the ship, not a crewmate's own. Anyone
+can carry it as a second weapon, but the android and the marine are the
+best with it (steadier aim, more damage); it has a long cooldown.
 
 ## Enemies
 

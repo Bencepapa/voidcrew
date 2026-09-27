@@ -6,6 +6,10 @@ import type { Direction, GameMap, Vec2 } from "./types";
 import { initialCrew } from "./crew";
 import { ACTOR_TYPES, actorAt, createActors, stepActors } from "./actors";
 import type { ActorState } from "./actors";
+import { gameClock } from "./clock";
+import { AIM_TIME_RATE, CREW_WEAPONS, applyHit, rollAmount } from "./combat";
+import type { ShotResult } from "./combat";
+import { cellKey, visibleCells } from "./visibility";
 
 export interface LogEntry {
   id: number;
@@ -66,7 +70,19 @@ export function useGameState() {
   const [dir, setDir] = useState<Direction>(map.start.facing);
   // the height the party stands at: the cell's floor, or a bridge above it
   const [elevation, setElevation] = useState(() => floorHeight(map, map.start.cell.x, map.start.cell.y));
-  const [crew] = useState(initialCrew);
+  const [crew, setCrew] = useState(initialCrew);
+  const crewRef = useRef(crew);
+  crewRef.current = crew;
+  // when each crewmate's weapon is ready again (game time)
+  const [readyAt, setReadyAt] = useState<number[]>(() => crew.map(() => 0));
+  const readyAtRef = useRef(readyAt);
+  readyAtRef.current = readyAt;
+  // the crewmate aiming (bullet time), if any
+  const [aim, setAim] = useState<{ crew: number } | null>(null);
+  const aimRef = useRef(aim);
+  aimRef.current = aim;
+  // when the party was last hit (real time), for a red flash
+  const [hurtAt, setHurtAt] = useState(0);
   const [log, setLog] = useState<LogEntry[]>([
     { id: logId++, text: `You board the USV Horizon, ${START_MAP.name}.` },
   ]);
@@ -145,26 +161,140 @@ export function useGameState() {
   // no moving or turning until a ladder climb or a lift ride is over, or
   // while the map loads
   const busyUntilRef = useRef(0);
-  const busy = () => performance.now() < busyUntilRef.current || readyMapRef.current !== mapRef.current.id;
+  const busy = () =>
+    performance.now() < busyUntilRef.current || readyMapRef.current !== mapRef.current.id || aimRef.current !== null;
 
   // the deck's actors, reset with each deck; they walk on while the deck
   // is shown
-  const [actors, setActors] = useState<ActorState[]>(() => createActors(map, performance.now()));
+  const [actors, setActors] = useState<ActorState[]>(() => createActors(map, gameClock.now()));
   const actorsRef = useRef(actors);
   actorsRef.current = actors;
+  const updateActors = useCallback((next: ActorState[]) => {
+    actorsRef.current = next;
+    setActors(next);
+  }, []);
   useEffect(() => {
-    setActors(createActors(map, performance.now()));
-  }, [map]);
+    updateActors(createActors(map, gameClock.now()));
+  }, [map, updateActors]);
   useEffect(() => {
     const timer = setInterval(() => {
       const m = mapRef.current;
       if (readyMapRef.current !== m.id) return;
-      setActors((prev) =>
-        stepActors(m, prev, performance.now(), posRef.current, (cell) => openDoorsRef.current.has(doorCellKey(cell))),
+      const { actors: next, attacks } = stepActors(m, actorsRef.current, gameClock.now(), posRef.current, (cell) =>
+        openDoorsRef.current.has(doorCellKey(cell)),
       );
+      if (next !== actorsRef.current) updateActors(next);
+      // their shots land on a random conscious crewmate
+      for (const attack of attacks) {
+        const standing = crewRef.current.filter((c) => c.hp > 0);
+        if (!standing.length) break;
+        const victim = standing[Math.floor(Math.random() * standing.length)];
+        const attacker = next.find((a) => a.id === attack.actor);
+        const hp = Math.max(0, victim.hp - attack.damage);
+        crewRef.current = crewRef.current.map((c) => (c.id === victim.id ? { ...c, hp } : c));
+        setCrew(crewRef.current);
+        setHurtAt(performance.now());
+        pushLog(
+          `${attacker ? ACTOR_TYPES[attacker.type].name : "Something"} hits ${victim.name} for ${attack.damage}.` +
+            (hp === 0 ? ` ${victim.name} goes down!` : ""),
+        );
+        if (crewRef.current.every((c) => c.hp === 0)) pushLog("The whole crew is down.");
+      }
     }, ACTOR_TICK_MS);
     return () => clearInterval(timer);
+  }, [pushLog, updateActors]);
+
+  // Combat (see combat.ts): a crewmate uses their weapon - a heal at once, a
+  // shot by aiming in bullet time (the aiming overlay resolves it)
+  const endAim = useCallback(() => {
+    gameClock.setRate(1);
+    aimRef.current = null;
+    setAim(null);
   }, []);
+  // living enemies within a weapon's reach and in sight of the party
+  const targetsInReach = useCallback((range: number) => {
+    const here = posRef.current;
+    const sight = visibleCells(mapRef.current, here.x, here.y, Math.ceil(range), (k) => openDoorsRef.current.has(k));
+    return actorsRef.current.filter(
+      (a) =>
+        a.diedAt === null &&
+        sight.has(cellKey(a.cell.x, a.cell.y)) &&
+        Math.hypot(a.cell.x - here.x, a.cell.y - here.y) <= range,
+    );
+  }, []);
+  const fireWeapon = useCallback(
+    (index: number) => {
+      const mate = crewRef.current[index];
+      const weapon = mate && CREW_WEAPONS[mate.id];
+      if (!weapon || aimRef.current || busy()) return;
+      if (mate.hp === 0) {
+        pushLog(`${mate.name} is down.`);
+        return;
+      }
+      if (gameClock.now() < readyAtRef.current[index]) {
+        pushLog(`${mate.name}'s ${weapon.name.toLowerCase()} isn't ready.`);
+        return;
+      }
+      const cool = () => setReadyAt((prev) => prev.map((t, i) => (i === index ? gameClock.now() + weapon.cooldownMs : t)));
+      if (weapon.kind === "heal") {
+        const hurt = crewRef.current
+          .filter((c) => c.hp > 0 && c.hp < c.maxHp)
+          .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+        if (!hurt) {
+          pushLog("Nobody needs patching up.");
+          return;
+        }
+        const amount = Math.min(hurt.maxHp - hurt.hp, rollAmount(weapon.amount));
+        crewRef.current = crewRef.current.map((c) => (c.id === hurt.id ? { ...c, hp: c.hp + amount } : c));
+        setCrew(crewRef.current);
+        pushLog(hurt.id === mate.id ? `${mate.name} takes a stim: +${amount} HP.` : `${mate.name} patches up ${hurt.name}: +${amount} HP.`);
+        cool();
+        return;
+      }
+      if (!targetsInReach(weapon.range ?? 1).length) {
+        pushLog(`${mate.name}: no target in reach.`);
+        return;
+      }
+      gameClock.setRate(AIM_TIME_RATE);
+      aimRef.current = { crew: index };
+      setAim({ crew: index });
+    },
+    [pushLog, targetsInReach],
+  );
+  const cancelAim = useCallback(() => {
+    if (aimRef.current) endAim();
+  }, [endAim]);
+  // the aiming overlay's shot: what it hit (or didn't)
+  const resolveShot = useCallback(
+    (result: ShotResult) => {
+      const current = aimRef.current;
+      if (!current) return;
+      const mate = crewRef.current[current.crew];
+      const weapon = CREW_WEAPONS[mate.id];
+      const now = gameClock.now();
+      if (result.kind === "actor") {
+        const target = actorsRef.current.find((a) => a.id === result.actor);
+        if (target && target.diedAt === null) {
+          const hit = applyHit(target, result.part, weapon, now);
+          const type = ACTOR_TYPES[target.type];
+          updateActors(actorsRef.current.map((a) => (a.id === target.id ? hit.actor : a)));
+          pushLog(
+            `${mate.name} hits the ${type.parts[result.part].label.toLowerCase()} for ${hit.damage}` +
+              (hit.killed ? " - it's destroyed!" : hit.effect ? ` - ${hit.effect}.` : "."),
+          );
+        }
+      } else {
+        pushLog(`${mate.name} misses${result.hit === "nothing" ? "." : ` and hits the ${result.hit}.`}`);
+      }
+      setReadyAt((prev) => prev.map((t, i) => (i === current.crew ? now + weapon.cooldownMs : t)));
+      endAim();
+    },
+    [endAim, pushLog, updateActors],
+  );
+  // a new deck: no aiming carries over
+  useEffect(() => {
+    if (aimRef.current) endAim();
+  }, [map, endAim]);
 
   const turnL = useCallback(() => {
     if (!busy()) setDir((d) => leftOf(d));
@@ -258,7 +388,7 @@ export function useGameState() {
       return;
     }
 
-    const blocker = actorAt(actorsRef.current, next, performance.now());
+    const blocker = actorAt(actorsRef.current, next, gameClock.now());
     if (blocker) {
       pushLog(`${ACTOR_TYPES[blocker.type].name} blocks the way.`);
       return;
@@ -364,6 +494,12 @@ export function useGameState() {
     pos,
     dir,
     actors,
+    readyAt,
+    aim,
+    hurtAt,
+    fireWeapon,
+    cancelAim,
+    resolveShot,
     elevation,
     jumpDown: jump,
     use,
