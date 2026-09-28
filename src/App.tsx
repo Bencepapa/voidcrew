@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
-import type { AimFrame, ViewportSettings, ViewportStats } from "./components/GameViewport";
+import type { AimFocus, AimFrame, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { AimOverlay } from "./components/AimOverlay";
 import { CREW_WEAPONS } from "./game/combat";
 import { Minimap } from "./components/Minimap";
@@ -35,6 +35,7 @@ export default function App() {
     fireWeapon,
     cancelAim,
     resolveShot,
+    setImmortalCrew,
     crew,
     log,
     moveForward,
@@ -51,6 +52,9 @@ export default function App() {
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const aimFrameRef = useRef<AimFrame | null>(null);
+  const aimFocusRef = useRef<AimFocus | null>(null);
+  useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
+  if (!aim) aimFocusRef.current = null;
   const aimRef = useRef(aim);
   aimRef.current = aim;
   const aimWeapon = aim ? (CREW_WEAPONS[crew[aim.crew].id] ?? null) : null;
@@ -156,6 +160,7 @@ export default function App() {
       actors={actors}
       aiming={aimWeapon}
       aimFrameRef={aimFrameRef}
+      aimFocusRef={aimFocusRef}
       onTouch={touch}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
@@ -172,6 +177,7 @@ export default function App() {
         <AimOverlay
           key={aim.crew}
           frameRef={aimFrameRef}
+          focusRef={aimFocusRef}
           weapon={aimWeapon}
           crewName={crew[aim.crew].name}
           miniGame={settings.aimMiniGame}

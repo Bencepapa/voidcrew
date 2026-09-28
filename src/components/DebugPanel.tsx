@@ -198,6 +198,15 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
         Aiming mini-game (off: chance roll)
       </label>
 
+      <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+        <input
+          type="checkbox"
+          checked={settings.immortalCrew}
+          onChange={(e) => set("immortalCrew", e.target.checked)}
+        />
+        Immortal crew (testing: HP stops at 1)
+      </label>
+
       <label className="flex flex-col gap-1">
         <span className="text-[10px] text-neutral-500">Geometry view</span>
         <select

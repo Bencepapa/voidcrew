@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import type { ShotResult, Weapon } from "../game/combat";
-import type { AimFrame, AimTarget } from "./GameViewport";
+import type { AimFocus, AimFrame, AimTarget } from "./GameViewport";
 
 // The aiming overlay (bullet time, see combat.ts), drawn over the game view:
 // 1. pick: the enemies in reach, their body parts outlined with hit chances;
@@ -13,13 +13,18 @@ import type { AimFrame, AimTarget } from "./GameViewport";
 //    With it off, the hit chance is rolled; a miss goes to a spot next to
 //    the part and hits whatever is there.
 
-const AUTO_FIRE_MS = 4000;
+const AUTO_FIRE_MS = 5000;
+// the sway shrinks to this share of the weapon's over about this long (s)
+const SWAY_STEADY = 0.3;
+const SWAY_SETTLE_S = 1.4;
 const PART_COLOR = "rgba(120, 255, 170, 0.9)";
 const PART_DIM = "rgba(120, 255, 170, 0.28)";
 const CROSSHAIR = "#ffd24a";
 
 interface Props {
   frameRef: MutableRefObject<AimFrame | null>;
+  // tells the camera what to turn to and zoom on
+  focusRef: MutableRefObject<AimFocus | null>;
   weapon: Weapon;
   crewName: string;
   miniGame: boolean;
@@ -27,7 +32,7 @@ interface Props {
   onCancel: () => void;
 }
 
-export function AimOverlay({ frameRef, weapon, crewName, miniGame, onShot, onCancel }: Props) {
+export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onShot, onCancel }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [phase, setPhase] = useState<"pick" | "aim">("pick");
   // the picked enemy (by id, so it survives reordering) and part index
@@ -73,7 +78,8 @@ export function AimOverlay({ frameRef, weapon, crewName, miniGame, onShot, onCan
     }
     // a miss: somewhere just off the part
     const a = Math.random() * Math.PI * 2;
-    const r = Math.max(x1 - x0, y1 - y0) * 0.6 + (weapon.sway ?? 0.03) * (frameRef.current?.height ?? 600);
+    const frame = frameRef.current;
+    const r = Math.max(x1 - x0, y1 - y0) * 0.6 + (weapon.sway ?? 0.03) * (frame?.height ?? 600) * (frame?.zoom ?? 1);
     fire(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
   };
 
@@ -125,6 +131,11 @@ export function AimOverlay({ frameRef, weapon, crewName, miniGame, onShot, onCan
       ctx.fillStyle = "rgba(20, 40, 60, 0.18)";
       ctx.fillRect(0, 0, w, h);
       const now = current();
+      focusRef.current = {
+        target: now?.target.id ?? null,
+        part: now ? now.target.parts[now.partIndex].part : null,
+        phase,
+      };
       if (!frame || !now) return;
       ctx.font = "11px monospace";
       ctx.lineWidth = 1;
@@ -133,7 +144,8 @@ export function AimOverlay({ frameRef, weapon, crewName, miniGame, onShot, onCan
         target.parts.forEach((part, i) => {
           const [x0, y0, x1, y1] = part.rect;
           const on = picked && i === now.partIndex;
-          if (!picked && phase === "aim") return;
+          // aiming: the part lights up on the sprite itself (no boxes)
+          if (phase === "aim") return;
           ctx.strokeStyle = on ? PART_COLOR : PART_DIM;
           ctx.setLineDash(on ? [] : [3, 3]);
           ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0);
@@ -149,7 +161,9 @@ export function AimOverlay({ frameRef, weapon, crewName, miniGame, onShot, onCan
       const part = now.target.parts[now.partIndex];
       const [x0, y0, x1, y1] = part.rect;
       const t = (performance.now() - aimStartRef.current) / 1000;
-      const r = (weapon.sway ?? 0.03) * h;
+      // the aim steadies the longer it's held
+      const steady = SWAY_STEADY + (1 - SWAY_STEADY) * Math.exp(-t / SWAY_SETTLE_S);
+      const r = (weapon.sway ?? 0.03) * h * frame.zoom * steady;
       const x = (x0 + x1) / 2 + r * (0.65 * Math.sin(t * 1.9) + 0.35 * Math.sin(t * 3.7 + 1.1));
       const y = (y0 + y1) / 2 + r * (0.65 * Math.cos(t * 2.3) + 0.35 * Math.sin(t * 2.9 + 2.3));
       crosshairRef.current = [x, y];

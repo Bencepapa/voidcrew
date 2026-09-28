@@ -84,6 +84,8 @@ export interface ViewportSettings {
   geometryView: GeometryViewId;
   // combat: aim with the crosshair mini-game (else the hit chance is rolled)
   aimMiniGame: boolean;
+  // testing: hits still take HP, but never below 1
+  immortalCrew: boolean;
   eyeHeight: number;
   wallHeight: number;
   cameraPullback: number;
@@ -129,7 +131,20 @@ export interface AimFrame {
   targets: AimTarget[];
   width: number;
   height: number;
+  // the view's current magnification (1 = the normal field of view): a
+  // weapon's sway, an angle, spans this many times more pixels
+  zoom: number;
   shoot: (x: number, y: number) => ShotResult;
+}
+
+// What the aiming overlay has picked, for the camera: it turns to the
+// target - framing it while a part is picked, then at the weapon's zoom
+// (Weapon.aimZoom) for the mini-game.
+export interface AimFocus {
+  target: number | null;
+  // the picked body part: its pixels light up on the sprite
+  part: BodyPart | null;
+  phase: "pick" | "aim";
 }
 
 export interface ViewportStats {
@@ -153,6 +168,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   wallProfile: "relief",
   geometryView: "textured",
   aimMiniGame: true,
+  immortalCrew: false,
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
@@ -685,6 +701,13 @@ const SIGHT_POINTS: [number, number][] = [
   [-0.35, 0.35],
   [0.35, 0.35],
 ];
+// aiming camera: how much of the view a target fills while a part is
+// picked, the narrowest field of view (degrees) and how fast it eases (s)
+const AIM_FRAMING = 1.6;
+const AIM_MIN_FOV = 8;
+const AIM_CAMERA_TAU = 0.12;
+// the hit chance samples a grid of this many spots squared over a part
+const CHANCE_GRID = 6;
 // actors: how long a hit flashes and a death fades (game ms)
 const ACTOR_FLASH_MS = 220;
 const ACTOR_FADE_MS = 900;
@@ -816,6 +839,7 @@ interface GameViewportProps {
   // aiming overlay
   aiming?: Weapon | null;
   aimFrameRef?: MutableRefObject<AimFrame | null>;
+  aimFocusRef?: MutableRefObject<AimFocus | null>;
   // an interactive decal (DecalSpec.action) was clicked or tapped within
   // reach
   onTouch?: (action: string) => void;
@@ -949,6 +973,70 @@ function geometryViewMaterial(view: GeometryViewId): THREE.Material | null {
   return GEOMETRY_VIEW_MATERIALS[view];
 }
 
+// Aiming: the picked body part lights up on its actor's sprite - its own
+// pixels, not a box: a faint fill and a bright outline, drawn in the scene,
+// so whatever covers part of it covers the highlight too. The sprite's
+// material gets the four parts' zones (sheet UVs of the cell shown) and the
+// picked one's index (-1: none).
+interface PartHighlight {
+  zones: { value: THREE.Vector4[] };
+  part: { value: number };
+  texel: { value: THREE.Vector2 };
+}
+function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight {
+  const uniforms: PartHighlight = {
+    zones: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
+    part: { value: -1 },
+    texel: { value: new THREE.Vector2(1 / 512, 1 / 512) },
+  };
+  material.customProgramCacheKey = () => "actor-part-highlight";
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uPartZones = uniforms.zones;
+    shader.uniforms.uPart = uniforms.part;
+    shader.uniforms.uTexel = uniforms.texel;
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <map_pars_fragment>",
+        `#include <map_pars_fragment>
+uniform vec4 uPartZones[4];
+uniform int uPart;
+uniform vec2 uTexel;
+bool inZone(vec4 z, vec2 uv) { return uv.x >= z.x && uv.x <= z.z && uv.y <= z.y && uv.y >= z.w; }
+// the part a spot of the sheet belongs to: head, torso, legs, then arms
+// (arms reach across the torso) - as partAt() on the CPU
+int partOf(vec2 uv) {
+  if (inZone(uPartZones[0], uv)) return 0;
+  if (inZone(uPartZones[1], uv)) return 1;
+  if (inZone(uPartZones[3], uv)) return 3;
+  if (inZone(uPartZones[2], uv)) return 2;
+  return -1;
+}
+bool onPart(vec2 uv) { return texture2D(map, uv).a >= 0.5 && partOf(uv) == uPart; }`,
+      )
+      .replace(
+        "#include <fog_fragment>",
+        `#include <fog_fragment>
+// after the fog, so it reads at any distance: a tint over the part, and a
+// two-texel outline where it meets another part or the transparent edge
+if (uPart >= 0 && onPart(vMapUv)) {
+  bool edge = false;
+  for (int i = 1; i <= 2; i++) {
+    vec2 d = uTexel * float(i);
+    edge = edge || !onPart(vMapUv + vec2(d.x, 0.0)) || !onPart(vMapUv - vec2(d.x, 0.0)) ||
+      !onPart(vMapUv + vec2(0.0, d.y)) || !onPart(vMapUv - vec2(0.0, d.y));
+  }
+  gl_FragColor.rgb = edge ? vec3(0.5, 1.0, 0.7) : gl_FragColor.rgb + vec3(0.04, 0.16, 0.09);
+}`,
+      );
+  };
+  return uniforms;
+}
+
+// a vertical field of view (degrees) magnified `zoom` times
+function zoomedFov(fov: number, zoom: number): number {
+  return THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(fov) / 2) / zoom));
+}
+
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
@@ -998,6 +1086,7 @@ export function GameViewport({
   actors,
   aiming,
   aimFrameRef: aimFrameRefProp,
+  aimFocusRef: aimFocusRefProp,
   onTouch,
   onReady,
   freeTick,
@@ -1012,6 +1101,8 @@ export function GameViewport({
   aimingRef.current = aiming ?? null;
   const ownAimFrameRef = useRef<AimFrame | null>(null);
   const aimFrameRef = aimFrameRefProp ?? ownAimFrameRef;
+  const ownAimFocusRef = useRef<AimFocus | null>(null);
+  const aimFocusRef = aimFocusRefProp ?? ownAimFocusRef;
   const onStatsRef = useRef(onStats);
   onStatsRef.current = onStats;
 
@@ -2485,6 +2576,8 @@ export function GameViewport({
     interface ActorEntry {
       mesh: THREE.Mesh;
       material: THREE.MeshStandardMaterial;
+      // the part highlight's uniforms (see highlightMaterial)
+      highlight: PartHighlight;
       uvKey: string;
       col: number;
       row: number;
@@ -2531,10 +2624,11 @@ export function GameViewport({
         let entry = actorMeshes.get(actor.id);
         if (!entry) {
           const material = actorMaterial(actor.type).clone();
+          const highlight = highlightMaterial(material);
           const mesh = new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), material);
           mesh.userData.actor = true;
           mesh.userData.actorId = actor.id;
-          entry = { mesh, material, uvKey: "", col: 0, row: 0, mirror: false };
+          entry = { mesh, material, highlight, uvKey: "", col: 0, row: 0, mirror: false };
           actorMeshes.set(actor.id, entry);
           group.add(mesh);
         }
@@ -2566,6 +2660,23 @@ export function GameViewport({
         entry.col = col;
         entry.row = row;
         entry.mirror = mirror;
+        // the picked part's pixels light up (see highlightMaterial)
+        const focus = aimFocusRef.current;
+        const lit = aimingRef.current && focus?.target === actor.id && focus.part ? focus.part : null;
+        entry.highlight.part.value = lit ? BODY_PARTS.indexOf(lit) : -1;
+        if (lit) {
+          BODY_PARTS.forEach((part, i) => {
+            const [x0, y0, x1, y1] = type.parts[part].zone;
+            entry!.highlight.zones.value[i].set(
+              (col + x0) / type.cols,
+              1 - (row + y0) / type.rows,
+              (col + x1) / type.cols,
+              1 - (row + y1) / type.rows,
+            );
+          });
+          const image = entry.material.map?.image as HTMLImageElement | undefined;
+          if (image?.width) entry.highlight.texel.value.set(1 / image.width, 1 / image.height);
+        }
 
         // the frame's placement fix (see actorOffsets), mirrored with it
         const fix = actorOffsets(type.sheet);
@@ -2678,7 +2789,7 @@ export function GameViewport({
       const ch = container!.clientHeight || 1;
       const refresh = performance.now() - chanceAt > AIM_CHANCE_REFRESH_MS;
       if (refresh) chanceAt = performance.now();
-      const sway = (weapon.sway ?? 0.03) * ch;
+      const sway = (weapon.sway ?? 0.03) * ch * aimZoom;
       const targets: AimTarget[] = [];
       for (const actor of actorsRef.current) {
         const entry = actorMeshes.get(actor.id);
@@ -2707,25 +2818,34 @@ export function GameViewport({
           if (behind) continue;
           const key = `${actor.id}:${part}`;
           if (refresh || !chanceCache.has(key)) {
-            // cover: the share of a 3x3 grid of spots on the part in plain view
+            // A grid of spots over the part's zone: those on the part itself
+            // (the sprite's solid pixels there, not another part's) give its
+            // real size; those of them in plain view, its cover.
+            let solid = 0;
             let seen = 0;
-            for (let i = 0; i < 3; i++) {
-              for (let j = 0; j < 3; j++) {
-                const u = u0 + ((u1 - u0) * (i + 0.5)) / 3;
-                const v = v0 + ((v1 - v0) * (j + 0.5)) / 3;
+            for (let i = 0; i < CHANCE_GRID; i++) {
+              for (let j = 0; j < CHANCE_GRID; j++) {
+                const u = u0 + ((u1 - u0) * (i + 0.5)) / CHANCE_GRID;
+                const v = v0 + ((v1 - v0) * (j + 0.5)) / CHANCE_GRID;
+                const su = (entry.col + u) / type.cols;
+                const sv = 1 - (entry.row + v) / type.rows;
+                if (alphaAt(actor.type, su, sv) < 128 || partAt(actor.type, u, v) !== part) continue;
+                solid++;
                 if (unoccluded(actorPoint(entry, actor.type, u, v, aimVec), entry.mesh)) seen++;
               }
             }
             // a part smaller than the weapon's sway is harder to land on
-            const size = Math.min(1, Math.sqrt(((x1 - x0) * (y1 - y0)) / (Math.PI * sway * sway)));
-            chanceCache.set(key, Math.min(0.97, (seen / 9) * weaponAccuracy(weapon, distance) * size));
+            const area = (x1 - x0) * (y1 - y0) * (solid / (CHANCE_GRID * CHANCE_GRID));
+            const size = Math.min(1, Math.sqrt(area / (Math.PI * sway * sway)));
+            const cover = solid ? seen / solid : 0;
+            chanceCache.set(key, Math.min(0.97, cover * weaponAccuracy(weapon, distance) * size));
           }
           parts.push({ part, label: type.parts[part].label, rect: [x0, y0, x1, y1], chance: chanceCache.get(key)! });
         }
         if (parts.length) targets.push({ id: actor.id, name: type.name, distance, parts });
       }
       targets.sort((a, b) => a.distance - b.distance);
-      aimFrameRef.current = { targets, width: cw, height: ch, shoot };
+      aimFrameRef.current = { targets, width: cw, height: ch, zoom: aimZoom, shoot };
     }
 
     // a shot through a point of the view: the first thing it meets there
@@ -2830,6 +2950,14 @@ export function GameViewport({
     let lastFrameAt = startedAt;
     let lastStatsAt = 0;
 
+    // aiming camera (see renderFrame): how far it's turned to the target
+    // (0..1), where it looks, and its field of view there
+    let aimBlend = 0;
+    const aimLookAt = new THREE.Vector3();
+    let aimFov = verticalFov(settings.fov, camera.aspect);
+    let aimFovGoal = aimFov;
+    let aimZoom = 1;
+
     function renderFrame() {
       const s = settingsRef.current;
       const now = performance.now();
@@ -2917,11 +3045,8 @@ export function GameViewport({
       const camX = cam.x - (fwdX / fwdLen) * pullback;
       const camZ = cam.z - (fwdZ / fwdLen) * pullback;
 
+      // the normal field of view (the aiming camera narrows it, below)
       const fov = verticalFov(s.fov, camera.aspect);
-      if (camera.fov !== fov) {
-        camera.fov = fov;
-        camera.updateProjectionMatrix();
-      }
 
       // glance-around (grid movement only): ease back to center once idle,
       // then turn the head by the offset around the eye
@@ -2947,8 +3072,38 @@ export function GameViewport({
 
       const eyeY = cam.y * wallHeight + s.eyeHeight + bobY;
       camera.position.set(camX, eyeY, camZ);
-      camera.lookAt(camX + lookX, eyeY, camZ + lookZ);
-      camera.rotateZ(bobRoll);
+
+      // aiming: turn to the target and zoom - framing it while a part is
+      // picked, at the weapon's zoom for the mini-game - easing in and out
+      const focus = aimFocusRef.current;
+      const aimWeapon = aimingRef.current;
+      const focused = aimWeapon && focus?.target != null ? actorMeshes.get(focus.target) : undefined;
+      if (focused && aimWeapon) {
+        const actor = actorsRef.current.find((a) => a.id === focus!.target);
+        aimLookAt.copy(focused.mesh.position);
+        const dist = Math.max(0.3, aimLookAt.distanceTo(camera.position));
+        const h = actor ? ACTOR_TYPES[actor.type].height * wallHeight : 0.8;
+        const framing = THREE.MathUtils.radToDeg(2 * Math.atan((h * AIM_FRAMING) / 2 / dist));
+        aimFovGoal =
+          focus!.phase === "pick"
+            ? Math.min(fov, Math.max(AIM_MIN_FOV, framing))
+            : Math.max(AIM_MIN_FOV, zoomedFov(fov, aimWeapon.aimZoom ?? 1));
+      }
+      aimBlend += ((focused ? 1 : 0) - aimBlend) * (1 - Math.exp(-dt / AIM_CAMERA_TAU));
+      aimFov += (aimFovGoal - aimFov) * (1 - Math.exp(-dt / AIM_CAMERA_TAU));
+      if (!focused) aimFovGoal = fov;
+      const viewFov = fov + (aimFov - fov) * aimBlend;
+      if (Math.abs(camera.fov - viewFov) > 1e-3) {
+        camera.fov = viewFov;
+        camera.updateProjectionMatrix();
+      }
+      aimZoom = Math.tan(THREE.MathUtils.degToRad(fov) / 2) / Math.tan(THREE.MathUtils.degToRad(viewFov) / 2);
+      camera.lookAt(
+        camX + lookX + (aimLookAt.x - camX - lookX) * aimBlend,
+        eyeY + (aimLookAt.y - eyeY) * aimBlend,
+        camZ + lookZ + (aimLookAt.z - camZ - lookZ) * aimBlend,
+      );
+      camera.rotateZ(bobRoll * (1 - aimBlend));
 
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.pointLightIntensity * rideDip;
@@ -2982,7 +3137,6 @@ export function GameViewport({
       );
       updateActors(camX, camZ);
       updateTracers();
-      const aimWeapon = aimingRef.current;
       if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ);
       else if (aimFrameRef.current) aimFrameRef.current = null;
       updateLightPool(

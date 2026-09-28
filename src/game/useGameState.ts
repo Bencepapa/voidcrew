@@ -83,6 +83,11 @@ export function useGameState() {
   aimRef.current = aim;
   // when the party was last hit (real time), for a red flash
   const [hurtAt, setHurtAt] = useState(0);
+  // testing: hits never take a crewmate below 1 HP
+  const immortalRef = useRef(false);
+  const setImmortalCrew = useCallback((on: boolean) => {
+    immortalRef.current = on;
+  }, []);
   const [log, setLog] = useState<LogEntry[]>([
     { id: logId++, text: `You board the USV Horizon, ${START_MAP.name}.` },
   ]);
@@ -190,7 +195,7 @@ export function useGameState() {
         if (!standing.length) break;
         const victim = standing[Math.floor(Math.random() * standing.length)];
         const attacker = next.find((a) => a.id === attack.actor);
-        const hp = Math.max(0, victim.hp - attack.damage);
+        const hp = Math.max(immortalRef.current ? Math.min(1, victim.hp) : 0, victim.hp - attack.damage);
         crewRef.current = crewRef.current.map((c) => (c.id === victim.id ? { ...c, hp } : c));
         setCrew(crewRef.current);
         setHurtAt(performance.now());
@@ -500,6 +505,7 @@ export function useGameState() {
     fireWeapon,
     cancelAim,
     resolveShot,
+    setImmortalCrew,
     elevation,
     jumpDown: jump,
     use,

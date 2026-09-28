@@ -21,6 +21,9 @@ export interface Weapon {
   accuracy?: number;
   falloff?: number;
   sway?: number;
+  // the view's magnification while aiming with the mini-game (a scope):
+  // 1 = none (a pistol), about 2 for a scoped rifle, 4+ for a sniper rifle
+  aimZoom?: number;
   // a stun weapon: every hit stuns, for this long
   stunMs?: number;
 }
@@ -35,6 +38,7 @@ export const CREW_WEAPONS: Record<string, Weapon> = {
     accuracy: 0.95,
     falloff: 0.05,
     sway: 0.035,
+    aimZoom: 1.8,
   },
   lyn: {
     name: "Arc welder",
@@ -45,6 +49,7 @@ export const CREW_WEAPONS: Record<string, Weapon> = {
     accuracy: 0.9,
     falloff: 0.15,
     sway: 0.05,
+    aimZoom: 1,
   },
   orion: {
     name: "Shock emitter",
@@ -55,6 +60,7 @@ export const CREW_WEAPONS: Record<string, Weapon> = {
     accuracy: 0.95,
     falloff: 0.04,
     sway: 0.03,
+    aimZoom: 1.3,
     stunMs: 2500,
   },
   kell: { name: "Stim injector", kind: "heal", amount: [8, 14], cooldownMs: 8000 },
