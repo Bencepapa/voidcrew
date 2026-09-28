@@ -3193,8 +3193,6 @@ export function GameViewport({
       const fwdX = cam.tx - cam.x;
       const fwdZ = cam.tz - cam.z;
       const fwdLen = Math.hypot(fwdX, fwdZ) || 1;
-      const camX = cam.x - (fwdX / fwdLen) * pullback;
-      const camZ = cam.z - (fwdZ / fwdLen) * pullback;
 
       // the normal field of view (the aiming camera narrows it, below)
       const fov = verticalFov(s.fov, camera.aspect);
@@ -3217,6 +3215,11 @@ export function GameViewport({
       const sin = Math.sin(peekYaw);
       const lookX = fx * cos - fz * sin;
       const lookZ = fz * cos + fx * sin;
+      // the eye pulled back from the cell center against where it looks -
+      // peeking included, so a glance circles the center just as a turn
+      // does, and a peek that becomes a turn doesn't move the eye
+      const camX = cam.x - lookX * pullback;
+      const camZ = cam.z - lookZ * pullback;
 
       // dev-only: the view's actual heading, for checking turn continuity
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewViewYaw: Math.atan2(lookX, -lookZ) });

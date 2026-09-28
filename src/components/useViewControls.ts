@@ -26,6 +26,11 @@ const PEEK_TURN_THRESHOLD = (35 * Math.PI) / 180;
 const MOUSELOOK_PER_PX = 0.0025;
 // shorter drags count as taps and are ignored
 const MIN_SWIPE_PX = 30;
+// A peeking drag decides its axis once it has moved this far: sideways it
+// peeks (from there on, so it starts from 0 - no jolt), up or down it's a
+// step and the view stays still. Stops a forward swipe that drifts a bit
+// sideways from swinging the view.
+const PEEK_DEAD_ZONE_PX = 24;
 
 interface ViewControlsOptions {
   grid: boolean;
@@ -55,7 +60,17 @@ const clampPeek = (v: number) => Math.max(-MAX_PEEK, Math.min(MAX_PEEK, v));
 // for mouselook; touches are left to the VirtualJoysticks overlay.
 export function useViewControls(opts: ViewControlsOptions) {
   const peekRef = useRef<PeekState>({ offset: 0, lastInputAt: 0, held: false, pendingTurn: 0 });
-  const drag = useRef<{ id: number; x: number; y: number; peek: boolean; startOffset: number } | null>(null);
+  // a drag in progress; `axis`: what a peeking drag turned out to be, once
+  // past the dead zone (and where the peek counts from: peekX)
+  const drag = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    peek: boolean;
+    startOffset: number;
+    axis: "x" | "y" | null;
+    peekX: number;
+  } | null>(null);
   const lockTarget = useRef<HTMLElement | null>(null);
   const [mouseLocked, setMouseLocked] = useState(false);
   const latest = useRef(opts);
@@ -96,7 +111,15 @@ export function useViewControls(opts: ViewControlsOptions) {
       const rect = e.currentTarget.getBoundingClientRect();
       // a mouse drag always peeks; a touch peeks on the right half only
       const peek = e.pointerType === "mouse" || e.clientX - rect.left >= rect.width / 2;
-      drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, peek, startOffset: peekRef.current.offset };
+      drag.current = {
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        peek,
+        startOffset: peekRef.current.offset,
+        axis: null,
+        peekX: e.clientX,
+      };
       if (peek) peekRef.current.held = true;
       try {
         // keep receiving the pointer even if the drag leaves the element
@@ -113,9 +136,17 @@ export function useViewControls(opts: ViewControlsOptions) {
       const d = drag.current;
       if (d && d.id === e.pointerId) {
         if (d.peek) {
+          if (!d.axis) {
+            const dx = e.clientX - d.x;
+            const dy = e.clientY - d.y;
+            if (Math.max(Math.abs(dx), Math.abs(dy)) < PEEK_DEAD_ZONE_PX) return;
+            d.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+            d.peekX = e.clientX;
+          }
+          if (d.axis !== "x") return;
           // grab the view: dragging left looks right; continues from any
           // glance already in progress
-          peek.offset = clampPeek(d.startOffset - (e.clientX - d.x) * TOUCH_PEEK_PER_PX);
+          peek.offset = clampPeek(d.startOffset - (e.clientX - d.peekX) * TOUCH_PEEK_PER_PX);
           peek.lastInputAt = performance.now();
         }
         return;
@@ -137,8 +168,8 @@ export function useViewControls(opts: ViewControlsOptions) {
 
       if (d.peek) {
         peek.held = false;
-        // a mostly vertical swipe on the peek side still steps
-        if (Math.abs(dy) >= MIN_SWIPE_PX && Math.abs(dy) > Math.abs(dx)) {
+        // a vertical swipe on the peek side still steps
+        if (d.axis === "y" && Math.abs(dy) >= MIN_SWIPE_PX) {
           if (dy < 0) o.onForward();
           else o.onBack();
           return;
