@@ -124,6 +124,15 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [grid, moveForward, moveBackward, turnL, turnR, jumpDown]);
 
+  // L: the headlamp
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "l" || e.key === "L") setSettings((s) => ({ ...s, headlamp: !s.headlamp }));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // 1-4: a crewmate's weapon (see combat.ts); aiming needs the pointer
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

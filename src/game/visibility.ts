@@ -22,6 +22,28 @@ export function cellKey(x: number, y: number): string {
   return `${x},${y}`;
 }
 
+// Whether an actor in one cell sees into another: a straight line between
+// their centers crossing no wall or closed door (stricter than visibleCells,
+// which also counts a cell seen when just a corner of it shows).
+export function lineOfSight(
+  map: GameMap,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  isDoorOpen: (key: string) => boolean,
+): boolean {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const steps = Math.ceil(Math.hypot(dx, dy) / STEP);
+  for (let i = 1; i < steps; i++) {
+    const x = Math.round(from.x + (dx * i) / steps);
+    const y = Math.round(from.y + (dy * i) / steps);
+    if ((x === from.x && y === from.y) || (x === to.x && y === to.y)) continue;
+    const type = cellAt(map, x, y);
+    if (type === "wall" || (type === "door" && !isDoorOpen(cellKey(x, y)))) return false;
+  }
+  return true;
+}
+
 export function visibleCells(
   map: GameMap,
   fromX: number,

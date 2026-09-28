@@ -86,6 +86,12 @@ export interface ViewportSettings {
   aimMiniGame: boolean;
   // testing: hits still take HP, but never below 1
   immortalCrew: boolean;
+  // crew gear: a scanner outlining enemies in view, even in the dark
+  enemyScanner: boolean;
+  // the headlamp: a light that moves with the party (off: map lights only)
+  headlamp: boolean;
+  // how far (cells) the view reaches: the fog, the lights and what's drawn
+  viewDistance: number;
   eyeHeight: number;
   wallHeight: number;
   cameraPullback: number;
@@ -169,6 +175,9 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   geometryView: "textured",
   aimMiniGame: true,
   immortalCrew: false,
+  enemyScanner: false,
+  headlamp: false,
+  viewDistance: 7,
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
@@ -677,7 +686,8 @@ function wallVariantRoll(x: number, z: number): number {
 const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
 
 const FOG_NEAR = 1.6;
-const FOG_FAR = 5.5;
+// (the fog ends this far short of the view distance)
+const FOG_FAR_MARGIN = 0.5;
 
 // Map lights are served by a fixed pool of point lights reassigned to the
 // best sources every frame: three.js compiles the light count into its
@@ -687,12 +697,13 @@ const FOG_FAR = 5.5;
 // doorways) compete, nearest first, those ahead of the camera favored.
 // Lights fade out with distance, about where the fog closes, and a slot
 // fades its light in and out instead of popping.
+// The sight (lights and culling) reaches the view distance setting; lights
+// fade out over its last LIGHT_FADE_SPAN cells.
 const LIGHT_POOL_SIZE = 8;
-const LIGHT_FADE_START = 4.5;
-const LIGHT_FADE_END = 6;
-// how far the sight reaches (cells): lights and culling; the fog closes
-// at FOG_FAR
-const LIGHT_SIGHT = 6;
+const LIGHT_FADE_SPAN = 1.5;
+// faint lights (a window's starlight) rank as if this many times farther,
+// so they don't crowd the lamps out of the pool
+const MINOR_LIGHT_PENALTY = 1.8;
 // where in the party's cell the sight is taken from (offsets from its center)
 const SIGHT_POINTS: [number, number][] = [
   [0, 0],
@@ -990,6 +1001,8 @@ function geometryViewMaterial(view: GeometryViewId): THREE.Material | null {
 const MAX_CRIT_ZONES = 10;
 interface PartHighlight {
   zones: { value: THREE.Vector4[] };
+  // 1: outline the whole sprite (the crew's scanner, see enemyScanner)
+  outline: { value: number };
   part: { value: number };
   texel: { value: THREE.Vector2 };
   // the weak spots' zones in the cell shown, their parts, and how many
@@ -999,7 +1012,8 @@ interface PartHighlight {
 }
 function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight {
   const uniforms: PartHighlight = {
-    zones: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
+    zones: { value: BODY_PARTS.map(() => new THREE.Vector4()) },
+    outline: { value: 0 },
     part: { value: -1 },
     texel: { value: new THREE.Vector2(1 / 512, 1 / 512) },
     crits: { value: Array.from({ length: MAX_CRIT_ZONES }, () => new THREE.Vector4()) },
@@ -1010,6 +1024,7 @@ function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uPartZones = uniforms.zones;
     shader.uniforms.uPart = uniforms.part;
+    shader.uniforms.uOutline = uniforms.outline;
     shader.uniforms.uTexel = uniforms.texel;
     shader.uniforms.uCrits = uniforms.crits;
     shader.uniforms.uCritParts = uniforms.critParts;
@@ -1018,7 +1033,8 @@ function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight 
       .replace(
         "#include <map_pars_fragment>",
         `#include <map_pars_fragment>
-uniform vec4 uPartZones[4];
+uniform vec4 uPartZones[${BODY_PARTS.length}];
+uniform float uOutline;
 uniform int uPart;
 uniform vec2 uTexel;
 uniform vec4 uCrits[${MAX_CRIT_ZONES}];
@@ -1033,17 +1049,20 @@ int critOf(vec2 uv) {
   }
   return -1;
 }
-// the part a spot of the sheet belongs to: a weak spot's, else head, torso,
-// legs, then arms (arms reach across the torso) - as hitPart() on the CPU
+// the part a spot of the sheet belongs to (a BODY_PARTS index): a weak
+// spot's, else head, torso, legs, then the arms (they reach across the
+// torso) - as hitPart() on the CPU
 int partOf(vec2 uv) {
   int c = critOf(uv);
   if (c >= 0) return int(uCritParts[c] + 0.5);
   if (inZone(uPartZones[0], uv)) return 0;
   if (inZone(uPartZones[1], uv)) return 1;
-  if (inZone(uPartZones[3], uv)) return 3;
+  if (inZone(uPartZones[4], uv)) return 4;
   if (inZone(uPartZones[2], uv)) return 2;
+  if (inZone(uPartZones[3], uv)) return 3;
   return -1;
 }
+bool solid(vec2 uv) { return texture2D(map, uv).a >= 0.5; }
 bool onPart(vec2 uv) { return texture2D(map, uv).a >= 0.5 && partOf(uv) == uPart; }
 bool onCrit(vec2 uv) { return texture2D(map, uv).a >= 0.5 && critOf(uv) >= 0 && partOf(uv) == uPart; }`,
       )
@@ -1065,6 +1084,15 @@ if (uPart >= 0 && onPart(vMapUv)) {
       !onCrit(vMapUv + vec2(0.0, uTexel.y)) || !onCrit(vMapUv - vec2(0.0, uTexel.y));
     gl_FragColor.rgb = rim ? vec3(1.0, 0.85, 0.2) : mix(gl_FragColor.rgb, vec3(1.0, 0.18, 0.08), 0.55);
   } else gl_FragColor.rgb += vec3(0.04, 0.16, 0.09);
+} else if (uOutline > 0.5 && uPart < 0 && solid(vMapUv)) {
+  // the crew's scanner: the sprite's outline, whatever the light
+  bool rim = false;
+  for (int i = 1; i <= 2; i++) {
+    vec2 d = uTexel * float(i);
+    rim = rim || !solid(vMapUv + vec2(d.x, 0.0)) || !solid(vMapUv - vec2(d.x, 0.0)) ||
+      !solid(vMapUv + vec2(0.0, d.y)) || !solid(vMapUv - vec2(0.0, d.y));
+  }
+  if (rim) gl_FragColor.rgb = vec3(1.0, 0.45, 0.15);
 }`,
       );
   };
@@ -1262,12 +1290,13 @@ export function GameViewport({
     let raf = 0;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x000000, FOG_NEAR, FOG_FAR);
+    const fog = new THREE.Fog(0x000000, FOG_NEAR, settings.viewDistance - FOG_FAR_MARGIN);
+    scene.fog = fog;
 
     // anything past the fog's end renders pure black anyway, so the far plane
     // sits just beyond it and frustum culling skips those walls entirely
     // (a big saving with relief walls' thousands of triangles each)
-    const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, FOG_FAR + 1);
+    const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, settings.viewDistance + 0.5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     // phones (touch screens) render at most 1.5 device pixels per CSS pixel:
@@ -2495,15 +2524,15 @@ export function GameViewport({
     // or shuts; picks the lights (updateLightPool) and what gets drawn
     // (applySight).
     let sight = { key: "", cells: new Set<string>() };
-    function updateSight(party: { x: number; z: number }) {
+    function updateSight(party: { x: number; z: number }, range: number) {
       const doors = openDoorsRef.current;
       const cx = Math.round(party.x);
       const cz = Math.round(party.z);
-      const key = `${cx},${cz}|${[...doors].sort().join(";")}`;
+      const key = `${cx},${cz}|${range}|${[...doors].sort().join(";")}`;
       if (key === sight.key) return false;
       const cells = new Set<string>();
       for (const [ox, oz] of SIGHT_POINTS) {
-        for (const c of visibleCells(map, cx + ox, cz + oz, LIGHT_SIGHT, (k) => doors.has(k))) cells.add(c);
+        for (const c of visibleCells(map, cx + ox, cz + oz, Math.round(range), (k) => doors.has(k))) cells.add(c);
       }
       sight = { key, cells };
       return true;
@@ -2561,7 +2590,10 @@ export function GameViewport({
       intensityScale: number,
       dt: number,
     ) {
-      applySight(updateSight(party));
+      const range = settingsRef.current.viewDistance;
+      const fadeEnd = range;
+      const fadeStart = range - LIGHT_FADE_SPAN;
+      applySight(updateSight(party, range));
 
       const score = (i: number) => {
         const l = mapLights[i];
@@ -2569,12 +2601,13 @@ export function GameViewport({
         const dz = l.z - cam.z;
         const dist = Math.hypot(dx, l.y * wallHeight - cam.y, dz);
         const ahead = (dx * cam.fwdX + dz * cam.fwdZ) / (Math.hypot(dx, dz) || 1);
-        return { dist, rank: dist + LIGHT_BEHIND_PENALTY * Math.max(0, -ahead) * dist };
+        const rank = dist + LIGHT_BEHIND_PENALTY * Math.max(0, -ahead) * dist;
+        return { dist, rank: l.minor ? rank * MINOR_LIGHT_PENALTY : rank };
       };
       const current = new Set(lightPool.map((slot) => slot.source));
       const ranked = mapLights
         .map((_, i) => ({ i, ...score(i) }))
-        .filter((c) => c.dist < LIGHT_FADE_END && litNear(lightCells[c.i], sight.cells))
+        .filter((c) => c.dist < fadeEnd && litNear(lightCells[c.i], sight.cells))
         .map((c) => ({ ...c, rank: current.has(c.i) ? c.rank * LIGHT_KEEP_BIAS : c.rank }))
         .sort((a, b) => a.rank - b.rank)
         .slice(0, LIGHT_POOL_SIZE);
@@ -2599,7 +2632,7 @@ export function GameViewport({
         slot.light.color.setHex(l.color);
         slot.light.position.set(l.x, l.y * wallHeight, l.z);
         slot.light.distance = l.range;
-        slot.light.intensity = l.intensity * intensityScale * slot.level * (1 - smoothstep(LIGHT_FADE_START, LIGHT_FADE_END, dist));
+        slot.light.intensity = l.intensity * intensityScale * slot.level * (1 - smoothstep(fadeStart, fadeEnd, dist));
       }
     }
 
@@ -2704,6 +2737,9 @@ export function GameViewport({
         const focus = aimFocusRef.current;
         const lit = aimingRef.current && focus?.target === actor.id && focus.part ? focus.part : null;
         entry.highlight.part.value = lit ? BODY_PARTS.indexOf(lit) : -1;
+        entry.highlight.outline.value = settingsRef.current.enemyScanner && actor.diedAt === null ? 1 : 0;
+        const sheetImage = entry.material.map?.image as HTMLImageElement | undefined;
+        if (sheetImage?.width) entry.highlight.texel.value.set(1 / sheetImage.width, 1 / sheetImage.height);
         if (lit) {
           BODY_PARTS.forEach((part, i) => {
             const [x0, y0, x1, y1] = type.parts[part].zone;
@@ -2801,7 +2837,7 @@ export function GameViewport({
     // the body part at a spot of a sheet cell (fractions from its top left)
     function partAt(typeName: string, u: number, v: number): BodyPart {
       const parts = ACTOR_TYPES[typeName].parts;
-      for (const part of ["head", "torso", "legs", "arms"] as BodyPart[]) {
+      for (const part of ["head", "torso", "legs", "armL", "armR"] as BodyPart[]) {
         const [x0, y0, x1, y1] = parts[part].zone;
         if (u >= x0 && u <= x1 && v >= y0 && v <= y1) return part;
       }
@@ -2901,6 +2937,14 @@ export function GameViewport({
             chanceCache.set(key, Math.min(0.97, cover * weaponAccuracy(weapon, distance) * size));
           }
           parts.push({ part, label: type.parts[part].label, rect: [x0, y0, x1, y1], chance: chanceCache.get(key)! });
+        }
+        // the two arms: named by the side of the screen they're on
+        actorPoint(entry, actor.type, 0.5, 0.5, aimVec).project(camera);
+        const midX = ((aimVec.x + 1) / 2) * cw;
+        for (const p of parts) {
+          if (p.part === "armL" || p.part === "armR") {
+            p.label = `${(p.rect[0] + p.rect[2]) / 2 < midX ? "LEFT" : "RIGHT"} ${p.label}`;
+          }
         }
         if (parts.length) targets.push({ id: actor.id, name: type.name, distance, parts });
       }
@@ -3210,7 +3254,13 @@ export function GameViewport({
       camera.rotateZ(bobRoll * (1 - aimBlend));
 
       ambient.intensity = s.ambientIntensity;
-      pointLight.intensity = s.pointLightIntensity * rideDip;
+      pointLight.intensity = s.headlamp ? s.pointLightIntensity * rideDip : 0;
+      const fogFar = s.viewDistance - FOG_FAR_MARGIN;
+      if (fog.far !== fogFar) {
+        fog.far = fogFar;
+        camera.far = s.viewDistance + 0.5;
+        camera.updateProjectionMatrix();
+      }
       for (const kit of allKits) {
         for (const mat of kitMaterials(kit)) {
           mat.roughness = s.roughness;

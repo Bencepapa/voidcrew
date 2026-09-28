@@ -1,5 +1,5 @@
-import { cellAt, ceilingHeight, floorHeight, windowPanels } from "./map";
-import { DIR_VECTOR } from "./movement";
+import { cellAt, ceilingHeight, floorHeight } from "./map";
+import { DIR_VECTOR, rightOf } from "./movement";
 import type { Direction, GameMap } from "./types";
 
 export type LightKind = "ceiling" | "floorGlow" | "wallGlow";
@@ -17,6 +17,8 @@ export interface LightSpec {
   range: number;
   // the wall a floor/wall glow sits against
   wall?: Direction;
+  // a faint one: ranks lower for the viewport's light pool
+  minor?: boolean;
 }
 
 const DIRECTIONS = Object.keys(DIR_VECTOR) as Direction[];
@@ -111,18 +113,23 @@ export function generateLights(map: GameMap): LightSpec[] {
     else lights.push(light);
   }
 
-  // a faint cold glow of starlight in front of each window panel
-  for (const { cell, wall } of windowPanels(map)) {
-    const v = DIR_VECTOR[wall];
+  // a faint cold glow of starlight in front of each window - one per
+  // window, in front of its middle, reaching along it
+  for (const w of map.windows ?? []) {
+    const v = DIR_VECTOR[w.wall];
+    const right = DIR_VECTOR[rightOf(w.wall)];
+    const cx = w.cell.x + (right.x * (w.width - 1)) / 2;
+    const cy = w.cell.y + (right.y * (w.width - 1)) / 2;
     lights.push({
       kind: "wallGlow",
-      x: cell.x + v.x * 0.15,
-      z: cell.y + v.y * 0.15,
-      y: floorHeight(map, cell.x, cell.y) + 0.6,
+      x: cx + v.x * 0.15,
+      z: cy + v.y * 0.15,
+      y: floorHeight(map, w.cell.x, w.cell.y) + 0.6,
       color: 0x9db8ff,
-      intensity: 0.5,
-      range: 1.6,
-      wall,
+      intensity: 0.5 + 0.15 * (w.width - 1),
+      range: 1.6 + 0.5 * (w.width - 1),
+      wall: w.wall,
+      minor: true,
     });
   }
 

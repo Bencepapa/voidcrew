@@ -218,7 +218,11 @@ export function AimOverlay({ frameRef, focusRef, hurtAt, weapon, crewName, miniG
           ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0);
           if (picked && phase === "pick") {
             ctx.fillStyle = on ? PART_COLOR : PART_DIM;
-            ctx.fillText(`${part.label} ${Math.round(part.chance * 100)}%`, x1 + 4, (y0 + y1) / 2 + 4);
+            // (a left-hand part's label on its left, clear of its twin's)
+            const left = part.label.startsWith("LEFT");
+            ctx.textAlign = left ? "right" : "left";
+            ctx.fillText(`${part.label} ${Math.round(part.chance * 100)}%`, left ? x0 - 4 : x1 + 4, (y0 + y1) / 2 + 4);
+            ctx.textAlign = "left";
           }
         });
       }

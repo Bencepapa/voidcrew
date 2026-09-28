@@ -61,6 +61,11 @@ build them in. See [TOOLS.md](TOOLS.md) for the asset pipeline.
    enemy to points on the party (three heights, both sides) that get past
    walls and props. Behind a crate at range, the odds drop a lot. The log
    shows the odds for now, for tuning.
+8. **Enemy senses.** An enemy notices the party only ahead of it (a 120°
+   field of view), within 5 cells and with a clear line between the cells'
+   centres; once hunting, it tracks the party all round within 7 cells.
+   The party's answer to their better sensors: the scanner (crew gear, a
+   debug toggle for now) outlines enemies in view even in the dark.
 
 ### Per-role mini-games (later)
 

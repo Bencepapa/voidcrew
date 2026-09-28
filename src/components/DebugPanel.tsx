@@ -69,7 +69,8 @@ const SLIDERS: SliderConfig[] = [
   { key: "cameraPullback", label: "Camera pullback", min: 0, max: 0.49, step: 0.01 },
   { key: "moveDurationMs", label: "Move duration (ms)", min: 60, max: 600, step: 10 },
   { key: "fov", label: "FOV", min: 40, max: 100, step: 1 },
-  { key: "pointLightIntensity", label: "Point light", min: 0, max: 8, step: 0.1 },
+  { key: "viewDistance", label: "View distance (cells)", min: 5, max: 9, step: 0.5 },
+  { key: "pointLightIntensity", label: "Headlamp", min: 0, max: 8, step: 0.1 },
   { key: "mapLightIntensity", label: "Map lights", min: 0, max: 3, step: 0.05 },
   { key: "ambientIntensity", label: "Ambient light", min: 0, max: 2, step: 0.05 },
 ];
@@ -205,6 +206,20 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
           onChange={(e) => set("immortalCrew", e.target.checked)}
         />
         Immortal crew (testing: HP stops at 1)
+      </label>
+
+      <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+        <input
+          type="checkbox"
+          checked={settings.enemyScanner}
+          onChange={(e) => set("enemyScanner", e.target.checked)}
+        />
+        Scanner: enemy outlines (crew gear)
+      </label>
+
+      <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+        <input type="checkbox" checked={settings.headlamp} onChange={(e) => set("headlamp", e.target.checked)} />
+        Headlamp (L)
       </label>
 
       <label className="flex flex-col gap-1">

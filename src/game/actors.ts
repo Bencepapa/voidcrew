@@ -1,7 +1,7 @@
 import { cellAt, floorHeight } from "./map";
 import { DIR_VECTOR } from "./movement";
 import { passage } from "./heights";
-import { cellKey, visibleCells } from "./visibility";
+import { lineOfSight } from "./visibility";
 import type { ActorSpec, Direction, GameMap, Vec2 } from "./types";
 
 // Moving actors (robots, NPCs, enemies): each stands in a cell, walks cell
@@ -15,8 +15,10 @@ import type { ActorSpec, Direction, GameMap, Vec2 } from "./types";
 // which can stun it, disarm it or slow it down.
 
 // body parts, for aiming: where each sits in a sheet cell (a Zone)
-export type BodyPart = "head" | "torso" | "arms" | "legs";
-export const BODY_PARTS: BodyPart[] = ["head", "torso", "arms", "legs"];
+// (the arms are two parts, the sheet's left and right: aiming at "the arms"
+// would put the crosshair between them, on the body)
+export type BodyPart = "head" | "torso" | "armL" | "armR" | "legs";
+export const BODY_PARTS: BodyPart[] = ["head", "torso", "armL", "armR", "legs"];
 
 export interface ActorType {
   // for the log, e.g. "A combat robot"
@@ -47,8 +49,12 @@ export interface ActorType {
   // that drops per cell (cover lowers it further, see partyHitChance)
   accuracy: number;
   falloff: number;
-  // how far (cells) it notices the party
+  // how far (cells) it notices the party - only ahead, within its field of
+  // view (degrees, all of it) - and, once hunting it, how far it keeps
+  // track of it, all round
   sight: number;
+  fieldOfView: number;
+  huntSight: number;
   // its body parts' names (for the aiming overlay) and where they are
   parts: Record<BodyPart, { label: string; zone: Zone }>;
   // weak spots: a hit there counts as a hit on their part, only harder
@@ -95,11 +101,14 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     attackCooldownMs: 2600,
     accuracy: 0.9,
     falloff: 0.12,
-    sight: 6,
+    sight: 5,
+    fieldOfView: 120,
+    huntSight: 7,
     parts: {
       head: { label: "SENSOR", zone: [0.3, 0.14, 0.7, 0.32] },
       torso: { label: "CORE", zone: [0.3, 0.32, 0.72, 0.62] },
-      arms: { label: "WEAPON ARMS", zone: [0.04, 0.27, 0.96, 0.78] },
+      armL: { label: "WEAPON ARM", zone: [0.04, 0.27, 0.5, 0.78] },
+      armR: { label: "WEAPON ARM", zone: [0.5, 0.27, 0.96, 0.78] },
       legs: { label: "LEGS", zone: [0.2, 0.62, 0.8, 0.99] },
     },
     // columns: front, front-side, side, back-side, back
@@ -132,14 +141,25 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
         ],
       },
       {
-        part: "arms",
+        part: "armL",
         label: "ELBOW JOINT",
         zones: [
-          [[0.09, 0.55, 0.29, 0.62], [0.72, 0.55, 0.92, 0.62]],
-          [[0.08, 0.55, 0.27, 0.62], [0.72, 0.55, 0.9, 0.62]],
-          [[0.23, 0.58, 0.34, 0.66], [0.58, 0.56, 0.76, 0.64]],
-          [[0.09, 0.55, 0.25, 0.62], [0.64, 0.55, 0.85, 0.62]],
-          [[0.09, 0.55, 0.27, 0.62], [0.73, 0.55, 0.91, 0.62]],
+          [[0.09, 0.55, 0.29, 0.62]],
+          [[0.08, 0.55, 0.27, 0.62]],
+          [[0.23, 0.58, 0.34, 0.66]],
+          [[0.09, 0.55, 0.25, 0.62]],
+          [[0.09, 0.55, 0.27, 0.62]],
+        ],
+      },
+      {
+        part: "armR",
+        label: "ELBOW JOINT",
+        zones: [
+          [[0.72, 0.55, 0.92, 0.62]],
+          [[0.72, 0.55, 0.9, 0.62]],
+          [[0.58, 0.56, 0.76, 0.64]],
+          [[0.64, 0.55, 0.85, 0.62]],
+          [[0.73, 0.55, 0.91, 0.62]],
         ],
       },
       {
@@ -275,12 +295,20 @@ export function stepActors(
       return actor;
     }
 
+    // it notices the party ahead of it; once hunting, anywhere near
+    const px = party.x - actor.cell.x;
+    const py = party.y - actor.cell.y;
+    const dist = Math.hypot(px, py);
+    const ahead = DIR_VECTOR[actor.facing];
+    const inView =
+      actor.hostile || dist < 1e-6 || (px * ahead.x + py * ahead.y) / dist >= Math.cos(((type.fieldOfView / 2) * Math.PI) / 180);
     const sees =
-      Math.hypot(party.x - actor.cell.x, party.y - actor.cell.y) <= type.sight &&
-      visibleCells(map, actor.cell.x, actor.cell.y, type.sight, (key) => {
+      dist <= (actor.hostile ? type.huntSight : type.sight) &&
+      inView &&
+      lineOfSight(map, actor.cell, party, (key) => {
         const [x, y] = key.split(",").map(Number);
         return isDoorOpen({ x, y });
-      }).has(cellKey(party.x, party.y));
+      });
     if (sees && !actor.hostile) {
       changed = true;
       return { ...actor, hostile: true, facing: toward(actor.cell, party), waitUntil: now + 400 };

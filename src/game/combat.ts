@@ -73,7 +73,8 @@ export const CREW_WEAPONS: Record<string, Weapon> = {
 export const PART_EFFECTS: Record<BodyPart, { damage: number; effect?: "stun" | "disarm" | "slow"; ms?: number }> = {
   head: { damage: 1.8, effect: "stun", ms: 1500 },
   torso: { damage: 1 },
-  arms: { damage: 0.8, effect: "disarm", ms: 4000 },
+  armL: { damage: 0.8, effect: "disarm", ms: 4000 },
+  armR: { damage: 0.8, effect: "disarm", ms: 4000 },
   legs: { damage: 0.8, effect: "slow", ms: 6000 },
 };
 
