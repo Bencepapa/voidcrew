@@ -26,19 +26,22 @@ export interface Weapon {
   aimZoom?: number;
   // a stun weapon: every hit stuns, for this long
   stunMs?: number;
+  // rapid fire: shots per use, each aimed on its own (default 1)
+  burst?: number;
 }
 
 export const CREW_WEAPONS: Record<string, Weapon> = {
   reese: {
     name: "Pulse rifle",
     kind: "shot",
-    amount: [10, 16],
-    cooldownMs: 3500,
+    amount: [5, 9],
+    cooldownMs: 4000,
     range: 8,
     accuracy: 0.95,
     falloff: 0.05,
     sway: 0.035,
     aimZoom: 1.8,
+    burst: 3,
   },
   lyn: {
     name: "Arc welder",
@@ -74,9 +77,13 @@ export const PART_EFFECTS: Record<BodyPart, { damage: number; effect?: "stun" | 
   legs: { damage: 0.8, effect: "slow", ms: 6000 },
 };
 
-// what a shot hit: an actor's body part, or something else
+// a hit on a weak spot (see ActorType.crits) multiplies the part's damage
+export const CRIT_DAMAGE = 2;
+
+// what a shot hit: an actor's body part (and weak spot, if it was on one),
+// or something else
 export type ShotResult =
-  | { kind: "actor"; actor: number; part: BodyPart }
+  | { kind: "actor"; actor: number; part: BodyPart; crit?: string }
   | { kind: "miss"; hit: "wall" | "prop" | "nothing" };
 
 // bullet time: how fast the world runs while aiming
@@ -95,9 +102,10 @@ export function applyHit(
   part: BodyPart,
   weapon: Weapon,
   now: number,
+  crit = false,
 ): { actor: ActorState; damage: number; killed: boolean; effect: string | null } {
   const rule = PART_EFFECTS[part];
-  const damage = Math.max(1, Math.round(rollAmount(weapon.amount) * rule.damage));
+  const damage = Math.max(1, Math.round(rollAmount(weapon.amount) * rule.damage * (crit ? CRIT_DAMAGE : 1)));
   const hp = Math.max(0, actor.hp - damage);
   let next: ActorState = { ...actor, hp, hitAt: now, hostile: true };
   let effect: string | null = null;

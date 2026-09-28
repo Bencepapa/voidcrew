@@ -40,7 +40,19 @@ build them in. See [TOOLS.md](TOOLS.md) for the asset pipeline.
      enemy, per the weapon (a sniper rifle barely, a welder a lot); fire
      when it's over the part. The shot goes where the crosshair is: the
      part, the part next to it, another enemy behind, the cover in front.
-     It fires by itself after a few seconds.
+     It fires by itself after a few seconds. The sway steadies the longer
+     the aim is held, and the view zooms per the weapon (Weapon.aimZoom).
+4. **Weak spots.** Each part can have critical spots (a robot's optics and
+   antenna, its reactor vent, elbow and knee joints), drawn red with a
+   yellow rim on the highlighted part and placed per view column. A hit
+   there multiplies the part's damage (CRIT_DAMAGE, ×2) on top of the
+   part's own multiplier. The percentages cover the whole part; they are the
+   real odds with the mini-game off and a guide with it on.
+5. **Rapid fire.** A burst weapon (Weapon.burst, the pulse rifle for now:
+   3 shots) runs the same mini-game once per round: each press fires one,
+   kicks the sway back up a little and restarts the auto-fire countdown.
+   Each shot leaves a mark on the target until the burst ends (x: hit,
+   o: miss). Cancelling after a shot still starts the cooldown.
 
 ### Per-role mini-games (later)
 

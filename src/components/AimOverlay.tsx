@@ -10,6 +10,9 @@ import type { AimFocus, AimFrame, AimTarget } from "./GameViewport";
 // 2. with the mini-game on: a crosshair sways around the part; Space/Enter
 //    or a click fires wherever it is - the shot goes through that point of
 //    the view (see GameViewport's shoot); it fires by itself after a while.
+//    A rapid-fire weapon (Weapon.burst) fires several shots this way, one
+//    at a time; each leaves a mark on the target (x: a hit, o: a miss)
+//    until the burst is over, and kicks the aim a little.
 //    With it off, the hit chance is rolled; a miss goes to a spot next to
 //    the part and hits whatever is there.
 
@@ -17,6 +20,10 @@ const AUTO_FIRE_MS = 5000;
 // the sway shrinks to this share of the weapon's over about this long (s)
 const SWAY_STEADY = 0.3;
 const SWAY_SETTLE_S = 1.4;
+// a burst's shot kicks the aim back this far from steady (s of settling)
+const RECOIL_S = 0.6;
+const HIT_MARK = "#ff5a3c";
+const MISS_MARK = "#d8e0e8";
 const PART_COLOR = "rgba(120, 255, 170, 0.9)";
 const PART_DIM = "rgba(120, 255, 170, 0.28)";
 const CROSSHAIR = "#ffd24a";
@@ -28,7 +35,8 @@ interface Props {
   weapon: Weapon;
   crewName: string;
   miniGame: boolean;
-  onShot: (result: ShotResult) => void;
+  // each shot as it's fired; `last`: the use is over
+  onShot: (result: ShotResult, last: boolean) => void;
   onCancel: () => void;
 }
 
@@ -38,7 +46,14 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
   // the picked enemy (by id, so it survives reordering) and part index
   const pickRef = useRef<{ target: number | null; part: number }>({ target: null, part: 1 });
   const aimStartRef = useRef(0);
+  // when the current shot's auto-fire countdown started
+  const shotStartRef = useRef(0);
   const firedRef = useRef(false);
+  const burst = Math.max(1, weapon.burst ?? 1);
+  const shotsRef = useRef(0);
+  const [shots, setShots] = useState(0);
+  // the burst's shots so far: where on the target (fractions of its box)
+  const marksRef = useRef<{ target: number; x: number; y: number; hit: boolean }[]>([]);
   const crosshairRef = useRef<[number, number]>([0, 0]);
 
   const current = (): { target: AimTarget; partIndex: number } | null => {
@@ -50,12 +65,44 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
     return { target, partIndex: Math.min(pick.part, target.parts.length - 1) };
   };
 
+  // the picked target's box on screen
+  const targetBox = (target: AimTarget): [number, number, number, number] => {
+    let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const { rect } of target.parts) {
+      [x0, y0, x1, y1] = [Math.min(x0, rect[0]), Math.min(y0, rect[1]), Math.max(x1, rect[2]), Math.max(y1, rect[3])];
+    }
+    return [x0, y0, x1, y1];
+  };
+
   const fire = (x: number, y: number) => {
     if (firedRef.current) return;
     const frame = frameRef.current;
     if (!frame) return;
-    firedRef.current = true;
-    onShot(frame.shoot(x, y));
+    const result = frame.shoot(x, y);
+    const now = current();
+    if (now) {
+      const [x0, y0, x1, y1] = targetBox(now.target);
+      marksRef.current.push({
+        target: now.target.id,
+        x: (x - x0) / Math.max(1, x1 - x0),
+        y: (y - y0) / Math.max(1, y1 - y0),
+        hit: result.kind === "actor",
+      });
+    }
+    count(result);
+  };
+  // a shot done: the next one kicks and restarts its countdown, the last
+  // ends the use
+  const count = (result: ShotResult) => {
+    shotsRef.current++;
+    setShots(shotsRef.current);
+    const last = shotsRef.current >= burst;
+    if (last) firedRef.current = true;
+    // the next shot: the aim kicks back, and its countdown starts over
+    const t = performance.now();
+    aimStartRef.current = Math.min(t, Math.max(aimStartRef.current, t - RECOIL_S * 1000));
+    shotStartRef.current = t;
+    onShot(result, last);
   };
 
   // confirm the pick: aim with the mini-game, or roll the chance
@@ -63,7 +110,7 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
     const now = current();
     if (!now) return;
     if (miniGame) {
-      aimStartRef.current = performance.now();
+      aimStartRef.current = shotStartRef.current = performance.now();
       setPhase("aim");
       return;
     }
@@ -71,16 +118,17 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
     const [x0, y0, x1, y1] = part.rect;
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
-    if (Math.random() < part.chance) {
-      firedRef.current = true;
-      onShot({ kind: "actor", actor: now.target.id, part: part.part });
-      return;
-    }
-    // a miss: somewhere just off the part
-    const a = Math.random() * Math.PI * 2;
     const frame = frameRef.current;
-    const r = Math.max(x1 - x0, y1 - y0) * 0.6 + (weapon.sway ?? 0.03) * (frame?.height ?? 600) * (frame?.zoom ?? 1);
-    fire(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    for (let i = 0; i < burst && !firedRef.current; i++) {
+      if (Math.random() < part.chance) {
+        count({ kind: "actor", actor: now.target.id, part: part.part });
+        continue;
+      }
+      // a miss: somewhere just off the part
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.max(x1 - x0, y1 - y0) * 0.6 + (weapon.sway ?? 0.03) * (frame?.height ?? 600) * (frame?.zoom ?? 1);
+      fire(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
   };
 
   useEffect(() => {
@@ -157,6 +205,25 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
       }
       ctx.setLineDash([]);
       if (phase !== "aim") return;
+      // the burst's shots so far, on their target
+      ctx.lineWidth = 2;
+      for (const mark of marksRef.current) {
+        const target = frame.targets.find((t) => t.id === mark.target);
+        if (!target) continue;
+        const [bx0, by0, bx1, by1] = targetBox(target);
+        const mx = bx0 + mark.x * (bx1 - bx0);
+        const my = by0 + mark.y * (by1 - by0);
+        ctx.strokeStyle = mark.hit ? HIT_MARK : MISS_MARK;
+        ctx.beginPath();
+        if (mark.hit) {
+          ctx.moveTo(mx - 5, my - 5);
+          ctx.lineTo(mx + 5, my + 5);
+          ctx.moveTo(mx + 5, my - 5);
+          ctx.lineTo(mx - 5, my + 5);
+        } else ctx.arc(mx, my, 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.lineWidth = 1;
       // the crosshair sways around the part's centre (it follows it)
       const part = now.target.parts[now.partIndex];
       const [x0, y0, x1, y1] = part.rect;
@@ -179,7 +246,7 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
       ctx.moveTo(x, y + 4);
       ctx.lineTo(x, y + 13);
       ctx.stroke();
-      const left = 1 - (performance.now() - aimStartRef.current) / AUTO_FIRE_MS;
+      const left = 1 - (performance.now() - shotStartRef.current) / AUTO_FIRE_MS;
       ctx.fillStyle = CROSSHAIR;
       ctx.fillRect(x - 13, y + 17, 26 * Math.max(0, left), 2);
       if (left <= 0) fire(x, y);
@@ -211,7 +278,9 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full cursor-crosshair" onClick={onClick} />
       <div className="absolute top-2 inset-x-0 text-center text-[11px] text-emerald-200/90 pointer-events-none font-mono">
         {crewName} · {weapon.name} ·{" "}
-        {phase === "pick" ? "Tab: target · ↑↓: part · Space: " + (miniGame ? "aim" : "fire") + " · Esc: cancel" : "Space: fire"}
+        {phase === "pick"
+          ? "Tab: target · ↑↓: part · Space: " + (miniGame ? "aim" : "fire") + " · Esc: cancel"
+          : "Space: fire" + (burst > 1 ? ` (${Math.min(burst, shots + 1)}/${burst})` : "")}
       </div>
     </div>
   );

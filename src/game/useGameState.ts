@@ -80,6 +80,8 @@ export function useGameState() {
   // the crewmate aiming (bullet time), if any
   const [aim, setAim] = useState<{ crew: number } | null>(null);
   const aimRef = useRef(aim);
+  // a shot of the current use is out (a burst's first, say)
+  const aimFiredRef = useRef(false);
   aimRef.current = aim;
   // when the party was last hit (real time), for a red flash
   const [hurtAt, setHurtAt] = useState(0);
@@ -262,16 +264,25 @@ export function useGameState() {
       }
       gameClock.setRate(AIM_TIME_RATE);
       aimRef.current = { crew: index };
+      aimFiredRef.current = false;
       setAim({ crew: index });
     },
     [pushLog, targetsInReach],
   );
+  // (a burst cut short still cools the weapon down)
   const cancelAim = useCallback(() => {
-    if (aimRef.current) endAim();
+    const current = aimRef.current;
+    if (!current) return;
+    if (aimFiredRef.current) {
+      const weapon = CREW_WEAPONS[crewRef.current[current.crew].id];
+      setReadyAt((prev) => prev.map((t, i) => (i === current.crew ? gameClock.now() + weapon.cooldownMs : t)));
+    }
+    endAim();
   }, [endAim]);
-  // the aiming overlay's shot: what it hit (or didn't)
+  // the aiming overlay's shot: what it hit (or didn't); the burst's last
+  // one ends the aiming
   const resolveShot = useCallback(
-    (result: ShotResult) => {
+    (result: ShotResult, last = true) => {
       const current = aimRef.current;
       if (!current) return;
       const mate = crewRef.current[current.crew];
@@ -280,17 +291,20 @@ export function useGameState() {
       if (result.kind === "actor") {
         const target = actorsRef.current.find((a) => a.id === result.actor);
         if (target && target.diedAt === null) {
-          const hit = applyHit(target, result.part, weapon, now);
+          const hit = applyHit(target, result.part, weapon, now, !!result.crit);
           const type = ACTOR_TYPES[target.type];
           updateActors(actorsRef.current.map((a) => (a.id === target.id ? hit.actor : a)));
           pushLog(
-            `${mate.name} hits the ${type.parts[result.part].label.toLowerCase()} for ${hit.damage}` +
+            `${mate.name} hits the ${(result.crit ?? type.parts[result.part].label).toLowerCase()}` +
+              `${result.crit ? " (critical!)" : ""} for ${hit.damage}` +
               (hit.killed ? " - it's destroyed!" : hit.effect ? ` - ${hit.effect}.` : "."),
           );
         }
       } else {
         pushLog(`${mate.name} misses${result.hit === "nothing" ? "." : ` and hits the ${result.hit}.`}`);
       }
+      aimFiredRef.current = true;
+      if (!last) return;
       setReadyAt((prev) => prev.map((t, i) => (i === current.crew ? now + weapon.cooldownMs : t)));
       endAim();
     },

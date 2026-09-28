@@ -14,8 +14,7 @@ import type { ActorSpec, Direction, GameMap, Vec2 } from "./types";
 // range and fires on its cooldown. Hits (see combat.ts) land on a body part,
 // which can stun it, disarm it or slow it down.
 
-// body parts, for aiming: where each sits in a sheet cell (fractions of
-// its width and height from the top left: x0, y0, x1, y1)
+// body parts, for aiming: where each sits in a sheet cell (a Zone)
 export type BodyPart = "head" | "torso" | "arms" | "legs";
 export const BODY_PARTS: BodyPart[] = ["head", "torso", "arms", "legs"];
 
@@ -47,7 +46,31 @@ export interface ActorType {
   // how far (cells) it notices the party
   sight: number;
   // its body parts' names (for the aiming overlay) and where they are
-  parts: Record<BodyPart, { label: string; zone: [number, number, number, number] }>;
+  parts: Record<BodyPart, { label: string; zone: Zone }>;
+  // weak spots: a hit there counts as a hit on their part, only harder
+  // (see CRIT_DAMAGE)
+  crits: CritSpot[];
+}
+
+// a rectangle of a sheet cell: x0, y0, x1, y1 as fractions from its top left
+export type Zone = [number, number, number, number];
+
+// A weak spot (eyes, a joint, a vent): where it is in each sheet column -
+// it moves as the actor turns (none: not seen from there).
+export interface CritSpot {
+  part: BodyPart;
+  label: string;
+  zones: Zone[][];
+}
+
+// the weak spot at a spot of a sheet cell in column `col`, if any
+export function critAt(type: ActorType, col: number, u: number, v: number): CritSpot | null {
+  for (const crit of type.crits) {
+    for (const [x0, y0, x1, y1] of crit.zones[col] ?? []) {
+      if (u >= x0 && u <= x1 && v >= y0 && v <= y1) return crit;
+    }
+  }
+  return null;
 }
 
 export const ACTOR_TYPES: Record<string, ActorType> = {
@@ -68,11 +91,63 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     attackCooldownMs: 2600,
     sight: 6,
     parts: {
-      head: { label: "SENSOR", zone: [0.36, 0.06, 0.64, 0.26] },
-      torso: { label: "CORE", zone: [0.3, 0.26, 0.7, 0.56] },
-      arms: { label: "WEAPON ARMS", zone: [0.04, 0.3, 0.96, 0.6] },
-      legs: { label: "LEGS", zone: [0.28, 0.6, 0.72, 0.98] },
+      head: { label: "SENSOR", zone: [0.3, 0.14, 0.7, 0.32] },
+      torso: { label: "CORE", zone: [0.3, 0.32, 0.72, 0.62] },
+      arms: { label: "WEAPON ARMS", zone: [0.04, 0.27, 0.96, 0.78] },
+      legs: { label: "LEGS", zone: [0.2, 0.62, 0.8, 0.99] },
     },
+    // columns: front, front-side, side, back-side, back
+    crits: [
+      {
+        part: "head",
+        label: "OPTICS",
+        zones: [[[0.4, 0.245, 0.6, 0.31]], [[0.3, 0.25, 0.46, 0.315]], [[0.31, 0.25, 0.41, 0.315]], [], []],
+      },
+      {
+        part: "head",
+        label: "ANTENNA",
+        zones: [
+          [[0.63, 0.15, 0.69, 0.26]],
+          [[0.62, 0.14, 0.68, 0.26]],
+          [[0.62, 0.14, 0.68, 0.24]],
+          [[0.33, 0.14, 0.41, 0.3]],
+          [[0.33, 0.15, 0.39, 0.29]],
+        ],
+      },
+      {
+        part: "torso",
+        label: "REACTOR VENT",
+        zones: [
+          [[0.44, 0.38, 0.57, 0.49]],
+          [[0.33, 0.39, 0.43, 0.49]],
+          [[0.38, 0.4, 0.54, 0.5]],
+          [[0.56, 0.33, 0.64, 0.51]],
+          [[0.44, 0.34, 0.54, 0.53]],
+        ],
+      },
+      {
+        part: "arms",
+        label: "ELBOW JOINT",
+        zones: [
+          [[0.09, 0.55, 0.29, 0.62], [0.72, 0.55, 0.92, 0.62]],
+          [[0.08, 0.55, 0.27, 0.62], [0.72, 0.55, 0.9, 0.62]],
+          [[0.23, 0.58, 0.34, 0.66], [0.58, 0.56, 0.76, 0.64]],
+          [[0.09, 0.55, 0.25, 0.62], [0.64, 0.55, 0.85, 0.62]],
+          [[0.09, 0.55, 0.27, 0.62], [0.73, 0.55, 0.91, 0.62]],
+        ],
+      },
+      {
+        part: "legs",
+        label: "KNEE JOINT",
+        zones: [
+          [[0.29, 0.72, 0.47, 0.8], [0.6, 0.72, 0.76, 0.8]],
+          [[0.31, 0.72, 0.48, 0.8], [0.53, 0.73, 0.72, 0.81]],
+          [[0.4, 0.72, 0.6, 0.8]],
+          [[0.28, 0.72, 0.46, 0.8], [0.54, 0.72, 0.72, 0.8]],
+          [[0.27, 0.73, 0.43, 0.81], [0.58, 0.73, 0.74, 0.81]],
+        ],
+      },
+    ],
   },
 };
 

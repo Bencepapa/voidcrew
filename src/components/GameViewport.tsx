@@ -9,7 +9,7 @@ import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights, lampColor } from "../game/lights";
 import { PROP_TYPES, propPlacement } from "../game/props";
-import { ACTOR_TYPES, BODY_PARTS } from "../game/actors";
+import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
 import type { ActorState, BodyPart } from "../game/actors";
 import { gameClock } from "../game/clock";
@@ -977,23 +977,35 @@ function geometryViewMaterial(view: GeometryViewId): THREE.Material | null {
 // pixels, not a box: a faint fill and a bright outline, drawn in the scene,
 // so whatever covers part of it covers the highlight too. The sprite's
 // material gets the four parts' zones (sheet UVs of the cell shown) and the
-// picked one's index (-1: none).
+// picked one's index (-1: none). Its weak spots (ActorType.crits) show red
+// with a yellow rim.
+const MAX_CRIT_ZONES = 10;
 interface PartHighlight {
   zones: { value: THREE.Vector4[] };
   part: { value: number };
   texel: { value: THREE.Vector2 };
+  // the weak spots' zones in the cell shown, their parts, and how many
+  crits: { value: THREE.Vector4[] };
+  critParts: { value: number[] };
+  critCount: { value: number };
 }
 function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight {
   const uniforms: PartHighlight = {
     zones: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
     part: { value: -1 },
     texel: { value: new THREE.Vector2(1 / 512, 1 / 512) },
+    crits: { value: Array.from({ length: MAX_CRIT_ZONES }, () => new THREE.Vector4()) },
+    critParts: { value: new Array(MAX_CRIT_ZONES).fill(-1) },
+    critCount: { value: 0 },
   };
   material.customProgramCacheKey = () => "actor-part-highlight";
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uPartZones = uniforms.zones;
     shader.uniforms.uPart = uniforms.part;
     shader.uniforms.uTexel = uniforms.texel;
+    shader.uniforms.uCrits = uniforms.crits;
+    shader.uniforms.uCritParts = uniforms.critParts;
+    shader.uniforms.uCritCount = uniforms.critCount;
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <map_pars_fragment>",
@@ -1001,17 +1013,31 @@ function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight 
 uniform vec4 uPartZones[4];
 uniform int uPart;
 uniform vec2 uTexel;
+uniform vec4 uCrits[${MAX_CRIT_ZONES}];
+uniform float uCritParts[${MAX_CRIT_ZONES}];
+uniform int uCritCount;
 bool inZone(vec4 z, vec2 uv) { return uv.x >= z.x && uv.x <= z.z && uv.y <= z.y && uv.y >= z.w; }
-// the part a spot of the sheet belongs to: head, torso, legs, then arms
-// (arms reach across the torso) - as partAt() on the CPU
+// the weak spot zone a spot of the sheet is in (-1: none)
+int critOf(vec2 uv) {
+  for (int i = 0; i < ${MAX_CRIT_ZONES}; i++) {
+    if (i >= uCritCount) break;
+    if (inZone(uCrits[i], uv)) return i;
+  }
+  return -1;
+}
+// the part a spot of the sheet belongs to: a weak spot's, else head, torso,
+// legs, then arms (arms reach across the torso) - as hitPart() on the CPU
 int partOf(vec2 uv) {
+  int c = critOf(uv);
+  if (c >= 0) return int(uCritParts[c] + 0.5);
   if (inZone(uPartZones[0], uv)) return 0;
   if (inZone(uPartZones[1], uv)) return 1;
   if (inZone(uPartZones[3], uv)) return 3;
   if (inZone(uPartZones[2], uv)) return 2;
   return -1;
 }
-bool onPart(vec2 uv) { return texture2D(map, uv).a >= 0.5 && partOf(uv) == uPart; }`,
+bool onPart(vec2 uv) { return texture2D(map, uv).a >= 0.5 && partOf(uv) == uPart; }
+bool onCrit(vec2 uv) { return texture2D(map, uv).a >= 0.5 && critOf(uv) >= 0 && partOf(uv) == uPart; }`,
       )
       .replace(
         "#include <fog_fragment>",
@@ -1025,7 +1051,12 @@ if (uPart >= 0 && onPart(vMapUv)) {
     edge = edge || !onPart(vMapUv + vec2(d.x, 0.0)) || !onPart(vMapUv - vec2(d.x, 0.0)) ||
       !onPart(vMapUv + vec2(0.0, d.y)) || !onPart(vMapUv - vec2(0.0, d.y));
   }
-  gl_FragColor.rgb = edge ? vec3(0.5, 1.0, 0.7) : gl_FragColor.rgb + vec3(0.04, 0.16, 0.09);
+  if (edge) gl_FragColor.rgb = vec3(0.5, 1.0, 0.7);
+  else if (critOf(vMapUv) >= 0) {
+    bool rim = !onCrit(vMapUv + vec2(uTexel.x, 0.0)) || !onCrit(vMapUv - vec2(uTexel.x, 0.0)) ||
+      !onCrit(vMapUv + vec2(0.0, uTexel.y)) || !onCrit(vMapUv - vec2(0.0, uTexel.y));
+    gl_FragColor.rgb = rim ? vec3(1.0, 0.85, 0.2) : mix(gl_FragColor.rgb, vec3(1.0, 0.18, 0.08), 0.55);
+  } else gl_FragColor.rgb += vec3(0.04, 0.16, 0.09);
 }`,
       );
   };
@@ -2674,6 +2705,20 @@ export function GameViewport({
               1 - (row + y1) / type.rows,
             );
           });
+          let n = 0;
+          for (const crit of type.crits) {
+            for (const [x0, y0, x1, y1] of crit.zones[col] ?? []) {
+              if (n >= MAX_CRIT_ZONES) break;
+              entry.highlight.crits.value[n].set(
+                (col + x0) / type.cols,
+                1 - (row + y0) / type.rows,
+                (col + x1) / type.cols,
+                1 - (row + y1) / type.rows,
+              );
+              entry.highlight.critParts.value[n++] = BODY_PARTS.indexOf(crit.part);
+            }
+          }
+          entry.highlight.critCount.value = n;
           const image = entry.material.map?.image as HTMLImageElement | undefined;
           if (image?.width) entry.highlight.texel.value.set(1 / image.width, 1 / image.height);
         }
@@ -2760,6 +2805,12 @@ export function GameViewport({
       }
       return best;
     }
+    // what a shot at a spot of an actor's sheet cell hits: a weak spot's
+    // part, or the part there
+    function hitPart(typeName: string, col: number, u: number, v: number): { part: BodyPart; crit?: string } {
+      const crit = critAt(ACTOR_TYPES[typeName], col, u, v);
+      return crit ? { part: crit.part, crit: crit.label } : { part: partAt(typeName, u, v) };
+    }
     // a point of an actor's quad, from a spot of its sheet cell
     function actorPoint(entry: ActorEntry, typeName: string, u: number, v: number, out: THREE.Vector3) {
       const type = ACTOR_TYPES[typeName];
@@ -2829,7 +2880,7 @@ export function GameViewport({
                 const v = v0 + ((v1 - v0) * (j + 0.5)) / CHANCE_GRID;
                 const su = (entry.col + u) / type.cols;
                 const sv = 1 - (entry.row + v) / type.rows;
-                if (alphaAt(actor.type, su, sv) < 128 || partAt(actor.type, u, v) !== part) continue;
+                if (alphaAt(actor.type, su, sv) < 128 || hitPart(actor.type, entry.col, u, v).part !== part) continue;
                 solid++;
                 if (unoccluded(actorPoint(entry, actor.type, u, v, aimVec), entry.mesh)) seen++;
               }
@@ -2868,7 +2919,7 @@ export function GameViewport({
           const u = hit.uv.x * type.cols - entry.col;
           const v = (1 - hit.uv.y) * type.rows - entry.row;
           addTracer(hit.point);
-          return { kind: "actor", actor: id, part: partAt(actor.type, u, v) };
+          return { kind: "actor", actor: id, ...hitPart(actor.type, entry.col, u, v) };
         }
         addTracer(hit.point);
         return { kind: "miss", hit: isProp(hit.object) ? "prop" : "wall" };
