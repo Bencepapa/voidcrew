@@ -97,8 +97,7 @@ not two editors.
 
 - Both views work by touch; the toolbar uses big buttons, long-press stands
   in for the right click and +/- buttons for the wheel.
-- Saving on a phone: the dev server over the local network, or download
-  the file and copy it over.
+- Saving on a phone: download the file and copy it into the repo.
 
 ## Order
 
@@ -110,9 +109,19 @@ not two editors.
 4. 2D view: painting, patrol routes, "test from here".
 5. Mobile toolbar; new maps.
 
-## Open questions
+## Palette sources
 
-- Whether saving from a phone straight to the repo matters (it would need
-  the dev server reachable over the network), or download is enough.
-- Where the palette's lists come from: texture sets, decals and props are
-  in code / asset folders today; the editor needs them listed in one place.
+No hand-kept list of its own – each palette reads what's already there:
+
+- props: `PROP_TYPES` (`src/game/props.ts`);
+- enemies: `ACTOR_TYPES` (`src/game/actors.ts`);
+- decals: `public/decals/index.json` (written by `npm run decals:import`);
+- textures: a `TEXTURE_SETS` table in code (id → kind: wall, floor,
+  ceiling, door, window or prop face; and a short label), replacing today's
+  bare `TextureSetId` union, which the type is then derived from. The
+  palette filters it by kind: walls for a wall face, floors for a floor.
+
+## Decisions
+
+- Saving on a phone is by download only; saving to the repo needs the dev
+  server on the computer.
