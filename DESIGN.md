@@ -49,10 +49,18 @@ build them in. See [TOOLS.md](TOOLS.md) for the asset pipeline.
    part's own multiplier. The percentages cover the whole part; they are the
    real odds with the mini-game off and a guide with it on.
 5. **Rapid fire.** A burst weapon (Weapon.burst, the pulse rifle for now:
-   3 shots) runs the same mini-game once per round: each press fires one,
-   kicks the sway back up a little and restarts the auto-fire countdown.
+   3 shots) runs the same mini-game once per round: each press fires one
+   and restarts the auto-fire countdown.
    Each shot leaves a mark on the target until the burst ends (x: hit,
    o: miss). Cancelling after a shot still starts the cooldown.
+6. **Shakes.** The sway settles the longer the aim is held, but every shot
+   of a burst (recoil) and every hit the crew takes while aiming adds a
+   jolt to it that fades over about a second.
+7. **Enemies aim too.** An enemy's shot hits with its accuracy, falling off
+   per cell, times the share of the party's body it can see: rays from the
+   enemy to points on the party (three heights, both sides) that get past
+   walls and props. Behind a crate at range, the odds drop a lot. The log
+   shows the odds for now, for tuning.
 
 ### Per-role mini-games (later)
 

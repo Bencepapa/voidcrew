@@ -43,6 +43,10 @@ export interface ActorType {
   damage: [number, number];
   attackRange: number;
   attackCooldownMs: number;
+  // its aim: the chance to hit an exposed party at point blank, and how much
+  // that drops per cell (cover lowers it further, see partyHitChance)
+  accuracy: number;
+  falloff: number;
   // how far (cells) it notices the party
   sight: number;
   // its body parts' names (for the aiming overlay) and where they are
@@ -89,6 +93,8 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     damage: [3, 6],
     attackRange: 4,
     attackCooldownMs: 2600,
+    accuracy: 0.9,
+    falloff: 0.12,
     sight: 6,
     parts: {
       head: { label: "SENSOR", zone: [0.3, 0.14, 0.7, 0.32] },
@@ -230,6 +236,15 @@ export function actorAt(actors: readonly ActorState[], cell: Vec2, now: number):
 export interface ActorAttack {
   actor: number;
   damage: number;
+  // how far (cells) it fired from
+  distance: number;
+}
+
+// An actor's chance to hit the party from `distance` cells, with `exposed`
+// the share of the party's body it sees past the cover (see GameViewport's
+// party cover).
+export function partyHitChance(type: ActorType, distance: number, exposed: number): number {
+  return Math.max(0.05, type.accuracy - type.falloff * Math.max(0, distance - 1)) * exposed;
 }
 
 const same = (a: Vec2, b: Vec2) => a.x === b.x && a.y === b.y;
@@ -279,7 +294,7 @@ export function stepActors(
           return { ...actor, facing: toward(actor.cell, party) };
         }
         const [lo, hi] = type.damage;
-        attacks.push({ actor: actor.id, damage: lo + Math.floor(Math.random() * (hi - lo + 1)) });
+        attacks.push({ actor: actor.id, damage: lo + Math.floor(Math.random() * (hi - lo + 1)), distance });
         changed = true;
         return { ...actor, facing: toward(actor.cell, party), lastAttack: now };
       }

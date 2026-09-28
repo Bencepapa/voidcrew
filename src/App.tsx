@@ -32,6 +32,7 @@ export default function App() {
     readyAt,
     aim,
     hurtAt,
+    partyCoverRef,
     fireWeapon,
     cancelAim,
     resolveShot,
@@ -161,6 +162,7 @@ export default function App() {
       aiming={aimWeapon}
       aimFrameRef={aimFrameRef}
       aimFocusRef={aimFocusRef}
+      partyCoverRef={partyCoverRef}
       onTouch={touch}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
@@ -178,6 +180,7 @@ export default function App() {
           key={aim.crew}
           frameRef={aimFrameRef}
           focusRef={aimFocusRef}
+          hurtAt={hurtAt}
           weapon={aimWeapon}
           crewName={crew[aim.crew].name}
           miniGame={settings.aimMiniGame}

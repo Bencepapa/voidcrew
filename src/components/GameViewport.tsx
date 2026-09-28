@@ -706,6 +706,12 @@ const SIGHT_POINTS: [number, number][] = [
 const AIM_FRAMING = 1.6;
 const AIM_MIN_FOV = 8;
 const AIM_CAMERA_TAU = 0.12;
+// the party's cover (see updatePartyCover): how often it's measured (ms),
+// the heights sampled on its body (shares of the eye height) and how wide
+// it stands
+const PARTY_COVER_REFRESH_MS = 250;
+const PARTY_BODY_HEIGHTS = [0.3, 0.65, 1];
+const PARTY_BODY_HALF_WIDTH = 0.12;
 // the hit chance samples a grid of this many spots squared over a part
 const CHANCE_GRID = 6;
 // actors: how long a hit flashes and a death fades (game ms)
@@ -840,6 +846,8 @@ interface GameViewportProps {
   aiming?: Weapon | null;
   aimFrameRef?: MutableRefObject<AimFrame | null>;
   aimFocusRef?: MutableRefObject<AimFocus | null>;
+  // written here: how much of the party each hostile actor sees past cover
+  partyCoverRef?: MutableRefObject<Map<number, number>>;
   // an interactive decal (DecalSpec.action) was clicked or tapped within
   // reach
   onTouch?: (action: string) => void;
@@ -1118,6 +1126,7 @@ export function GameViewport({
   aiming,
   aimFrameRef: aimFrameRefProp,
   aimFocusRef: aimFocusRefProp,
+  partyCoverRef,
   onTouch,
   onReady,
   freeTick,
@@ -2899,6 +2908,50 @@ export function GameViewport({
       aimFrameRef.current = { targets, width: cw, height: ch, zoom: aimZoom, shoot };
     }
 
+    // The party's cover against each hostile actor near enough to shoot:
+    // rays from its middle to points on the party's body (a column of
+    // heights, a little to either side) - the share that gets through.
+    let coverAt = 0;
+    const coverFrom = new THREE.Vector3();
+    const coverTo = new THREE.Vector3();
+    function updatePartyCover(camX: number, floorY: number, camZ: number, eye: number) {
+      if (!partyCoverRef || performance.now() - coverAt < PARTY_COVER_REFRESH_MS) return;
+      coverAt = performance.now();
+      const cover = partyCoverRef.current;
+      cover.clear();
+      for (const actor of actorsRef.current) {
+        const entry = actorMeshes.get(actor.id);
+        const type = ACTOR_TYPES[actor.type];
+        if (!entry || actor.diedAt !== null || !actor.hostile) continue;
+        coverFrom.copy(entry.mesh.position);
+        const dx = camX - coverFrom.x;
+        const dz = camZ - coverFrom.z;
+        const len = Math.hypot(dx, dz);
+        if (len > type.attackRange + 1.5 || len < 1e-3) continue;
+        // sideways, across the line of fire
+        const sx = -dz / len;
+        const sz = dx / len;
+        let open = 0;
+        let total = 0;
+        for (const h of PARTY_BODY_HEIGHTS) {
+          for (const side of [-PARTY_BODY_HALF_WIDTH, PARTY_BODY_HALF_WIDTH]) {
+            total++;
+            coverTo.set(camX + sx * side, floorY + eye * h, camZ + sz * side);
+            aimDir.copy(coverTo).sub(coverFrom);
+            const dist = aimDir.length();
+            aimRaycaster.set(coverFrom, aimDir.normalize());
+            aimRaycaster.far = dist;
+            const blocked = aimRaycaster
+              .intersectObjects(group.children, true)
+              .some((hit) => hit.object.userData.actorId === undefined && drawnChain(hit.object) && !seeThrough(hit.object));
+            if (!blocked) open++;
+          }
+        }
+        cover.set(actor.id, open / total);
+      }
+      if (import.meta.env.DEV) Object.assign(window, { __voidcrewPartyCover: Object.fromEntries(cover) });
+    }
+
     // a shot through a point of the view: the first thing it meets there
     // (an actor only where its sprite isn't transparent)
     function shoot(sx: number, sy: number): ShotResult {
@@ -3188,6 +3241,7 @@ export function GameViewport({
       );
       updateActors(camX, camZ);
       updateTracers();
+      updatePartyCover(camX, cam.y * wallHeight, camZ, s.eyeHeight);
       if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ);
       else if (aimFrameRef.current) aimFrameRef.current = null;
       updateLightPool(

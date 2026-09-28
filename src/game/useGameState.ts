@@ -4,7 +4,7 @@ import { DIR_VECTOR, behindOf, leftOf, rightOf, stepForward } from "./movement";
 import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
 import type { Direction, GameMap, Vec2 } from "./types";
 import { initialCrew } from "./crew";
-import { ACTOR_TYPES, actorAt, createActors, stepActors } from "./actors";
+import { ACTOR_TYPES, actorAt, createActors, partyHitChance, stepActors } from "./actors";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
 import { AIM_TIME_RATE, CREW_WEAPONS, applyHit, rollAmount } from "./combat";
@@ -85,6 +85,9 @@ export function useGameState() {
   aimRef.current = aim;
   // when the party was last hit (real time), for a red flash
   const [hurtAt, setHurtAt] = useState(0);
+  // how much of the party each actor sees past cover (0..1, by actor id),
+  // measured in the scene by the viewport; unmeasured: fully exposed
+  const partyCoverRef = useRef(new Map<number, number>());
   // testing: hits never take a crewmate below 1 HP
   const immortalRef = useRef(false);
   const setImmortalCrew = useCallback((on: boolean) => {
@@ -191,18 +194,28 @@ export function useGameState() {
         openDoorsRef.current.has(doorCellKey(cell)),
       );
       if (next !== actorsRef.current) updateActors(next);
-      // their shots land on a random conscious crewmate
+      // their shots may land on a random conscious crewmate: the farther
+      // and the better covered the party, the likelier they miss
       for (const attack of attacks) {
         const standing = crewRef.current.filter((c) => c.hp > 0);
         if (!standing.length) break;
-        const victim = standing[Math.floor(Math.random() * standing.length)];
         const attacker = next.find((a) => a.id === attack.actor);
+        const name = attacker ? ACTOR_TYPES[attacker.type].name : "Something";
+        const chance = attacker
+          ? partyHitChance(ACTOR_TYPES[attacker.type], attack.distance, partyCoverRef.current.get(attacker.id) ?? 1)
+          : 1;
+        const odds = ` (${Math.round(chance * 100)}%)`;
+        if (Math.random() >= chance) {
+          pushLog(`${name} fires and misses${odds}.`);
+          continue;
+        }
+        const victim = standing[Math.floor(Math.random() * standing.length)];
         const hp = Math.max(immortalRef.current ? Math.min(1, victim.hp) : 0, victim.hp - attack.damage);
         crewRef.current = crewRef.current.map((c) => (c.id === victim.id ? { ...c, hp } : c));
         setCrew(crewRef.current);
         setHurtAt(performance.now());
         pushLog(
-          `${attacker ? ACTOR_TYPES[attacker.type].name : "Something"} hits ${victim.name} for ${attack.damage}.` +
+          `${name} hits ${victim.name} for ${attack.damage}${odds}.` +
             (hp === 0 ? ` ${victim.name} goes down!` : ""),
         );
         if (crewRef.current.every((c) => c.hp === 0)) pushLog("The whole crew is down.");
@@ -516,6 +529,7 @@ export function useGameState() {
     readyAt,
     aim,
     hurtAt,
+    partyCoverRef,
     fireWeapon,
     cancelAim,
     resolveShot,

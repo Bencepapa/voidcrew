@@ -12,7 +12,9 @@ import type { AimFocus, AimFrame, AimTarget } from "./GameViewport";
 //    the view (see GameViewport's shoot); it fires by itself after a while.
 //    A rapid-fire weapon (Weapon.burst) fires several shots this way, one
 //    at a time; each leaves a mark on the target (x: a hit, o: a miss)
-//    until the burst is over, and kicks the aim a little.
+//    until the burst is over.
+// The sway settles the longer the aim is held; each shot fired and each
+// hit the crew takes shakes it up again (a jolt that fades).
 //    With it off, the hit chance is rolled; a miss goes to a spot next to
 //    the part and hits whatever is there.
 
@@ -20,8 +22,11 @@ const AUTO_FIRE_MS = 5000;
 // the sway shrinks to this share of the weapon's over about this long (s)
 const SWAY_STEADY = 0.3;
 const SWAY_SETTLE_S = 1.4;
-// a burst's shot kicks the aim back this far from steady (s of settling)
-const RECOIL_S = 0.6;
+// shakes: how much a shot of a burst and a hit on the crew add to the sway
+// (shares of the weapon's), and how fast that fades (s)
+const RECOIL_SWAY = 0.35;
+const HURT_SWAY = 0.6;
+const JOLT_FADE_S = 1.2;
 const HIT_MARK = "#ff5a3c";
 const MISS_MARK = "#d8e0e8";
 const PART_COLOR = "rgba(120, 255, 170, 0.9)";
@@ -32,6 +37,8 @@ interface Props {
   frameRef: MutableRefObject<AimFrame | null>;
   // tells the camera what to turn to and zoom on
   focusRef: MutableRefObject<AimFocus | null>;
+  // when the crew was last hit (performance.now()): it shakes the aim
+  hurtAt: number;
   weapon: Weapon;
   crewName: string;
   miniGame: boolean;
@@ -40,7 +47,7 @@ interface Props {
   onCancel: () => void;
 }
 
-export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onShot, onCancel }: Props) {
+export function AimOverlay({ frameRef, focusRef, hurtAt, weapon, crewName, miniGame, onShot, onCancel }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [phase, setPhase] = useState<"pick" | "aim">("pick");
   // the picked enemy (by id, so it survives reordering) and part index
@@ -50,6 +57,19 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
   const shotStartRef = useRef(0);
   const firedRef = useRef(false);
   const burst = Math.max(1, weapon.burst ?? 1);
+  // the shakes so far: added sway, as of when
+  const joltRef = useRef({ amount: 0, at: 0 });
+  const joltNow = (t: number) => joltRef.current.amount * Math.exp(-(t - joltRef.current.at) / 1000 / JOLT_FADE_S);
+  const jolt = (amount: number) => {
+    const t = performance.now();
+    joltRef.current = { amount: joltNow(t) + amount, at: t };
+  };
+  const seenHurtRef = useRef(hurtAt);
+  useEffect(() => {
+    if (hurtAt === seenHurtRef.current) return;
+    seenHurtRef.current = hurtAt;
+    jolt(HURT_SWAY);
+  }, [hurtAt]);
   const shotsRef = useRef(0);
   const [shots, setShots] = useState(0);
   // the burst's shots so far: where on the target (fractions of its box)
@@ -98,10 +118,9 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
     setShots(shotsRef.current);
     const last = shotsRef.current >= burst;
     if (last) firedRef.current = true;
-    // the next shot: the aim kicks back, and its countdown starts over
-    const t = performance.now();
-    aimStartRef.current = Math.min(t, Math.max(aimStartRef.current, t - RECOIL_S * 1000));
-    shotStartRef.current = t;
+    // the next shot: the recoil shakes the aim, and its countdown starts over
+    jolt(RECOIL_SWAY);
+    shotStartRef.current = performance.now();
     onShot(result, last);
   };
 
@@ -229,7 +248,8 @@ export function AimOverlay({ frameRef, focusRef, weapon, crewName, miniGame, onS
       const [x0, y0, x1, y1] = part.rect;
       const t = (performance.now() - aimStartRef.current) / 1000;
       // the aim steadies the longer it's held
-      const steady = SWAY_STEADY + (1 - SWAY_STEADY) * Math.exp(-t / SWAY_SETTLE_S);
+      // (and shakes when shooting or shot at)
+      const steady = SWAY_STEADY + (1 - SWAY_STEADY) * Math.exp(-t / SWAY_SETTLE_S) + joltNow(performance.now());
       const r = (weapon.sway ?? 0.03) * h * frame.zoom * steady;
       const x = (x0 + x1) / 2 + r * (0.65 * Math.sin(t * 1.9) + 0.35 * Math.sin(t * 3.7 + 1.1));
       const y = (y0 + y1) / 2 + r * (0.65 * Math.cos(t * 2.3) + 0.35 * Math.sin(t * 2.9 + 2.3));
