@@ -1,0 +1,118 @@
+# Map editor – plan
+
+A level editor for the deck maps (`src/maps/<id>.json`, see
+`src/game/mapFormat.ts`). Nothing of it is built yet except the groundwork
+listed below.
+
+## Approach: one editor, two views
+
+Both views edit the same map file, so they are two tools on one document,
+not two editors.
+
+- **In-game (primary).** Toggle edit mode while playing and change the deck
+  in place, Minecraft-style: dig walls out, fill floor back in, and put
+  lights, decals and props exactly where you look. What you see is the
+  final lighting and textures, and testing is instant – toggle edit mode
+  off and walk.
+- **2D map view (secondary).** An enlarged, editable minimap for what is
+  slow or blind in 3D: painting the layout of a large area, heights as
+  numbers, doors and windows on cell edges, enemy patrol routes, and
+  "test from here".
+
+| | 2D view | In-game |
+| --- | --- | --- |
+| Layout, large areas | fast, painted with the mouse | slow, one cell at a time |
+| Heights, ladders, bridges | exact numbers | visible, but hard to pick |
+| Decals, lights, props | blind (surface coordinates by guess) | click where it should be |
+| Mood: light, textures | not visible | final look at once |
+| Patrol routes | drawn on the map | awkward |
+| Testing | "test from here" jumps into the game | just toggle edit mode off |
+| Mobile | good (tap, pinch) | good with a big-button toolbar |
+
+## Groundwork already in place
+
+- **Picking:** the aiming raycasts already tell the wall / floor / prop /
+  actor under a screen point (and the spot on its surface).
+- **Saving:** the actor editor writes JSON to disk through a Vite dev
+  server endpoint (`vite.config.ts`); maps can save the same way, and HMR
+  reloads them at once.
+- **Download:** the debug panel downloads the current map file as it is in
+  the repo – the way to save when there's no dev server (the GitHub Pages
+  build, a phone).
+- **2D base:** the minimap already draws cells, doors, windows and bridges.
+- **Format:** decals already carry surface coordinates (`px`, `py`),
+  windows their wall, props their cell, anchor and rotation.
+- **Testing aids:** noclip, immortal crew, `?map=<id>`, the teleport hook.
+
+## In-game edit mode
+
+- **Toggle:** a key (Tab or E) or a button. While editing: no combat, no
+  fog, the headlamp on, enemies frozen, noclip on; the surface under the
+  cursor (or crosshair on touch) is highlighted, with its cell and face.
+- **Dig and fill:** click a wall to dig it out (it becomes floor at the
+  neighbour's height); right-click (long-press on touch) a floor to fill it
+  in as wall.
+- **Heights:** on a floor or ceiling, the wheel (or +/- buttons) raises or
+  lowers it by one height step (0.25).
+- **Palette** at the bottom, placing the chosen thing where you click:
+  - wall / floor / ceiling texture – paints the face (or the cell's layer);
+  - decal – at the exact spot on the surface, rotation with the wheel;
+  - light – on the ceiling of the cell (its colour from the deck);
+  - prop – in the cell, at the nearest anchor (center, sides, corners),
+    rotation with the wheel;
+  - window – in the wall face (width grows along the wall);
+  - door / lift door – in the cell, facing the passage;
+  - ladder – against the wall toward the higher neighbour;
+  - enemy – in the cell, facing away from the camera.
+- **Select, move, delete:** click a placed thing to select it (outlined, as
+  the aiming highlight); Delete removes it, dragging moves it.
+- **Undo / redo:** Z / Y (and buttons); every edit is one step on a stack of
+  map file snapshots.
+- **Save:** to disk through the dev server, or download (see above).
+
+## 2D map view
+
+- Opened from edit mode (a key or button), over or beside the game view.
+- Paint cells wall/floor; a brush for a layer (floor height, ceiling height,
+  floor/wall/ceiling texture) with the layer's legend as the palette.
+- Doors and windows on cell edges; ladders and bridges as markers.
+- Enemies: place, then click cells to build the patrol route.
+- **Test from here:** drops the party into the picked cell facing the picked
+  direction, and closes the view.
+- Pan and zoom with the mouse or pinch.
+
+## Map file handling
+
+- The editor works on the `MapFile` (the JSON as written), not on the parsed
+  `GameMap`, and re-parses it after every edit (parseMap is cheap) so the
+  game shows it at once.
+- Writing it back must keep the repo's layout, so diffs stay small: one
+  value per line only when it doesn't fit in about 100 characters, and
+  object keys in their original order. (Numeric-looking keys such as
+  legend characters "1".."4" lose their order in a JS object, so the
+  serializer has to keep the key order of the loaded file itself.)
+- New maps: a size and a name, all wall, the party in a dug-out start cell.
+
+## Mobile
+
+- Both views work by touch; the toolbar uses big buttons, long-press stands
+  in for the right click and +/- buttons for the wheel.
+- Saving on a phone: the dev server over the local network, or download
+  the file and copy it over.
+
+## Order
+
+1. Edit mode toggle, highlight under the cursor, dig / fill, undo, save to
+   disk and download.
+2. Palette: textures, lights, decals (at the exact spot), props (anchor and
+   rotation).
+3. Heights, ladders, bridges, doors, windows.
+4. 2D view: painting, patrol routes, "test from here".
+5. Mobile toolbar; new maps.
+
+## Open questions
+
+- Whether saving from a phone straight to the repo matters (it would need
+  the dev server reachable over the network), or download is enough.
+- Where the palette's lists come from: texture sets, decals and props are
+  in code / asset folders today; the editor needs them listed in one place.
