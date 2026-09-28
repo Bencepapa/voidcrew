@@ -1,8 +1,12 @@
 # Map editor – plan
 
 A level editor for the deck maps (`src/maps/<id>.json`, see
-`src/game/mapFormat.ts`). Nothing of it is built yet except the groundwork
-listed below.
+`src/game/mapFormat.ts`). Step 1 of the order below is built (`src/editor/`):
+Tab (or "Edit map" in the debug panel) toggles edit mode; a click digs out
+the wall pointed at, the right button (or the Fill tool on touch) fills a
+floor in; Z / Y undo and redo, Ctrl+S saves to disk, Download downloads.
+Each edit rebuilds the deck's scene (about 0.2 s) - fine for now, an
+incremental rebuild can come later.
 
 ## Approach: one editor, two views
 
@@ -101,8 +105,8 @@ not two editors.
 
 ## Order
 
-1. Edit mode toggle, highlight under the cursor, dig / fill, undo, save to
-   disk and download.
+1. ✅ Edit mode toggle, highlight under the cursor, dig / fill, undo, save
+   to disk and download.
 2. Palette: textures, lights, decals (at the exact spot), props (anchor and
    rotation).
 3. Heights, ladders, bridges, doors, windows.

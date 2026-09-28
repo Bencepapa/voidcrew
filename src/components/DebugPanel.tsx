@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { TextureSetId, ViewportSettings, ViewportStats, WallProfileId } from "./GameViewport";
-import { downloadMap } from "../game/mapExport";
+import { downloadMap } from "../editor/mapStore";
 
 interface DebugPanelProps {
   settings: ViewportSettings;
@@ -11,6 +11,8 @@ interface DebugPanelProps {
   compact?: boolean;
   // the current map, for its download button
   mapId?: string;
+  // opens the map editor
+  onEditMap?: () => void;
 }
 
 // the wall texture sets still in use (a map can name its own instead)
@@ -84,7 +86,7 @@ const MATERIAL_SLIDERS: SliderConfig[] = [
 
 const SELECT = "bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm";
 
-export function DebugPanel({ settings, onChange, stats, compact, mapId }: DebugPanelProps) {
+export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMap }: DebugPanelProps) {
   function set<K extends keyof ViewportSettings>(key: K, value: ViewportSettings[K]) {
     onChange({ ...settings, [key]: value });
   }
@@ -148,6 +150,15 @@ export function DebugPanel({ settings, onChange, stats, compact, mapId }: DebugP
       {check("noclip", "Noclip (walk through walls)")}
       {check("enemyScanner", "Scanner: enemy outlines (crew gear)")}
       {check("headlamp", "Headlamp (L)")}
+      {onEditMap && (
+        <button
+          type="button"
+          onClick={onEditMap}
+          className="text-[11px] border border-amber-500/60 text-amber-200 rounded-sm px-2 py-1 hover:bg-neutral-800 text-left"
+        >
+          Edit map (Tab)
+        </button>
+      )}
       {mapId && (
         <button
           type="button"

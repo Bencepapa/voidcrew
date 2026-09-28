@@ -155,6 +155,15 @@ export interface AimFocus {
   phase: "pick" | "aim";
 }
 
+// The map editor (see EDITOR.md): the cell under the pointer - a wall to dig
+// out (with the open cell it's dug from, whose face was pointed at), or a
+// floor to fill in.
+export interface EditTarget {
+  kind: "wall" | "floor";
+  cell: Vec2;
+  from?: Vec2;
+}
+
 export interface ViewportStats {
   // triangles actually drawn last frame (after culling), and draw calls
   renderedTriangles: number;
@@ -784,6 +793,11 @@ const SHAFT_LIGHT_PERIOD_MS = 700;
 const SHAFT_LIGHT_SWEEP = 1.2;
 // how far away an interactive decal can be touched (world units)
 const TOUCH_REACH = 1.4;
+// the map editor: how far (world units) it picks cells, and the highlight's
+// colors - a wall to dig out, a floor to fill in
+const EDIT_REACH = 8;
+const EDIT_DIG_COLOR = 0xffa040;
+const EDIT_FILL_COLOR = 0x40d0ff;
 const DOOR_PANEL_SETS: Record<DoorSpec["kind"], TextureSetId> = {
   standard: "door1",
   lift: "liftdoor1",
@@ -865,6 +879,10 @@ interface GameViewportProps {
   // an interactive decal (DecalSpec.action) was clicked or tapped within
   // reach
   onTouch?: (action: string) => void;
+  // the map editor is on: the cell under the pointer is highlighted, and a
+  // click or tap edits it (`alt`: the right button)
+  editMode?: boolean;
+  onEdit?: (target: EditTarget, alt: boolean) => void;
   // a map's scene is fully built and shown (after the loading screen)
   onReady?: (mapId: string) => void;
   // free movement: called every frame with the frame time (s), returns the
@@ -1159,6 +1177,8 @@ export function GameViewport({
   aimFocusRef: aimFocusRefProp,
   partyCoverRef,
   onTouch,
+  editMode,
+  onEdit,
   onReady,
   freeTick,
   peekRef,
@@ -1209,6 +1229,10 @@ export function GameViewport({
   rideRef.current = ride;
   const onTouchRef = useRef(onTouch);
   onTouchRef.current = onTouch;
+  const editModeRef = useRef(!!editMode);
+  editModeRef.current = !!editMode;
+  const onEditRef = useRef(onEdit);
+  onEditRef.current = onEdit;
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   // the loading screen, up while a new map's scene is built; the map last
@@ -3078,15 +3102,23 @@ export function GameViewport({
     const onPress = (e: PointerEvent) => {
       press = { x: e.clientX, y: e.clientY, at: performance.now() };
     };
+    // a point of the view in normalized device coordinates - its center
+    // while the pointer is locked (free mouselook)
+    const viewNdc = (clientX: number, clientY: number) => {
+      if (document.pointerLockElement) return new THREE.Vector2(0, 0);
+      const rect = renderer.domElement.getBoundingClientRect();
+      return new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    };
     const onRelease = (e: PointerEvent) => {
       const p = press;
       press = null;
       if (!p || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8 || performance.now() - p.at > 500) return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      // pointer-locked (free mouselook): aim with the screen's center
-      const ndc = document.pointerLockElement
-        ? new THREE.Vector2(0, 0)
-        : new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      const ndc = viewNdc(e.clientX, e.clientY);
+      if (editModeRef.current) {
+        const target = editTargetAt(ndc);
+        if (target) onEditRef.current?.(target, e.button === 2);
+        return;
+      }
       raycaster.setFromCamera(ndc, camera);
       const hits = raycaster.intersectObjects(group.children, true);
       if (!hits.length) return;
@@ -3096,6 +3128,76 @@ export function GameViewport({
     };
     renderer.domElement.addEventListener("pointerdown", onPress);
     window.addEventListener("pointerup", onRelease);
+
+    // --- the map editor: what's under the pointer, highlighted ---
+    const editRaycaster = new THREE.Raycaster();
+    editRaycaster.far = EDIT_REACH;
+    const editNormal = new THREE.Vector3();
+    let editHover: THREE.Vector2 | null = null;
+    const onHover = (e: PointerEvent) => {
+      editHover = viewNdc(e.clientX, e.clientY);
+    };
+    const onLeave = () => {
+      editHover = null;
+    };
+    // no context menu over the view while editing: the right button fills
+    const onContextMenu = (e: Event) => {
+      if (editModeRef.current) e.preventDefault();
+    };
+    renderer.domElement.addEventListener("pointermove", onHover);
+    renderer.domElement.addEventListener("pointerleave", onLeave);
+    renderer.domElement.addEventListener("contextmenu", onContextMenu);
+    // The cell a point of the view shows: the first solid surface there - a
+    // wall's face (the wall cell behind it, dug from the open cell in front),
+    // else the floor of the cell it's in.
+    function editTargetAt(ndc: THREE.Vector2): EditTarget | null {
+      editRaycaster.setFromCamera(ndc, camera);
+      const hit = editRaycaster
+        .intersectObjects(group.children, true)
+        .find((h) => h.face && h.object.userData.actorId === undefined && drawnChain(h.object) && !seeThrough(h.object));
+      if (!hit?.face) return null;
+      editNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+      const p = hit.point;
+      const flat = Math.abs(editNormal.y) >= Math.max(Math.abs(editNormal.x), Math.abs(editNormal.z));
+      if (!flat) {
+        // the side it faces, on the grid
+        const sx = Math.abs(editNormal.x) > Math.abs(editNormal.z) ? Math.sign(editNormal.x) : 0;
+        const sz = sx ? 0 : Math.sign(editNormal.z);
+        const behind = { x: Math.round(p.x - sx * 0.05), y: Math.round(p.z - sz * 0.05) };
+        if (cellAt(map, behind.x, behind.y) === "wall") {
+          return { kind: "wall", cell: behind, from: { x: behind.x + sx, y: behind.y + sz } };
+        }
+      }
+      const cell = { x: Math.round(p.x), y: Math.round(p.z) };
+      return cellAt(map, cell.x, cell.y) === "wall" ? null : { kind: "floor", cell };
+    }
+    const editBox = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({ color: EDIT_DIG_COLOR, depthTest: false, transparent: true }),
+    );
+    editBox.renderOrder = 10;
+    editBox.visible = false;
+    scene.add(editBox);
+    geometries.push(editBox.geometry);
+    function updateEditHighlight() {
+      const target = editModeRef.current ? editTargetAt(editHover ?? new THREE.Vector2(0, 0)) : null;
+      editBox.visible = !!target;
+      if (!target) return;
+      const mat = editBox.material as THREE.LineBasicMaterial;
+      if (target.kind === "wall") {
+        // the wall block, as tall as the room it's dug from
+        const from = target.from!;
+        const bottom = floorY(from.x, from.y);
+        const top = ceilingY(from.x, from.y);
+        editBox.position.set(target.cell.x, (bottom + top) / 2, target.cell.y);
+        editBox.scale.set(0.98, top - bottom - 0.02, 0.98);
+        mat.color.setHex(EDIT_DIG_COLOR);
+      } else {
+        editBox.position.set(target.cell.x, floorY(target.cell.x, target.cell.y) + 0.02, target.cell.y);
+        editBox.scale.set(0.98, 0.04, 0.98);
+        mat.color.setHex(EDIT_FILL_COLOR);
+      }
+    }
 
     const startedAt = performance.now();
     let lastFrameAt = startedAt;
@@ -3297,6 +3399,8 @@ export function GameViewport({
       );
       updateActors(camX, camZ);
       updateTracers();
+      camera.updateMatrixWorld();
+      updateEditHighlight();
       updatePartyCover(camX, cam.y * wallHeight, camZ, s.eyeHeight);
       if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ);
       else if (aimFrameRef.current) aimFrameRef.current = null;
@@ -3377,6 +3481,9 @@ export function GameViewport({
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPress);
       window.removeEventListener("pointerup", onRelease);
+      renderer.domElement.removeEventListener("pointermove", onHover);
+      renderer.domElement.removeEventListener("pointerleave", onLeave);
+      renderer.domElement.removeEventListener("contextmenu", onContextMenu);
       container.removeChild(renderer.domElement);
       for (const geo of geometries) geo.dispose();
       for (const kit of allKits) {

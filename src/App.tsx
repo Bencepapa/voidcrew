@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
-import type { AimFocus, AimFrame, ViewportSettings, ViewportStats } from "./components/GameViewport";
+import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
+import { EditorBar } from "./editor/EditorBar";
+import type { EditTool } from "./editor/EditorBar";
+import { applyEdit, canRedo, canUndo, downloadMap, hasUnsavedEdits, redo, saveMap, undo } from "./editor/mapStore";
+import { dig, fill } from "./editor/mapEdits";
 import { AimOverlay } from "./components/AimOverlay";
 import { CREW_WEAPONS } from "./game/combat";
 import { Minimap } from "./components/Minimap";
@@ -38,6 +42,9 @@ export default function App() {
     resolveShot,
     setImmortalCrew,
     setNoclip,
+    setWorldFrozen,
+    replaceMap,
+    pushLog,
     crew,
     log,
     moveForward,
@@ -51,12 +58,20 @@ export default function App() {
     openDoorAt,
   } = useGameState();
   const [settings, setSettings] = useState<ViewportSettings>(DEFAULT_SETTINGS);
+  // the map editor (see EDITOR.md): while it's on the world holds still,
+  // walls don't stop the party and the headlamp is lit
+  const [editMode, setEditMode] = useState(false);
+  const [editTool, setEditTool] = useState<EditTool>("dig");
+  // bumped by every edit, undo, redo and save, to redraw the toolbar
+  const [, setEdits] = useState(0);
+  const viewSettings = editMode ? { ...settings, noclip: true, headlamp: true } : settings;
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const aimFrameRef = useRef<AimFrame | null>(null);
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
-  useEffect(() => setNoclip(settings.noclip), [settings.noclip, setNoclip]);
+  useEffect(() => setNoclip(viewSettings.noclip), [viewSettings.noclip, setNoclip]);
+  useEffect(() => setWorldFrozen(editMode), [editMode, setWorldFrozen]);
   if (!aim) aimFocusRef.current = null;
   const aimRef = useRef(aim);
   aimRef.current = aim;
@@ -67,7 +82,7 @@ export default function App() {
   const free = useFreeMovement({
     enabled: !grid,
     frozen: inLift || aim !== null,
-    noclip: settings.noclip,
+    noclip: viewSettings.noclip,
     map,
     pos,
     dir,
@@ -117,6 +132,8 @@ export default function App() {
   useEffect(() => {
     if (!grid) return;
     function onKey(e: KeyboardEvent) {
+      // (Ctrl+S and the like are shortcuts, not steps)
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "ArrowUp" || e.key === "w") moveForward();
       if (e.key === "ArrowDown" || e.key === "s") moveBackward();
       if (e.key === "ArrowLeft" || e.key === "a") turnL();
@@ -126,6 +143,64 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [grid, moveForward, moveBackward, turnL, turnR, jumpDown]);
+
+  // The map editor's edits: a click digs out the wall pointed at, or fills
+  // in the floor (the Fill tool, or the right button).
+  const onEdit = (target: EditTarget, alt: boolean) => {
+    const tool: EditTool = alt ? "fill" : editTool;
+    let result: ReturnType<typeof applyEdit> | null = null;
+    if (tool === "dig" && target.kind === "wall" && target.from) {
+      const from = target.from;
+      result = applyEdit(map.id, (file) => dig(file, target.cell, from));
+    } else if (tool === "fill" && target.kind === "floor") {
+      if (target.cell.x === pos.x && target.cell.y === pos.y) {
+        pushLog("Editor: can't fill in the cell the party stands in.");
+        return;
+      }
+      result = applyEdit(map.id, (file) => fill(file, target.cell));
+    }
+    if (!result) return;
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  const editUndo = () => {
+    const m = undo(map.id);
+    if (m) replaceMap(m);
+    setEdits((n) => n + 1);
+  };
+  const editRedo = () => {
+    const m = redo(map.id);
+    if (m) replaceMap(m);
+    setEdits((n) => n + 1);
+  };
+  const editSave = () => {
+    saveMap(map.id)
+      .then((file) => pushLog(`Editor: saved ${file}.`))
+      .catch((err) => pushLog(`Editor: not saved - ${err instanceof Error ? err.message : err}`))
+      .finally(() => setEdits((n) => n + 1));
+  };
+  // Tab: the editor on and off; while on, Z / Y undo and redo, Ctrl+S saves
+  const editKeys = useRef({ editUndo, editRedo, editSave });
+  editKeys.current = { editUndo, editRedo, editSave };
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Tab" && !aimRef.current) {
+        e.preventDefault();
+        setEditMode((on) => !on);
+        return;
+      }
+      if (!editMode) return;
+      const key = e.key.toLowerCase();
+      if (key === "s" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        editKeys.current.editSave();
+      } else if (key === "z") editKeys.current.editUndo();
+      else if (key === "y") editKeys.current.editRedo();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editMode]);
 
   // L: the headlamp
   useEffect(() => {
@@ -140,15 +215,16 @@ export default function App() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const n = Number(e.key);
-      if (n >= 1 && n <= crew.length && !aim) {
+      if (n >= 1 && n <= crew.length && !aim && !editMode) {
         if (document.pointerLockElement) document.exitPointerLock();
         fireWeapon(n - 1);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [crew.length, aim, fireWeapon]);
+  }, [crew.length, aim, fireWeapon, editMode]);
   const onWeapon = (index: number) => {
+    if (editMode) return;
     if (document.pointerLockElement) document.exitPointerLock();
     fireWeapon(index);
   };
@@ -176,10 +252,12 @@ export default function App() {
       aimFocusRef={aimFocusRef}
       partyCoverRef={partyCoverRef}
       onTouch={touch}
+      editMode={editMode}
+      onEdit={onEdit}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
       peekRef={view.peekRef}
-      settings={settings}
+      settings={viewSettings}
       onStats={setStats}
     />
   );
@@ -201,6 +279,21 @@ export default function App() {
         />
       )}
       {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
+      {editMode && (
+        <EditorBar
+          tool={editTool}
+          onTool={setEditTool}
+          canUndo={canUndo(map.id)}
+          canRedo={canRedo(map.id)}
+          onUndo={editUndo}
+          onRedo={editRedo}
+          unsaved={hasUnsavedEdits(map.id)}
+          onSave={editSave}
+          onDownload={() => downloadMap(map.id)}
+          onExit={() => setEditMode(false)}
+          compact={compact}
+        />
+      )}
     </>
   );
   // free movement: touch gets twin sticks; a mouse gets a hint until it's
@@ -259,7 +352,14 @@ export default function App() {
           {menuOpen && (
             <div className="pointer-events-auto w-48 min-h-0 flex flex-col gap-1 overflow-y-auto">
               {actionMenu}
-              <DebugPanel settings={settings} onChange={setSettings} stats={stats} mapId={map.id} compact />
+              <DebugPanel
+                settings={settings}
+                onChange={setSettings}
+                stats={stats}
+                mapId={map.id}
+                onEditMap={() => setEditMode(true)}
+                compact
+              />
             </div>
           )}
         </div>
@@ -294,7 +394,13 @@ export default function App() {
         <div className="w-56 flex flex-col gap-2 min-h-0">
           {actionMenu}
           <div className="flex-1 min-h-0">
-            <DebugPanel settings={settings} onChange={setSettings} stats={stats} mapId={map.id} />
+            <DebugPanel
+              settings={settings}
+              onChange={setSettings}
+              stats={stats}
+              mapId={map.id}
+              onEditMap={() => setEditMode(true)}
+            />
           </div>
         </div>
       </div>

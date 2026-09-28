@@ -115,9 +115,56 @@ function actorOffsets(): Plugin {
   };
 }
 
+// The map editor's save (see src/editor/mapStore.ts): POST
+// __voidcrew/map?id=<map id> with the file's text writes src/maps/<id>.json.
+// The game already shows what it saved, so that write doesn't hot-reload it
+// (a reload would drop the party back at the deck's start); editing a map
+// file by hand still does.
+function mapFiles(): Plugin {
+  const justSaved = new Map<string, number>();
+  return {
+    name: "voidcrew-map-files",
+    apply: "serve",
+    configureServer(server) {
+      const dir = path.resolve(server.config.root, "src/maps");
+      server.middlewares.use(`${server.config.base}__voidcrew/map`, (req, res) => {
+        const id = new URL(req.url ?? "", "http://x").searchParams.get("id") ?? "";
+        if (req.method !== "POST" || !/^[\w-]+$/.test(id)) {
+          res.statusCode = 400;
+          res.end("POST with ?id=<map id>");
+          return;
+        }
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk: Buffer) => chunks.push(chunk));
+        req.on("end", () => {
+          const text = Buffer.concat(chunks).toString();
+          try {
+            JSON.parse(text);
+          } catch {
+            res.statusCode = 400;
+            res.end("expected JSON");
+            return;
+          }
+          const file = path.join(dir, `${id}.json`);
+          justSaved.set(path.normalize(file), Date.now());
+          fs.writeFileSync(file, text);
+          res.end(path.relative(server.config.root, file));
+        });
+      });
+    },
+    handleHotUpdate(ctx) {
+      const at = justSaved.get(path.normalize(ctx.file));
+      if (at !== undefined && Date.now() - at < 2000) {
+        justSaved.delete(path.normalize(ctx.file));
+        return [];
+      }
+    },
+  };
+}
+
 export default defineConfig({
   base: "/voidcrew/",
-  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets()],
+  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles()],
   server: {
     port: 3000,
     watch: {

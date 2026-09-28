@@ -192,10 +192,19 @@ export function useGameState() {
   useEffect(() => {
     updateActors(createActors(map, gameClock.now()));
   }, [map, updateActors]);
+  // the map editor: the world holds still (no enemies moving or firing)
+  const frozenRef = useRef(false);
+  const setWorldFrozen = useCallback((on: boolean) => {
+    frozenRef.current = on;
+  }, []);
+  // the map editor: the deck as edited, in place of the current one
+  const replaceMap = useCallback((next: GameMap) => {
+    if (next.id === mapRef.current.id) setMap(next);
+  }, []);
   useEffect(() => {
     const timer = setInterval(() => {
       const m = mapRef.current;
-      if (readyMapRef.current !== m.id) return;
+      if (readyMapRef.current !== m.id || frozenRef.current) return;
       const { actors: next, attacks } = stepActors(m, actorsRef.current, gameClock.now(), posRef.current, (cell) =>
         openDoorsRef.current.has(doorCellKey(cell)),
       );
@@ -548,6 +557,8 @@ export function useGameState() {
     resolveShot,
     setImmortalCrew,
     setNoclip,
+    setWorldFrozen,
+    replaceMap,
     elevation,
     jumpDown: jump,
     use,
