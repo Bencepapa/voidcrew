@@ -37,6 +37,7 @@ export default function App() {
     cancelAim,
     resolveShot,
     setImmortalCrew,
+    setNoclip,
     crew,
     log,
     moveForward,
@@ -55,6 +56,7 @@ export default function App() {
   const aimFrameRef = useRef<AimFrame | null>(null);
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
+  useEffect(() => setNoclip(settings.noclip), [settings.noclip, setNoclip]);
   if (!aim) aimFocusRef.current = null;
   const aimRef = useRef(aim);
   aimRef.current = aim;
@@ -65,6 +67,7 @@ export default function App() {
   const free = useFreeMovement({
     enabled: !grid,
     frozen: inLift || aim !== null,
+    noclip: settings.noclip,
     map,
     pos,
     dir,
@@ -256,7 +259,7 @@ export default function App() {
           {menuOpen && (
             <div className="pointer-events-auto w-48 min-h-0 flex flex-col gap-1 overflow-y-auto">
               {actionMenu}
-              <DebugPanel settings={settings} onChange={setSettings} stats={stats} compact />
+              <DebugPanel settings={settings} onChange={setSettings} stats={stats} mapId={map.id} compact />
             </div>
           )}
         </div>
@@ -291,7 +294,7 @@ export default function App() {
         <div className="w-56 flex flex-col gap-2 min-h-0">
           {actionMenu}
           <div className="flex-1 min-h-0">
-            <DebugPanel settings={settings} onChange={setSettings} stats={stats} />
+            <DebugPanel settings={settings} onChange={setSettings} stats={stats} mapId={map.id} />
           </div>
         </div>
       </div>

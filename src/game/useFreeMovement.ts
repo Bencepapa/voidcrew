@@ -9,6 +9,8 @@ interface FreeMovementOptions {
   enabled: boolean;
   // no moving or turning (riding a lift)
   frozen: boolean;
+  // testing: no collisions, no falling (see stepFreePose)
+  noclip: boolean;
   map: GameMap;
   pos: Vec2;
   dir: Direction;
@@ -96,7 +98,7 @@ export function useFreeMovement(opts: FreeMovementOptions) {
       isOpen: (c: Vec2) =>
         o.openDoors.has(doorCellKey(c)) && !(opening && opening.x === c.x && opening.y === c.y),
     };
-    const { pose, bumpedDoor } = stepFreePose(poseRef.current, input, dt, o.map, doors);
+    const { pose, bumpedDoor } = stepFreePose(poseRef.current, input, dt, o.map, doors, o.noclip);
     poseRef.current = pose;
     // dev-only: inspect from the console (e.g. while testing with a hidden tab)
     if (import.meta.env.DEV) Object.assign(window, { __voidcrewPose: pose, __voidcrewInput: input });

@@ -93,6 +93,12 @@ export function useGameState() {
   const setImmortalCrew = useCallback((on: boolean) => {
     immortalRef.current = on;
   }, []);
+  // testing: steps go anywhere on the map - through walls, doors, props
+  // and actors
+  const noclipRef = useRef(false);
+  const setNoclip = useCallback((on: boolean) => {
+    noclipRef.current = on;
+  }, []);
   const [log, setLog] = useState<LogEntry[]>([
     { id: logId++, text: `You board the USV Horizon, ${START_MAP.name}.` },
   ]);
@@ -414,6 +420,13 @@ export function useGameState() {
     const next = stepForward(pos, moveDir);
     const target = cellAt(map, next.x, next.y);
 
+    if (noclipRef.current) {
+      if (next.x < 0 || next.y < 0 || next.x >= map.width || next.y >= map.height) return;
+      setPos(next);
+      if (target !== "wall") setElevation(floorHeight(map, next.x, next.y));
+      return;
+    }
+
     // pressing against a lift's button wall pushes the button
     if (target === "wall" && moveDir === dir && liftAt(map, pos)?.button === moveDir) {
       startLift();
@@ -534,6 +547,7 @@ export function useGameState() {
     cancelAim,
     resolveShot,
     setImmortalCrew,
+    setNoclip,
     elevation,
     jumpDown: jump,
     use,

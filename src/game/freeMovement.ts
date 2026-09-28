@@ -156,12 +156,15 @@ function blockingCell(map: GameMap, x: number, z: number, feet: number, doors: D
 // Advances the pose by `dt` seconds. Movement is resolved one axis at a time
 // so the player slides along walls instead of sticking to them. Returns the
 // new pose and the closed door cell bumped into, if any (bumping opens it).
+// With `noclip` (testing) nothing blocks: it goes through walls and keeps
+// its height inside them, standing on the floor elsewhere.
 export function stepFreePose(
   pose: FreePose,
   input: FreeInput,
   dt: number,
   map: GameMap,
   doors: DoorState,
+  noclip = false,
 ): { pose: FreePose; bumpedDoor: Vec2 | null } {
   const yaw = pose.yaw + input.turn * FREE_TURN_SPEED * dt;
   const fwd = forwardOf(yaw);
@@ -176,6 +179,13 @@ export function stepFreePose(
   let z = pose.z;
   let y = pose.y;
   let fallSpeed = pose.fallSpeed;
+
+  if (noclip) {
+    x = Math.min(map.width - 0.5, Math.max(-0.5, x + dx));
+    z = Math.min(map.height - 0.5, Math.max(-0.5, z + dz));
+    if (cellAt(map, Math.round(x), Math.round(z)) !== "wall") y = groundUnder(map, x, z, y);
+    return { pose: { x, z, y, fallSpeed: 0, yaw }, bumpedDoor: null };
+  }
 
   // On a ladder - within reach of it and off the floor, or pushing toward
   // it - moving toward the ladder climbs and away from it climbs down. Off

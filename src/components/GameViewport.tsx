@@ -86,6 +86,8 @@ export interface ViewportSettings {
   aimMiniGame: boolean;
   // testing: hits still take HP, but never below 1
   immortalCrew: boolean;
+  // testing: walk through walls, doors, props and enemies
+  noclip: boolean;
   // crew gear: a scanner outlining enemies in view, even in the dark
   enemyScanner: boolean;
   // the headlamp: a light that moves with the party (off: map lights only)
@@ -175,6 +177,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   geometryView: "textured",
   aimMiniGame: true,
   immortalCrew: false,
+  noclip: false,
   enemyScanner: false,
   headlamp: false,
   viewDistance: 7,

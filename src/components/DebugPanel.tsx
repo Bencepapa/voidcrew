@@ -1,4 +1,5 @@
 import type { TextureSetId, ViewportSettings, ViewportStats, WallProfileId } from "./GameViewport";
+import { downloadMap } from "../game/mapExport";
 
 interface DebugPanelProps {
   settings: ViewportSettings;
@@ -7,6 +8,8 @@ interface DebugPanelProps {
   // translucent, non-scrolling variant for the mobile overlay layout (the
   // overlay container scrolls instead)
   compact?: boolean;
+  // the current map, for its download button
+  mapId?: string;
 }
 
 const TEXTURE_SET_OPTIONS: { id: TextureSetId; label: string }[] = [
@@ -80,7 +83,7 @@ const BEVEL_SLIDERS: SliderConfig[] = [
   { key: "bevelAngleDeg", label: "Bevel angle (deg, from floor)", min: 15, max: 75, step: 1 },
 ];
 
-export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelProps) {
+export function DebugPanel({ settings, onChange, stats, compact, mapId }: DebugPanelProps) {
   function set<K extends keyof ViewportSettings>(key: K, value: ViewportSettings[K]) {
     onChange({ ...settings, [key]: value });
   }
@@ -207,6 +210,21 @@ export function DebugPanel({ settings, onChange, stats, compact }: DebugPanelPro
         />
         Immortal crew (testing: HP stops at 1)
       </label>
+
+      <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+        <input type="checkbox" checked={settings.noclip} onChange={(e) => set("noclip", e.target.checked)} />
+        Noclip (walk through walls)
+      </label>
+
+      {mapId && (
+        <button
+          type="button"
+          onClick={() => downloadMap(mapId)}
+          className="text-[11px] border border-neutral-600 rounded-sm px-2 py-1 hover:bg-neutral-800 text-left"
+        >
+          Download map ({mapId}.json)
+        </button>
+      )}
 
       <label className="flex items-center gap-2 text-[11px] cursor-pointer">
         <input
