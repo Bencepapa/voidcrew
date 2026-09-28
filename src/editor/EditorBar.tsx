@@ -16,8 +16,7 @@ interface Props {
   onSave: () => void;
   onDownload: () => void;
   onExit: () => void;
-  // the phone layout: at the bottom, above the party (the minimap and the
-  // menu take the top)
+  // the phone layout: at the bottom (the minimap and the menu take the top)
   compact?: boolean;
 }
 
@@ -28,7 +27,7 @@ const active = "border-amber-400 bg-amber-400/20 text-amber-200";
 export function EditorBar(p: Props) {
   return (
     <div
-      className={`absolute ${p.compact ? "bottom-16" : "top-2"} inset-x-2 z-20 flex flex-wrap justify-center gap-1 font-mono`}
+      className={`absolute ${p.compact ? "bottom-2" : "top-2"} inset-x-2 z-20 flex flex-wrap justify-center gap-1 font-mono`}
       // the view underneath mustn't take these as peeks or steps
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}

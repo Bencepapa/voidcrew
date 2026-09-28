@@ -1,5 +1,6 @@
 import type { MapFile } from "../game/mapFormat";
-import type { Vec2 } from "../game/types";
+import { PROP_TYPES } from "../game/props";
+import type { Direction, PropAnchor, Vec2 } from "../game/types";
 
 // Edits on a map file (see mapStore.applyEdit): each takes a copy of the
 // file and returns it changed.
@@ -9,14 +10,44 @@ const LAYER_NAMES: (keyof Layers)[] = ["floor", "ceiling", "floorTexture", "wall
 
 const setChar = (row: string, x: number, char: string) => row.slice(0, x) + char + row.slice(x + 1);
 
+// the wall a wall-mounted prop at an anchor hangs on (corners: the north or
+// south one - see props.ts WALL_FACING)
+const MOUNTED_ON: Record<PropAnchor, Direction | null> = {
+  center: null,
+  N: "N",
+  NE: "N",
+  NW: "N",
+  S: "S",
+  SE: "S",
+  SW: "S",
+  E: "E",
+  W: "W",
+};
+
+const NEIGHBOURS: { dx: number; dy: number; toward: Direction }[] = [
+  { dx: 0, dy: 1, toward: "N" },
+  { dx: 0, dy: -1, toward: "S" },
+  { dx: 1, dy: 0, toward: "W" },
+  { dx: -1, dy: 0, toward: "E" },
+];
+
 // Digs a wall cell out into floor, like the open cell it was dug from
 // (`from`, next to it): the same floor and ceiling heights and textures.
+// What was on the wall's faces goes with it: the decals on them and the
+// props mounted on them, in the cells around.
 export function dig(file: MapFile, cell: Vec2, from: Vec2): MapFile {
   file.layout[cell.y] = setChar(file.layout[cell.y], cell.x, ".");
   for (const name of LAYER_NAMES) {
     const layer = file.layers?.[name];
     if (!layer) continue;
     layer.rows[cell.y] = setChar(layer.rows[cell.y], cell.x, layer.rows[from.y]?.[from.x] ?? ".");
+  }
+  // a face of the dug wall: a neighbour's side toward it
+  const onFace = (x: number, y: number, side: string | null | undefined) =>
+    NEIGHBOURS.some((n) => x === cell.x + n.dx && y === cell.y + n.dy && side === n.toward);
+  if (file.decals) file.decals = file.decals.filter((d) => !onFace(d.x, d.y, d.surface));
+  if (file.props) {
+    file.props = file.props.filter((p) => !(PROP_TYPES[p.prop]?.wall && onFace(p.x, p.y, MOUNTED_ON[p.at ?? "center"])));
   }
   return file;
 }

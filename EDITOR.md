@@ -54,8 +54,12 @@ not two editors.
   fog, the headlamp on, enemies frozen, noclip on; the surface under the
   cursor (or crosshair on touch) is highlighted, with its cell and face.
 - **Dig and fill:** click a wall to dig it out (it becomes floor at the
-  neighbour's height); right-click (long-press on touch) a floor to fill it
-  in as wall.
+  neighbour's height); right-click (the Fill tool on touch) a floor to fill
+  it in as wall. Digging takes what was on the wall's faces with it – the
+  decals on them and the props mounted on them (shelves, posters,
+  curtains); a window in it blocks the dig. Filling takes the cell's decals
+  and ceiling light. Undo brings any of it back.
+- The party panel is hidden while editing (no fighting, and the room).
 - **Heights:** on a floor or ceiling, the wheel (or +/- buttons) raises or
   lowers it by one height step (0.25).
 - **Palette** at the bottom, placing the chosen thing where you click:
@@ -76,7 +80,8 @@ not two editors.
 
 ## 2D map view
 
-- Opened from edit mode (a key or button), over or beside the game view.
+- Opened by clicking the minimap in edit mode (or a key), over the game
+  view.
 - Paint cells wall/floor; a brush for a layer (floor height, ceiling height,
   floor/wall/ceiling texture) with the layer's legend as the palette.
 - Doors and windows on cell edges; ladders and bridges as markers.

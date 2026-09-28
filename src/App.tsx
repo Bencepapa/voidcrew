@@ -364,9 +364,12 @@ export default function App() {
           )}
         </div>
 
-        <div className="absolute bottom-2 inset-x-2 pointer-events-none">
-          <PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />
-        </div>
+        {/* (not while editing the map: no fighting, and the room it takes) */}
+        {!editMode && (
+          <div className="absolute bottom-2 inset-x-2 pointer-events-none">
+            <PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />
+          </div>
+        )}
       </div>
     );
   }
@@ -405,7 +408,7 @@ export default function App() {
         </div>
       </div>
 
-      <PartyPanel crew={crew} readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />
+      {!editMode && <PartyPanel crew={crew} readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />}
     </div>
   );
 }
