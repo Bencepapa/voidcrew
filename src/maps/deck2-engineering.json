@@ -93,8 +93,10 @@
   ],
   "bridges": [{ "x": 10, "y": 3, "height": 1, "axis": "EW" }],
   "lights": [
-    { "x": 10, "y": 3 },
-    { "x": 10, "y": 6 }
+    { "x": 6, "y": 2 },
+    { "x": 4, "y": 7 },
+    { "x": 10, "y": 7 },
+    { "x": 1, "y": 7 }
   ],
   "windows": [
     { "x": 4, "y": 1, "wall": "N", "width": 3 },
@@ -125,5 +127,11 @@
     { "decal": "text_danger", "x": 3, "y": 3, "surface": "S", "px": 100, "py": 40 },
     { "decal": "text_engine", "x": 5, "y": 1, "surface": "S", "px": 120, "py": 40 },
     { "decal": "text_lift", "x": 1, "y": 7, "surface": "W", "px": 36, "py": 40 }
+  ],
+  "lightsOff": [
+    { "x": 5, "y": 1 },
+    { "x": 7, "y": 3 },
+    { "x": 3, "y": 5 },
+    { "x": 1, "y": 5 }
   ]
 }

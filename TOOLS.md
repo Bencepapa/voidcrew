@@ -231,6 +231,18 @@ Its texture sets also go into `TEXTURE_SETS`. In a map:
    },
    ```
    `height`: in wall heights; `walkRows`: the poses played during one step.
+   Fighting and senses are set there too (see `ActorType`): `hp`, `damage`,
+   `attackRange`, `attackCooldownMs`, `accuracy`, `falloff`; `sight` and
+   `fieldOfView` (unaware), `huntSight` (alert), `hearing`, `alertMs` (how
+   long it stays alert without sensing the party); and `tactics`:
+   ```ts
+   tactics: { shotPauseMs: 250, retreat: [1, 2], seeksCover: true, advance: true, minRange: 2 },
+   ```
+   – holds still `shotPauseMs` after a shot, falls back `retreat` cells
+   (toward cover if `seeksCover`), and steps forward into a line of fire
+   before the next shot (`advance`), no closer than `minRange`. A dumb or
+   heavily armored robot, or a zombie, stands its ground:
+   `retreat: [0, 0], advance: false`.
 5. **In a map**:
    ```json
    "actors": [{ "actor": "robot1", "x": 9, "y": 1, "facing": "W", "patrol": [[9, 1], [5, 1]] }]

@@ -87,6 +87,10 @@
     { "x": 9, "y": 7, "wall": "S" },
     { "x": 13, "y": 7, "wall": "S" }
   ],
+  "actors": [
+    { "actor": "robot1", "x": 14, "y": 2, "facing": "W" },
+    { "actor": "robot1", "x": 8, "y": 6, "facing": "E" }
+  ],
   "props": [
     { "prop": "crate1", "x": 15, "y": 4, "at": "NE" },
     { "prop": "crewbed1", "x": 4, "y": 1, "at": "N" },

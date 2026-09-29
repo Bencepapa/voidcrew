@@ -1,5 +1,6 @@
 import { cellAt, floorHeight } from "./map";
-import { DIR_VECTOR } from "./movement";
+import { DIR_VECTOR, rightOf } from "./movement";
+import { PROP_TYPES } from "./props";
 import { passage } from "./heights";
 import { lineOfSight } from "./visibility";
 import type { ActorSpec, Direction, GameMap, Vec2 } from "./types";
@@ -55,11 +56,33 @@ export interface ActorType {
   sight: number;
   fieldOfView: number;
   huntSight: number;
+  // how near (cells) it hears the party, whichever way it faces
+  hearing: number;
+  // how long it stays alert without seeing or hearing the party (game ms)
+  alertMs: number;
+  // how it moves in a fight (see stepActors)
+  tactics: ActorTactics;
   // its body parts' names (for the aiming overlay) and where they are
   parts: Record<BodyPart, { label: string; zone: Zone }>;
   // weak spots: a hit there counts as a hit on their part, only harder
   // (see CRIT_DAMAGE)
   crits: CritSpot[];
+}
+
+// How an actor fights around its gun's cooldown. A dumb or heavily armored
+// robot (or a zombie) stands its ground: retreat [0, 0], advance false.
+export interface ActorTactics {
+  // how long it holds still after a shot (game ms)
+  shotPauseMs: number;
+  // how many cells it falls back after a shot, at least / at most
+  retreat: [number, number];
+  // falling back, it heads for cover: out of the party's sight, or by a prop
+  // (else just away)
+  seeksCover: boolean;
+  // just before it's ready, it steps forward into a line of fire...
+  advance: boolean;
+  // ... no closer to the party than this (cells)
+  minRange: number;
 }
 
 // a rectangle of a sheet cell: x0, y0, x1, y1 as fractions from its top left
@@ -104,6 +127,9 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     sight: 5,
     fieldOfView: 120,
     huntSight: 7,
+    hearing: 1,
+    alertMs: 8000,
+    tactics: { shotPauseMs: 250, retreat: [1, 2], seeksCover: true, advance: true, minRange: 2 },
     parts: {
       head: { label: "SENSOR", zone: [0.3, 0.14, 0.7, 0.32] },
       torso: { label: "CORE", zone: [0.3, 0.32, 0.72, 0.62] },
@@ -195,9 +221,17 @@ export interface ActorState {
   waitUntil: number;
   // how long the step it's taking lasts (slowed actors walk slower)
   moveMs: number;
-  // fighting: it has seen the party and hunts it
+  // fighting: it's alert (has seen the party and hunts it)
   hp: number;
   hostile: boolean;
+  // when it last saw, heard or was hit by the party, and where the party
+  // was then (where it searches)
+  lastSeenAt: number;
+  lastSeenCell: Vec2 | null;
+  // after a shot: cells still to fall back; and whether it has stepped
+  // forward for the next shot yet
+  retreatSteps: number;
+  advanced: boolean;
   lastAttack: number;
   stunnedUntil: number;
   disarmedUntil: number;
@@ -229,6 +263,10 @@ export function createActors(map: GameMap, now: number): ActorState[] {
     moveMs: ACTOR_TYPES[spec.actor].moveMs,
     hp: ACTOR_TYPES[spec.actor].hp,
     hostile: false,
+    lastSeenAt: -1e9,
+    lastSeenCell: null,
+    retreatSteps: 0,
+    advanced: false,
     lastAttack: -1e9,
     stunnedUntil: 0,
     disarmedUntil: 0,
@@ -268,17 +306,25 @@ export function partyHitChance(type: ActorType, distance: number, exposed: numbe
 }
 
 const same = (a: Vec2, b: Vec2) => a.x === b.x && a.y === b.y;
+const DIRECTIONS: Direction[] = ["N", "E", "S", "W"];
 
 const toward = (from: Vec2, to: Vec2): Direction =>
   Math.abs(to.x - from.x) >= Math.abs(to.y - from.y) ? (to.x > from.x ? "E" : "W") : to.y > from.y ? "S" : "N";
 
 // Advances the actors to `now` (game time). A living one that's done
 // walking and waiting:
-// - hostile, seeing the party: fires if it's in range, able and its gun is
-//   ready; else it closes in
-// - otherwise: takes its next step toward its patrol point - along the
-//   longer axis first, the other if that's blocked - or waits if it can't
-//   move. Seeing the party makes it hostile.
+// - unaware: walks its patrol route. It notices the party ahead of it
+//   (within its sight and field of view), or hears it right next to it -
+//   or feels a shot land - and turns alert.
+// - alert, seeing the party: fights in a rhythm around its gun's cooldown
+//   (as its type's tactics allow) - fires, holds still a moment, falls back
+//   a cell or two (to a cell out of the party's line of sight, or by a
+//   crate, if there's one), waits there while it reloads, steps forward
+//   into a line of fire just before it's ready, and fires again. Out of
+//   range, it closes in.
+// - alert, not seeing it: waits in cover while reloading, then goes to
+//   where it last saw the party and looks around. After alertMs without
+//   seeing (or hearing) it, it's unaware again and back to its route.
 // Returns the same array if nothing changed, plus the shots fired.
 export function stepActors(
   map: GameMap,
@@ -289,82 +335,171 @@ export function stepActors(
 ): { actors: ActorState[]; attacks: ActorAttack[] } {
   let changed = false;
   const attacks: ActorAttack[] = [];
+  const doorOpen = (key: string) => {
+    const [x, y] = key.split(",").map(Number);
+    return isDoorOpen({ x, y });
+  };
+  const clearLine = (from: Vec2, to: Vec2) => lineOfSight(map, from, to, doorOpen);
+  // cells with a prop to hide by (not the ones hung on walls)
+  const propCells = new Set((map.props ?? []).filter((p) => !PROP_TYPES[p.prop]?.wall).map((p) => `${p.cell.x},${p.cell.y}`));
+
   const next = actors.map((actor) => {
     const type = ACTOR_TYPES[actor.type];
     if (actor.diedAt !== null || actorMoving(actor, now) || now < actor.waitUntil || now < actor.stunnedUntil) {
       return actor;
     }
-
-    // it notices the party ahead of it; once hunting, anywhere near
-    const px = party.x - actor.cell.x;
-    const py = party.y - actor.cell.y;
-    const dist = Math.hypot(px, py);
-    const ahead = DIR_VECTOR[actor.facing];
-    const inView =
-      actor.hostile || dist < 1e-6 || (px * ahead.x + py * ahead.y) / dist >= Math.cos(((type.fieldOfView / 2) * Math.PI) / 180);
-    const sees =
-      dist <= (actor.hostile ? type.huntSight : type.sight) &&
-      inView &&
-      lineOfSight(map, actor.cell, party, (key) => {
-        const [x, y] = key.split(",").map(Number);
-        return isDoorOpen({ x, y });
-      });
-    if (sees && !actor.hostile) {
+    let a = actor;
+    const update = (patch: Partial<ActorState>) => {
+      a = { ...a, ...patch };
       changed = true;
-      return { ...actor, hostile: true, facing: toward(actor.cell, party), waitUntil: now + 400 };
-    }
-    if (actor.hostile && sees) {
-      const distance = Math.hypot(party.x - actor.cell.x, party.y - actor.cell.y);
-      if (distance <= type.attackRange) {
-        if (now < actor.disarmedUntil || now - actor.lastAttack < type.attackCooldownMs) {
-          if (actor.facing === toward(actor.cell, party)) return actor;
-          changed = true;
-          return { ...actor, facing: toward(actor.cell, party) };
-        }
-        const [lo, hi] = type.damage;
-        attacks.push({ actor: actor.id, damage: lo + Math.floor(Math.random() * (hi - lo + 1)), distance });
-        changed = true;
-        return { ...actor, facing: toward(actor.cell, party), lastAttack: now };
+    };
+
+    // a step to a neighbouring cell it can walk into (level, free)
+    const canStep = (to: Vec2, dir: Direction) => {
+      const kind = cellAt(map, to.x, to.y);
+      if (kind === "wall" || (kind === "door" && !isDoorOpen(to))) return false;
+      if (same(to, party) || actors.some((o) => o !== actor && actorAt([o], to, now))) return false;
+      const way = passage(map, a.cell, floorHeight(map, a.cell.x, a.cell.y), to, dir);
+      return way.kind === "walk" && way.y === floorHeight(map, to.x, to.y);
+    };
+    const neighbours = () =>
+      DIRECTIONS.map((dir) => ({ dir, to: { x: a.cell.x + DIR_VECTOR[dir].x, y: a.cell.y + DIR_VECTOR[dir].y } })).filter(
+        ({ to, dir }) => canStep(to, dir),
+      );
+    // takes a step; in a fight it keeps facing the party (backing off, say)
+    const stepTo = (to: Vec2, dir: Direction, face?: Vec2) => {
+      update({
+        from: a.cell,
+        cell: to,
+        moveStart: now,
+        moveMs: type.moveMs * (now < a.slowedUntil ? 2 : 1),
+        facing: face ? toward(to, face) : dir,
+      });
+      return a;
+    };
+    // a step toward a cell: along the longer axis first, the other if that's
+    // blocked; if neither works it looks that way and tries again shortly
+    const walkToward = (goal: Vec2) => {
+      const dx = goal.x - a.cell.x;
+      const dy = goal.y - a.cell.y;
+      const horizontal: Direction | null = dx > 0 ? "E" : dx < 0 ? "W" : null;
+      const vertical: Direction | null = dy > 0 ? "S" : dy < 0 ? "N" : null;
+      const tries = (Math.abs(dx) >= Math.abs(dy) ? [horizontal, vertical] : [vertical, horizontal]).filter(
+        (d): d is Direction => d !== null,
+      );
+      for (const dir of tries) {
+        const v = DIR_VECTOR[dir];
+        const to = { x: a.cell.x + v.x, y: a.cell.y + v.y };
+        if (canStep(to, dir)) return stepTo(to, dir);
       }
+      update({ facing: tries[0] ?? a.facing, waitUntil: now + 500 });
+      return a;
+    };
+
+    // what it senses of the party
+    const dist = Math.hypot(party.x - a.cell.x, party.y - a.cell.y);
+    const ahead = DIR_VECTOR[a.facing];
+    const inView =
+      dist < 1e-6 ||
+      ((party.x - a.cell.x) * ahead.x + (party.y - a.cell.y) * ahead.y) / dist >= Math.cos(((type.fieldOfView / 2) * Math.PI) / 180);
+    const line = dist <= type.huntSight && clearLine(a.cell, party);
+    const sees = line && (a.hostile ? dist <= type.huntSight : (inView && dist <= type.sight) || dist <= type.hearing);
+
+    // a shot it didn't see coming: now it knows where the party is
+    if (a.hitAt > a.lastSeenAt) {
+      update({ hostile: true, lastSeenAt: a.hitAt, lastSeenCell: party, facing: toward(a.cell, party) });
+    }
+    if (sees && !a.hostile) {
+      // noticed: turns to the party, a moment to react
+      update({ hostile: true, lastSeenAt: now, lastSeenCell: party, facing: toward(a.cell, party), waitUntil: now + 400 });
+      return a;
+    }
+    if (sees) update({ lastSeenAt: now, lastSeenCell: party });
+    if (a.hostile && !sees && now - a.lastSeenAt > type.alertMs) {
+      // lost it: back to its route, unaware
+      update({ hostile: false, lastSeenCell: null, retreatSteps: 0, advanced: false });
     }
 
-    let { target, forward } = actor;
-    // a hostile one that doesn't see the party walks back to its route
-    const chasing = actor.hostile && sees;
-    if (!chasing && same(actor.cell, actor.patrol[target])) {
+    if (a.hostile) {
+      const cooldownLeft = type.attackCooldownMs - (now - a.lastAttack);
+      const disarmed = now < a.disarmedUntil;
+      const soonReady = !disarmed && cooldownLeft <= type.moveMs * 1.1;
+      const goal = a.lastSeenCell ?? party;
+      const tactics = type.tactics;
+
+      if (sees && dist <= type.attackRange && !disarmed && cooldownLeft <= 0) {
+        const [lo, hi] = type.damage;
+        attacks.push({ actor: a.id, damage: lo + Math.floor(Math.random() * (hi - lo + 1)), distance: dist });
+        const [fewest, most] = tactics.retreat;
+        update({
+          facing: toward(a.cell, party),
+          lastAttack: now,
+          retreatSteps: fewest + Math.floor(Math.random() * (most - fewest + 1)),
+          advanced: false,
+          // holds still a moment after the shot
+          waitUntil: now + tactics.shotPauseMs,
+        });
+        return a;
+      }
+
+      // falling back after a shot, while the gun cools down: to cover if
+      // there's some - out of the party's sight, or by a prop - else away
+      if (a.retreatSteps > 0 && !soonReady) {
+        let best: { to: Vec2; dir: Direction; score: number } | null = null;
+        for (const { to, dir } of neighbours()) {
+          const away = Math.hypot(goal.x - to.x, goal.y - to.y) - Math.hypot(goal.x - a.cell.x, goal.y - a.cell.y);
+          const hidden = !clearLine(to, goal);
+          const toParty = { x: to.x + Math.sign(goal.x - to.x), y: to.y + Math.sign(goal.y - to.y) };
+          const byProp = propCells.has(`${to.x},${to.y}`) || propCells.has(`${toParty.x},${toParty.y}`);
+          const cover = tactics.seeksCover ? (hidden ? 3 : 0) + (byProp ? 2 : 0) : 0;
+          const score = cover + (away > 0 ? 1 : away < 0 ? -2 : 0);
+          if (score > 0 && (!best || score > best.score)) best = { to, dir, score };
+        }
+        update({ retreatSteps: best ? a.retreatSteps - 1 : 0 });
+        if (best) return stepTo(best.to, best.dir, goal);
+      }
+
+      // almost ready: steps forward into a line of fire (no closer than two
+      // cells), unless it has one already where it stands
+      if (tactics.advance && soonReady && !a.advanced && !(sees && dist >= tactics.minRange)) {
+        let best: { to: Vec2; dir: Direction; d: number } | null = null;
+        for (const { to, dir } of neighbours()) {
+          const d = Math.hypot(goal.x - to.x, goal.y - to.y);
+          if (d < tactics.minRange || !clearLine(to, goal)) continue;
+          if (!best || d < best.d) best = { to, dir, d };
+        }
+        update({ advanced: true });
+        if (best) return stepTo(best.to, best.dir, goal);
+      }
+
+      if (sees) {
+        if (dist > type.attackRange) return walkToward(party);
+        // in range, reloading: keeps an eye on the party
+        if (a.facing !== toward(a.cell, party)) update({ facing: toward(a.cell, party) });
+        return a;
+      }
+      // doesn't see it: waits in cover while reloading, then searches where
+      // it last saw the party, looking around once there
+      if (!soonReady && a.lastSeenCell && !same(a.cell, a.lastSeenCell) && now - a.lastSeenAt < type.attackCooldownMs) {
+        return a;
+      }
+      if (a.lastSeenCell && !same(a.cell, a.lastSeenCell)) return walkToward(a.lastSeenCell);
+      update({ facing: rightOf(a.facing), waitUntil: now + 900 });
+      return a;
+    }
+
+    let { target, forward } = a;
+    if (same(a.cell, a.patrol[target])) {
       // arrived: pause, then head for the next point (turning back at the
       // route's ends)
-      if (actor.patrol.length < 2) return actor;
-      if (forward && target === actor.patrol.length - 1) forward = false;
+      if (a.patrol.length < 2) return a;
+      if (forward && target === a.patrol.length - 1) forward = false;
       else if (!forward && target === 0) forward = true;
       target += forward ? 1 : -1;
-      changed = true;
-      return { ...actor, target, forward, waitUntil: now + type.waitMs };
+      update({ target, forward, waitUntil: now + type.waitMs });
+      return a;
     }
-
-    const goal = chasing ? party : actor.patrol[target];
-    const dx = goal.x - actor.cell.x;
-    const dy = goal.y - actor.cell.y;
-    const horizontal: Direction | null = dx > 0 ? "E" : dx < 0 ? "W" : null;
-    const vertical: Direction | null = dy > 0 ? "S" : dy < 0 ? "N" : null;
-    const tries = (Math.abs(dx) >= Math.abs(dy) ? [horizontal, vertical] : [vertical, horizontal]).filter(
-      (d): d is Direction => d !== null,
-    );
-    for (const dir of tries) {
-      const v = DIR_VECTOR[dir];
-      const to = { x: actor.cell.x + v.x, y: actor.cell.y + v.y };
-      const kind = cellAt(map, to.x, to.y);
-      if (kind === "wall" || (kind === "door" && !isDoorOpen(to))) continue;
-      if (same(to, party) || actors.some((a) => a !== actor && actorAt([a], to, now))) continue;
-      const way = passage(map, actor.cell, floorHeight(map, actor.cell.x, actor.cell.y), to, dir);
-      if (way.kind !== "walk" || way.y !== floorHeight(map, to.x, to.y)) continue;
-      changed = true;
-      const moveMs = type.moveMs * (now < actor.slowedUntil ? 2 : 1);
-      return { ...actor, from: actor.cell, cell: to, moveStart: now, moveMs, facing: dir };
-    }
-    // blocked (by the party, say): look that way and try again shortly
-    changed = true;
-    return { ...actor, facing: tries[0] ?? actor.facing, waitUntil: now + 500 };
+    return walkToward(a.patrol[target]);
   });
   return { actors: changed ? next : actors, attacks };
 }
