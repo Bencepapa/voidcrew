@@ -50,18 +50,13 @@ export interface GameMap {
   labelColor?: string;
   // the deck's ceiling lights (hex, e.g. "#ffd08a"); default a neutral warm white
   lightColor?: string;
-  // false: no generated mood lights (the demo deck's extra lamps and colored
-  // glows) - only the map's own lights, lifts' and windows'
-  autoLights?: boolean;
   decals?: DecalSpec[];
   // door cells that aren't plain standard doors
   doors?: DoorSpec[];
   ladders?: LadderSpec[];
   bridges?: BridgeSpec[];
-  // hand-placed lights, on top of the generated mood lighting
+  // the deck's lights, all placed (see the editor's Light tool)
   lights?: MapLight[];
-  // cells whose generated ceiling light is switched off
-  lightsOff?: Vec2[];
   // everything about the map but its lights (see parseMap): two versions
   // with the same key differ only in lighting, which the renderer can
   // change without rebuilding the deck
@@ -112,6 +107,10 @@ export interface PropSpec {
   at: PropAnchor;
   // degrees, clockwise seen from above
   rotation?: number;
+  // a nudge from its anchored spot (cells: across, along)
+  offset?: [number, number];
+  // raised off the floor (wall heights) - on another prop, say
+  elevation?: number;
 }
 
 // A lift cabin: the cell behind a lift door. Its button (a decal with the

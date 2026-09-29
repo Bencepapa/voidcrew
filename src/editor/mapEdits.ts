@@ -9,7 +9,7 @@ import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
 // floor in, paint the surface the pointer is on with a texture set, place /
 // change / remove a light, raise or lower a floor or ceiling, or put in /
 // take out a ladder, a bridge, a door or a prop.
-export type EditTool = "dig" | "fill" | "texture" | "light" | "height" | "ladder" | "bridge" | "door" | "prop";
+export type EditTool = "dig" | "fill" | "texture" | "light" | "height" | "ladder" | "bridge" | "door" | "prop" | "decal";
 
 // The surface under the pointer, which picks the tool's target (a wall's
 // face is seen from the open cell it belongs to - `from`).
@@ -163,10 +163,61 @@ export function toggleDoor(file: MapFile, cell: Vec2): MapFile {
   return file;
 }
 
-// A prop in `cell` at an anchor (turned `rotation` degrees).
-export function addProp(file: MapFile, prop: string, cell: Vec2, anchor: PropAnchor, rotation: number): MapFile {
+// A prop in `cell` at an anchor (turned `rotation` degrees; nudged and
+// raised as `extra` says - see PropSpec).
+export function addProp(
+  file: MapFile,
+  prop: string,
+  cell: Vec2,
+  anchor: PropAnchor,
+  rotation: number,
+  extra: { offset?: [number, number]; elevation?: number } = {},
+): MapFile {
   const props = file.props ?? (file.props = []);
-  props.push({ prop, x: cell.x, y: cell.y, at: anchor, ...(rotation ? { rotation } : {}) });
+  props.push({ prop, x: cell.x, y: cell.y, at: anchor, ...(rotation ? { rotation } : {}), ...extra });
+  return file;
+}
+
+type PropEntry = NonNullable<MapFile["props"]>[number];
+
+// changes a prop (a setting set to undefined drops it)
+export function updateProp(file: MapFile, index: number, patch: Partial<PropEntry>): MapFile {
+  const prop = file.props?.[index];
+  if (!prop) return file;
+  const next = { ...prop, ...patch } as Record<string, unknown>;
+  for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  file.props![index] = next as PropEntry;
+  return file;
+}
+
+export function removePropIndex(file: MapFile, index: number): MapFile {
+  if (!file.props?.[index]) return file;
+  file.props.splice(index, 1);
+  if (!file.props.length) delete file.props;
+  return file;
+}
+
+type DecalEntry = NonNullable<MapFile["decals"]>[number];
+
+// The map's decals: put one in, change one, take one out.
+export function addDecal(file: MapFile, decal: DecalEntry): MapFile {
+  (file.decals ?? (file.decals = [])).push(decal);
+  return file;
+}
+
+export function updateDecal(file: MapFile, index: number, patch: Partial<DecalEntry>): MapFile {
+  const decal = file.decals?.[index];
+  if (!decal) return file;
+  const next = { ...decal, ...patch } as Record<string, unknown>;
+  for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  file.decals![index] = next as DecalEntry;
+  return file;
+}
+
+export function removeDecal(file: MapFile, index: number): MapFile {
+  if (!file.decals?.[index]) return file;
+  file.decals.splice(index, 1);
+  if (!file.decals.length) delete file.decals;
   return file;
 }
 
@@ -214,31 +265,11 @@ export function anchorAt(dx: number, dz: number, wallOnly = false): PropAnchor {
   return "center";
 }
 
-// Switches the cell's ceiling light on or off. A generated one (`auto`: the
-// mood lighting puts one there - see lights.ts autoLightCells) is switched
-// off by listing the cell in lightsOff; any other is the map's own, in
-// lights.
-export function setLight(file: MapFile, cell: Vec2, on: boolean, auto: boolean): MapFile {
-  const here = (l: { x: number; y: number }) => l.x === cell.x && l.y === cell.y;
-  file.lights = (file.lights ?? []).filter((l) => !here(l));
-  file.lightsOff = (file.lightsOff ?? []).filter((l) => !here(l));
-  if (on && !auto) file.lights.push({ x: cell.x, y: cell.y });
-  if (!on && auto) file.lightsOff.push({ x: cell.x, y: cell.y });
-  if (!file.lights.length) delete file.lights;
-  if (!file.lightsOff.length) delete file.lightsOff;
-  return file;
-}
 
-// The map's own lights (MapLight): add one - a ceiling lamp in a cell, or a
-// free-standing one at `pos` there - change one, or remove one. Adding a
-// lamp where the generated lighting has one switches that one off.
+// The map's lights (MapLight): add one - a ceiling lamp in a cell, or a
+// free-standing one at `pos` there - change one, or remove one.
 export function addLight(file: MapFile, light: MapLight): MapFile {
-  const lights = file.lights ?? (file.lights = []);
-  if (!light.pos) {
-    file.lightsOff = (file.lightsOff ?? []).filter((l) => l.x !== light.x || l.y !== light.y);
-    if (!file.lightsOff.length) delete file.lightsOff;
-  }
-  lights.push(light);
+  (file.lights ?? (file.lights = [])).push(light);
   return file;
 }
 
@@ -256,11 +287,3 @@ export function removeLight(file: MapFile, index: number): MapFile {
   return file;
 }
 
-// A generated ceiling lamp becomes the map's own (to be colored or moved):
-// the generated one is switched off, an own one takes its place.
-export function customizeBuiltInLight(file: MapFile, cell: Vec2): MapFile {
-  const off = file.lightsOff ?? (file.lightsOff = []);
-  if (!off.some((l) => l.x === cell.x && l.y === cell.y)) off.push({ x: cell.x, y: cell.y });
-  (file.lights ?? (file.lights = [])).push({ x: cell.x, y: cell.y });
-  return file;
-}

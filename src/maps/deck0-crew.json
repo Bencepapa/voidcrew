@@ -8,7 +8,6 @@
   },
   "labelColor": "#c8901e",
   "lightColor": "#ffcf87",
-  "autoLights": false,
   "start": { "x": 1, "y": 4, "facing": "E" },
   "layout": [
     "WWWWWWWWWWWWWWWWW",
@@ -74,7 +73,8 @@
     { "x": 5, "y": 2 },
     { "x": 5, "y": 6 },
     { "x": 13, "y": 2 },
-    { "x": 15, "y": 4, "range": 1.1, "intensity": 1.45, "color": "#89704d" }
+    { "x": 15, "y": 4, "range": 1.1, "intensity": 1.45, "color": "#89704d" },
+    { "x": 1, "y": 4, "intensity": 0.8 }
   ],
   "windows": [
     { "x": 5, "y": 1, "wall": "N" },

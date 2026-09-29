@@ -219,9 +219,10 @@ export function propPlacement(spec: PropSpec): PropPlacement {
   const reachX = (cos * length + sin * depth) / 2;
   const reachZ = (sin * length + cos * depth) / 2;
   const [ax, az] = ANCHOR_VECTOR[spec.at];
+  const [ox, oz] = spec.offset ?? [0, 0];
   return {
-    x: spec.cell.x + ax * Math.max(0, 0.5 - reachX - WALL_GAP),
-    z: spec.cell.y + az * Math.max(0, 0.5 - reachZ - WALL_GAP),
+    x: spec.cell.x + ax * Math.max(0, 0.5 - reachX - WALL_GAP) + ox,
+    z: spec.cell.y + az * Math.max(0, 0.5 - reachZ - WALL_GAP) + oz,
     yaw,
     reachX,
     reachZ,
@@ -236,7 +237,7 @@ export function propBoxes(map: GameMap, cx: number, cy: number) {
     .filter((p) => p.cell.x === cx && p.cell.y === cy)
     .map((p) => {
       const { x, z, reachX, reachZ, type } = propPlacement(p);
-      return { minX: x - reachX, maxX: x + reachX, minZ: z - reachZ, maxZ: z + reachZ, height: type.size[1] };
+      return { minX: x - reachX, maxX: x + reachX, minZ: z - reachZ, maxZ: z + reachZ, height: (p.elevation ?? 0) + type.size[1] };
     });
 }
 

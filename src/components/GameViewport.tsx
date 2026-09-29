@@ -24,7 +24,7 @@ import { forwardOf } from "../game/freeMovement";
 import type { FreePose } from "../game/freeMovement";
 import type { PeekState } from "./useViewControls";
 import type { LiftRide } from "../game/useGameState";
-import { WALL_ROTATION, surfaceKey } from "../render/surfaces";
+import { WALL_ROTATION, surfaceFrame, surfaceKey } from "../render/surfaces";
 import { DecalLibrary, fetchDecalManifest } from "../render/decals";
 import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
 import { renderText, seededRandom } from "../render/pixelFont";
@@ -140,6 +140,14 @@ export interface EditTarget {
   // where a free-standing light would go: just off the surface pointed at -
   // its cell and its MapLight.pos there
   spot?: { cell: Vec2; pos: [number, number, number] };
+  // the Prop tool: the prop pointed at (its index in the map's props)
+  prop?: number;
+  // the Decal tool: the decal pointed at (its index in the map's decals)
+  decal?: number;
+  // the surface pointed at as a decal sees it (see DecalSpec): its cell and
+  // side, and the point on it in surface pixels (0..255 across a panel;
+  // from its top left, a wall's first panel)
+  surfacePoint?: { cell: Vec2; surface: Direction | "floor" | "ceiling"; u: number; v: number };
 }
 
 export interface ViewportStats {
@@ -440,9 +448,6 @@ const FOG_FAR_MARGIN = 0.5;
 // fade out over its last LIGHT_FADE_SPAN cells.
 const LIGHT_POOL_SIZE = 8;
 const LIGHT_FADE_SPAN = 1.5;
-// faint lights (a window's starlight) rank as if this many times farther,
-// so they don't crowd the lamps out of the pool
-const MINOR_LIGHT_PENALTY = 1.8;
 // where in the party's cell the sight is taken from (offsets from its center)
 const SIGHT_POINTS: [number, number][] = [
   [0, 0],
@@ -534,6 +539,8 @@ const EDIT_LIGHT_ADD_COLOR = 0xffe040;
 const EDIT_SELECT_COLOR = 0x80f0ff;
 // how far off a surface a free-standing light is placed (world units)
 const LIGHT_SPOT_GAP = 0.12;
+// a surface's pixels across one panel (as decals count them - see decals.ts)
+const SURFACE_PIXELS = 256;
 // an actor's glowing pixels (see glowMapOf): at least this red, no more
 // than this green or blue
 const GLOW_MIN_RED = 150;
@@ -628,6 +635,10 @@ interface GameViewportProps {
   onEdit?: (target: EditTarget, alt: boolean, shift: boolean) => void;
   // the Light tool's selected light (its index in the map's lights)
   selectedLight?: number | null;
+  // the Prop tool's selected prop (its index in the map's props)
+  selectedProp?: number | null;
+  // the Decal tool's selected decal (its index in the map's decals)
+  selectedDecal?: number | null;
   // the surface under the pointer whenever it changes - the editor's
   // texture palette follows it
   onEditHover?: (target: EditTarget | null) => void;
@@ -981,6 +992,8 @@ export function GameViewport({
   onEdit,
   onEditHover,
   selectedLight,
+  selectedProp,
+  selectedDecal,
   onReady,
   freeTick,
   peekRef,
@@ -1056,6 +1069,10 @@ export function GameViewport({
   onEditRef.current = onEdit;
   const selectedLightRef = useRef(selectedLight ?? null);
   selectedLightRef.current = selectedLight ?? null;
+  const selectedPropRef = useRef(selectedProp ?? null);
+  selectedPropRef.current = selectedProp ?? null;
+  const selectedDecalRef = useRef(selectedDecal ?? null);
+  selectedDecalRef.current = selectedDecal ?? null;
   const editToolRef = useRef(editTool ?? "dig");
   editToolRef.current = editTool ?? "dig";
   const onEditHoverRef = useRef(onEditHover);
@@ -2161,19 +2178,24 @@ export function GameViewport({
       return template;
     }
 
+    // the props placed, by index in the map's props (the editor's selection)
+    const propObjects = new Map<number, THREE.Object3D>();
     for (const name of propTypes) {
       track(async () => {
         const template = await buildPropTemplate(PROP_TYPES[name]);
         if (!template) return;
-        for (const spec of map.props ?? []) {
-          if (spec.prop !== name) continue;
+        (map.props ?? []).forEach((spec, index) => {
+          if (spec.prop !== name) return;
           const { x, z, yaw } = propPlacement(spec);
           const prop = template.clone();
-          prop.position.set(x, floorY(spec.cell.x, spec.cell.y), z);
+          prop.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
           prop.rotation.y = -yaw;
           prop.userData.prop = true;
+          // the editor picks it by this (its index in the map's props)
+          prop.userData.propIndex = index;
+          propObjects.set(index, prop);
           group.add(prop);
-        }
+        });
       }).catch((err) => console.error("Prop build failed:", err));
     }
 
@@ -2587,7 +2609,7 @@ export function GameViewport({
         const dist = Math.hypot(dx, l.y * wallHeight - cam.y, dz);
         const ahead = (dx * cam.fwdX + dz * cam.fwdZ) / (Math.hypot(dx, dz) || 1);
         const rank = dist + LIGHT_BEHIND_PENALTY * Math.max(0, -ahead) * dist;
-        return { dist, rank: l.minor ? rank * MINOR_LIGHT_PENALTY : rank };
+        return { dist, rank };
       };
       const current = new Set(lightPool.map((slot) => slot.source));
       const ranked = mapLights
@@ -3211,12 +3233,28 @@ export function GameViewport({
     // wall's face (the wall cell behind it, dug from the open cell in front),
     // else the floor or ceiling of the cell it's in: floors face up, ceiling
     // geometry is turned to face down.
+    const decalIndexOf = (h: THREE.Intersection | undefined) => h?.object.userData.decalIndex as number | undefined;
+    // a world point on a cell's surface in that surface's pixels (see
+    // DecalSpec and surfaceFrame)
+    const surfaceInverse = new THREE.Quaternion();
+    const surfaceLocal = new THREE.Vector3();
+    function surfacePointAt(cell: Vec2, surface: Direction | "floor" | "ceiling", point: THREE.Vector3): EditTarget["surfacePoint"] {
+      const frame = surfaceFrame(cell, surface, wallHeight, { floor: floorY(cell.x, cell.y), ceiling: ceilingY(cell.x, cell.y) });
+      surfaceInverse.copy(frame.quaternion).invert();
+      surfaceLocal.copy(point).sub(frame.position).applyQuaternion(surfaceInverse);
+      return {
+        cell,
+        surface,
+        u: Math.round(((surfaceLocal.x + frame.width / 2) / frame.width) * SURFACE_PIXELS),
+        v: Math.round(((frame.height / 2 - surfaceLocal.y) / frame.height) * SURFACE_PIXELS),
+      };
+    }
     function editTargetAt(ndc: THREE.Vector2): EditTarget | null {
       editRaycaster.setFromCamera(ndc, camera);
       const lightTool = editToolRef.current === "light";
-      const hit = editRaycaster
+      const hits = editRaycaster
         .intersectObjects(group.children, true)
-        .find(
+        .filter(
           (h) =>
             h.face &&
             h.object.userData.actorId === undefined &&
@@ -3224,7 +3262,22 @@ export function GameViewport({
             drawnChain(h.object) &&
             !seeThrough(h.object),
         );
+      const hit = hits[0];
       if (!hit?.face) return null;
+      // the Decal tool: a decal lies on its surface - it counts if it's as
+      // near as the nearest hit
+      const decalHit =
+        editToolRef.current === "decal"
+          ? hits.find((h) => h.object.userData.decalIndex !== undefined && h.distance <= hit.distance + 0.02)
+          : undefined;
+      // the Prop tool: a prop pointed at (any part of it)
+      if (editToolRef.current === "prop") {
+        for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
+          if (o.userData.propIndex === undefined) continue;
+          const spec = latestMapRef.current.props?.[o.userData.propIndex as number];
+          if (spec) return { kind: "floor", cell: { ...spec.cell }, prop: o.userData.propIndex as number };
+        }
+      }
       const lightIndex = hit.object.userData.mapLight as number | undefined;
       const own = lightIndex === undefined ? undefined : latestMapRef.current.lights?.[lightIndex];
       if (lightIndex !== undefined && own) {
@@ -3252,7 +3305,9 @@ export function GameViewport({
         const sz = sx ? 0 : Math.sign(editNormal.z);
         const behind = { x: Math.round(p.x - sx * 0.05), y: Math.round(p.z - sz * 0.05) };
         if (cellAt(map, behind.x, behind.y) === "wall") {
-          return { kind: "wall", cell: behind, from: { x: behind.x + sx, y: behind.y + sz }, spot };
+          const from = { x: behind.x + sx, y: behind.y + sz };
+          const side: Direction = sx > 0 ? "W" : sx < 0 ? "E" : sz > 0 ? "N" : "S";
+          return { kind: "wall", cell: behind, from, spot, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(from, side, p) };
         }
       }
       const cell = { x: Math.round(p.x), y: Math.round(p.z) };
@@ -3260,7 +3315,8 @@ export function GameViewport({
       // floor or ceiling by which the hit is nearer to (a relief's step
       // sides face sideways, so the normal can't tell)
       const nearCeiling = ceilingY(cell.x, cell.y) - p.y < p.y - floorY(cell.x, cell.y);
-      return { kind: nearCeiling ? "ceiling" : "floor", cell, spot };
+      const surface = nearCeiling ? "ceiling" : "floor";
+      return { kind: surface, cell, spot, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(cell, surface, p) };
     }
     const editBox = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
@@ -3300,7 +3356,38 @@ export function GameViewport({
     selectBox.renderOrder = 11;
     selectBox.visible = false;
     scene.add(selectBox);
+    const selectBounds = new THREE.Box3();
+    const selectCenter = new THREE.Vector3();
+    const selectSize = new THREE.Vector3();
     function updateSelectionBox() {
+      // a selected decal: framed around its pieces
+      const decalIndex = editModeRef.current ? selectedDecalRef.current : null;
+      if (decalIndex !== null) {
+        selectBounds.makeEmpty();
+        for (const obj of group.children) {
+          if (obj.userData.decalIndex === decalIndex) selectBounds.expandByObject(obj);
+        }
+        if (!selectBounds.isEmpty()) {
+          selectBounds.getCenter(selectCenter);
+          selectBounds.getSize(selectSize);
+          selectBox.position.copy(selectCenter);
+          selectBox.scale.set(selectSize.x + 0.03, selectSize.y + 0.03, selectSize.z + 0.03);
+          selectBox.visible = true;
+          return;
+        }
+      }
+      // a selected prop: framed around its bounds
+      const propIndex = editModeRef.current ? selectedPropRef.current : null;
+      const prop = propIndex === null ? undefined : propObjects.get(propIndex);
+      if (prop) {
+        selectBounds.setFromObject(prop);
+        selectBounds.getCenter(selectCenter);
+        selectBounds.getSize(selectSize);
+        selectBox.position.copy(selectCenter);
+        selectBox.scale.set(selectSize.x + 0.04, selectSize.y + 0.04, selectSize.z + 0.04);
+        selectBox.visible = true;
+        return;
+      }
       const selected = editModeRef.current ? selectedLightRef.current : null;
       const l = selected === null ? undefined : mapLights.find((m) => m.source === selected);
       selectBox.visible = !!l;
@@ -3319,12 +3406,18 @@ export function GameViewport({
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
       const tool = editToolRef.current;
-      let mode: "wall" | "plate" | "bulb" | null = null;
+      let mode: "wall" | "plate" | "bulb" | "prop" | "decal" | null = null;
       let color = EDIT_FILL_COLOR;
       if (target) {
         if (tool === "texture") {
           mode = target.kind === "wall" ? "wall" : "plate";
           color = EDIT_PAINT_COLOR;
+        } else if (tool === "decal") {
+          mode = target.decal !== undefined ? "decal" : null;
+          color = EDIT_LIGHT_ADD_COLOR;
+        } else if (tool === "prop" && target.prop !== undefined) {
+          mode = "prop";
+          color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "light") {
           // a light hangs in the cell's ceiling, so either surface of it works
           if (target.light !== undefined) {
@@ -3350,7 +3443,25 @@ export function GameViewport({
       editBox.visible = mode !== null;
       if (!target || !mode) return;
       const mat = editBox.material as THREE.LineBasicMaterial;
-      if (mode === "bulb") {
+      if (mode === "decal") {
+        selectBounds.makeEmpty();
+        for (const obj of group.children) {
+          if (obj.userData.decalIndex === target.decal) selectBounds.expandByObject(obj);
+        }
+        selectBounds.getCenter(selectCenter);
+        selectBounds.getSize(selectSize);
+        editBox.position.copy(selectCenter);
+        editBox.scale.set(selectSize.x + 0.02, selectSize.y + 0.02, selectSize.z + 0.02);
+      } else if (mode === "prop") {
+        const obj = propObjects.get(target.prop!);
+        if (obj) {
+          selectBounds.setFromObject(obj);
+          selectBounds.getCenter(selectCenter);
+          selectBounds.getSize(selectSize);
+          editBox.position.copy(selectCenter);
+          editBox.scale.set(selectSize.x + 0.02, selectSize.y + 0.02, selectSize.z + 0.02);
+        }
+      } else if (mode === "bulb") {
         const l = mapLights.find((m) => m.source === target.light);
         if (l) editBox.position.set(l.x, l.y * wallHeight, l.z);
         editBox.scale.setScalar(0.1);

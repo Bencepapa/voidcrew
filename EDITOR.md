@@ -104,8 +104,16 @@ not two editors.
   below) are still to come.
 - **Prop:** the palette picks the prop; a click on a floor puts it at the
   nearest side or corner (or the center), a wall-hung one on the nearest
-  side; R turns the next one; the right button takes out the one nearest
-  the click.
+  side, and picks it. A click on a prop picks it, the right button takes
+  it out. The picked one: arrows nudge it (as the party sees it), Page Up /
+  Down raise it, R turns it 90 degrees (Shift+R: 15), Delete takes it out;
+  its panel sets the turn and height, and **Stack on top** puts the
+  palette's prop on top of it (`offset` and `elevation` in the map).
+- **Decal:** the palette shows every decal (public/decals/index.json); a
+  click on a wall, floor or ceiling puts the picked one there, centered on
+  the click, and picks it. A click on a decal picks it, the right button
+  takes it off. The picked one: arrows move it over its surface (4 pixels,
+  Shift: 16), R turns it (Shift+R: 15 degrees), Delete takes it off.
 
 Every edit is checked by the map loader: one that would break the map (a
 ladder with no higher cell, a bridge out of its room's height...) is
@@ -113,8 +121,10 @@ refused, and the log says why.
 
 ## Lights
 
-The Light tool works on the map's `lights` (and `lightsOff`, which
-switches generated lamps off):
+Every light is placed on the map - nothing is generated any more (the old
+mood lighting's lamps were written into the maps as ordinary lights; its
+random red and blue glows and the windows' glow are gone). The Light tool
+works on the map's `lights`:
 
 ```json
 "lights": [
@@ -127,8 +137,7 @@ switches generated lamps off):
   floor: across, up in wall heights, along) it's a free-standing light,
   drawn as a small bulb. `color`, `intensity`, `range` default to the
   deck's lamp.
-- A click on a floor or ceiling picks the cell's lamp (a generated one
-  becomes the map's own) or hangs one; Shift+click (or Place: Point light)
+- A click on a floor or ceiling picks the cell's lamp or hangs one; Shift+click (or Place: Point light)
   puts a light just off the surface pointed at; a click on a bulb picks it;
   the right button removes. The panel sets color, intensity, range and
   height; the arrows (as the party sees it) and Page Up / Down move a

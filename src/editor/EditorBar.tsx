@@ -8,7 +8,9 @@
 // the pointer on its way to it: a click paints the surface with its row's
 // pick. The row of the surface under the pointer is marked.
 
+import { useEffect, useState } from "react";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
+import { fetchDecalManifest } from "../render/decals";
 import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
 import type { MapLight } from "../game/types";
@@ -35,6 +37,21 @@ interface Props {
   onPropChoice: (prop: string) => void;
   propRotation: number;
   onPropRotate: () => void;
+  // the Decal tool: the decal a click puts on, the turn it gets, and the
+  // selected one
+  decalChoice: string | null;
+  onDecalChoice: (choice: DecalChoice) => void;
+  decalRotation: number;
+  decal: DecalInfo | null;
+  onDecalChange: (patch: { rotation?: number }) => void;
+  onDecalDelete: () => void;
+  onDecalDeselect: () => void;
+  // the selected prop, and what the panel does with it
+  prop: PropInfo | null;
+  onPropChange: (patch: { rotation?: number; elevation?: number }) => void;
+  onPropStack: () => void;
+  onPropDelete: () => void;
+  onPropDeselect: () => void;
   // the Light tool: what a click places (see App), and the selected light
   lightPlace: LightPlace;
   onLightPlace: (place: LightPlace) => void;
@@ -47,6 +64,31 @@ interface Props {
 }
 
 export type LightPlace = "ceiling" | "point";
+
+// a decal picked in the palette, and its size in surface pixels (its image's)
+export interface DecalChoice {
+  name: string;
+  width: number;
+  height: number;
+}
+
+// the selected decal as the panel shows it
+export interface DecalInfo {
+  name: string;
+  rotation: number;
+  // what touching it does (a lift button)
+  action?: string;
+}
+
+// the selected prop as the panel shows it
+export interface PropInfo {
+  name: string;
+  rotation: number;
+  elevation: number;
+  // its cell's floor-to-ceiling height, and where a prop on it would stand
+  roomHeight: number;
+  top: number;
+}
 
 // the selected light as the panel shows it
 export interface LightInfo {
@@ -62,6 +104,47 @@ export interface LightInfo {
 }
 
 const BUTTON = "px-2 py-1 border rounded-sm text-[11px] disabled:opacity-30";
+
+// The decals there are (public/decals/index.json), as thumbnails; a click
+// picks one (with its image's size, which placing it needs).
+function DecalPalette(p: { choice: string | null; onChoice: (choice: DecalChoice) => void; rotation: number }) {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    fetchDecalManifest(import.meta.env.BASE_URL, "")
+      .then((manifest) => live && setNames(Object.keys(manifest)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm max-w-[640px]">
+      {names.map((name) => (
+        <button
+          key={name}
+          type="button"
+          title={name}
+          className={`w-9 h-9 border flex items-center justify-center bg-neutral-900 ${
+            p.choice === name ? "border-amber-400" : "border-neutral-700 hover:border-neutral-400"
+          }`}
+          onClick={(e) => {
+            const img = e.currentTarget.querySelector("img");
+            p.onChoice({ name, width: img?.naturalWidth || 64, height: img?.naturalHeight || 64 });
+          }}
+        >
+          <img
+            src={`${import.meta.env.BASE_URL}decals/${name}/diffuse.png`}
+            alt={name}
+            className="max-w-full max-h-full"
+            style={{ imageRendering: "pixelated" }}
+          />
+        </button>
+      ))}
+      <span className="text-[10px] text-neutral-400 px-1">Turn: {p.rotation}° (R)</span>
+    </div>
+  );
+}
 
 // a labeled slider with its value, for the light panel
 function slider(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void) {
@@ -88,6 +171,7 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "bridge", label: "Bridge", title: "Span a cell with a bridge" },
   { tool: "door", label: "Door", title: "Make a cell a door, or back" },
   { tool: "prop", label: "Prop", title: "Put in or take out props" },
+  { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
 ];
 // what a click does with each (where the toolbar doesn't say otherwise)
 const TOOL_HELP: Partial<Record<EditTool, string>> = {
@@ -95,7 +179,8 @@ const TOOL_HELP: Partial<Record<EditTool, string>> = {
   ladder: "click near a floor's edge (or a step's face): a ladder up that side · again: take it out",
   bridge: "click a floor: a bridge across it the way you face, at the ledges' height · again: take it out",
   door: "click a floor: a door there · click a door: back to floor",
-  prop: "click a floor (near a side or corner to push it there): put it in · right-click: take out the nearest · R: turn",
+  decal: "click a wall, floor or ceiling: the decal there · click a decal: pick it · right-click: take it off",
+  prop: "click a floor (near a side or corner to push it there): put it in · click a prop: pick it · right-click: take it out",
 };
 const SURFACES: { surface: EditSurface; label: string }[] = [
   { surface: "wall", label: "Wall" },
@@ -204,6 +289,31 @@ export function EditorBar(p: Props) {
           </div>
         </>
       )}
+      {p.tool === "decal" && (
+        <>
+          <span className="basis-full" />
+          <DecalPalette choice={p.decalChoice} onChoice={p.onDecalChoice} rotation={p.decalRotation} />
+          {p.decal && (
+            <>
+              <span className="basis-full" />
+              <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+                <span className="text-amber-200">
+                  {p.decal.name}
+                  {p.decal.action ? ` (${p.decal.action})` : ""}
+                </span>
+                {slider("Turn", p.decal.rotation, 0, 345, 15, (v) => p.onDecalChange({ rotation: v || undefined }))}
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDecalDelete} title="Delete">
+                  Remove
+                </button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDecalDeselect}>
+                  Done
+                </button>
+                <span className="text-neutral-500">arrows: move (Shift: more) · R: turn</span>
+              </div>
+            </>
+          )}
+        </>
+      )}
       {p.tool === "prop" && (
         <>
           <span className="basis-full" />
@@ -222,6 +332,28 @@ export function EditorBar(p: Props) {
               Turn: {p.propRotation}°
             </button>
           </div>
+          {p.prop && (
+            <>
+              <span className="basis-full" />
+              <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+                <span className="text-amber-200">{p.prop.name}</span>
+                {slider("Turn", p.prop.rotation, 0, 345, 15, (v) => p.onPropChange({ rotation: v || undefined }))}
+                {slider("Height", p.prop.elevation, 0, Math.max(0, p.prop.roomHeight - 0.05), 0.05, (v) =>
+                  p.onPropChange({ elevation: v || undefined }),
+                )}
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropStack} title="The palette's prop, on top of this one">
+                  Stack {p.propChoice} on top
+                </button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropDelete} title="Delete">
+                  Remove
+                </button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropDeselect}>
+                  Done
+                </button>
+                <span className="text-neutral-500">arrows: nudge · PgUp/PgDn: height · R: turn</span>
+              </div>
+            </>
+          )}
         </>
       )}
       {TOOL_HELP[p.tool] && (

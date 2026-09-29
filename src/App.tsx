@@ -5,28 +5,31 @@ import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } 
 import { EditorBar } from "./editor/EditorBar";
 import { applyEdit, canRedo, canUndo, downloadMap, hasUnsavedEdits, redo, saveMap, undo } from "./editor/mapStore";
 import {
+  addDecal,
+  removeDecal,
+  updateDecal,
   addLight,
   addProp,
   anchorAt,
-  customizeBuiltInLight,
   dig,
   fill,
   paintTexture,
   removeLight,
   removeProp,
+  removePropIndex,
+  updateProp,
   setHeight,
-  setLight,
   toggleBridge,
   toggleDoor,
   toggleLadder,
   updateLight,
 } from "./editor/mapEdits";
 import { PROP_TYPES } from "./game/props";
-import type { LightInfo, LightPlace } from "./editor/EditorBar";
+import type { DecalChoice, DecalInfo, LightInfo, LightPlace, PropInfo } from "./editor/EditorBar";
 import { cellAt, ceilingHeight, floorHeight } from "./game/map";
 import type { Direction, MapLight } from "./game/types";
 import { DIR_VECTOR, rightOf } from "./game/movement";
-import { autoLightCells, generateLights, hasCeilingLight, ownCeilingLight } from "./game/lights";
+import { generateLights, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, TextureLayer } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
@@ -93,6 +96,14 @@ export default function App() {
   // the Prop tool: the prop a click puts in, and how it's turned (R turns it)
   const [propChoice, setPropChoice] = useState<string>(Object.keys(PROP_TYPES)[0]);
   const [propRotation, setPropRotation] = useState(0);
+  // the Prop tool's selected prop (its index in the map's props)
+  const [selectedProp, setSelectedProp] = useState<number | null>(null);
+  // the Decal tool: the decal a click puts on (and its size in surface
+  // pixels), how it's turned, and the selected one (its index in the map's
+  // decals)
+  const [decalChoice, setDecalChoice] = useState<DecalChoice | null>(null);
+  const [decalRotation, setDecalRotation] = useState(0);
+  const [selectedDecal, setSelectedDecal] = useState<number | null>(null);
   // the surface the pointer is on: the Texture tool's palette marks its row
   // (it sticks to the last one when nothing is under the pointer)
   const [editSurface, setEditSurface] = useState<EditSurface>("wall");
@@ -205,19 +216,14 @@ export default function App() {
       }
     } else if (editTool === "light") {
       // Light tool: a click picks a light (its bulb, or a cell's ceiling
-      // lamp - a generated one becomes the map's own), or places one where
-      // there's none; the right button removes it
+      // lamp), or places one where there's none; the right button removes it
       const cell = target.cell;
       const count = map.lights?.length ?? 0;
       const own = target.light ?? (target.kind === "wall" ? -1 : ownCeilingLight(map, cell));
-      const auto = autoLightCells(map).some((c) => c.x === cell.x && c.y === cell.y);
-      const builtIn = target.kind !== "wall" && own < 0 && auto && hasCeilingLight(map, cell);
       if (alt) {
         if (own >= 0) {
           result = applyEdit(map.id, (file) => removeLight(file, own));
           setSelectedLight((sel) => (sel === null || sel === own ? null : sel > own ? sel - 1 : sel));
-        } else if (builtIn) {
-          result = applyEdit(map.id, (file) => setLight(file, cell, false, true));
         }
       } else if (target.light !== undefined) {
         setSelectedLight(target.light);
@@ -231,9 +237,7 @@ export default function App() {
           setSelectedLight(own);
           return;
         }
-        result = builtIn
-          ? applyEdit(map.id, (file) => customizeBuiltInLight(file, cell))
-          : applyEdit(map.id, (file) => addLight(file, { x: cell.x, y: cell.y }));
+        result = applyEdit(map.id, (file) => addLight(file, { x: cell.x, y: cell.y }));
         setSelectedLight(count);
       }
     } else if (editTool === "height") {
@@ -283,15 +287,61 @@ export default function App() {
         return;
       }
       result = applyEdit(map.id, (file) => toggleDoor(file, cell));
+    } else if (editTool === "decal") {
+      // a click on a decal picks it (the right button takes it off); on a
+      // surface it puts the palette's decal there, centered on the click
+      const picked = target.decal;
+      if (picked !== undefined) {
+        if (!alt) {
+          setSelectedDecal(picked);
+          return;
+        }
+        result = applyEdit(map.id, (file) => removeDecal(file, picked));
+        setSelectedDecal((sel) => (sel === null || sel === picked ? null : sel > picked ? sel - 1 : sel));
+      } else if (!alt && target.surfacePoint) {
+        if (!decalChoice) {
+          pushLog("Editor: pick a decal in the palette first.");
+          return;
+        }
+        const { cell, surface, u, v } = target.surfacePoint;
+        const count = map.decals?.length ?? 0;
+        result = applyEdit(map.id, (file) =>
+          addDecal(file, {
+            decal: decalChoice.name,
+            x: cell.x,
+            y: cell.y,
+            surface,
+            px: Math.round(u - decalChoice.width / 2),
+            py: Math.round(v - decalChoice.height / 2),
+            ...(decalRotation ? { rotation: decalRotation } : {}),
+          }),
+        );
+        setSelectedDecal(count);
+      }
     } else if (editTool === "prop") {
-      if (target.kind === "wall") return;
-      const cell = target.cell;
-      const [dx, , dz] = target.spot && target.spot.cell.x === cell.x && target.spot.cell.y === cell.y ? target.spot.pos : [0, 0, 0];
-      if (alt) {
-        result = applyEdit(map.id, (file) => removeProp(file, cell, anchorAt(dx, dz)));
+      // a click on a prop picks it (the right button takes it out); on a
+      // floor it puts in the palette's prop there (and picks it)
+      const picked = target.prop;
+      if (picked !== undefined) {
+        if (!alt) {
+          setSelectedProp(picked);
+          return;
+        }
+        result = applyEdit(map.id, (file) => removePropIndex(file, picked));
+        setSelectedProp((sel) => (sel === null || sel === picked ? null : sel > picked ? sel - 1 : sel));
       } else {
-        const anchor = anchorAt(dx, dz, !!PROP_TYPES[propChoice]?.wall);
-        result = applyEdit(map.id, (file) => addProp(file, propChoice, cell, anchor, propRotation));
+        if (target.kind === "wall") return;
+        const cell = target.cell;
+        const [dx, , dz] = target.spot && target.spot.cell.x === cell.x && target.spot.cell.y === cell.y ? target.spot.pos : [0, 0, 0];
+        if (alt) {
+          result = applyEdit(map.id, (file) => removeProp(file, cell, anchorAt(dx, dz)));
+          setSelectedProp(null);
+        } else {
+          const anchor = anchorAt(dx, dz, !!PROP_TYPES[propChoice]?.wall);
+          const count = map.props?.length ?? 0;
+          result = applyEdit(map.id, (file) => addProp(file, propChoice, cell, anchor, propRotation));
+          setSelectedProp(count);
+        }
       }
     } else {
       const tool: EditTool = alt ? "fill" : editTool;
@@ -348,6 +398,173 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [editMode]);
+
+  // The selected decal, as the panel shows it
+  const selectedDecalInfo: DecalInfo | null = (() => {
+    const spec = selectedDecal === null ? undefined : map.decals?.[selectedDecal];
+    return spec ? { name: spec.decal, rotation: spec.rotation ?? 0, action: spec.action } : null;
+  })();
+  const changeDecal = (patch: Parameters<typeof updateDecal>[2], merge?: string) => {
+    if (selectedDecal === null) return;
+    const index = selectedDecal;
+    const result = applyEdit(map.id, (file) => updateDecal(file, index, patch), merge && `decal ${index} ${merge}`);
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  const deleteDecal = () => {
+    if (selectedDecal === null) return;
+    const index = selectedDecal;
+    const result = applyEdit(map.id, (file) => removeDecal(file, index));
+    if (!("error" in result)) replaceMap(result.map);
+    setSelectedDecal(null);
+    setEdits((n) => n + 1);
+  };
+  // the selected decal: arrows move it over its surface (4 pixels, Shift:
+  // 16 - as seen looking at it; a floor's top is north), R turns it 90
+  // degrees (Shift+R: 15), Delete takes it off; with none selected, R turns
+  // the next one
+  const decalKeys = useRef({ changeDecal, deleteDecal, decals: map.decals, selectedDecal });
+  decalKeys.current = { changeDecal, deleteDecal, decals: map.decals, selectedDecal };
+  useEffect(() => {
+    if (!editMode || editTool !== "decal") return;
+    function onKey(e: KeyboardEvent) {
+      const { changeDecal: change, deleteDecal: remove, decals, selectedDecal: index } = decalKeys.current;
+      const spec = index === null ? undefined : decals?.[index];
+      const turn = e.key === "r" || e.key === "R";
+      if (!spec) {
+        if (turn) setDecalRotation((r) => (r + (e.shiftKey ? 15 : 90)) % 360);
+        return;
+      }
+      const stop = () => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      if (e.key === "Delete") {
+        stop();
+        remove();
+      } else if (turn) {
+        stop();
+        change({ rotation: ((spec.rotation ?? 0) + (e.shiftKey ? 15 : 90)) % 360 || undefined });
+      } else {
+        const step = e.shiftKey ? 16 : 4;
+        const move: Record<string, [number, number]> = {
+          ArrowLeft: [-step, 0],
+          ArrowRight: [step, 0],
+          ArrowUp: [0, -step],
+          ArrowDown: [0, step],
+        };
+        const d = move[e.key];
+        if (!d) return;
+        stop();
+        change({ px: spec.x + d[0], py: spec.y + d[1] }, "move");
+      }
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editMode, editTool]);
+
+  // The selected prop, as the panel shows it
+  const selectedPropInfo: PropInfo | null = (() => {
+    const spec = selectedProp === null ? undefined : map.props?.[selectedProp];
+    if (!spec) return null;
+    const type = PROP_TYPES[spec.prop];
+    return {
+      name: spec.prop,
+      rotation: spec.rotation ?? 0,
+      elevation: spec.elevation ?? 0,
+      roomHeight: ceilingHeight(map, spec.cell.x, spec.cell.y) - floorHeight(map, spec.cell.x, spec.cell.y),
+      // where a prop stacked on it stands: on its top
+      top: (spec.elevation ?? 0) + (type?.size[1] ?? 0),
+    };
+  })();
+  const changeProp = (patch: Parameters<typeof updateProp>[2], merge?: string) => {
+    if (selectedProp === null) return;
+    const index = selectedProp;
+    const result = applyEdit(map.id, (file) => updateProp(file, index, patch), merge && `prop ${index} ${merge}`);
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  const deleteProp = () => {
+    if (selectedProp === null) return;
+    const index = selectedProp;
+    const result = applyEdit(map.id, (file) => removePropIndex(file, index));
+    if (!("error" in result)) replaceMap(result.map);
+    setSelectedProp(null);
+    setEdits((n) => n + 1);
+  };
+  // the palette's prop on top of the selected one (and picked)
+  const stackProp = () => {
+    const spec = selectedProp === null ? undefined : map.props?.[selectedProp];
+    if (!spec || !selectedPropInfo) return;
+    const count = map.props?.length ?? 0;
+    const result = applyEdit(map.id, (file) =>
+      addProp(file, propChoice, spec.cell, spec.at, propRotation, {
+        ...(spec.offset ? { offset: spec.offset } : {}),
+        elevation: Math.round(selectedPropInfo.top * 100) / 100,
+      }),
+    );
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else {
+      replaceMap(result.map);
+      setSelectedProp(count);
+    }
+    setEdits((n) => n + 1);
+  };
+  // the selected prop: arrows nudge it (as the party sees it), Page Up /
+  // Page Down raise and lower it, R turns it 90 degrees (Shift+R: 15),
+  // Delete takes it out
+  const propKeys = useRef({ selectedPropInfo, changeProp, deleteProp, props: map.props, selectedProp });
+  propKeys.current = { selectedPropInfo, changeProp, deleteProp, props: map.props, selectedProp };
+  useEffect(() => {
+    if (!editMode || editTool !== "prop") return;
+    function onKey(e: KeyboardEvent) {
+      const { selectedPropInfo: info, changeProp: change, deleteProp: remove, props, selectedProp: index } = propKeys.current;
+      const spec = index === null ? undefined : props?.[index];
+      if (!info || !spec) return;
+      const stop = () => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      if (e.key === "Delete") {
+        stop();
+        remove();
+        return;
+      }
+      if (e.key === "r" || e.key === "R") {
+        stop();
+        change({ rotation: ((spec.rotation ?? 0) + (e.shiftKey ? 15 : 90)) % 360 || undefined });
+        return;
+      }
+      const step = 0.05;
+      const ahead = DIR_VECTOR[facingRef.current];
+      const right = DIR_VECTOR[rightOf(facingRef.current)];
+      const round = (v: number) => Math.round(v * 100) / 100;
+      const [ox, oz] = spec.offset ?? [0, 0];
+      const nudge: Record<string, [number, number]> = {
+        ArrowLeft: [-right.x, -right.y],
+        ArrowRight: [right.x, right.y],
+        ArrowUp: [ahead.x, ahead.y],
+        ArrowDown: [-ahead.x, -ahead.y],
+      };
+      if (nudge[e.key]) {
+        stop();
+        const [dx, dz] = nudge[e.key];
+        const clamp = (v: number) => round(Math.min(0.45, Math.max(-0.45, v)));
+        const offset: [number, number] = [clamp(ox + dx * step), clamp(oz + dz * step)];
+        change({ offset: offset[0] || offset[1] ? offset : undefined }, "offset");
+      } else if (e.key === "PageUp" || e.key === "PageDown") {
+        stop();
+        const up = e.key === "PageUp" ? step : -step;
+        const elevation = round(Math.min(info.roomHeight - 0.05, Math.max(0, info.elevation + up)));
+        change({ elevation: elevation || undefined }, "elevation");
+      }
+    }
+    // before the movement keys' handlers (and the next prop's R)
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editMode, editTool]);
 
   // The selected light, as the panel shows it: its own settings, or the
   // values it's lit with where it has none (see lights.ts)
@@ -489,6 +706,8 @@ export default function App() {
       editTool={editTool}
       onEdit={onEdit}
       selectedLight={selectedLightInfo ? selectedLight : null}
+      selectedProp={selectedPropInfo ? selectedProp : null}
+      selectedDecal={selectedDecalInfo ? selectedDecal : null}
       onEditHover={onEditHover}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
@@ -534,6 +753,18 @@ export default function App() {
           onPropChoice={setPropChoice}
           propRotation={propRotation}
           onPropRotate={() => setPropRotation((r) => (r + 90) % 360)}
+          decalChoice={decalChoice?.name ?? null}
+          onDecalChoice={setDecalChoice}
+          decalRotation={decalRotation}
+          decal={selectedDecalInfo}
+          onDecalChange={(patch) => changeDecal(patch, Object.keys(patch).join())}
+          onDecalDelete={deleteDecal}
+          onDecalDeselect={() => setSelectedDecal(null)}
+          prop={selectedPropInfo}
+          onPropChange={(patch) => changeProp(patch, Object.keys(patch).join())}
+          onPropStack={stackProp}
+          onPropDelete={deleteProp}
+          onPropDeselect={() => setSelectedProp(null)}
           lightPlace={lightPlace}
           onLightPlace={setLightPlace}
           light={selectedLightInfo}

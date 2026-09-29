@@ -31,6 +31,8 @@ interface DecalAsset {
 
 interface Projection {
   decal: string;
+  // its spec's place in the list given to add() (the map's decals)
+  index: number;
   // DecalSpec.action
   action?: string;
   key: string;
@@ -88,11 +90,11 @@ export class DecalLibrary {
   // (resolves once every decal's asset is in and it's on the surfaces there
   // are so far)
   add(specs: DecalSpec[]): Promise<void> {
-    const loads = specs.map((spec) =>
+    const loads = specs.map((spec, index) =>
       this.asset(spec.decal)
         .then((asset) => {
           if (this.disposed) return;
-          for (const p of this.project(spec, asset)) {
+          for (const p of this.project(spec, asset, index)) {
             const list = this.projections.get(p.key) ?? [];
             list.push(p);
             this.projections.set(p.key, list);
@@ -170,7 +172,7 @@ export class DecalLibrary {
   }
 
   // the projector for a decal, and every surface it may land on
-  private project(spec: DecalSpec, asset: DecalAsset): Projection[] {
+  private project(spec: DecalSpec, asset: DecalAsset, index: number): Projection[] {
     const frame = surfaceFrame(spec.cell, spec.surface, this.opts.wallHeight, this.opts.levels(spec.cell));
     const texelW = frame.width / SURFACE_PIXELS;
     const texelH = frame.height / SURFACE_PIXELS;
@@ -196,6 +198,7 @@ export class DecalLibrary {
     const reach = Math.ceil(Math.hypot(w, h));
     return coplanarSurfaces(spec.cell, spec.surface, reach).map((cell) => ({
       decal: spec.decal,
+      index,
       action: spec.action,
       key: surfaceKey(cell, spec.surface),
       position,
@@ -233,6 +236,8 @@ export class DecalLibrary {
     const decal = new THREE.Mesh(geometry, p.material);
     // an interactive decal: the viewport finds it by this when touched
     if (p.action) decal.userData.action = p.action;
+    // the map editor picks it by this
+    decal.userData.decalIndex = p.index;
     this.opts.parent.add(decal);
     this.built.push({ decal: p.decal, key: p.key, triangles });
   }

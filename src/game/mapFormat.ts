@@ -43,7 +43,6 @@ export interface MapFile {
   };
   labelColor?: string;
   lightColor?: string;
-  autoLights?: boolean;
   start: { x: number; y: number; facing: Direction };
   layout: string[];
   layers?: {
@@ -67,12 +66,18 @@ export interface MapFile {
   ladders?: { x: number; y: number; wall: Direction }[];
   bridges?: { x: number; y: number; height: number; axis: "NS" | "EW" }[];
   lights?: MapLight[];
-  // cells whose generated ceiling light (see autoLights) is switched off
-  lightsOff?: { x: number; y: number }[];
   // x, y: the (leftmost) cell; wall: the wall it's in; width: panels
   windows?: { x: number; y: number; wall: Direction; width?: number }[];
   // at: where in the cell (default "center"); rotation: degrees
-  props?: { prop: string; x: number; y: number; at?: PropAnchor; rotation?: number }[];
+  props?: {
+    prop: string;
+    x: number;
+    y: number;
+    at?: PropAnchor;
+    rotation?: number;
+    offset?: [number, number];
+    elevation?: number;
+  }[];
   // patrol: the cells it walks between ([x, y] each), starting with the first
   actors?: { actor: string; x: number; y: number; facing?: Direction; patrol?: [number, number][] }[];
   decals?: {
@@ -178,7 +183,6 @@ export function parseMap(id: string, file: MapFile): GameMap {
     textures: file.textures,
     labelColor: file.labelColor,
     lightColor: file.lightColor,
-    autoLights: file.autoLights,
     name: file.name,
     width,
     height,
@@ -199,13 +203,19 @@ export function parseMap(id: string, file: MapFile): GameMap {
     ladders,
     bridges,
     lights: (file.lights ?? []).map((l) => ({ ...l })),
-    lightsOff: (file.lightsOff ?? []).map((l) => ({ x: l.x, y: l.y })),
-    structureKey: JSON.stringify({ ...file, lights: undefined, lightsOff: undefined }),
+    structureKey: JSON.stringify({ ...file, lights: undefined }),
     windows,
     props: (file.props ?? []).map((p) => {
       if (!PROP_TYPES[p.prop]) throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);
       if (cells[p.y]?.[p.x] !== "floor") throw new Error(`prop at ${p.x},${p.y} isn't in a floor cell`);
-      return { prop: p.prop, cell: { x: p.x, y: p.y }, at: p.at ?? "center", rotation: p.rotation };
+      return {
+        prop: p.prop,
+        cell: { x: p.x, y: p.y },
+        at: p.at ?? "center",
+        rotation: p.rotation,
+        offset: p.offset,
+        elevation: p.elevation,
+      };
     }),
     actors: (file.actors ?? []).map((a) => {
       for (const [x, y] of [[a.x, a.y], ...(a.patrol ?? [])]) {
