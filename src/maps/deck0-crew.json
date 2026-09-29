@@ -116,16 +116,17 @@
     { "prop": "plant1", "x": 14, "y": 6, "at": "NE" },
     { "prop": "crate1", "x": 15, "y": 4, "at": "NE", "offset": [-0.45, -0.05] },
     { "prop": "crate1", "x": 15, "y": 4, "at": "SW" },
-    { "prop": "crate1", "x": 15, "y": 4, "at": "NW", "offset": [-0.05, 0.3], "elevation": 0.4, "rotation": 15 }
+    { "prop": "crate1", "x": 15, "y": 4, "at": "NW", "offset": [-0.05, 0.3], "elevation": 0.4, "rotation": 15 },
+    { "prop": "foldtable1", "x": 7, "y": 4, "at": "N" }
   ],
   "doors": [
-    { "x": 2, "y": 4, "kind": "lift", "facing": "E", "label": "CREW", "labelVertical": true },
-    { "x": 5, "y": 3, "kind": "standard", "facing": "S", "label": "C1" },
-    { "x": 9, "y": 3, "kind": "standard", "facing": "S", "label": "C2" },
-    { "x": 13, "y": 3, "kind": "standard", "facing": "S", "label": "C3" },
-    { "x": 5, "y": 5, "kind": "standard", "facing": "N", "label": "C4" },
-    { "x": 9, "y": 5, "kind": "standard", "facing": "N", "label": "C5" },
-    { "x": 13, "y": 5, "kind": "standard", "facing": "N", "label": "C6" }
+    { "x": 2, "y": 4, "kind": "lift", "facing": "E", "label": "CREW", "labelVertical": true, "offset": -0.42 },
+    { "x": 5, "y": 3, "kind": "standard", "facing": "S", "label": "C1", "offset": 0.42 },
+    { "x": 9, "y": 3, "kind": "standard", "facing": "S", "label": "C2", "offset": 0.42 },
+    { "x": 13, "y": 3, "kind": "standard", "facing": "S", "label": "C3", "offset": 0.42 },
+    { "x": 5, "y": 5, "kind": "standard", "facing": "N", "label": "C4", "offset": 0.42 },
+    { "x": 9, "y": 5, "kind": "standard", "facing": "N", "label": "C5", "offset": 0.42 },
+    { "x": 13, "y": 5, "kind": "standard", "facing": "N", "label": "C6", "offset": 0.42 }
   ],
   "decals": [
     { "decal": "lift_btn_0_down", "x": 1, "y": 4, "surface": "S", "px": 40, "py": 66, "action": "lift" },
@@ -136,6 +137,29 @@
     { "decal": "poster_planet", "x": 4, "y": 6, "surface": "N", "px": 92, "py": 40 },
     { "decal": "photo_frame", "x": 8, "y": 6, "surface": "N", "px": 88, "py": 60 },
     { "decal": "kid_drawing", "x": 14, "y": 7, "surface": "E", "px": 90, "py": 60 },
-    { "decal": "polaroids", "x": 12, "y": 7, "surface": "W", "px": 92, "py": 60 }
+    { "decal": "polaroids", "x": 12, "y": 7, "surface": "W", "px": 92, "py": 60 },
+    { "decal": "warning", "x": 9, "y": 5, "surface": "E", "px": 81, "py": 64 },
+    { "decal": "kid_drawing", "x": 12, "y": 4, "surface": "S", "px": 33, "py": 56 },
+    { "decal": "bullet_holes", "x": 13, "y": 3, "surface": "W", "px": 174, "py": 84 },
+    { "decal": "bullet_hole", "x": 13, "y": 3, "surface": "W", "px": 131, "py": 149 },
+    { "decal": "bullet_hole", "x": 13, "y": 3, "surface": "W", "px": 90, "py": 182 },
+    { "decal": "poster_home", "x": 4, "y": 4, "surface": "S", "px": 71, "py": 35 },
+    { "decal": "poster_planet", "x": 7, "y": 4, "surface": "N", "px": 56, "py": 48 },
+    { "decal": "notice_board", "x": 7, "y": 4, "surface": "N", "px": 131, "py": 73 },
+    { "decal": "poster_home", "x": 14, "y": 4, "surface": "N", "px": 36, "py": 33, "rotation": 15 },
+    { "decal": "poster_planet", "x": 14, "y": 4, "surface": "N", "px": 84, "py": 61, "rotation": 345 },
+    { "decal": "polaroids", "x": 14, "y": 4, "surface": "N", "px": 30, "py": 103 },
+    { "decal": "warning", "x": 15, "y": 4, "surface": "N", "px": 77, "py": 47 },
+    { "decal": "bullet_holes", "x": 15, "y": 4, "surface": "N", "px": 131, "py": 46 },
+    { "decal": "bullet_hole", "x": 15, "y": 4, "surface": "N", "px": 197, "py": 117 },
+    { "decal": "scorch", "x": 15, "y": 4, "surface": "floor", "px": -71, "py": 6 },
+    { "decal": "scorch", "x": 14, "y": 4, "surface": "floor", "px": 194, "py": 51, "rotation": 75 },
+    { "decal": "scorch", "x": 8, "y": 1, "surface": "W", "px": -11, "py": 80 },
+    { "decal": "scorch", "x": 8, "y": 1, "surface": "floor", "px": 37, "py": 144 },
+    { "decal": "oil", "x": 10, "y": 1, "surface": "floor", "px": 35, "py": 65 },
+    { "decal": "scorch", "x": 9, "y": 5, "surface": "floor", "px": 126, "py": 197 },
+    { "decal": "scorch", "x": 10, "y": 6, "surface": "floor", "px": -73, "py": -18, "rotation": 120 },
+    { "decal": "oil", "x": 10, "y": 6, "surface": "floor", "px": -12, "py": 33 },
+    { "decal": "oil", "x": 9, "y": 6, "surface": "floor", "px": 204, "py": 178 }
   ]
 }

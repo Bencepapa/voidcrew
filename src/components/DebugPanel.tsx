@@ -13,6 +13,9 @@ interface DebugPanelProps {
   mapId?: string;
   // opens the map editor
   onEditMap?: () => void;
+  // the deck variation being played (see variation.ts), and a new one
+  seed?: number;
+  onReroll?: () => void;
 }
 
 // the wall texture sets still in use (a map can name its own instead)
@@ -86,7 +89,7 @@ const MATERIAL_SLIDERS: SliderConfig[] = [
 
 const SELECT = "bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm";
 
-export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMap }: DebugPanelProps) {
+export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMap, seed, onReroll }: DebugPanelProps) {
   function set<K extends keyof ViewportSettings>(key: K, value: ViewportSettings[K]) {
     onChange({ ...settings, [key]: value });
   }
@@ -150,6 +153,16 @@ export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMa
       {check("noclip", "Noclip (walk through walls)")}
       {check("enemyScanner", "Scanner: enemy outlines (crew gear)")}
       {check("headlamp", "Headlamp (L)")}
+      {seed !== undefined && (
+        <div className="flex items-center justify-between gap-2 text-[11px]">
+          <span>Variation {seed}</span>
+          {onReroll && (
+            <button type="button" onClick={onReroll} className="border border-neutral-600 rounded-sm px-2 py-0.5 hover:bg-neutral-800">
+              Reroll
+            </button>
+          )}
+        </div>
+      )}
       {onEditMap && (
         <button
           type="button"

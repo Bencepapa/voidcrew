@@ -38,13 +38,19 @@ import {
   toggleBridge,
   toggleDoor,
   toggleLadder,
+  updateDoor,
+  addActor,
+  removeActor,
+  updateActor,
   updateLight,
 } from "./editor/mapEdits";
 import { PROP_TYPES } from "./game/props";
-import type { DecalChoice, DecalInfo, LightInfo, LightPlace, PropInfo } from "./editor/EditorBar";
-import { cellAt, ceilingHeight, floorHeight } from "./game/map";
-import type { Direction, MapLight } from "./game/types";
-import { DIR_VECTOR, rightOf } from "./game/movement";
+import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, PropInfo } from "./editor/EditorBar";
+import { newSeed } from "./game/variation";
+import { ACTOR_TYPES } from "./game/actors";
+import { DOOR_EDGE_OFFSET, cellAt, ceilingHeight, doorAt, floorHeight } from "./game/map";
+import type { Direction, MapLight, Vec2 } from "./game/types";
+import { DIR_VECTOR, behindOf, rightOf } from "./game/movement";
 import { generateLights, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, TextureLayer } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
@@ -88,6 +94,7 @@ export default function App() {
     replaceMap,
     enterMap,
     shiftParty,
+    setVariation,
     pushLog,
     crew,
     log,
@@ -122,6 +129,24 @@ export default function App() {
   const [decalChoice, setDecalChoice] = useState<DecalChoice | null>(null);
   const [decalRotation, setDecalRotation] = useState(0);
   const [selectedDecal, setSelectedDecal] = useState<number | null>(null);
+  // the Door tool's selected door (its cell)
+  const [selectedDoor, setSelectedDoor] = useState<Vec2 | null>(null);
+  // the Robot tool: the actor type a click puts in, and the selected actor
+  // (its index in the map's actors)
+  const [robotChoice, setRobotChoice] = useState(Object.keys(ACTOR_TYPES)[0]);
+  const [selectedActor, setSelectedActor] = useState<number | null>(null);
+  // the deck variation played (see variation.ts): ?seed= in the URL, else
+  // a new one; while editing there's none - everything shows
+  const [seed, setSeed] = useState(() => Number(new URLSearchParams(location.search).get("seed")) || newSeed());
+  useEffect(() => setVariation(editMode ? null : seed), [editMode, seed, setVariation]);
+  const reroll = () => {
+    const next = newSeed();
+    setSeed(next);
+    const url = new URL(location.href);
+    url.searchParams.set("seed", String(next));
+    history.replaceState(null, "", url);
+    pushLog(`Variation ${next}.`);
+  };
   // the surface the pointer is on: the Texture tool's palette marks its row
   // (it sticks to the last one when nothing is under the pointer)
   const [editSurface, setEditSurface] = useState<EditSurface>("wall");
@@ -295,16 +320,48 @@ export default function App() {
         }),
       );
       result = applyEdit(map.id, (file) => toggleBridge(file, cell, axis, ledge));
+    } else if (editTool === "robot") {
+      // a click on a robot picks it (the right button takes it out); on a
+      // floor it puts in one of the kind picked - or, Shift+click with a
+      // robot picked, adds that floor to its patrol route
+      const picked = target.actor;
+      if (picked !== undefined) {
+        if (!alt) {
+          setSelectedActor(picked);
+          return;
+        }
+        result = applyEdit(map.id, (file) => removeActor(file, picked));
+        setSelectedActor(null);
+      } else if (target.kind !== "wall" && !alt) {
+        const cell = target.cell;
+        const sel = selectedActor === null ? undefined : map.actors?.[selectedActor];
+        if (shift && sel && selectedActor !== null) {
+          const route = (sel.patrol.length ? sel.patrol : [sel.cell]).map((p): [number, number] => [p.x, p.y]);
+          const index = selectedActor;
+          result = applyEdit(map.id, (file) => updateActor(file, index, { patrol: [...route, [cell.x, cell.y]] }));
+        } else {
+          const count = map.actors?.length ?? 0;
+          result = applyEdit(map.id, (file) => addActor(file, { actor: robotChoice, x: cell.x, y: cell.y, facing: behindOf(dir) }));
+          setSelectedActor(count);
+        }
+      }
     } else if (editTool === "door") {
-      if (target.kind === "wall") return;
-      const cell = target.cell;
+      // a click on a door picks it (the right button turns it back into
+      // floor); on a floor it makes the cell a door (and picks it)
+      const cell = target.door ?? target.cell;
       const isDoor = cellAt(map, cell.x, cell.y) === "door";
+      if (isDoor && !alt) {
+        setSelectedDoor(cell);
+        return;
+      }
+      if (target.kind === "wall" && !target.door) return;
       if (alt && !isDoor) return;
       if (cell.x === pos.x && cell.y === pos.y && !isDoor) {
         pushLog("Editor: can't put a door where the party stands.");
         return;
       }
       result = applyEdit(map.id, (file) => toggleDoor(file, cell));
+      setSelectedDoor(isDoor ? null : cell);
     } else if (editTool === "decal") {
       // a click on a decal picks it (the right button takes it off); on a
       // surface it puts the palette's decal there, centered on the click
@@ -478,10 +535,98 @@ export default function App() {
     }
   };
 
+  // The selected actor, as the panel shows it
+  const selectedActorInfo: ActorInfo | null = (() => {
+    const spec = selectedActor === null ? undefined : map.actors?.[selectedActor];
+    return spec ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length } : null;
+  })();
+  const changeActor = (patch: Parameters<typeof updateActor>[2], merge?: string) => {
+    if (selectedActor === null) return;
+    const index = selectedActor;
+    const result = applyEdit(map.id, (file) => updateActor(file, index, patch), merge && `actor ${index} ${merge}`);
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  const deleteActor = () => {
+    if (selectedActor === null) return;
+    const index = selectedActor;
+    const result = applyEdit(map.id, (file) => removeActor(file, index));
+    if (!("error" in result)) replaceMap(result.map);
+    setSelectedActor(null);
+    setEdits((n) => n + 1);
+  };
+
+  // The selected door, as the panel shows it
+  const selectedDoorInfo: DoorInfo | null = (() => {
+    if (!selectedDoor || cellAt(map, selectedDoor.x, selectedDoor.y) !== "door") return null;
+    const spec = doorAt(map, selectedDoor.x, selectedDoor.y);
+    return { offset: spec.offset ?? 0, facing: spec.facing, kind: spec.kind, label: spec.label ?? "" };
+  })();
+  const changeDoor = (patch: { offset?: number; facing?: Direction; label?: string }, merge?: string) => {
+    if (!selectedDoor) return;
+    const cell = selectedDoor;
+    const spec = doorAt(map, cell.x, cell.y);
+    const base = { kind: spec.kind, facing: spec.facing };
+    const result = applyEdit(map.id, (file) => updateDoor(file, cell, base, patch), merge && `door ${cell.x},${cell.y} ${merge}`);
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  const deleteDoor = () => {
+    if (!selectedDoor) return;
+    const cell = selectedDoor;
+    const result = applyEdit(map.id, (file) => toggleDoor(file, cell));
+    if (!("error" in result)) replaceMap(result.map);
+    setSelectedDoor(null);
+    setEdits((n) => n + 1);
+  };
+  // the selected door: the arrows move it along its passage, as the party
+  // sees it (0.02 cells a press, Shift: 0.1), up to flush with an edge;
+  // Delete turns it back into floor
+  const doorKeys = useRef({ changeDoor, deleteDoor, info: selectedDoorInfo });
+  doorKeys.current = { changeDoor, deleteDoor, info: selectedDoorInfo };
+  useEffect(() => {
+    if (!editMode || editTool !== "door") return;
+    function onKey(e: KeyboardEvent) {
+      const { changeDoor: change, deleteDoor: remove, info } = doorKeys.current;
+      if (!info) return;
+      const stop = () => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      if (e.key === "Delete") {
+        stop();
+        remove();
+        return;
+      }
+      const ahead = DIR_VECTOR[facingRef.current];
+      const right = DIR_VECTOR[rightOf(facingRef.current)];
+      const moves: Record<string, Vec2> = {
+        ArrowUp: ahead,
+        ArrowDown: { x: -ahead.x, y: -ahead.y },
+        ArrowRight: right,
+        ArrowLeft: { x: -right.x, y: -right.y },
+      };
+      const m = moves[e.key];
+      if (!m) return;
+      stop();
+      // how much of that way runs along the door's front
+      const v = DIR_VECTOR[info.facing];
+      const along = m.x * v.x + m.y * v.y;
+      if (!along) return;
+      const step = (e.shiftKey ? 0.1 : 0.02) * along;
+      const offset = Math.round(Math.min(DOOR_EDGE_OFFSET, Math.max(-DOOR_EDGE_OFFSET, info.offset + step)) * 100) / 100;
+      change({ offset: offset || undefined }, "offset");
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editMode, editTool]);
+
   // The selected decal, as the panel shows it
   const selectedDecalInfo: DecalInfo | null = (() => {
     const spec = selectedDecal === null ? undefined : map.decals?.[selectedDecal];
-    return spec ? { name: spec.decal, rotation: spec.rotation ?? 0, action: spec.action } : null;
+    return spec ? { name: spec.decal, rotation: spec.rotation ?? 0, action: spec.action, chance: spec.chance ?? 1 } : null;
   })();
   const changeDecal = (patch: Parameters<typeof updateDecal>[2], merge?: string) => {
     if (selectedDecal === null) return;
@@ -552,6 +697,7 @@ export default function App() {
       name: spec.prop,
       rotation: spec.rotation ?? 0,
       elevation: spec.elevation ?? 0,
+      chance: spec.chance ?? 1,
       roomHeight: ceilingHeight(map, spec.cell.x, spec.cell.y) - floorHeight(map, spec.cell.x, spec.cell.y),
       // where a prop stacked on it stands: on its top
       top: (spec.elevation ?? 0) + (type?.size[1] ?? 0),
@@ -657,6 +803,7 @@ export default function App() {
       range: lit.range,
       pos: own.pos,
       bulb: own.bulb,
+      chance: own.chance ?? 1,
       roomHeight: ceilingHeight(map, own.x, own.y) - floorHeight(map, own.x, own.y),
     };
   })();
@@ -789,6 +936,8 @@ export default function App() {
       selectedLight={selectedLightInfo ? selectedLight : null}
       selectedProp={selectedPropInfo ? selectedProp : null}
       selectedDecal={selectedDecalInfo ? selectedDecal : null}
+      selectedDoor={selectedDoorInfo ? selectedDoor : null}
+      selectedActor={selectedActorInfo ? selectedActor : null}
       onEditHover={onEditHover}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
@@ -834,6 +983,21 @@ export default function App() {
           onPropChoice={setPropChoice}
           propRotation={propRotation}
           onPropRotate={() => setPropRotation((r) => (r + 90) % 360)}
+          robotChoice={robotChoice}
+          onRobotChoice={setRobotChoice}
+          actor={selectedActorInfo}
+          onActorChange={(patch) => changeActor(patch, Object.keys(patch).join())}
+          onActorClearRoute={() => changeActor({ patrol: undefined })}
+          onActorDelete={deleteActor}
+          onActorDeselect={() => setSelectedActor(null)}
+          door={selectedDoorInfo}
+          onDoorChange={(patch) => changeDoor(patch, Object.keys(patch).join())}
+          onDoorFlip={() =>
+            selectedDoorInfo &&
+            changeDoor({ facing: behindOf(selectedDoorInfo.facing), offset: -selectedDoorInfo.offset || undefined })
+          }
+          onDoorDelete={deleteDoor}
+          onDoorDeselect={() => setSelectedDoor(null)}
           mapId={map.id}
           mapSize={{ width: map.width, height: map.height }}
           mapIds={mapIds()}
@@ -926,6 +1090,8 @@ export default function App() {
                 stats={stats}
                 mapId={map.id}
                 onEditMap={() => setEditMode(true)}
+                seed={seed}
+                onReroll={reroll}
                 compact
               />
             </div>
@@ -971,6 +1137,8 @@ export default function App() {
               stats={stats}
               mapId={map.id}
               onEditMap={() => setEditMode(true)}
+              seed={seed}
+              onReroll={reroll}
             />
           </div>
         </div>

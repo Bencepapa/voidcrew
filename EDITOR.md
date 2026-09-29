@@ -100,8 +100,14 @@ not two editors.
 - **Bridge:** a click on a floor spans it the way the party faces, at the
   height of the ledges on either side; again takes it out.
 - **Door:** a click on a floor makes the cell a door (its front along the
-  passage), on a door turns it back into floor. Doors on a cell edge (see
-  below) are still to come.
+  passage) and picks it; a click on a door picks it, the right button
+  turns it back into floor. The picked one moves along its passage - the
+  arrows (as the party sees it; Shift: more), the Place slider, or Back
+  edge / Middle / Front edge - up to flush with the cell's edge, in line
+  with the walls (`offset` in the map, +-0.42 toward its front). A door
+  blocks only where its plane is crossed: flush with one edge, its cell is
+  walkable from that side, and it opens when gone through. Flip front
+  turns it round where it stands; Label stencils the panel.
 - **Prop:** the palette picks the prop; a click on a floor puts it at the
   nearest side or corner (or the center), a wall-hung one on the nearest
   side, and picks it. A click on a prop picks it, the right button takes
@@ -136,14 +142,25 @@ The **Map** tool's panel:
   and (dev server) saves it. Its lifts still lead where the original's did
   - point them at the right decks for a new ship.
 
-## Variations (planned)
+## Variations
 
-Derelict ships as variations of a deck: every prop, decal, light and
-actor gets an optional `chance` (0..1, default 1) of being there. When a
-deck loads for a ship, a random number seeded by the ship (and the deck)
-decides each - the same ship always looks the same, another ship differs.
-The editor shows everything, marks the chancy ones, and sets the chance
-in their panels; a "roll" button previews a variation.
+Every prop, decal, light and actor can have a `chance` (0..1, unset:
+always) of being there. A deck is played as a variation: a seed decides
+each item (src/game/variation.ts) - the same seed and deck always give the
+same result, another seed another one. The seed is `?seed=` in the URL,
+else a new one each start; the debug panel shows it, and Reroll makes a
+new one. While editing there's no variation - everything shows, so the
+panels edit the map as it is; leaving edit mode plays (and so previews)
+the current variation.
+
+The Chance slider is in the light, prop, decal and robot panels (all the
+way up: always, left out of the file).
+
+**Robot:** the palette picks the actor type; a click on a floor puts one
+in (facing the party) and picks it; a click on a robot picks it, the right
+button takes it out. With one picked, Shift+click on a floor adds that
+cell to its patrol route (starting from where it stands); its panel sets
+its facing and chance, and clears its route.
 
 ## Lights
 

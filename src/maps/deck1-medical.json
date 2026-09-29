@@ -95,15 +95,17 @@
     { "x": 1, "y": 4, "wall": "W" }
   ],
   "doors": [
-    { "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "MEDICAL", "labelVertical": true },
-    { "x": 9, "y": 3, "kind": "lift", "facing": "W", "label": "MEDICAL", "labelVertical": true }
+    { "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "MEDICAL", "labelVertical": true, "offset": -0.42 },
+    { "x": 9, "y": 3, "kind": "lift", "facing": "W", "label": "MEDICAL", "labelVertical": true, "offset": -0.42 }
   ],
   "decals": [
     { "decal": "lift_btn_1_down", "x": 1, "y": 1, "surface": "S", "px": 40, "py": 66, "action": "lift" },
     { "decal": "lift_btn_1_up", "x": 10, "y": 3, "surface": "N", "px": 40, "py": 66, "action": "lift" },
     { "decal": "text_medical", "x": 5, "y": 1, "surface": "S", "px": 60, "py": 40 },
-    { "decal": "patch_plate", "x": 5, "y": 5, "surface": "S", "px": 150, "py": 140 },
     { "decal": "warning", "x": 8, "y": 3, "surface": "E", "px": 80, "py": 50 },
-    { "decal": "claw_marks", "x": 7, "y": 5, "surface": "S", "px": 60, "py": 90 }
+    { "decal": "claw_marks", "x": 7, "y": 5, "surface": "S", "px": 60, "py": 90 },
+    { "decal": "text_lift", "x": 8, "y": 4, "surface": "E", "px": 36, "py": 38 },
+    { "decal": "notice_board", "x": 3, "y": 2, "surface": "E", "px": 30, "py": 54 },
+    { "decal": "notice_board", "x": 3, "y": 2, "surface": "E", "px": 135, "py": 53 }
   ]
 }

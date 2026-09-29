@@ -27,6 +27,27 @@ export function doorAt(map: GameMap, x: number, y: number): DoorSpec {
   return { cell: { x, y }, kind: "standard", facing: northSouth ? "S" : "E" };
 }
 
+// how far a door goes from its cell's middle: its frame (0.08 deep) flush
+// with the cell's edge, in line with the walls on either side
+export const DOOR_EDGE_OFFSET = 0.42;
+
+// Whether a step from one cell to the next goes through a door's plane (a
+// door cell's door, wherever in the cell it stands - see DoorSpec.offset):
+// a door in the middle or in the near half is gone through stepping into
+// its cell, one in the far half stepping out of it. The door cell, or null.
+export function doorCrossed(map: GameMap, from: Vec2, to: Vec2): Vec2 | null {
+  const m = { x: Math.sign(to.x - from.x), y: Math.sign(to.y - from.y) };
+  const along = (cell: Vec2) => {
+    const spec = doorAt(map, cell.x, cell.y);
+    const v = DIR_VECTOR[spec.facing];
+    // where its plane is, along the step (0: the cell's middle)
+    return (spec.offset ?? 0) * (v.x * m.x + v.y * m.y);
+  };
+  if (cellAt(map, to.x, to.y) === "door" && along(to) <= 1e-6) return to;
+  if (cellAt(map, from.x, from.y) === "door" && along(from) > 1e-6) return from;
+  return null;
+}
+
 export function cellAt(map: GameMap, x: number, y: number): CellType {
   if (y < 0 || y >= map.height || x < 0 || x >= map.width) return "wall";
   return map.cells[y][x];

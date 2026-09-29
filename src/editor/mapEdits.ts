@@ -20,6 +20,7 @@ export type EditTool =
   | "door"
   | "prop"
   | "decal"
+  | "robot"
   | "map";
 
 // The surface under the pointer, which picks the tool's target (a wall's
@@ -159,6 +160,20 @@ export function toggleBridge(file: MapFile, cell: Vec2, axis: "NS" | "EW", heigh
   else bridges.push({ x: cell.x, y: cell.y, height, axis });
   file.bridges = bridges;
   if (!bridges.length) delete file.bridges;
+  return file;
+}
+
+type DoorEntry = NonNullable<MapFile["doors"]>[number];
+
+// Changes a door's settings (a door cell without any yet gets `base` -
+// how it stands now); a setting set to undefined drops it.
+export function updateDoor(file: MapFile, cell: Vec2, base: Omit<DoorEntry, "x" | "y">, patch: Partial<DoorEntry>): MapFile {
+  const doors = file.doors ?? (file.doors = []);
+  let i = doors.findIndex(at(cell));
+  if (i < 0) i = doors.push({ x: cell.x, y: cell.y, ...base }) - 1;
+  const next = { ...doors[i], ...patch } as Record<string, unknown>;
+  for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  doors[i] = next as DoorEntry;
   return file;
 }
 
@@ -386,4 +401,28 @@ export function blankMap(name: string, deck: number, width: number, height: numb
     layout,
     lights: [{ x: 3, y: 3 }],
   };
+}
+
+type ActorEntry = NonNullable<MapFile["actors"]>[number];
+
+// The map's actors (robots...): put one in, change one, take one out.
+export function addActor(file: MapFile, actor: ActorEntry): MapFile {
+  (file.actors ?? (file.actors = [])).push(actor);
+  return file;
+}
+
+export function updateActor(file: MapFile, index: number, patch: Partial<ActorEntry>): MapFile {
+  const actor = file.actors?.[index];
+  if (!actor) return file;
+  const next = { ...actor, ...patch } as Record<string, unknown>;
+  for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  file.actors![index] = next as ActorEntry;
+  return file;
+}
+
+export function removeActor(file: MapFile, index: number): MapFile {
+  if (!file.actors?.[index]) return file;
+  file.actors.splice(index, 1);
+  if (!file.actors.length) delete file.actors;
+  return file;
 }

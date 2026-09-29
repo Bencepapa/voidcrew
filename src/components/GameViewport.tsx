@@ -144,6 +144,10 @@ export interface EditTarget {
   prop?: number;
   // the Decal tool: the decal pointed at (its index in the map's decals)
   decal?: number;
+  // the Door tool: the door pointed at (its cell)
+  door?: Vec2;
+  // the Robot tool: the actor pointed at (its index in the map's actors)
+  actor?: number;
   // the surface pointed at as a decal sees it (see DecalSpec): its cell and
   // side, and the point on it in surface pixels (0..255 across a panel;
   // from its top left, a wall's first panel)
@@ -639,6 +643,10 @@ interface GameViewportProps {
   selectedProp?: number | null;
   // the Decal tool's selected decal (its index in the map's decals)
   selectedDecal?: number | null;
+  // the Door tool's selected door (its cell)
+  selectedDoor?: Vec2 | null;
+  // the Robot tool's selected actor (its index in the map's actors)
+  selectedActor?: number | null;
   // the surface under the pointer whenever it changes - the editor's
   // texture palette follows it
   onEditHover?: (target: EditTarget | null) => void;
@@ -994,6 +1002,8 @@ export function GameViewport({
   selectedLight,
   selectedProp,
   selectedDecal,
+  selectedDoor,
+  selectedActor,
   onReady,
   freeTick,
   peekRef,
@@ -1073,6 +1083,10 @@ export function GameViewport({
   selectedPropRef.current = selectedProp ?? null;
   const selectedDecalRef = useRef(selectedDecal ?? null);
   selectedDecalRef.current = selectedDecal ?? null;
+  const selectedDoorRef = useRef(selectedDoor ?? null);
+  selectedDoorRef.current = selectedDoor ?? null;
+  const selectedActorRef = useRef(selectedActor ?? null);
+  selectedActorRef.current = selectedActor ?? null;
   const editToolRef = useRef(editTool ?? "dig");
   editToolRef.current = editTool ?? "dig";
   const onEditHoverRef = useRef(onEditHover);
@@ -1972,8 +1986,13 @@ export function GameViewport({
           const { spec } = cell;
           const door = new THREE.Group();
           door.position.set(cell.x, floorY(cell.x, cell.z), cell.z);
-          // local +Z = the side the door faces
+          // local +Z = the side the door faces; moved that way to where it
+          // stands in its cell (see DoorSpec.offset)
           door.rotation.y = FACING_ROTATION[spec.facing];
+          door.translateZ(spec.offset ?? 0);
+          // the map editor picks it by this
+          door.userData.doorCell = { x: cell.x, y: cell.z };
+          doorGroups.set(cell.key, door);
 
           // two halves back to back, each facing out of one side
           for (const side of [1, -1]) {
@@ -2178,6 +2197,8 @@ export function GameViewport({
       return template;
     }
 
+    // the doors, by door cell key (the editor's selection)
+    const doorGroups = new Map<string, THREE.Object3D>();
     // the props placed, by index in the map's props (the editor's selection)
     const propObjects = new Map<number, THREE.Object3D>();
     for (const name of propTypes) {
@@ -3257,7 +3278,7 @@ export function GameViewport({
         .filter(
           (h) =>
             h.face &&
-            h.object.userData.actorId === undefined &&
+            (h.object.userData.actorId === undefined || editToolRef.current === "robot") &&
             (lightTool || h.object.userData.mapLight === undefined) &&
             drawnChain(h.object) &&
             !seeThrough(h.object),
@@ -3270,6 +3291,19 @@ export function GameViewport({
         editToolRef.current === "decal"
           ? hits.find((h) => h.object.userData.decalIndex !== undefined && h.distance <= hit.distance + 0.02)
           : undefined;
+      // the Robot tool: an actor pointed at
+      const actorId = hit.object.userData.actorId as number | undefined;
+      if (actorId !== undefined) {
+        const actor = actorsRef.current.find((a) => a.id === actorId);
+        return actor ? { kind: "floor", cell: { ...actor.cell }, actor: actorId } : null;
+      }
+      // the Door tool: a door pointed at (any part of it)
+      if (editToolRef.current === "door") {
+        for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
+          const at = o.userData.doorCell as Vec2 | undefined;
+          if (at) return { kind: "floor", cell: { ...at }, door: { ...at } };
+        }
+      }
       // the Prop tool: a prop pointed at (any part of it)
       if (editToolRef.current === "prop") {
         for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
@@ -3359,7 +3393,30 @@ export function GameViewport({
     const selectBounds = new THREE.Box3();
     const selectCenter = new THREE.Vector3();
     const selectSize = new THREE.Vector3();
+    const frameObject = (box: THREE.LineSegments, obj: THREE.Object3D, pad: number) => {
+      selectBounds.setFromObject(obj);
+      selectBounds.getCenter(selectCenter);
+      selectBounds.getSize(selectSize);
+      box.position.copy(selectCenter);
+      box.scale.set(selectSize.x + pad, selectSize.y + pad, selectSize.z + pad);
+    };
     function updateSelectionBox() {
+      // a selected actor: framed around its sprite
+      const actorIndex = editModeRef.current ? selectedActorRef.current : null;
+      const actorEntry = actorIndex === null ? undefined : actorMeshes.get(actorIndex);
+      if (actorEntry) {
+        frameObject(selectBox, actorEntry.mesh, 0.04);
+        selectBox.visible = true;
+        return;
+      }
+      // a selected door: framed around it
+      const doorCell = editModeRef.current ? selectedDoorRef.current : null;
+      const doorObj = doorCell && doorGroups.get(`${doorCell.x},${doorCell.y}`);
+      if (doorObj) {
+        frameObject(selectBox, doorObj, 0.04);
+        selectBox.visible = true;
+        return;
+      }
       // a selected decal: framed around its pieces
       const decalIndex = editModeRef.current ? selectedDecalRef.current : null;
       if (decalIndex !== null) {
@@ -3406,12 +3463,18 @@ export function GameViewport({
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
       const tool = editToolRef.current;
-      let mode: "wall" | "plate" | "bulb" | "prop" | "decal" | null = null;
+      let mode: "wall" | "plate" | "bulb" | "prop" | "decal" | "door" | "actor" | null = null;
       let color = EDIT_FILL_COLOR;
       if (target) {
         if (tool === "texture") {
           mode = target.kind === "wall" ? "wall" : "plate";
           color = EDIT_PAINT_COLOR;
+        } else if (tool === "robot" && target.actor !== undefined) {
+          mode = "actor";
+          color = EDIT_LIGHT_ADD_COLOR;
+        } else if (tool === "door" && target.door) {
+          mode = "door";
+          color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "decal") {
           mode = target.decal !== undefined ? "decal" : null;
           color = EDIT_LIGHT_ADD_COLOR;
@@ -3443,7 +3506,13 @@ export function GameViewport({
       editBox.visible = mode !== null;
       if (!target || !mode) return;
       const mat = editBox.material as THREE.LineBasicMaterial;
-      if (mode === "decal") {
+      if (mode === "actor") {
+        const entry = actorMeshes.get(target.actor!);
+        if (entry) frameObject(editBox, entry.mesh, 0.02);
+      } else if (mode === "door") {
+        const obj = doorGroups.get(`${target.door!.x},${target.door!.y}`);
+        if (obj) frameObject(editBox, obj, 0.02);
+      } else if (mode === "decal") {
         selectBounds.makeEmpty();
         for (const obj of group.children) {
           if (obj.userData.decalIndex === target.decal) selectBounds.expandByObject(obj);

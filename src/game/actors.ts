@@ -1,4 +1,4 @@
-import { cellAt, floorHeight } from "./map";
+import { cellAt, doorCrossed, floorHeight } from "./map";
 import { DIR_VECTOR, rightOf } from "./movement";
 import { PROP_TYPES } from "./props";
 import { passage } from "./heights";
@@ -361,8 +361,9 @@ export function stepActors(
 
     // a step to a neighbouring cell it can walk into (level, free)
     const canStep = (to: Vec2, dir: Direction) => {
-      const kind = cellAt(map, to.x, to.y);
-      if (kind === "wall" || (kind === "door" && !isDoorOpen(to))) return false;
+      if (cellAt(map, to.x, to.y) === "wall") return false;
+      const door = doorCrossed(map, a.cell, to);
+      if (door && !isDoorOpen(door)) return false;
       if (same(to, party) || actors.some((o) => o !== actor && actorAt([o], to, now))) return false;
       const way = passage(map, a.cell, floorHeight(map, a.cell.x, a.cell.y), to, dir);
       return way.kind === "walk" && way.y === floorHeight(map, to.x, to.y);

@@ -95,27 +95,28 @@
   "lights": [
     { "x": 4, "y": 7, "color": "#ff0000" },
     { "x": 10, "y": 7, "color": "#850000", "intensity": 4, "range": 1.7 },
-    { "x": 10, "y": 3, "color": "#4a5d96", "intensity": 0.2, "range": 4.4, "pos": [-0.3, 0.95, 0.01] },
-    { "x": 3, "y": 1, "color": "#ff0000" },
+    { "x": 10, "y": 3, "color": "#3e4b6f", "intensity": 2.15, "range": 5.7, "pos": [0.45, 1.1, 0.01] },
     { "x": 7, "y": 5, "color": "#ff0000" },
     { "x": 1, "y": 1, "intensity": 0.8 },
     { "x": 1, "y": 5, "intensity": 1.9, "pos": [0.12, 0.58, -0.45], "color": "#db0000", "range": 1.6, "bulb": true },
     { "x": 3, "y": 5, "intensity": 0.15, "color": "#ff0000" },
     { "x": 3, "y": 3, "color": "#ff0000" },
-    { "x": 1, "y": 7, "color": "#ff0000" }
+    { "x": 1, "y": 7, "color": "#ff0000" },
+    { "x": 10, "y": 1, "color": "#ff0000", "pos": [-0.35, 0.05, 0.3] },
+    { "x": 2, "y": 1, "color": "#ff0000" }
   ],
   "windows": [
     { "x": 4, "y": 1, "wall": "N", "width": 3 },
     { "x": 11, "y": 3, "wall": "E" }
   ],
   "lifts": [{ "x": 1, "y": 1, "button": "S", "to": "deck1-medical" }],
-  "actors": [{ "actor": "robot1", "x": 9, "y": 1, "facing": "W", "patrol": [[9, 1], [5, 1]] }],
+  "actors": [{ "actor": "robot1", "x": 9, "y": 1, "facing": "W", "patrol": [[9, 1], [5, 1]] }, { "actor": "robot1", "x": 4, "y": 5, "facing": "N", "chance": 0.4, "patrol": [[4, 5], [4, 5], [3, 5], [3, 7], [1, 7], [1, 6]] }],
   "props": [
     { "prop": "crate1", "x": 3, "y": 1, "at": "NE" },
     { "prop": "crate1", "x": 9, "y": 7, "at": "N" },
     { "prop": "crate1", "x": 1, "y": 3, "at": "NW", "rotation": 180 }
   ],
-  "doors": [{ "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "ENGINE", "labelVertical": true }],
+  "doors": [{ "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "ENGINE", "labelVertical": true, "offset": -0.42 }, { "x": 4, "y": 4, "kind": "standard", "facing": "S", "offset": -0.42 }, { "x": 4, "y": 7, "kind": "standard", "facing": "E", "offset": -0.42 }],
   "decals": [
     { "decal": "lift_btn_2_up", "x": 1, "y": 1, "surface": "S", "px": 40, "py": 66, "action": "lift" },
     { "decal": "bullet_holes", "x": 3, "y": 1, "surface": "N", "px": 140, "py": 50 },

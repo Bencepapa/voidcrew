@@ -1,4 +1,4 @@
-import { bridgeAt, cellAt, ceilingHeight, floorHeight } from "./map";
+import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight } from "./map";
 import { BRIDGE_WIDTH, CLIMB_SPEED, MAX_STEP, MIN_HEADROOM } from "./heights";
 import { DIR_VECTOR } from "./movement";
 import { propBoxes } from "./props";
@@ -97,14 +97,19 @@ function cellBoxes(map: GameMap, cx: number, cy: number, feet: number, doors: Do
   const northSouth = cellAt(map, cx, cy - 1) !== "wall" || cellAt(map, cx, cy + 1) !== "wall";
   const d = DOOR_FRAME_HALF_DEPTH;
   const o = doors.isOpen({ x: cx, y: cy }) ? DOOR_OPENING_HALF_WIDTH : 0;
+  // (moved along the passage as its door stands in the cell)
+  const spec = doorAt(map, cx, cy);
+  const v = DIR_VECTOR[spec.facing];
+  const px = cx + v.x * (spec.offset ?? 0);
+  const pz = cy + v.y * (spec.offset ?? 0);
   return northSouth
     ? [
-        { minX: cx - 0.5, maxX: cx - o, minZ: cy - d, maxZ: cy + d },
-        { minX: cx + o, maxX: cx + 0.5, minZ: cy - d, maxZ: cy + d },
+        { minX: cx - 0.5, maxX: cx - o, minZ: pz - d, maxZ: pz + d },
+        { minX: cx + o, maxX: cx + 0.5, minZ: pz - d, maxZ: pz + d },
       ]
     : [
-        { minX: cx - d, maxX: cx + d, minZ: cy - 0.5, maxZ: cy - o },
-        { minX: cx - d, maxX: cx + d, minZ: cy + o, maxZ: cy + 0.5 },
+        { minX: px - d, maxX: px + d, minZ: cy - 0.5, maxZ: cy - o },
+        { minX: px - d, maxX: px + d, minZ: cy + o, maxZ: cy + 0.5 },
       ];
 }
 

@@ -15,6 +15,8 @@ import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
 import type { Direction, MapLight } from "../game/types";
 import { PROP_TYPES } from "../game/props";
+import { DOOR_EDGE_OFFSET } from "../game/map";
+import { ACTOR_TYPES } from "../game/actors";
 
 interface Props {
   tool: EditTool;
@@ -37,6 +39,20 @@ interface Props {
   onPropChoice: (prop: string) => void;
   propRotation: number;
   onPropRotate: () => void;
+  // the Robot tool: the actor type a click puts in, and the selected actor
+  robotChoice: string;
+  onRobotChoice: (type: string) => void;
+  actor: ActorInfo | null;
+  onActorChange: (patch: { facing?: Direction; chance?: number }) => void;
+  onActorClearRoute: () => void;
+  onActorDelete: () => void;
+  onActorDeselect: () => void;
+  // the Door tool: the selected door, and what the panel does with it
+  door: DoorInfo | null;
+  onDoorChange: (patch: { offset?: number; label?: string }) => void;
+  onDoorFlip: () => void;
+  onDoorDelete: () => void;
+  onDoorDeselect: () => void;
   // the Map tool: this map (its id and size), the others, and what the
   // panel does - grow or cut an edge, open another map, make one, copy this
   mapId: string;
@@ -52,12 +68,12 @@ interface Props {
   onDecalChoice: (choice: DecalChoice) => void;
   decalRotation: number;
   decal: DecalInfo | null;
-  onDecalChange: (patch: { rotation?: number }) => void;
+  onDecalChange: (patch: { rotation?: number; chance?: number }) => void;
   onDecalDelete: () => void;
   onDecalDeselect: () => void;
   // the selected prop, and what the panel does with it
   prop: PropInfo | null;
-  onPropChange: (patch: { rotation?: number; elevation?: number }) => void;
+  onPropChange: (patch: { rotation?: number; elevation?: number; chance?: number }) => void;
   onPropStack: () => void;
   onPropDelete: () => void;
   onPropDeselect: () => void;
@@ -81,12 +97,31 @@ export interface DecalChoice {
   height: number;
 }
 
+// the selected actor as the panel shows it
+export interface ActorInfo {
+  type: string;
+  facing: Direction;
+  chance: number;
+  // how many cells its patrol route has (0: it stands)
+  route: number;
+}
+
+// the selected door as the panel shows it
+export interface DoorInfo {
+  // where it stands in its cell, toward its front (see DoorSpec.offset)
+  offset: number;
+  facing: Direction;
+  kind: "standard" | "lift";
+  label: string;
+}
+
 // the selected decal as the panel shows it
 export interface DecalInfo {
   name: string;
   rotation: number;
   // what touching it does (a lift button)
   action?: string;
+  chance: number;
 }
 
 // the selected prop as the panel shows it
@@ -97,6 +132,7 @@ export interface PropInfo {
   // its cell's floor-to-ceiling height, and where a prop on it would stand
   roomHeight: number;
   top: number;
+  chance: number;
 }
 
 // the selected light as the panel shows it
@@ -110,6 +146,8 @@ export interface LightInfo {
   bulb?: boolean;
   // its cell's floor-to-ceiling height (wall heights), the most it goes up
   roomHeight: number;
+  // its chance to be there in a variation (see variation.ts)
+  chance: number;
 }
 
 const BUTTON = "px-2 py-1 border rounded-sm text-[11px] disabled:opacity-30";
@@ -155,6 +193,12 @@ function DecalPalette(p: { choice: string | null; onChoice: (choice: DecalChoice
   );
 }
 
+// an item's chance of being there in a variation (1: always - left out of
+// the map file)
+function chanceSlider(value: number, onChange: (chance: number | undefined) => void) {
+  return slider("Chance", value, 0, 1, 0.05, (v) => onChange(v >= 1 ? undefined : v));
+}
+
 // a labeled slider with its value, for the light panel
 function slider(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void) {
   return (
@@ -181,6 +225,7 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "door", label: "Door", title: "Make a cell a door, or back" },
   { tool: "prop", label: "Prop", title: "Put in or take out props" },
   { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
+  { tool: "robot", label: "Robot", title: "Put in robots, their facing, route and chance" },
   { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
 ];
 // what a click does with each (where the toolbar doesn't say otherwise)
@@ -188,7 +233,8 @@ const TOOL_HELP: Partial<Record<EditTool, string>> = {
   height: "click a floor or ceiling: up 0.25 · right-click: down",
   ladder: "click near a floor's edge (or a step's face): a ladder up that side · again: take it out",
   bridge: "click a floor: a bridge across it the way you face, at the ledges' height · again: take it out",
-  door: "click a floor: a door there · click a door: back to floor",
+  door: "click a floor: a door there · click a door: pick it · right-click a door: back to floor",
+  robot: "click a floor: a robot there (facing you) · click a robot: pick it · Shift+click a floor: add it to the picked one's route · right-click: take it out",
   decal: "click a wall, floor or ceiling: the decal there · click a decal: pick it · right-click: take it off",
   prop: "click a floor (near a side or corner to push it there): put it in · click a prop: pick it · right-click: take it out",
 };
@@ -299,6 +345,98 @@ export function EditorBar(p: Props) {
           </div>
         </>
       )}
+      {p.tool === "robot" && (
+        <>
+          <span className="basis-full" />
+          <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
+            {Object.keys(ACTOR_TYPES).map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={`${BUTTON} ${p.robotChoice === type ? active : idle}`}
+                onClick={() => p.onRobotChoice(type)}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+          {p.actor && (
+            <>
+              <span className="basis-full" />
+              <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+                <span className="text-amber-200">{p.actor.type}</span>
+                <span className="flex items-center gap-0.5">
+                  Faces
+                  {(["N", "E", "S", "W"] as Direction[]).map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className={`${BUTTON} ${p.actor!.facing === d ? active : idle}`}
+                      onClick={() => p.onActorChange({ facing: d })}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </span>
+                {chanceSlider(p.actor.chance, (chance) => p.onActorChange({ chance }))}
+                <span className="text-neutral-400">{p.actor.route ? `route: ${p.actor.route} cells` : "stands"}</span>
+                {p.actor.route > 0 && (
+                  <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorClearRoute}>
+                    Clear route
+                  </button>
+                )}
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorDelete}>
+                  Remove
+                </button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorDeselect}>
+                  Done
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {p.tool === "door" && p.door && (
+        <>
+          <span className="basis-full" />
+          <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+            <span className="text-amber-200">
+              {p.door.kind} door, front {p.door.facing}
+            </span>
+            {slider("Place", p.door.offset, -DOOR_EDGE_OFFSET, DOOR_EDGE_OFFSET, 0.02, (v) =>
+              p.onDoorChange({ offset: v || undefined }),
+            )}
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: -DOOR_EDGE_OFFSET })}>
+              Back edge
+            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: undefined })}>
+              Middle
+            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: DOOR_EDGE_OFFSET })}>
+              Front edge
+            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorFlip} title="Turn it round (it stays where it is)">
+              Flip front
+            </button>
+            <label className="flex items-center gap-1">
+              Label
+              <input
+                type="text"
+                value={p.door.label}
+                onChange={(e) => p.onDoorChange({ label: e.target.value || undefined })}
+                className="w-16 bg-neutral-800 border border-neutral-700 px-1"
+              />
+            </label>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorDelete} title="Delete">
+              Remove
+            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorDeselect}>
+              Done
+            </button>
+            <span className="text-neutral-500">arrows: move (Shift: more)</span>
+          </div>
+        </>
+      )}
       {p.tool === "map" && (
         <>
           <span className="basis-full" />
@@ -348,6 +486,7 @@ export function EditorBar(p: Props) {
                   {p.decal.action ? ` (${p.decal.action})` : ""}
                 </span>
                 {slider("Turn", p.decal.rotation, 0, 345, 15, (v) => p.onDecalChange({ rotation: v || undefined }))}
+                {chanceSlider(p.decal.chance, (chance) => p.onDecalChange({ chance }))}
                 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDecalDelete} title="Delete">
                   Remove
                 </button>
@@ -387,6 +526,7 @@ export function EditorBar(p: Props) {
                 {slider("Height", p.prop.elevation, 0, Math.max(0, p.prop.roomHeight - 0.05), 0.05, (v) =>
                   p.onPropChange({ elevation: v || undefined }),
                 )}
+                {chanceSlider(p.prop.chance, (chance) => p.onPropChange({ chance }))}
                 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropStack} title="The palette's prop, on top of this one">
                   Stack {p.propChoice} on top
                 </button>
@@ -446,6 +586,7 @@ export function EditorBar(p: Props) {
                 </label>
                 {slider("Intensity", p.light.intensity, 0, 4, 0.05, (v) => p.onLightChange({ intensity: v }))}
                 {slider("Range", p.light.range, 0.5, 6, 0.1, (v) => p.onLightChange({ range: v }))}
+                {chanceSlider(p.light.chance, (chance) => p.onLightChange({ chance }))}
                 {p.light.pos && (
                   <>
                     {slider("Height", p.light.pos[1], 0.05, p.light.roomHeight - 0.05, 0.05, (v) =>

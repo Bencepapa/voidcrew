@@ -75,6 +75,9 @@ export interface ActorSpec {
   cell: Vec2;
   facing: Direction;
   patrol: Vec2[];
+  // the chance (0..1) it's there in a variation of the deck (see
+  // variation.ts); unset: always
+  chance?: number;
 }
 
 // A 3D prop (see props.ts) in a walkable cell, pushed toward `at`: a side,
@@ -98,6 +101,9 @@ export interface MapLight {
   // a free-standing one: its bulb shows in the game too (else only while
   // editing - just the light is there)
   bulb?: boolean;
+  // the chance (0..1) it's there in a variation of the deck (see
+  // variation.ts); unset: always
+  chance?: number;
 }
 
 export interface PropSpec {
@@ -111,6 +117,9 @@ export interface PropSpec {
   offset?: [number, number];
   // raised off the floor (wall heights) - on another prop, say
   elevation?: number;
+  // the chance (0..1) it's there in a variation of the deck (see
+  // variation.ts); unset: always
+  chance?: number;
 }
 
 // A lift cabin: the cell behind a lift door. Its button (a decal with the
@@ -164,6 +173,10 @@ export interface DoorSpec {
   label?: string;
   // run the label down the panel, turned 90 degrees clockwise
   labelVertical?: boolean;
+  // where in its cell the door stands: moved this far (cells) toward its
+  // front from the middle; at +-DOOR_EDGE_OFFSET it's flush with the cell's
+  // edge, in line with the walls there (see doorCrossed)
+  offset?: number;
 }
 
 // A decal (bullet hole, stencil, stain...) projected onto one surface of a
@@ -184,6 +197,9 @@ export interface DecalSpec {
   rotation?: number;
   // touching (clicking, tapping) the decal does this - e.g. "lift"
   action?: string;
+  // the chance (0..1) it's there in a variation of the deck (see
+  // variation.ts); unset: always
+  chance?: number;
 }
 
 export interface Crewmate {

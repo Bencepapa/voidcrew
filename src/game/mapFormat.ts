@@ -59,6 +59,8 @@ export interface MapFile {
     facing: Direction;
     label?: string;
     labelVertical?: boolean;
+    // where in the cell it stands (see DoorSpec.offset)
+    offset?: number;
   }[];
   // x, y: the cabin; button: the wall its button decal is on; to: map id
   lifts?: { x: number; y: number; button: Direction; to: string }[];
@@ -78,9 +80,17 @@ export interface MapFile {
     rotation?: number;
     offset?: [number, number];
     elevation?: number;
+    chance?: number;
   }[];
   // patrol: the cells it walks between ([x, y] each), starting with the first
-  actors?: { actor: string; x: number; y: number; facing?: Direction; patrol?: [number, number][] }[];
+  actors?: {
+    actor: string;
+    x: number;
+    y: number;
+    facing?: Direction;
+    patrol?: [number, number][];
+    chance?: number;
+  }[];
   decals?: {
     decal: string;
     x: number;
@@ -90,6 +100,7 @@ export interface MapFile {
     py: number;
     rotation?: number;
     action?: string;
+    chance?: number;
   }[];
 }
 
@@ -200,6 +211,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       facing: d.facing,
       label: d.label,
       labelVertical: d.labelVertical,
+      offset: d.offset,
     })),
     ladders,
     bridges,
@@ -216,6 +228,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         rotation: p.rotation,
         offset: p.offset,
         elevation: p.elevation,
+        chance: p.chance,
       };
     }),
     actors: (file.actors ?? []).map((a) => {
@@ -227,6 +240,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         cell: { x: a.x, y: a.y },
         facing: a.facing ?? "S",
         patrol: (a.patrol ?? []).map(([x, y]) => ({ x, y })),
+        chance: a.chance,
       };
     }),
     lifts: (file.lifts ?? []).map((l) => {
@@ -241,6 +255,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       y: d.py,
       rotation: d.rotation,
       action: d.action,
+      chance: d.chance,
     })),
   };
 }

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MAPS, START_MAP, cellAt, doorAt, floorHeight, liftAt, liftDoorOf } from "./map";
+import { MAPS, START_MAP, cellAt, doorAt, doorCrossed, floorHeight, liftAt, liftDoorOf } from "./map";
 import { DIR_VECTOR, behindOf, leftOf, rightOf, stepForward } from "./movement";
 import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
 import type { Direction, GameMap, Vec2 } from "./types";
 import { initialCrew } from "./crew";
+import { variantOf } from "./variation";
 import { ACTOR_TYPES, actorAt, createActors, partyHitChance, stepActors } from "./actors";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
@@ -62,7 +63,11 @@ function directionTo(from: Vec2, to: Vec2): Direction | undefined {
 }
 
 export function useGameState() {
-  const [map, setMap] = useState<GameMap>(START_MAP);
+  // the deck as its map has it; `map` - what's played - is its variation
+  // (see variation.ts), unless there's none (the editor shows everything)
+  const [fullMap, setMap] = useState<GameMap>(START_MAP);
+  const [variation, setVariation] = useState<number | null>(null);
+  const map = useMemo(() => (variation === null ? fullMap : variantOf(fullMap, variation)), [fullMap, variation]);
   const mapRef = useRef(map);
   mapRef.current = map;
   // arriving in the lift, facing its door
@@ -483,8 +488,10 @@ export function useGameState() {
       busyUntilRef.current = performance.now() + CLIMB_MS_PER_HEIGHT * way.height + CLIMB_WALK_MS;
     }
 
-    if (target === "door" && !openDoors.has(doorCellKey(next))) {
-      startOpening(next);
+    // a shut door on the way (in the next cell, or this one's far side)
+    const door = doorCrossed(map, pos, next);
+    if (door && !openDoors.has(doorCellKey(door))) {
+      startOpening(door);
       setTimeout(() => {
         setPos(next);
         setElevation(way.y);
@@ -579,6 +586,7 @@ export function useGameState() {
     replaceMap,
     enterMap,
     shiftParty,
+    setVariation,
     elevation,
     jumpDown: jump,
     use,
