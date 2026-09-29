@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
+import { prepareRaycasts } from "../render/bvh";
 import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween, liftDoorOf, windowPanels } from "../game/map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
@@ -463,6 +464,8 @@ const ACTOR_FADE_MS = 900;
 // aiming: how often the hit chances are worked out again (real ms), and how
 // long a shot's trace lingers
 const AIM_CHANCE_REFRESH_MS = 250;
+// how many body parts' chances are worked out again per frame
+const AIM_CHANCE_PARTS_PER_FRAME = 1;
 const TRACER_MS = 220;
 // objects wider or deeper than this (cells) are never culled
 const CULL_MAX_SIZE = 1.3;
@@ -1117,6 +1120,8 @@ export function GameViewport({
         if (disposed || ready || buildsPending > 0 || texturesLoaded < texturesTotal) return;
         ready = true;
         renderer.compile(scene, camera);
+        // (behind the loading screen, not on the first aim)
+        prepareRaycasts(group);
         shownMapRef.current = map.id;
         setLoading(null);
         onReadyRef.current?.(map.id);
@@ -2370,12 +2375,15 @@ export function GameViewport({
       }
     }
     let lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
+    // bumped whenever objects are swapped in place (see objectsAlong)
+    let sceneVersion = 0;
 
     // The editor changed only the deck's lights: the ceiling tiles' glowing
     // panels, the fixtures and the light pool follow, the rest stays built.
     // A pool slot keeps its light if the new set still has it.
     function applyLights(next: GameMap) {
       const old = mapLights;
+      sceneVersion++;
       mapLights = generateLights(next);
       litCells = ceilingLightCells(mapLights);
       lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
@@ -2617,8 +2625,51 @@ export function GameViewport({
     const aimNdc = new THREE.Vector2();
     const aimVec = new THREE.Vector3();
     const aimDir = new THREE.Vector3();
+    // each part's hit chance (by "actor:part") and when it was worked out
     const chanceCache = new Map<string, number>();
-    let chanceAt = 0;
+    const chanceAt = new Map<string, number>();
+
+    // What a ray between two points can meet: the objects culled with the
+    // cells along it and around (see cellOf), plus the ones never culled
+    // and the actors (they move). Testing only those - not the whole deck's
+    // hundreds of meshes - is what keeps aiming smooth.
+    let rayCells: Map<string, THREE.Object3D[]> | null = null;
+    const rayAlways: THREE.Object3D[] = [];
+    let rayCellsAt = "";
+    function objectsAlong(from: THREE.Vector3, to: THREE.Vector3): THREE.Object3D[] {
+      const version = `${group.children.length}|${sceneVersion}`;
+      if (!rayCells || rayCellsAt !== version) {
+        rayCells = new Map();
+        rayAlways.length = 0;
+        rayCellsAt = version;
+        for (const obj of group.children) {
+          const key = obj.userData.actor ? null : cellOf(obj);
+          if (key === null) rayAlways.push(obj);
+          else {
+            const list = rayCells.get(key);
+            if (list) list.push(obj);
+            else rayCells.set(key, [obj]);
+          }
+        }
+      }
+      const out = [...rayAlways];
+      const seen = new Set<string>();
+      const steps = Math.ceil(Math.hypot(to.x - from.x, to.z - from.z) / 0.25) + 1;
+      for (let i = 0; i <= steps; i++) {
+        const cx = Math.round(from.x + ((to.x - from.x) * i) / steps);
+        const cz = Math.round(from.z + ((to.z - from.z) * i) / steps);
+        for (let dz = -1; dz <= 1; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const key = cellKey(cx + dx, cz + dz);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const list = rayCells.get(key);
+            if (list) out.push(...list);
+          }
+        }
+      }
+      return out;
+    }
     // each actor type's sheet alpha, to let shots through its transparent
     // pixels
     const sheetAlpha = new Map<string, { data: Uint8ClampedArray; width: number; height: number } | null>();
@@ -2687,7 +2738,7 @@ export function GameViewport({
       const dist = aimDir.length();
       aimRaycaster.set(camera.position, aimDir.normalize());
       aimRaycaster.far = dist - 0.03;
-      for (const hit of aimRaycaster.intersectObjects(group.children, true)) {
+      for (const hit of aimRaycaster.intersectObjects(objectsAlong(camera.position, target), true)) {
         if (hit.object === self || !drawnChain(hit.object) || seeThrough(hit.object)) continue;
         if (hit.object.userData.actorId !== undefined) {
           const other = actorMeshes.get(hit.object.userData.actorId as number);
@@ -2701,8 +2752,10 @@ export function GameViewport({
     function updateAimFrame(weapon: Weapon, camX: number, camZ: number) {
       const cw = container!.clientWidth || 1;
       const ch = container!.clientHeight || 1;
-      const refresh = performance.now() - chanceAt > AIM_CHANCE_REFRESH_MS;
-      if (refresh) chanceAt = performance.now();
+      const startedAt = performance.now();
+      // chances go stale and are worked out again a few parts a frame, not
+      // all at once (a new part's straight away)
+      let budget = AIM_CHANCE_PARTS_PER_FRAME;
       const sway = (weapon.sway ?? 0.03) * ch * aimZoom;
       const targets: AimTarget[] = [];
       for (const actor of actorsRef.current) {
@@ -2731,7 +2784,10 @@ export function GameViewport({
           }
           if (behind) continue;
           const key = `${actor.id}:${part}`;
-          if (refresh || !chanceCache.has(key)) {
+          const stale = !chanceCache.has(key) || (budget > 0 && startedAt - (chanceAt.get(key) ?? 0) > AIM_CHANCE_REFRESH_MS);
+          if (stale) {
+            if (chanceCache.has(key)) budget--;
+            chanceAt.set(key, startedAt);
             // A grid of spots over the part's zone: those on the part itself
             // (the sprite's solid pixels there, not another part's) give its
             // real size; those of them in plain view, its cover.
@@ -2768,6 +2824,8 @@ export function GameViewport({
       }
       targets.sort((a, b) => a.distance - b.distance);
       aimFrameRef.current = { targets, width: cw, height: ch, zoom: aimZoom, shoot };
+      // dev: how long this frame's aiming took (ms), for checking it stays smooth
+      if (import.meta.env.DEV) Object.assign(window, { __voidcrewAimCost: performance.now() - startedAt });
     }
 
     // The party's cover against each hostile actor near enough to shoot:
@@ -2804,7 +2862,7 @@ export function GameViewport({
             aimRaycaster.set(coverFrom, aimDir.normalize());
             aimRaycaster.far = dist;
             const blocked = aimRaycaster
-              .intersectObjects(group.children, true)
+              .intersectObjects(objectsAlong(coverFrom, coverTo), true)
               .some((hit) => hit.object.userData.actorId === undefined && drawnChain(hit.object) && !seeThrough(hit.object));
             if (!blocked) open++;
           }
