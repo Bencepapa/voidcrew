@@ -5,6 +5,18 @@ import type { Direction, PropAnchor, Vec2 } from "../game/types";
 // Edits on a map file (see mapStore.applyEdit): each takes a copy of the
 // file and returns it changed.
 
+// What a click in the editor does (see EDITOR.md): dig a wall out or fill a
+// floor in, paint the surface the pointer is on with a texture set, or place
+// / remove a ceiling light.
+export type EditTool = "dig" | "fill" | "texture" | "light";
+
+// The surface under the pointer, which picks the tool's target (a wall's
+// face is seen from the open cell it belongs to - `from`).
+export type EditSurface = "wall" | "floor" | "ceiling";
+
+// The layer each surface's texture set is written to.
+export type TextureLayer = "floorTexture" | "wallTexture" | "ceilingTexture";
+
 type Layers = NonNullable<MapFile["layers"]>;
 const LAYER_NAMES: (keyof Layers)[] = ["floor", "ceiling", "floorTexture", "wallTexture", "ceilingTexture"];
 
@@ -60,5 +72,57 @@ export function fill(file: MapFile, cell: Vec2): MapFile {
   const here = (p: { x: number; y: number }) => p.x === cell.x && p.y === cell.y;
   if (file.decals) file.decals = file.decals.filter((d) => !here(d));
   if (file.lights) file.lights = file.lights.filter((l) => !here(l));
+  return file;
+}
+
+// Characters a texture layer's legend can use: one per set.
+const CHAR_POOL = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+// Paints a cell's surface (`cell`: the open cell a wall face is seen from)
+// with a texture set, or - `setId` null - back to the layer's default. A
+// layer the map doesn't have yet starts empty, every cell the default. Its
+// legend maps one character per set, so a set not on the map yet takes a
+// character no legend uses and no row shows: rows only mean the default for
+// characters their legend doesn't know.
+export function paintTexture(file: MapFile, layer: TextureLayer, cell: Vec2, setId: string | null): MapFile {
+  const width = file.layout[0]?.length ?? 0;
+  const layers = file.layers ?? (file.layers = {});
+  let entry = layers[layer];
+  if (!entry && setId === null) return file;
+  if (!entry) {
+    entry = { legend: {}, rows: Array.from({ length: file.layout.length }, () => ".".repeat(width)) };
+    layers[layer] = entry;
+  }
+  const row = entry.rows[cell.y];
+  if (row === undefined || row.length !== width) return file;
+  const taken = new Set(Object.keys(entry.legend));
+  const known = setId === null ? undefined : Object.entries(entry.legend).find(([, id]) => id === setId)?.[0];
+  let char: string | null;
+  if (known !== undefined) {
+    char = known;
+  } else if (setId === null) {
+    char = taken.has(".") ? [...CHAR_POOL].find((c) => !taken.has(c)) ?? null : ".";
+  } else {
+    const shown = new Set(entry.rows.join(""));
+    char = [...CHAR_POOL].find((c) => !taken.has(c) && !shown.has(c)) ?? null;
+    if (char !== null) entry.legend[char] = setId;
+  }
+  if (char === null) return file;
+  entry.rows[cell.y] = setChar(row, cell.x, char);
+  return file;
+}
+
+// Switches the cell's ceiling light on or off. A generated one (`auto`: the
+// mood lighting puts one there - see lights.ts autoLightCells) is switched
+// off by listing the cell in lightsOff; any other is the map's own, in
+// lights.
+export function setLight(file: MapFile, cell: Vec2, on: boolean, auto: boolean): MapFile {
+  const here = (l: { x: number; y: number }) => l.x === cell.x && l.y === cell.y;
+  file.lights = (file.lights ?? []).filter((l) => !here(l));
+  file.lightsOff = (file.lightsOff ?? []).filter((l) => !here(l));
+  if (on && !auto) file.lights.push({ x: cell.x, y: cell.y });
+  if (!on && auto) file.lightsOff.push({ x: cell.x, y: cell.y });
+  if (!file.lights.length) delete file.lights;
+  if (!file.lightsOff.length) delete file.lightsOff;
   return file;
 }

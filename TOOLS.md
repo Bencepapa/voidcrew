@@ -7,7 +7,7 @@ there are, and which files to edit when adding something new.
 
 | I want to add | Command / tool | Also edit |
 | --- | --- | --- |
-| Wall, floor, ceiling or door texture | `npm run texture:process` | `TEXTURE_SETS` + `TextureSetId` in `src/components/GameViewport.tsx`, the map's `textures` block |
+| Wall, floor, ceiling or door texture | `npm run texture:process` | `TEXTURE_SETS` in `src/render/textureSets.ts`, the map's `textures` block |
 | Window (one panel) | `npm run texture:process -- --key ff00ff` | as above; `textures.window` in the map |
 | Wide window (three-part strip) | `npm run texture:window-strip` | `<name>_left/_mid/_right` in `TEXTURE_SETS` |
 | Door frame (cut-out opening) | `npm run texture:process -- --key ff00ff --trim` | `TEXTURE_SETS`, `textures.doorFrame` in the map |
@@ -96,9 +96,10 @@ by the two images' bounding boxes), or the relief won't match the picture.
 
 **Wiring it up:**
 
-1. `src/components/GameViewport.tsx`: add the name to the `TextureSetId`
-   type and an entry to `TEXTURE_SETS` (`diffuse`, `normal`, `depth`,
-   `pixelArt: true`, plus `emissive` for a glowing ceiling).
+1. `src/render/textureSets.ts`: add an entry to `TEXTURE_SETS` - the id is
+   the key; `diffuse`, `normal`, `depth`, `pixelArt: true`, plus `emissive`
+   for a glowing ceiling, and a `kind` (wall/floor/ceiling/door/window/propFace)
+   and `label` for the editor palette.
 2. The map's `textures` block (`src/maps/<id>.json`):
    ```json
    "textures": {

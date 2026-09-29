@@ -8,6 +8,7 @@ import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights, lampColor } from "../game/lights";
+import type { LightSpec } from "../game/lights";
 import { PROP_TYPES, propPlacement } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
@@ -26,41 +27,11 @@ import { WALL_ROTATION, surfaceKey } from "../render/surfaces";
 import { DecalLibrary } from "../render/decals";
 import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
 import { renderText, seededRandom } from "../render/pixelFont";
+import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
+import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
+import type { EditTool } from "../editor/mapEdits";
 
-export type TextureSetId =
-  | "wall1"
-  | "wall2"
-  | "wall3"
-  | "wall4"
-  | "wall5"
-  | "floor1"
-  | "floor2"
-  | "door1"
-  | "doorframe1"
-  | "liftdoor1"
-  | "ceiling1"
-  | "window1"
-  | "window1_left"
-  | "window1_mid"
-  | "window1_right"
-  | "medwindow1"
-  | "medwindow1_left"
-  | "medwindow1_mid"
-  | "medwindow1_right"
-  | "crate1"
-  | "crate1_top"
-  | "medbed1_front"
-  | "medbed1_side"
-  | "medbed1_top"
-  | "lift1"
-  | "liftceil1"
-  | "medwall1"
-  | "crewwall1"
-  | "medfloor1"
-  | "medceil1"
-  | "meddoor1"
-  | "medliftdoor1"
-  | "meddoorframe1";
+export type { TextureSetId };
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 // debug: draw every surface with its textures, or just its polygons -
 // flat-shaded faces colored by their direction, or a wireframe
@@ -155,11 +126,11 @@ export interface AimFocus {
   phase: "pick" | "aim";
 }
 
-// The map editor (see EDITOR.md): the cell under the pointer - a wall to dig
-// out (with the open cell it's dug from, whose face was pointed at), or a
-// floor to fill in.
+// The map editor (see EDITOR.md): what the pointer is on - a wall to dig
+// out (with the open cell it's dug from, whose face was pointed at), or the
+// floor / ceiling of a cell to fill, paint or hang a light in.
 export interface EditTarget {
-  kind: "wall" | "floor";
+  kind: "wall" | "floor" | "ceiling";
   cell: Vec2;
   from?: Vec2;
 }
@@ -350,262 +321,11 @@ function createBeveledWallGeometry(
   return geo;
 }
 
-interface TextureSetPaths {
-  diffuse: string;
-  normal: string;
-  depth: string;
-  pixelArt: boolean;
-  // mask of the parts that glow when lit (a ceiling light panel)
-  emissive?: string;
-  // a grate floor: its lowest this many height levels are the slots, cut
-  // open where it's a bridge deck (see through it)
-  grateLevels?: number;
-}
-
-const TEXTURE_SETS: Record<TextureSetId, TextureSetPaths> = {
-  // import.meta.env.BASE_URL matches Vite's `base` config (e.g. "/voidcrew/"
-  // on GitHub Pages) - a hardcoded "/textures/..." would 404 there since the
-  // app isn't served from the domain root.
-  wall1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/wall1/diffuse.jpeg`,
-    normal: `${import.meta.env.BASE_URL}textures/wall1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/wall1/depth.png`,
-    pixelArt: false,
-  },
-  wall2: {
-    diffuse: `${import.meta.env.BASE_URL}textures/wall2/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/wall2/normal.png`,
-    // wall2 has no real depth map from the Sprite Lamp pass - flat/neutral
-    // fallback so displacement is just a no-op instead of erroring.
-    depth: `${import.meta.env.BASE_URL}textures/wall2/depth.png`,
-    pixelArt: true,
-  },
-  wall3: {
-    diffuse: `${import.meta.env.BASE_URL}textures/wall3/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/wall3/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/wall3/depth.png`,
-    pixelArt: true,
-  },
-  // Gemini 1254px diffuse + depth run through scripts/process-texture.ts
-  // (256px, 32 colors, baked height levels, normal derived from depth)
-  wall4: {
-    diffuse: `${import.meta.env.BASE_URL}textures/wall4/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/wall4/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/wall4/depth.png`,
-    pixelArt: true,
-  },
-  wall5: {
-    diffuse: `${import.meta.env.BASE_URL}textures/wall5/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/wall5/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/wall5/depth.png`,
-    pixelArt: true,
-  },
-  // one floor tile per cell: a grate with recessed slots
-  floor1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/floor1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/floor1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/floor1/depth.png`,
-    pixelArt: true,
-    grateLevels: 2,
-  },
-  // diamond plate with a raised frame
-  floor2: {
-    diffuse: `${import.meta.env.BASE_URL}textures/floor2/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/floor2/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/floor2/depth.png`,
-    pixelArt: true,
-  },
-  // sliding door panel
-  door1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/door1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/door1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/door1/depth.png`,
-    pixelArt: true,
-  },
-  // door frame; its opening is transparent in both diffuse and depth
-  doorframe1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/doorframe1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/doorframe1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/doorframe1/depth.png`,
-    pixelArt: true,
-  },
-  // lift door panel: slides sideways; a blank field on its left takes a label
-  liftdoor1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/liftdoor1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/liftdoor1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/liftdoor1/depth.png`,
-    pixelArt: true,
-  },
-  // lift cabin wall: two plain plates
-  lift1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/lift1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/lift1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/lift1/depth.png`,
-    pixelArt: true,
-  },
-  // lift cabin ceiling: two light strips that glow (emissive)
-  liftceil1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/liftceil1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/liftceil1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/liftceil1/depth.png`,
-    emissive: `${import.meta.env.BASE_URL}textures/liftceil1/emissive.png`,
-    pixelArt: true,
-  },
-  // the medical deck (generated from concept/medical_concept.png): sterile
-  // light grey plates with medical-green accents
-  // crew quarters wall panel
-  crewwall1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/crewwall1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/crewwall1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/crewwall1/depth.png`,
-    pixelArt: true,
-  },
-  medwall1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medwall1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medwall1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medwall1/depth.png`,
-    pixelArt: true,
-  },
-  medfloor1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medfloor1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medfloor1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medfloor1/depth.png`,
-    pixelArt: true,
-  },
-  medceil1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medceil1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medceil1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medceil1/depth.png`,
-    emissive: `${import.meta.env.BASE_URL}textures/medceil1/emissive.png`,
-    pixelArt: true,
-  },
-  meddoor1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/meddoor1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/meddoor1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/meddoor1/depth.png`,
-    pixelArt: true,
-  },
-  // door frame: its opening is transparent
-  meddoorframe1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/meddoorframe1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/meddoorframe1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/meddoorframe1/depth.png`,
-    pixelArt: true,
-  },
-  medliftdoor1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medliftdoor1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medliftdoor1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medliftdoor1/depth.png`,
-    pixelArt: true,
-  },
-  // wall panel with a window frame; its opening is transparent
-  window1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/window1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/window1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/window1/depth.png`,
-    pixelArt: true,
-  },
-  // the pieces of a wider window (scripts/make-window-strip.ts): its ends
-  // and a middle that repeats, split by mullions on the seams
-  window1_left: {
-    diffuse: `${import.meta.env.BASE_URL}textures/window1_left/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/window1_left/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/window1_left/depth.png`,
-    pixelArt: true,
-  },
-  window1_mid: {
-    diffuse: `${import.meta.env.BASE_URL}textures/window1_mid/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/window1_mid/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/window1_mid/depth.png`,
-    pixelArt: true,
-  },
-  window1_right: {
-    diffuse: `${import.meta.env.BASE_URL}textures/window1_right/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/window1_right/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/window1_right/depth.png`,
-    pixelArt: true,
-  },
-  medwindow1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medwindow1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medwindow1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medwindow1/depth.png`,
-    pixelArt: true,
-  },
-  medwindow1_left: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medwindow1_left/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medwindow1_left/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medwindow1_left/depth.png`,
-    pixelArt: true,
-  },
-  medwindow1_mid: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medwindow1_mid/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medwindow1_mid/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medwindow1_mid/depth.png`,
-    pixelArt: true,
-  },
-  medwindow1_right: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medwindow1_right/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medwindow1_right/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medwindow1_right/depth.png`,
-    pixelArt: true,
-  },
-  // a prop crate's sides and top (see src/game/props.ts)
-  crate1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/crate1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/crate1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/crate1/depth.png`,
-    pixelArt: true,
-  },
-  crate1_top: {
-    diffuse: `${import.meta.env.BASE_URL}textures/crate1_top/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/crate1_top/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/crate1_top/depth.png`,
-    pixelArt: true,
-  },
-  // a prop's orthographic views (see src/game/props.ts)
-  medbed1_front: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medbed1_front/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medbed1_front/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medbed1_front/depth.png`,
-    pixelArt: true,
-  },
-  medbed1_side: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medbed1_side/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medbed1_side/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medbed1_side/depth.png`,
-    pixelArt: true,
-  },
-  medbed1_top: {
-    diffuse: `${import.meta.env.BASE_URL}textures/medbed1_top/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/medbed1_top/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/medbed1_top/depth.png`,
-    pixelArt: true,
-  },
-  // ceiling tile; its center panel glows in cells with a ceiling light
-  ceiling1: {
-    diffuse: `${import.meta.env.BASE_URL}textures/ceiling1/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/ceiling1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/ceiling1/depth.png`,
-    emissive: `${import.meta.env.BASE_URL}textures/ceiling1/emissive.png`,
-    pixelArt: true,
-  },
-};
-
 // a lit ceiling panel glows in its deck's lamp color (see lampColor)
 const LIGHT_PANEL_INTENSITY = 1.6;
 
 // floor used where the map doesn't specify one
 const DEFAULT_FLOOR: TextureSetId = "floor1";
-
-// a texture set that isn't listed: the maps in public/textures/<name>/
-function textureFolder(name: string): TextureSetPaths {
-  const base = `${import.meta.env.BASE_URL}textures/${name}/`;
-  return { diffuse: `${base}diffuse.png`, normal: `${base}normal.png`, depth: `${base}depth.png`, pixelArt: true };
-}
-
-function isTextureSetId(id: string | undefined): id is TextureSetId {
-  return id !== undefined && id in TEXTURE_SETS;
-}
 
 // A wall panel is a whole texture tall, or - where a wall's height isn't a
 // whole number of panels - a band of the texture: its top ("t") or bottom
@@ -798,6 +518,11 @@ const TOUCH_REACH = 1.4;
 const EDIT_REACH = 8;
 const EDIT_DIG_COLOR = 0xffa040;
 const EDIT_FILL_COLOR = 0x40d0ff;
+// the Texture tool paints the surface green; the Light tool shows yellow
+// where a click adds a ceiling light, blue where it takes one away
+const EDIT_PAINT_COLOR = 0x60ff80;
+const EDIT_LIGHT_ADD_COLOR = 0xffe040;
+const EDIT_LIGHT_REMOVE_COLOR = 0x40d0ff;
 const DOOR_PANEL_SETS: Record<DoorSpec["kind"], TextureSetId> = {
   standard: "door1",
   lift: "liftdoor1",
@@ -882,7 +607,12 @@ interface GameViewportProps {
   // the map editor is on: the cell under the pointer is highlighted, and a
   // click or tap edits it (`alt`: the right button)
   editMode?: boolean;
+  // the tool the editor has picked: what the highlight says a click does
+  editTool?: EditTool;
   onEdit?: (target: EditTarget, alt: boolean) => void;
+  // the surface under the pointer whenever it changes - the editor's
+  // texture palette follows it
+  onEditHover?: (target: EditTarget | null) => void;
   // a map's scene is fully built and shown (after the loading screen)
   onReady?: (mapId: string) => void;
   // free movement: called every frame with the frame time (s), returns the
@@ -1178,7 +908,9 @@ export function GameViewport({
   partyCoverRef,
   onTouch,
   editMode,
+  editTool,
   onEdit,
+  onEditHover,
   onReady,
   freeTick,
   peekRef,
@@ -1233,6 +965,10 @@ export function GameViewport({
   editModeRef.current = !!editMode;
   const onEditRef = useRef(onEdit);
   onEditRef.current = onEdit;
+  const editToolRef = useRef(editTool ?? "dig");
+  editToolRef.current = editTool ?? "dig";
+  const onEditHoverRef = useRef(onEditHover);
+  onEditHoverRef.current = onEditHover;
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   // the loading screen, up while a new map's scene is built; the map last
@@ -1308,6 +1044,19 @@ export function GameViewport({
       doorAnimsRef.current.set(key, { panel, from: panel.position.clone(), start: performance.now() });
     }
   }, [openDoors]);
+
+  // The map the scene is built from. A new version of it that differs only
+  // in its lights (the editor's Light tool) keeps the scene: its lighting is
+  // redone in place (applyLights) instead of rebuilding every wall.
+  const sceneMapRef = useRef(map);
+  if (sceneMapRef.current.id !== map.id || !map.structureKey || sceneMapRef.current.structureKey !== map.structureKey) {
+    sceneMapRef.current = map;
+  }
+  const sceneMap = sceneMapRef.current;
+  const applyLightsRef = useRef<((next: GameMap) => void) | null>(null);
+  useEffect(() => {
+    if (map !== sceneMap) applyLightsRef.current?.(map);
+  }, [map, sceneMap]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1398,7 +1147,7 @@ export function GameViewport({
     // `setId`: a TEXTURE_SETS entry, or (for props) any folder under
     // public/textures/ with the usual diffuse, normal and depth maps
     function createWallKit(setId: string, displace = true): WallKit {
-      const paths = isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
+      const paths: TextureSetFiles = isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
       const diffuse = loader.load(paths.diffuse + bust);
       const normalMap = loader.load(paths.normal + bust);
       const depthMap = loader.load(paths.depth + bust);
@@ -1504,10 +1253,10 @@ export function GameViewport({
       return kit;
     }
     // cells with a ceiling light: their ceiling tile's light panel glows
-    const mapLights = generateLights(map);
-    const litCells = new Set(
-      mapLights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`),
-    );
+    let mapLights = generateLights(map);
+    const ceilingLightCells = (lights: LightSpec[]) =>
+      new Set(lights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`));
+    let litCells = ceilingLightCells(mapLights);
 
     const frameKit = createWallKit(isTextureSetId(map.textures?.doorFrame) ? map.textures.doorFrame : DOOR_FRAME_SET, false);
     // window panels (see the wall loop), by their wall's surface key
@@ -1647,6 +1396,7 @@ export function GameViewport({
       group.add(obj);
       obj.updateMatrixWorld(true);
       decals.registerSurface(slot.key, mesh);
+      return obj;
     }
 
     function placeWalls(
@@ -1669,11 +1419,16 @@ export function GameViewport({
     }
 
     // ... and turned to face down from the ceiling; lit slots get the kit's
-    // glowing front material
+    // glowing front material (swapped when the lights change: ceilingTiles)
+    const ceilingTiles: { cell: string; obj: THREE.Object3D; kit: WallKit; relief: boolean }[] = [];
+    const ceilingMaterial = (kit: WallKit, relief: boolean, lit: boolean) => {
+      const front = lit && kit.litMat ? kit.litMat : kit.wallMat;
+      return relief ? [front, kit.sideMat] : front;
+    };
     function placeCeilings(geo: THREE.BufferGeometry, farGeo: THREE.BufferGeometry | null, kit: WallKit, relief: boolean) {
       for (const slot of kit.slots) {
-        const front = slot.lit && kit.litMat ? kit.litMat : kit.wallMat;
-        placeSurface(slot, geo, farGeo, relief ? [front, kit.sideMat] : front, (o) => (o.rotation.x = Math.PI / 2));
+        const obj = placeSurface(slot, geo, farGeo, ceilingMaterial(kit, relief, !!slot.lit), (o) => (o.rotation.x = Math.PI / 2));
+        ceilingTiles.push({ cell: `${slot.x},${slot.z}`, obj, kit, relief });
       }
     }
 
@@ -2516,26 +2271,36 @@ export function GameViewport({
       return mat;
     };
 
-    for (const light of mapLights) {
-      if (light.kind === "ceiling") {
-        // a textured ceiling brings its own glowing light panel
-        if (ceilingKitAt(Math.round(light.x), Math.round(light.z))?.litMat) continue;
-        const panel = new THREE.Mesh(ceilingFixtureGeo, fixtureMat(light.color));
-        panel.rotation.x = Math.PI / 2;
-        panel.position.set(light.x, ceilingY(Math.round(light.x), Math.round(light.z)) - 0.002, light.z);
-        group.add(panel);
-      } else if (light.kind === "floorGlow" && light.wall) {
-        // a thin strip on the floor along the foot of the wall
-        const v = DIR_VECTOR[light.wall];
-        const strip = new THREE.Mesh(floorFixtureGeo, fixtureMat(light.color));
-        strip.rotation.set(-Math.PI / 2, 0, v.x !== 0 ? Math.PI / 2 : 0);
-        strip.userData.floorY = floorY(Math.round(light.x), Math.round(light.z));
-        strip.position.set(light.x + v.x * 0.1, strip.userData.floorY + floorTop + 0.003, light.z + v.y * 0.1);
-        group.add(strip);
-        floorStrips.push(strip);
+    // (placed again when the lights change - see applyLights)
+    const fixtures: THREE.Object3D[] = [];
+    function placeFixtures() {
+      for (const obj of fixtures) group.remove(obj);
+      fixtures.length = 0;
+      floorStrips.length = 0;
+      for (const light of mapLights) {
+        if (light.kind === "ceiling") {
+          // a textured ceiling brings its own glowing light panel
+          if (ceilingKitAt(Math.round(light.x), Math.round(light.z))?.litMat) continue;
+          const panel = new THREE.Mesh(ceilingFixtureGeo, fixtureMat(light.color));
+          panel.rotation.x = Math.PI / 2;
+          panel.position.set(light.x, ceilingY(Math.round(light.x), Math.round(light.z)) - 0.002, light.z);
+          group.add(panel);
+          fixtures.push(panel);
+        } else if (light.kind === "floorGlow" && light.wall) {
+          // a thin strip on the floor along the foot of the wall
+          const v = DIR_VECTOR[light.wall];
+          const strip = new THREE.Mesh(floorFixtureGeo, fixtureMat(light.color));
+          strip.rotation.set(-Math.PI / 2, 0, v.x !== 0 ? Math.PI / 2 : 0);
+          strip.userData.floorY = floorY(Math.round(light.x), Math.round(light.z));
+          strip.position.set(light.x + v.x * 0.1, strip.userData.floorY + floorTop + 0.003, light.z + v.y * 0.1);
+          group.add(strip);
+          fixtures.push(strip);
+          floorStrips.push(strip);
+        }
+        // wall glows have no fixture - the light itself reads as a lit patch
       }
-      // wall glows have no fixture - the light itself reads as a lit patch
     }
+    placeFixtures();
 
     const lightPool = Array.from({ length: LIGHT_POOL_SIZE }, () => {
       const light = new THREE.PointLight(0xffffff, 0, 1, 2);
@@ -2604,7 +2369,33 @@ export function GameViewport({
         obj.visible = off || key === null || sight.cells.has(key);
       }
     }
-    const lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
+    let lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
+
+    // The editor changed only the deck's lights: the ceiling tiles' glowing
+    // panels, the fixtures and the light pool follow, the rest stays built.
+    // A pool slot keeps its light if the new set still has it.
+    function applyLights(next: GameMap) {
+      const old = mapLights;
+      mapLights = generateLights(next);
+      litCells = ceilingLightCells(mapLights);
+      lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
+      for (const tile of ceilingTiles) {
+        const material = ceilingMaterial(tile.kit, tile.relief, litCells.has(tile.cell));
+        tile.obj.traverse((o) => {
+          if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = material;
+        });
+      }
+      placeFixtures();
+      // the new fixtures get culled with the rest on the next frame
+      culledCount = -1;
+      for (const slot of lightPool) {
+        if (slot.source < 0) continue;
+        const was = old[slot.source];
+        slot.source = mapLights.findIndex((l) => l.kind === was.kind && l.x === was.x && l.y === was.y && l.z === was.z);
+        if (slot.source < 0) slot.level = 0;
+      }
+    }
+    applyLightsRef.current = applyLights;
     const litNear = (key: string, cells: Set<string>) => {
       if (cells.has(key)) return true;
       const [x, y] = key.split(",").map(Number);
@@ -3137,9 +2928,9 @@ export function GameViewport({
     const onHover = (e: PointerEvent) => {
       editHover = viewNdc(e.clientX, e.clientY);
     };
-    const onLeave = () => {
-      editHover = null;
-    };
+    // leaving the view (for the toolbar, say) keeps the last point: the
+    // highlight mustn't jump to whatever is in the middle of the view
+    const onLeave = () => {};
     // no context menu over the view while editing: the right button fills
     const onContextMenu = (e: Event) => {
       if (editModeRef.current) e.preventDefault();
@@ -3149,7 +2940,8 @@ export function GameViewport({
     renderer.domElement.addEventListener("contextmenu", onContextMenu);
     // The cell a point of the view shows: the first solid surface there - a
     // wall's face (the wall cell behind it, dug from the open cell in front),
-    // else the floor of the cell it's in.
+    // else the floor or ceiling of the cell it's in: floors face up, ceiling
+    // geometry is turned to face down.
     function editTargetAt(ndc: THREE.Vector2): EditTarget | null {
       editRaycaster.setFromCamera(ndc, camera);
       const hit = editRaycaster
@@ -3169,7 +2961,11 @@ export function GameViewport({
         }
       }
       const cell = { x: Math.round(p.x), y: Math.round(p.z) };
-      return cellAt(map, cell.x, cell.y) === "wall" ? null : { kind: "floor", cell };
+      if (cellAt(map, cell.x, cell.y) === "wall") return null;
+      // floor or ceiling by which the hit is nearer to (a relief's step
+      // sides face sideways, so the normal can't tell)
+      const nearCeiling = ceilingY(cell.x, cell.y) - p.y < p.y - floorY(cell.x, cell.y);
+      return { kind: nearCeiling ? "ceiling" : "floor", cell };
     }
     const editBox = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
@@ -3179,24 +2975,77 @@ export function GameViewport({
     editBox.visible = false;
     scene.add(editBox);
     geometries.push(editBox.geometry);
+    // the surface under the pointer, to the editor (the palette follows it):
+    // only when it changes, not every frame, and only once it settles - a
+    // sweep across the view on the way to the toolbar mustn't swap the
+    // palette away from the surface it was picked for
+    let lastHover = "";
+    let hoverKey = "";
+    let hoverSince = 0;
+    const HOVER_SETTLE_MS = 150;
+    function reportHover(target: EditTarget | null) {
+      const key = target ? `${target.kind} ${target.cell.x},${target.cell.y} ${target.from?.x},${target.from?.y}` : "";
+      if (key === lastHover) return;
+      if (key !== hoverKey) {
+        hoverKey = key;
+        hoverSince = performance.now();
+      }
+      if (performance.now() - hoverSince < HOVER_SETTLE_MS) return;
+      lastHover = key;
+      onEditHoverRef.current?.(target);
+    }
+    // Marks what a click with the tool in hand would do: the wall block Dig
+    // takes out, or the surface Fill paints over / the Texture tool paints /
+    // the Light tool hangs a light in.
     function updateEditHighlight() {
       const target = editModeRef.current ? editTargetAt(editHover ?? new THREE.Vector2(0, 0)) : null;
-      editBox.visible = !!target;
-      if (!target) return;
+      reportHover(target);
+      // dev: what's under the pointer, for the console and tests
+      if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
+      const tool = editToolRef.current;
+      let mode: "wall" | "plate" | null = null;
+      let color = EDIT_FILL_COLOR;
+      if (target) {
+        if (tool === "texture") {
+          mode = target.kind === "wall" ? "wall" : "plate";
+          color = EDIT_PAINT_COLOR;
+        } else if (tool === "light") {
+          // a light hangs in the cell's ceiling, so either surface of it works
+          if (target.kind !== "wall") {
+            mode = "plate";
+            const lit = litCells.has(`${target.cell.x},${target.cell.y}`);
+            color = lit ? EDIT_LIGHT_REMOVE_COLOR : EDIT_LIGHT_ADD_COLOR;
+          }
+        } else if (target.kind === "wall") {
+          // only Dig works on a wall (Fill's right button needs a floor)
+          if (tool === "dig") {
+            mode = "wall";
+            color = EDIT_DIG_COLOR;
+          }
+        } else {
+          mode = "plate";
+          color = EDIT_FILL_COLOR;
+        }
+      }
+      editBox.visible = mode !== null;
+      if (!target || !mode) return;
       const mat = editBox.material as THREE.LineBasicMaterial;
-      if (target.kind === "wall") {
+      if (mode === "wall") {
         // the wall block, as tall as the room it's dug from
         const from = target.from!;
         const bottom = floorY(from.x, from.y);
         const top = ceilingY(from.x, from.y);
         editBox.position.set(target.cell.x, (bottom + top) / 2, target.cell.y);
         editBox.scale.set(0.98, top - bottom - 0.02, 0.98);
-        mat.color.setHex(EDIT_DIG_COLOR);
       } else {
-        editBox.position.set(target.cell.x, floorY(target.cell.x, target.cell.y) + 0.02, target.cell.y);
+        // the surface the tool touches: its ceiling where the tool works on
+        // one (the ceiling plate of a light's cell), else its floor
+        const onCeiling = tool === "light" || (tool === "texture" && target.kind === "ceiling");
+        const y = onCeiling ? ceilingY(target.cell.x, target.cell.y) - 0.02 : floorY(target.cell.x, target.cell.y) + 0.02;
+        editBox.position.set(target.cell.x, y, target.cell.y);
         editBox.scale.set(0.98, 0.04, 0.98);
-        mat.color.setHex(EDIT_FILL_COLOR);
       }
+      mat.color.setHex(color);
     }
 
     const startedAt = performance.now();
@@ -3289,8 +3138,12 @@ export function GameViewport({
         rideDip = 1 - 0.85 * (1 - smoothstep(0, LIFT_DIP_MS, Math.abs(rideElapsed - ride.swapAt)));
       }
       const shakeY = shake * (Math.sin(t * 37) * 0.006 + Math.sin(t * 23.3) * 0.004);
-      const bobY = (s.bobEnabled ? Math.sin((t * 2 * Math.PI) / 3.2) * 0.035 : 0) + shakeY;
-      const bobRoll = (s.bobEnabled ? Math.cos((t * 2 * Math.PI) / 1.6) * 0.015 : 0) + shake * Math.sin(t * 29) * 0.004;
+      // steady while editing: the bob sways the view enough to move what's
+      // under the pointer between the floor and the ceiling - and with it
+      // the surface (and the palette) a click would work on
+      const bob = s.bobEnabled && !editModeRef.current ? 1 : 0;
+      const bobY = bob * Math.sin((t * 2 * Math.PI) / 3.2) * 0.035 + shakeY;
+      const bobRoll = bob * Math.cos((t * 2 * Math.PI) / 1.6) * 0.015 + shake * Math.sin(t * 29) * 0.004;
 
       const fwdX = cam.tx - cam.x;
       const fwdZ = cam.tz - cam.z;
@@ -3475,6 +3328,7 @@ export function GameViewport({
 
     return () => {
       disposed = true;
+      if (applyLightsRef.current === applyLights) applyLightsRef.current = null;
       const w = window as { __voidcrewSnapshot?: () => string };
       if (w.__voidcrewSnapshot === snapshot) delete w.__voidcrewSnapshot;
       cancelAnimationFrame(raf);
@@ -3514,7 +3368,7 @@ export function GameViewport({
       renderer.dispose();
     };
   }, [
-    map,
+    sceneMap,
     settings.textureSet,
     settings.accentTextureSet,
     settings.accentRatio,

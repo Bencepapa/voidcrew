@@ -112,8 +112,8 @@ not two editors.
 
 1. ✅ Edit mode toggle, highlight under the cursor, dig / fill, undo, save
    to disk and download.
-2. Palette: textures, lights, decals (at the exact spot), props (anchor and
-   rotation).
+2. ✅ Palette: textures, lights. Still to come: decals (at the exact spot),
+   props (anchor and rotation).
 3. Heights, ladders, bridges, doors, windows.
 4. 2D view: painting, patrol routes, "test from here".
 5. Mobile toolbar; new maps.
@@ -125,10 +125,10 @@ No hand-kept list of its own – each palette reads what's already there:
 - props: `PROP_TYPES` (`src/game/props.ts`);
 - enemies: `ACTOR_TYPES` (`src/game/actors.ts`);
 - decals: `public/decals/index.json` (written by `npm run decals:import`);
-- textures: a `TEXTURE_SETS` table in code (id → kind: wall, floor,
-  ceiling, door, window or prop face; and a short label), replacing today's
-  bare `TextureSetId` union, which the type is then derived from. The
-  palette filters it by kind: walls for a wall face, floors for a floor.
+- textures: the `TEXTURE_SETS` table in `src/render/textureSets.ts` (id →
+  kind: wall, floor, ceiling, door, window or prop face; and a short label),
+  with `TextureSetId` derived from its keys. The palette filters it by kind:
+  walls for a wall face, floors for a floor.
 
 ## Decisions
 

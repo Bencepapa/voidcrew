@@ -26,6 +26,9 @@ const PEEK_TURN_THRESHOLD = (35 * Math.PI) / 180;
 const MOUSELOOK_PER_PX = 0.0025;
 // shorter drags count as taps and are ignored
 const MIN_SWIPE_PX = 30;
+// editing, free movement: a mouse drag past this turns the view (the
+// viewport takes a press that moves less as a click)
+const EDIT_DRAG_PX = 6;
 // A peeking drag decides its axis once it has moved this far: sideways it
 // peeks (from there on, so it starts from 0 - no jolt), up or down it's a
 // step and the view stays still. Stops a forward swipe that drifts a bit
@@ -40,6 +43,10 @@ interface ViewControlsOptions {
   onTurnRight: () => void;
   // free movement: mouselook yaw input (radians, + = right)
   onYaw: (delta: number) => void;
+  // the map editor is on: the mouse points at what to edit, so it's never
+  // captured (free movement turns by dragging instead) and hovering doesn't
+  // glance around (grid movement)
+  editing?: boolean;
 }
 
 const clampPeek = (v: number) => Math.max(-MAX_PEEK, Math.min(MAX_PEEK, v));
@@ -58,6 +65,10 @@ const clampPeek = (v: number) => Math.max(-MAX_PEEK, Math.min(MAX_PEEK, v));
 //
 // Free movement: clicking the view with the mouse captures it (pointer lock)
 // for mouselook; touches are left to the VirtualJoysticks overlay.
+//
+// Editing the map (either movement): the mouse stays free to point at
+// surfaces and the toolbar. A mouse drag turns the view (free movement) or
+// peeks (grid); a click without dragging is the editor's.
 export function useViewControls(opts: ViewControlsOptions) {
   const peekRef = useRef<PeekState>({ offset: 0, lastInputAt: 0, held: false, pendingTurn: 0 });
   // a drag in progress; `axis`: what a peeking drag turned out to be, once
@@ -92,15 +103,19 @@ export function useViewControls(opts: ViewControlsOptions) {
     };
   }, []);
 
-  // leaving free movement releases the mouse
+  // leaving free movement, or starting to edit, releases the mouse
   useEffect(() => {
-    if (opts.grid && document.pointerLockElement) document.exitPointerLock();
-  }, [opts.grid]);
+    if ((opts.grid || opts.editing) && document.pointerLockElement) document.exitPointerLock();
+  }, [opts.grid, opts.editing]);
 
   const handlers = {
     onPointerDown(e: PointerEvent<HTMLElement>) {
       const o = latest.current;
       if (!o.grid) {
+        if (e.pointerType === "mouse" && o.editing) {
+          drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, peek: false, startOffset: 0, axis: null, peekX: e.clientX };
+          return;
+        }
         if (e.pointerType === "mouse") {
           lockTarget.current = e.currentTarget;
           // refused in some embedded/hidden pages - mouselook just stays off
@@ -131,7 +146,17 @@ export function useViewControls(opts: ViewControlsOptions) {
 
     onPointerMove(e: PointerEvent<HTMLElement>) {
       const o = latest.current;
-      if (!o.grid) return;
+      if (!o.grid) {
+        // editing: a mouse drag turns the view (past a small dead zone, so a
+        // click that wobbles a little stays a click)
+        const d = drag.current;
+        if (o.editing && d && d.id === e.pointerId && e.buttons) {
+          if (!d.axis && Math.hypot(e.clientX - d.x, e.clientY - d.y) < EDIT_DRAG_PX) return;
+          d.axis = "x";
+          o.onYaw(e.movementX * MOUSELOOK_PER_PX);
+        }
+        return;
+      }
       const peek = peekRef.current;
       const d = drag.current;
       if (d && d.id === e.pointerId) {
@@ -151,7 +176,7 @@ export function useViewControls(opts: ViewControlsOptions) {
         }
         return;
       }
-      if (e.pointerType === "mouse" && e.buttons === 0) {
+      if (e.pointerType === "mouse" && e.buttons === 0 && !o.editing) {
         peek.offset = clampPeek(peek.offset + e.movementX * MOUSE_PEEK_PER_PX);
         peek.lastInputAt = performance.now();
       }
@@ -162,6 +187,7 @@ export function useViewControls(opts: ViewControlsOptions) {
       const d = drag.current;
       if (!d || d.id !== e.pointerId) return;
       drag.current = null;
+      if (!o.grid) return;
       const peek = peekRef.current;
       const dx = e.clientX - d.x;
       const dy = e.clientY - d.y;

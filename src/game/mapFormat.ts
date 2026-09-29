@@ -67,6 +67,8 @@ export interface MapFile {
   ladders?: { x: number; y: number; wall: Direction }[];
   bridges?: { x: number; y: number; height: number; axis: "NS" | "EW" }[];
   lights?: { x: number; y: number }[];
+  // cells whose generated ceiling light (see autoLights) is switched off
+  lightsOff?: { x: number; y: number }[];
   // x, y: the (leftmost) cell; wall: the wall it's in; width: panels
   windows?: { x: number; y: number; wall: Direction; width?: number }[];
   // at: where in the cell (default "center"); rotation: degrees
@@ -197,6 +199,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
     ladders,
     bridges,
     lights: (file.lights ?? []).map((l) => ({ x: l.x, y: l.y })),
+    lightsOff: (file.lightsOff ?? []).map((l) => ({ x: l.x, y: l.y })),
+    structureKey: JSON.stringify({ ...file, lights: undefined, lightsOff: undefined }),
     windows,
     props: (file.props ?? []).map((p) => {
       if (!PROP_TYPES[p.prop]) throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);

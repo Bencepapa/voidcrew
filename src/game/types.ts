@@ -60,6 +60,12 @@ export interface GameMap {
   bridges?: BridgeSpec[];
   // hand-placed ceiling lights, on top of the generated mood lighting
   lights?: Vec2[];
+  // cells whose generated ceiling light is switched off
+  lightsOff?: Vec2[];
+  // everything about the map but its lights (see parseMap): two versions
+  // with the same key differ only in lighting, which the renderer can
+  // change without rebuilding the deck
+  structureKey?: string;
   windows?: WindowSpec[];
   lifts?: LiftSpec[];
   props?: PropSpec[];

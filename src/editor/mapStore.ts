@@ -75,6 +75,10 @@ export function applyEdit(id: string, edit: (file: MapFile) => MapFile): { map: 
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
   }
+  // nothing changed (a texture already there, a light already off...): it
+  // parses, but there's no history entry to step back through and no new
+  // scene to build - the deck as it stands
+  if (JSON.stringify(next) === JSON.stringify(e.file)) return { map: MAPS[id] ?? map };
   e.undo.push(e.file);
   if (e.undo.length > UNDO_LIMIT) e.undo.shift();
   e.redo = [];

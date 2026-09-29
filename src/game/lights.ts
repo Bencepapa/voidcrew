@@ -70,6 +70,20 @@ function floorCells(map: GameMap, inRegion: (x: number, y: number) => boolean): 
 //   walkable cell
 // - right side (x > 5): a couple of red glows low against a wall
 // - bottom-left (x < 6, y > 4): a few faint blue glows on the wall, mid-height
+// The cells the generated mood lighting puts a ceiling light in (unless the
+// map's lightsOff switches it off): every second walkable cell in the top
+// left 6x6 area and in tall rooms.
+export function autoLightCells(map: GameMap): { x: number; y: number }[] {
+  if (map.autoLights === false) return [];
+  const tall = (x: number, y: number) => ceilingHeight(map, x, y) - floorHeight(map, x, y) >= 1.5;
+  return floorCells(map, (x, y) => ((x <= 5 && y <= 5) || tall(x, y)) && x % 2 === 1 && y % 2 === 1);
+}
+
+// whether a cell's ceiling has a light, as generateLights places them
+export function hasCeilingLight(map: GameMap, cell: { x: number; y: number }): boolean {
+  return generateLights(map).some((l) => l.kind === "ceiling" && l.x === cell.x && l.z === cell.y);
+}
+
 export function generateLights(map: GameMap): LightSpec[] {
   const random = seededRandom(map.name);
   const lights: LightSpec[] = [];
@@ -89,13 +103,11 @@ export function generateLights(map: GameMap): LightSpec[] {
       range: 2.4 + extra * 1.2,
     };
   };
-  // tall rooms anywhere get them too
-  const tall = (x: number, y: number) => ceilingHeight(map, x, y) - floorHeight(map, x, y) >= 1.5;
-  const autoCells = auto ? floorCells(map, (x, y) => ((x <= 5 && y <= 5) || tall(x, y)) && x % 2 === 1 && y % 2 === 1) : [];
-  for (const { x, y } of autoCells) {
-    lights.push(ceilingLight(x, y));
+  // the generated ones (bar those switched off), then the map's own
+  const off = new Set((map.lightsOff ?? []).map((c) => `${c.x},${c.y}`));
+  for (const { x, y } of autoLightCells(map)) {
+    if (!off.has(`${x},${y}`)) lights.push(ceilingLight(x, y));
   }
-  // the map's own ceiling lights
   for (const cell of map.lights ?? []) {
     if (!lights.some((l) => l.kind === "ceiling" && l.x === cell.x && l.z === cell.y)) {
       lights.push(ceilingLight(cell.x, cell.y));

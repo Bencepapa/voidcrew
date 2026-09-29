@@ -3,9 +3,11 @@ import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { EditorBar } from "./editor/EditorBar";
-import type { EditTool } from "./editor/EditorBar";
 import { applyEdit, canRedo, canUndo, downloadMap, hasUnsavedEdits, redo, saveMap, undo } from "./editor/mapStore";
-import { dig, fill } from "./editor/mapEdits";
+import { dig, fill, paintTexture, setLight } from "./editor/mapEdits";
+import { autoLightCells, hasCeilingLight } from "./game/lights";
+import type { EditSurface, EditTool, TextureLayer } from "./editor/mapEdits";
+import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
 import { CREW_WEAPONS } from "./game/combat";
 import { Minimap } from "./components/Minimap";
@@ -62,6 +64,11 @@ export default function App() {
   // walls don't stop the party and the headlamp is lit
   const [editMode, setEditMode] = useState(false);
   const [editTool, setEditTool] = useState<EditTool>("dig");
+  // the surface the pointer is on: the Texture tool's palette marks its row
+  // (it sticks to the last one when nothing is under the pointer)
+  const [editSurface, setEditSurface] = useState<EditSurface>("wall");
+  // the set picked for each surface (null: the texture the map gives it)
+  const [paint, setPaint] = useState<Record<EditSurface, TextureSetId | null>>({ wall: null, floor: null, ceiling: null });
   // bumped by every edit, undo, redo and save, to redraw the toolbar
   const [, setEdits] = useState(0);
   const viewSettings = editMode ? { ...settings, noclip: true, headlamp: true } : settings;
@@ -99,6 +106,7 @@ export default function App() {
     onTurnLeft: turnL,
     onTurnRight: turnR,
     onYaw: free.addYaw,
+    editing: editMode,
   });
 
   // dev-only console hooks for comparing rendering settings, e.g.
@@ -144,20 +152,48 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [grid, moveForward, moveBackward, turnL, turnR, jumpDown]);
 
-  // The map editor's edits: a click digs out the wall pointed at, or fills
-  // in the floor (the Fill tool, or the right button).
+  // The surface under the pointer, for the palette (see EditorBar).
+  const onEditHover = (target: EditTarget | null) => {
+    if (target) setEditSurface(target.kind);
+  };
+  // The map editor's edits: a click digs out the wall pointed at or fills in
+  // the floor (the Fill tool, or the right button), paints the surface with
+  // the set picked in the palette (the right button paints the map's own
+  // texture back), or toggles the cell's ceiling light.
   const onEdit = (target: EditTarget, alt: boolean) => {
-    const tool: EditTool = alt ? "fill" : editTool;
     let result: ReturnType<typeof applyEdit> | null = null;
-    if (tool === "dig" && target.kind === "wall" && target.from) {
-      const from = target.from;
-      result = applyEdit(map.id, (file) => dig(file, target.cell, from));
-    } else if (tool === "fill" && target.kind === "floor") {
-      if (target.cell.x === pos.x && target.cell.y === pos.y) {
-        pushLog("Editor: can't fill in the cell the party stands in.");
-        return;
+    if (editTool === "texture") {
+      // a wall's texture set is the open cell its face is seen from
+      const cell = target.kind === "wall" ? target.from : target.cell;
+      const layer: TextureLayer =
+        target.kind === "wall" ? "wallTexture" : target.kind === "floor" ? "floorTexture" : "ceilingTexture";
+      if (cell) {
+        const setId = alt ? null : paint[target.kind];
+        result = applyEdit(map.id, (file) => paintTexture(file, layer, cell, setId));
+        if (!("error" in result)) {
+          pushLog(`Editor: ${target.kind} at ${cell.x},${cell.y} - ${setId ?? "the map's own texture"}.`);
+        }
       }
-      result = applyEdit(map.id, (file) => fill(file, target.cell));
+    } else if (editTool === "light") {
+      const cell = target.cell;
+      if (target.kind !== "wall") {
+        // generated lights included (see lights.ts)
+        const lit = hasCeilingLight(map, cell);
+        const auto = autoLightCells(map).some((c) => c.x === cell.x && c.y === cell.y);
+        result = applyEdit(map.id, (file) => setLight(file, cell, alt ? false : !lit, auto));
+      }
+    } else {
+      const tool: EditTool = alt ? "fill" : editTool;
+      if (tool === "dig" && target.kind === "wall" && target.from) {
+        const from = target.from;
+        result = applyEdit(map.id, (file) => dig(file, target.cell, from));
+      } else if (tool === "fill" && target.kind !== "wall") {
+        if (target.cell.x === pos.x && target.cell.y === pos.y) {
+          pushLog("Editor: can't fill in the cell the party stands in.");
+          return;
+        }
+        result = applyEdit(map.id, (file) => fill(file, target.cell));
+      }
     }
     if (!result) return;
     if ("error" in result) pushLog(`Editor: ${result.error}`);
@@ -253,7 +289,9 @@ export default function App() {
       partyCoverRef={partyCoverRef}
       onTouch={touch}
       editMode={editMode}
+      editTool={editTool}
       onEdit={onEdit}
+      onEditHover={onEditHover}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
       peekRef={view.peekRef}
@@ -283,6 +321,9 @@ export default function App() {
         <EditorBar
           tool={editTool}
           onTool={setEditTool}
+          surface={editSurface}
+          paint={paint}
+          onPaint={(surface, setId) => setPaint((p) => ({ ...p, [surface]: setId }))}
           canUndo={canUndo(map.id)}
           canRedo={canRedo(map.id)}
           onUndo={editUndo}
