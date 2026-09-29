@@ -40,6 +40,12 @@ interface Projection {
   material: THREE.MeshStandardMaterial;
 }
 
+export function fetchDecalManifest(baseUrl: string, bust: string): Promise<Record<string, DecalManifestEntry>> {
+  return fetch(`${baseUrl}decals/index.json${bust}`).then((r) =>
+    r.ok ? r.json() : Promise.reject(new Error(`decal manifest: ${r.status}`)),
+  );
+}
+
 export class DecalLibrary {
   private manifest: Promise<Record<string, DecalManifestEntry>>;
   private assets = new Map<string, Promise<DecalAsset>>();
@@ -58,15 +64,23 @@ export class DecalLibrary {
       // cache-busting query appended to file URLs ("" for none)
       bust: string;
       loader: THREE.TextureLoader;
+      // textures shared with other libraries, loaded once (whoever owns the
+      // map disposes them); without it each library loads and disposes its
+      // own
+      textureCache?: Map<string, Promise<THREE.Texture>>;
+      // projected decal geometry shared with other libraries (by surface
+      // geometry, its placement and the decal's), built once - whoever owns
+      // the map disposes it; null: the decal missed that panel
+      geometryCache?: Map<string, THREE.BufferGeometry | null>;
+      // the manifest (public/decals/index.json), if already fetched
+      manifest?: Promise<Record<string, DecalManifestEntry>>;
       wallHeight: number;
       // world heights of a cell's floor and ceiling
       levels: (cell: Vec2) => CellLevels;
       parent: THREE.Object3D;
     },
   ) {
-    this.manifest = fetch(`${opts.baseUrl}decals/index.json${opts.bust}`).then((r) =>
-      r.ok ? r.json() : Promise.reject(new Error(`decal manifest: ${r.status}`)),
-    );
+    this.manifest = opts.manifest ?? fetchDecalManifest(opts.baseUrl, opts.bust);
   }
 
   // queue decals; each lands on its surfaces as soon as its asset has loaded
@@ -104,18 +118,35 @@ export class DecalLibrary {
     for (const d of this.disposables) d.dispose();
   }
 
+  private loadTexture(url: string): Promise<THREE.Texture> {
+    const cache = this.opts.textureCache;
+    if (!cache) {
+      return this.opts.loader.loadAsync(url).then((tex) => {
+        this.disposables.push(tex);
+        return tex;
+      });
+    }
+    let tex = cache.get(url);
+    if (!tex) {
+      tex = this.opts.loader.loadAsync(url);
+      cache.set(url, tex);
+      tex.catch(() => cache.delete(url));
+    }
+    return tex;
+  }
+
   private asset(name: string): Promise<DecalAsset> {
     let asset = this.assets.get(name);
     if (!asset) {
       asset = this.manifest.then(async (manifest) => {
         const entry = manifest[name];
         if (!entry) throw new Error("not in public/decals/index.json");
-        const { baseUrl, bust, loader } = this.opts;
+        const { baseUrl, bust } = this.opts;
         const dir = `${baseUrl}decals/${name}/`;
-        const map = await loader.loadAsync(`${dir}diffuse.png${bust}`);
+        const map = await this.loadTexture(`${dir}diffuse.png${bust}`);
         map.colorSpace = THREE.SRGBColorSpace;
         map.magFilter = THREE.NearestFilter;
-        const normalMap = entry.normal ? await loader.loadAsync(`${dir}normal.png${bust}`) : null;
+        const normalMap = entry.normal ? await this.loadTexture(`${dir}normal.png${bust}`) : null;
         if (normalMap) normalMap.magFilter = THREE.NearestFilter;
         const material = new THREE.MeshStandardMaterial({
           map,
@@ -129,9 +160,9 @@ export class DecalLibrary {
           roughness: 0.75,
           metalness: 0.15,
         });
-        this.disposables.push(material, map);
-        if (normalMap) this.disposables.push(normalMap);
-        return { material, width: map.image.width, height: map.image.height };
+        this.disposables.push(material);
+        const image = map.image as { width: number; height: number };
+        return { material, width: image.width, height: image.height };
       });
       this.assets.set(name, asset);
     }
@@ -176,14 +207,29 @@ export class DecalLibrary {
 
   private build(p: Projection, mesh: THREE.Mesh) {
     mesh.updateWorldMatrix(true, false);
-    const geometry = new DecalGeometry(mesh, p.position, p.orientation, p.size);
-    const triangles = geometry.getAttribute("position").count / 3;
-    if (triangles === 0) {
-      // this panel is out of the decal's reach after all
-      geometry.dispose();
-      return;
+    const cache = this.opts.geometryCache;
+    const key = cache
+      ? [
+          mesh.geometry.uuid,
+          mesh.matrixWorld.elements.map((v) => v.toFixed(4)).join(","),
+          p.position.toArray().map((v) => v.toFixed(4)).join(","),
+          p.orientation.toArray().slice(0, 3).map((v) => (v as number).toFixed(4)).join(","),
+          p.size.toArray().map((v) => v.toFixed(4)).join(","),
+        ].join("|")
+      : "";
+    let geometry = cache?.get(key);
+    if (geometry === undefined) {
+      geometry = new DecalGeometry(mesh, p.position, p.orientation, p.size);
+      if (geometry.getAttribute("position").count === 0) {
+        // this panel is out of the decal's reach after all
+        geometry.dispose();
+        geometry = null;
+      }
+      if (cache) cache.set(key, geometry);
+      else if (geometry) this.disposables.push(geometry);
     }
-    this.disposables.push(geometry);
+    if (!geometry) return;
+    const triangles = geometry.getAttribute("position").count / 3;
     const decal = new THREE.Mesh(geometry, p.material);
     // an interactive decal: the viewport finds it by this when touched
     if (p.action) decal.userData.action = p.action;

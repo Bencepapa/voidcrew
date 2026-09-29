@@ -25,7 +25,7 @@ import type { FreePose } from "../game/freeMovement";
 import type { PeekState } from "./useViewControls";
 import type { LiftRide } from "../game/useGameState";
 import { WALL_ROTATION, surfaceKey } from "../render/surfaces";
-import { DecalLibrary } from "../render/decals";
+import { DecalLibrary, fetchDecalManifest } from "../render/decals";
 import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
 import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
@@ -853,6 +853,40 @@ if (uPart >= 0 && onPart(vMapUv)) {
   return uniforms;
 }
 
+// What one build of the scene leaves for the next - an edit rebuilds the
+// deck, but its walls' textures and relief don't change: the renderer (and
+// the shaders it has compiled), the wall kits' textures, the depth maps and
+// the relief geometry (with its AO map and raycast hierarchy), each keyed
+// by everything it's made from. Emptied when the textures hot-reload
+// (`version`) and when the view goes.
+interface SceneCache {
+  renderer: THREE.WebGLRenderer | null;
+  version: string;
+  textures: Map<string, THREE.Texture>;
+  decalTextures: Map<string, Promise<THREE.Texture>>;
+  decalManifest: ReturnType<typeof fetchDecalManifest> | null;
+  decalGeometries: Map<string, THREE.BufferGeometry | null>;
+  grids: Map<string, ReturnType<typeof loadHeightGrid>>;
+  reliefs: Map<string, Promise<ReturnType<typeof createReliefWallGeometry> | null>>;
+}
+function clearSceneCache(cache: SceneCache) {
+  for (const tex of cache.textures.values()) tex.dispose();
+  cache.textures.clear();
+  for (const tex of cache.decalTextures.values()) tex.then((t) => t.dispose()).catch(() => {});
+  cache.decalTextures.clear();
+  cache.decalManifest = null;
+  for (const geo of cache.decalGeometries.values()) geo?.dispose();
+  cache.decalGeometries.clear();
+  cache.grids.clear();
+  for (const relief of cache.reliefs.values()) {
+    relief.then((r) => {
+      r?.geometry.dispose();
+      r?.aoMap.dispose();
+    }).catch(() => {});
+  }
+  cache.reliefs.clear();
+}
+
 // a vertical field of view (degrees) magnified `zoom` times
 function zoomedFov(fov: number, zoom: number): number {
   return THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(fov) / 2) / zoom));
@@ -921,6 +955,25 @@ export function GameViewport({
   onStats,
 }: GameViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // kept from one build of the scene to the next (see SceneCache)
+  const cacheRef = useRef<SceneCache>({
+    renderer: null,
+    version: "",
+    textures: new Map(),
+    decalTextures: new Map(),
+    decalManifest: null,
+    decalGeometries: new Map(),
+    grids: new Map(),
+    reliefs: new Map(),
+  });
+  useEffect(
+    () => () => {
+      clearSceneCache(cacheRef.current);
+      cacheRef.current.renderer?.dispose();
+      cacheRef.current.renderer = null;
+    },
+    [],
+  );
   const actorsRef = useRef(actors ?? []);
   actorsRef.current = actors ?? [];
   const aimingRef = useRef(aiming ?? null);
@@ -1067,6 +1120,7 @@ export function GameViewport({
 
     let disposed = false;
     let raf = 0;
+    const buildStart = performance.now();
 
     const scene = new THREE.Scene();
     const fog = new THREE.Fog(0x000000, FOG_NEAR, settings.viewDistance - FOG_FAR_MARGIN);
@@ -1077,7 +1131,8 @@ export function GameViewport({
     // (a big saving with relief walls' thousands of triangles each)
     const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, settings.viewDistance + 0.5);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const cache = cacheRef.current;
+    const renderer = cache.renderer ?? (cache.renderer = new THREE.WebGLRenderer({ antialias: true }));
     // phones (touch screens) render at most 1.5 device pixels per CSS pixel:
     // their 3x screens cost 4x the pixels of 1.5x, for no pixel-art detail
     const maxPixelRatio = window.matchMedia("(pointer: coarse)").matches ? 1.5 : 2;
@@ -1096,6 +1151,20 @@ export function GameViewport({
     scene.add(shaftLight);
 
     const bust = textureVersion ? `?v=${textureVersion}` : "";
+    if (cache.version !== bust) {
+      clearSceneCache(cache);
+      cache.version = bust;
+    }
+    // a texture loaded once (see SceneCache); `onLoad` runs once it's in -
+    // straight away if it already is
+    const kitTexture = (url: string, onLoad?: (tex: THREE.Texture) => void) => {
+      let tex = cache.textures.get(url);
+      if (!tex) {
+        tex = loader.load(url, onLoad);
+        cache.textures.set(url, tex);
+      } else if (onLoad && tex.image) onLoad(tex);
+      return tex;
+    };
 
     // Loading: every texture goes through `manager`, every geometry build
     // and decal batch through track(). Once both are idle the shaders are
@@ -1122,6 +1191,8 @@ export function GameViewport({
         renderer.compile(scene, camera);
         // (behind the loading screen, not on the first aim)
         prepareRaycasts(group);
+        // dev: how long the build took (ms), e.g. after a map edit
+        if (import.meta.env.DEV) Object.assign(window, { __voidcrewBuild: { total: performance.now() - buildStart } });
         shownMapRef.current = map.id;
         setLoading(null);
         onReadyRef.current?.(map.id);
@@ -1153,9 +1224,9 @@ export function GameViewport({
     // public/textures/ with the usual diffuse, normal and depth maps
     function createWallKit(setId: string, displace = true): WallKit {
       const paths: TextureSetFiles = isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
-      const diffuse = loader.load(paths.diffuse + bust);
-      const normalMap = loader.load(paths.normal + bust);
-      const depthMap = loader.load(paths.depth + bust);
+      const diffuse = kitTexture(paths.diffuse + bust);
+      const normalMap = kitTexture(paths.normal + bust);
+      const depthMap = kitTexture(paths.depth + bust);
       diffuse.colorSpace = THREE.SRGBColorSpace;
       if (paths.pixelArt) {
         // crisp texels up close instead of bilinear blur; minification keeps
@@ -1183,7 +1254,7 @@ export function GameViewport({
 
       let litMat: THREE.MeshStandardMaterial | undefined;
       if (paths.emissive) {
-        const emissiveMap = loader.load(paths.emissive + bust);
+        const emissiveMap = kitTexture(paths.emissive + bust);
         if (paths.pixelArt) emissiveMap.magFilter = THREE.NearestFilter;
         textures.push(emissiveMap);
         litMat = new THREE.MeshStandardMaterial({
@@ -1368,6 +1439,9 @@ export function GameViewport({
       baseUrl: import.meta.env.BASE_URL,
       bust,
       loader,
+      textureCache: cache.decalTextures,
+      geometryCache: cache.decalGeometries,
+      manifest: (cache.decalManifest ??= fetchDecalManifest(import.meta.env.BASE_URL, bust)),
       wallHeight,
       levels: (cell) => ({ floor: floorY(cell.x, cell.y), ceiling: ceilingY(cell.x, cell.y) }),
       parent: group,
@@ -1534,7 +1608,6 @@ export function GameViewport({
     };
 
     // height maps by URL, each loaded once per scene
-    const heightGrids = new Map<string, ReturnType<typeof loadWithRetry>>();
     const coarseGrids = new Map<string, Awaited<ReturnType<typeof loadWithRetry>>>();
 
     // builds a kit's relief geometry from its depth map and hooks up its AO
@@ -1559,41 +1632,57 @@ export function GameViewport({
         lodOnly?: boolean;
       },
     ) {
-      let gridPromise = heightGrids.get(kit.depthUrl);
-      if (!gridPromise) {
-        gridPromise = loadWithRetry(kit.depthUrl, 4);
-        heightGrids.set(kit.depthUrl, gridPromise);
+      // built once for the same depth map, shape and relief settings (see
+      // SceneCache)
+      const key = [
+        kit.depthUrl,
+        JSON.stringify(shape),
+        settings.reliefDepth,
+        settings.reliefLevels,
+        settings.reliefMinIsland,
+        settings.aoRadius,
+      ].join("|");
+      let built = cache.reliefs.get(key);
+      if (!built) {
+        built = (async () => {
+          let gridPromise = cache.grids.get(kit.depthUrl);
+          if (!gridPromise) {
+            gridPromise = loadWithRetry(kit.depthUrl, 4);
+            cache.grids.set(kit.depthUrl, gridPromise);
+          }
+          let grid = await gridPromise;
+          if (shape.coarse && shape.coarse > 1) {
+            const coarseKey = `${kit.depthUrl}|${shape.coarse}`;
+            let coarse = coarseGrids.get(coarseKey);
+            if (!coarse) {
+              coarse = downsampleHeightGrid(grid, shape.coarse);
+              coarseGrids.set(coarseKey, coarse);
+            }
+            grid = coarse;
+          }
+          const made = createReliefWallGeometry(grid, {
+            wallWidth: shape.width ?? 1,
+            wallHeight: shape.height,
+            depth: shape.depth ?? settings.reliefDepth,
+            levels: settings.reliefLevels,
+            minIsland: settings.reliefMinIsland,
+            aoRadius: settings.aoRadius,
+            flushEdges: shape.flushEdges,
+            holeBackZ: shape.holeBackZ,
+            rows: shape.rows,
+            cols: shape.cols,
+            holeLevels: shape.holeLevels,
+          });
+          // a partial panel or a far version uses its full panel's AO map
+          if (shape.rows || shape.lodOnly) made.aoMap.dispose();
+          return made;
+        })();
+        cache.reliefs.set(key, built);
+        built.catch(() => cache.reliefs.delete(key));
       }
-      let grid = await gridPromise;
-      if (disposed) return null;
-      if (shape.coarse && shape.coarse > 1) {
-        const coarseKey = `${kit.depthUrl}|${shape.coarse}`;
-        let coarse = coarseGrids.get(coarseKey);
-        if (!coarse) {
-          coarse = downsampleHeightGrid(grid, shape.coarse);
-          coarseGrids.set(coarseKey, coarse);
-        }
-        grid = coarse;
-      }
-      const relief = createReliefWallGeometry(grid, {
-        wallWidth: shape.width ?? 1,
-        wallHeight: shape.height,
-        depth: shape.depth ?? settings.reliefDepth,
-        levels: settings.reliefLevels,
-        minIsland: settings.reliefMinIsland,
-        aoRadius: settings.aoRadius,
-        flushEdges: shape.flushEdges,
-        holeBackZ: shape.holeBackZ,
-        rows: shape.rows,
-        cols: shape.cols,
-        holeLevels: shape.holeLevels,
-      });
-      geometries.push(relief.geometry);
-      if (shape.rows || shape.lodOnly) {
-        relief.aoMap.dispose();
-        return relief;
-      }
-      kit.textures.push(relief.aoMap);
+      const relief = await built;
+      if (disposed || !relief) return null;
+      if (shape.rows || shape.lodOnly) return relief;
       for (const mat of kitMaterials(kit)) {
         mat.aoMap = relief.aoMap;
         mat.aoMapIntensity = settingsRef.current.aoIntensity;
@@ -2097,7 +2186,7 @@ export function GameViewport({
     // --- trim: worn yellow paint (ladders) and hazard stripes (bridge
     // edges), repeating at the walls' pixel density on boxes of any size ---
     function trimTexture(url: string, wrap: THREE.Wrapping): THREE.Texture {
-      const tex = loader.load(url + bust, (t) => {
+      const tex = kitTexture(url + bust, (t) => {
         // the boxes' UVs count texels (trimBox): one repeat per image size
         const img = t.image as HTMLImageElement;
         t.repeat.set(1 / img.width, 1 / img.height);
@@ -2469,7 +2558,6 @@ export function GameViewport({
     // the left views mirrored. The sheet's normal map lights it like the
     // walls, so a passing lamp shades it.
     const actorMaterials = new Map<string, THREE.MeshStandardMaterial>();
-    const actorTextures: THREE.Texture[] = [];
     // each actor's quad, its own copy of its type's material (for the hit
     // flash and the death fade) and the sheet cell it shows
     interface ActorEntry {
@@ -2488,13 +2576,10 @@ export function GameViewport({
       if (!mat) {
         const type = ACTOR_TYPES[typeName];
         const base = `${import.meta.env.BASE_URL}actors/${type.sheet}/`;
-        const diffuse = loader.load(base + "diffuse.png" + bust);
-        const normalMap = loader.load(base + "normal.png" + bust);
+        const diffuse = kitTexture(base + "diffuse.png" + bust);
+        const normalMap = kitTexture(base + "normal.png" + bust);
         diffuse.colorSpace = THREE.SRGBColorSpace;
-        for (const tex of [diffuse, normalMap]) {
-          tex.magFilter = THREE.NearestFilter;
-          actorTextures.push(tex);
-        }
+        for (const tex of [diffuse, normalMap]) tex.magFilter = THREE.NearestFilter;
         mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap, alphaTest: 0.5, roughness: 0.6, metalness: 0.35 });
         actorMaterials.set(typeName, mat);
       }
@@ -3398,11 +3483,11 @@ export function GameViewport({
       renderer.domElement.removeEventListener("contextmenu", onContextMenu);
       container.removeChild(renderer.domElement);
       for (const geo of geometries) geo.dispose();
+      // (their textures and relief stay cached for the next build)
       for (const kit of allKits) {
         kit.wallMat.dispose();
         kit.sideMat.dispose();
         kit.litMat?.dispose();
-        for (const tex of kit.textures) tex.dispose();
       }
       for (const mat of ownMaterials) mat.dispose();
       for (const id of [...actorMeshes.keys()]) removeActorMesh(id);
@@ -3411,19 +3496,18 @@ export function GameViewport({
         (line.material as THREE.Material).dispose();
       }
       for (const mat of actorMaterials.values()) mat.dispose();
-      for (const tex of actorTextures) tex.dispose();
       floorMat.dispose();
       spaceMat.dispose();
       sheenMat.dispose();
       wiredGlass.dispose();
       paintMat.dispose();
       hazardMat.dispose();
-      for (const tex of trimTextures) tex.dispose();
       bridgeMat.dispose();
       ceilMat.dispose();
       for (const mat of fixtureMats.values()) mat.dispose();
       decals.dispose();
-      renderer.dispose();
+      // the renderer stays for the next build (see SceneCache)
+      renderer.renderLists.dispose();
     };
   }, [
     sceneMap,
