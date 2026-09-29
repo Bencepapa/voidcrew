@@ -129,6 +129,8 @@ export interface WindowSpec {
   cell: Vec2;
   wall: Direction;
   width: number;
+  // its faint glow of starlight into the room (see lights.ts); false: none
+  glow: boolean;
 }
 
 // A catwalk across a tall cell at `height`, walkable along its axis: an

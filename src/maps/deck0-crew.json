@@ -114,8 +114,9 @@
     { "prop": "curtain_closed", "x": 13, "y": 7, "at": "S" },
     { "prop": "crewbed1", "x": 14, "y": 7, "at": "S" },
     { "prop": "plant1", "x": 14, "y": 6, "at": "NE" },
-    { "prop": "crate1", "x": 15, "y": 4, "at": "NE" },
-    { "prop": "crate1", "x": 15, "y": 4, "at": "SW" }
+    { "prop": "crate1", "x": 15, "y": 4, "at": "NE", "offset": [-0.45, -0.05] },
+    { "prop": "crate1", "x": 15, "y": 4, "at": "SW" },
+    { "prop": "crate1", "x": 15, "y": 4, "at": "NW", "offset": [-0.05, 0.3], "elevation": 0.4, "rotation": 15 }
   ],
   "doors": [
     { "x": 2, "y": 4, "kind": "lift", "facing": "E", "label": "CREW", "labelVertical": true },

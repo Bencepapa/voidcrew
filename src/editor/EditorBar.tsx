@@ -13,7 +13,7 @@ import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { fetchDecalManifest } from "../render/decals";
 import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
-import type { MapLight } from "../game/types";
+import type { Direction, MapLight } from "../game/types";
 import { PROP_TYPES } from "../game/props";
 
 interface Props {
@@ -37,6 +37,15 @@ interface Props {
   onPropChoice: (prop: string) => void;
   propRotation: number;
   onPropRotate: () => void;
+  // the Map tool: this map (its id and size), the others, and what the
+  // panel does - grow or cut an edge, open another map, make one, copy this
+  mapId: string;
+  mapSize: { width: number; height: number };
+  mapIds: string[];
+  onResize: (edge: Direction, grow: boolean) => void;
+  onOpenMap: (id: string) => void;
+  onNewMap: () => void;
+  onSaveMapAs: () => void;
   // the Decal tool: the decal a click puts on, the turn it gets, and the
   // selected one
   decalChoice: string | null;
@@ -172,6 +181,7 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "door", label: "Door", title: "Make a cell a door, or back" },
   { tool: "prop", label: "Prop", title: "Put in or take out props" },
   { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
+  { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
 ];
 // what a click does with each (where the toolbar doesn't say otherwise)
 const TOOL_HELP: Partial<Record<EditTool, string>> = {
@@ -286,6 +296,42 @@ export function EditorBar(p: Props) {
                 ))}
               </div>
             ))}
+          </div>
+        </>
+      )}
+      {p.tool === "map" && (
+        <>
+          <span className="basis-full" />
+          <div className="flex flex-wrap items-center justify-center gap-1 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+            <label className="flex items-center gap-1">
+              Map
+              <select value={p.mapId} onChange={(e) => p.onOpenMap(e.target.value)} className="bg-neutral-800 border border-neutral-700 px-1 py-0.5">
+                {p.mapIds.map((id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-neutral-400">
+              {p.mapSize.width} x {p.mapSize.height}
+            </span>
+            {(["N", "S", "W", "E"] as Direction[]).map((edge) => (
+              <span key={edge} className="flex items-center gap-0.5">
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onResize(edge, true)} title={`Add a row/column at the ${edge} edge`}>
+                  +{edge}
+                </button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onResize(edge, false)} title={`Cut the ${edge} edge (all wall only)`}>
+                  −{edge}
+                </button>
+              </span>
+            ))}
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onNewMap}>
+              New map…
+            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSaveMapAs}>
+              Save as…
+            </button>
           </div>
         </>
       )}

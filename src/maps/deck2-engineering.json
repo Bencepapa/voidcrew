@@ -93,19 +93,16 @@
   ],
   "bridges": [{ "x": 10, "y": 3, "height": 1, "axis": "EW" }],
   "lights": [
-    { "x": 6, "y": 2, "color": "#ff0000" },
     { "x": 4, "y": 7, "color": "#ff0000" },
     { "x": 10, "y": 7, "color": "#850000", "intensity": 4, "range": 1.7 },
-    { "x": 10, "y": 3, "pos": [-0.3, 0.95, 0.01], "color": "#4a5d96", "range": 4.4, "intensity": 0.2 },
+    { "x": 10, "y": 3, "color": "#4a5d96", "intensity": 0.2, "range": 4.4, "pos": [-0.3, 0.95, 0.01] },
     { "x": 3, "y": 1, "color": "#ff0000" },
-    { "x": 1, "y": 3, "color": "#ff0000" },
     { "x": 7, "y": 5, "color": "#ff0000" },
     { "x": 1, "y": 1, "intensity": 0.8 },
-    { "x": 5, "y": 1 },
-    { "x": 3, "y": 3 },
-    { "x": 7, "y": 3 },
-    { "x": 1, "y": 5 },
-    { "x": 3, "y": 5 }
+    { "x": 1, "y": 5, "intensity": 1.9, "pos": [0.12, 0.58, -0.45], "color": "#db0000", "range": 1.6, "bulb": true },
+    { "x": 3, "y": 5, "intensity": 0.15, "color": "#ff0000" },
+    { "x": 3, "y": 3, "color": "#ff0000" },
+    { "x": 1, "y": 7, "color": "#ff0000" }
   ],
   "windows": [
     { "x": 4, "y": 1, "wall": "N", "width": 3 },

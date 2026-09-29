@@ -3,8 +3,24 @@ import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { EditorBar } from "./editor/EditorBar";
-import { applyEdit, canRedo, canUndo, downloadMap, hasUnsavedEdits, redo, saveMap, undo } from "./editor/mapStore";
 import {
+  applyEdit,
+  canRedo,
+  canUndo,
+  createMap,
+  downloadMap,
+  hasUnsavedEdits,
+  mapFile,
+  mapIds,
+  redo,
+  saveMap,
+  undo,
+} from "./editor/mapStore";
+import { MAPS } from "./game/map";
+import type { GameMap } from "./game/types";
+import {
+  blankMap,
+  resizeMap,
   addDecal,
   removeDecal,
   updateDecal,
@@ -70,6 +86,8 @@ export default function App() {
     setNoclip,
     setWorldFrozen,
     replaceMap,
+    enterMap,
+    shiftParty,
     pushLog,
     crew,
     log,
@@ -399,6 +417,67 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editMode]);
 
+  // The Map tool: the grid grows or shrinks at an edge; other decks are
+  // opened, made or copied (the URL's ?map= follows, so a reload stays on
+  // the deck)
+  const openMap = (to: GameMap) => {
+    setSelectedLight(null);
+    setSelectedProp(null);
+    setSelectedDecal(null);
+    enterMap(to);
+    const url = new URL(location.href);
+    url.searchParams.set("map", to.id);
+    history.replaceState(null, "", url);
+  };
+  const resize = (edge: Direction, grow: boolean) => {
+    const result = applyEdit(map.id, (file) => resizeMap(file, edge, grow));
+    if ("error" in result) {
+      pushLog(`Editor: ${result.error}`);
+      return;
+    }
+    replaceMap(result.map);
+    const shift = grow ? 1 : -1;
+    if (edge === "N") shiftParty(0, shift);
+    if (edge === "W") shiftParty(shift, 0);
+    setSelectedLight(null);
+    setSelectedProp(null);
+    setSelectedDecal(null);
+    setEdits((n) => n + 1);
+  };
+  const newMap = () => {
+    const id = prompt("New map's id (its file name, e.g. derelict1-crew):")?.trim();
+    if (!id) return;
+    const name = prompt("Its name:", `Deck ${map.deck} - `)?.trim() || id;
+    const size = prompt("Its size, width x height:", "16x10") ?? "";
+    const [w, h] = size.split(/[x, ]+/).map(Number);
+    const result = createMap(id, blankMap(name, map.deck, w || 16, h || 10, mapFile(map.id) ?? undefined));
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else {
+      openMap(result.map);
+      pushLog(`Editor: made ${id} - save it to keep it.`);
+    }
+  };
+  const saveMapAs = () => {
+    const id = prompt("Copy this map as (its new id, e.g. derelict1-engineering):")?.trim();
+    if (!id) return;
+    const name = prompt("Its name:", map.name)?.trim() || map.name;
+    const file = structuredClone(mapFile(map.id));
+    if (!file) return;
+    file.name = name;
+    const result = createMap(id, file, map.id);
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else {
+      openMap(result.map);
+      // (straight to disk in dev: a copy is meant to be kept)
+      if (import.meta.env.DEV) {
+        saveMap(id)
+          .then((path) => pushLog(`Editor: saved ${path}.`))
+          .catch((err) => pushLog(`Editor: not saved - ${err instanceof Error ? err.message : err}`));
+      }
+      pushLog(`Editor: copied ${map.id} as ${id}.`);
+    }
+  };
+
   // The selected decal, as the panel shows it
   const selectedDecalInfo: DecalInfo | null = (() => {
     const spec = selectedDecal === null ? undefined : map.decals?.[selectedDecal];
@@ -635,7 +714,9 @@ export default function App() {
       e.stopImmediatePropagation();
       const [x, y, z] = info.pos;
       const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)) * 100) / 100;
-      change({ pos: [clamp(x + d[0], -0.45, 0.45), clamp(y + d[1], 0.05, info.roomHeight - 0.05), clamp(z + d[2], -0.45, 0.45)] });
+      // (through a wall, too: a light behind a window's glass shines in
+      // without a highlight on it)
+      change({ pos: [clamp(x + d[0], -0.75, 0.75), clamp(y + d[1], 0.05, info.roomHeight - 0.05), clamp(z + d[2], -0.75, 0.75)] });
     }
     // before the movement keys' handlers
     window.addEventListener("keydown", onKey, true);
@@ -753,6 +834,13 @@ export default function App() {
           onPropChoice={setPropChoice}
           propRotation={propRotation}
           onPropRotate={() => setPropRotation((r) => (r + 90) % 360)}
+          mapId={map.id}
+          mapSize={{ width: map.width, height: map.height }}
+          mapIds={mapIds()}
+          onResize={resize}
+          onOpenMap={(id) => MAPS[id] && openMap(MAPS[id])}
+          onNewMap={newMap}
+          onSaveMapAs={saveMapAs}
           decalChoice={decalChoice?.name ?? null}
           onDecalChoice={setDecalChoice}
           decalRotation={decalRotation}

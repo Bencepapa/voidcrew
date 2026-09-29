@@ -197,6 +197,24 @@ export function useGameState() {
   const setWorldFrozen = useCallback((on: boolean) => {
     frozenRef.current = on;
   }, []);
+  // the map editor: to another deck outright (no lift ride), at its start
+  const enterMap = useCallback((to: GameMap) => {
+    closeTimers.current.forEach((t) => clearTimeout(t));
+    closeTimers.current.clear();
+    prevPosRef.current = to.start.cell;
+    readyMapRef.current = null;
+    setMap(to);
+    setPos(to.start.cell);
+    setDir(to.start.facing);
+    setElevation(floorHeight(to, to.start.cell.x, to.start.cell.y));
+    setOpenDoors(new Set());
+  }, []);
+  // the map editor: the party moved along with everything on the map (the
+  // grid grew or shrank at its north or west edge)
+  const shiftParty = useCallback((dx: number, dy: number) => {
+    setPos((p) => ({ x: p.x + dx, y: p.y + dy }));
+    prevPosRef.current = { x: prevPosRef.current.x + dx, y: prevPosRef.current.y + dy };
+  }, []);
   // the map editor: the deck as edited, in place of the current one
   const replaceMap = useCallback((next: GameMap) => {
     if (next.id === mapRef.current.id) setMap(next);
@@ -559,6 +577,8 @@ export function useGameState() {
     setNoclip,
     setWorldFrozen,
     replaceMap,
+    enterMap,
+    shiftParty,
     elevation,
     jumpDown: jump,
     use,

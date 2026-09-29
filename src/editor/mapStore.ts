@@ -76,9 +76,10 @@ export function applyEdit(
 ): { map: GameMap } | { error: string } {
   const e = entry(id);
   if (!e) return { error: `no map "${id}"` };
-  const next = edit(structuredClone(e.file));
+  let next: MapFile;
   let map: GameMap;
   try {
+    next = edit(structuredClone(e.file));
     map = parseMap(id, next);
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
@@ -145,4 +146,34 @@ export function downloadMap(id: string) {
   a.download = `${id}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// every map there is (the repo's, and any made in this session)
+export function mapIds(): string[] {
+  return Object.keys(MAPS).sort();
+}
+
+// A new map (made, or copied from another - `from` keeps that one's layout
+// of the file): its file not saved yet. Returns the deck, or why it can't be.
+export function createMap(id: string, file: MapFile, from?: string): { map: GameMap } | { error: string } {
+  if (!/^[\w-]+$/.test(id)) return { error: `"${id}" isn't a usable map id (letters, digits, - and _)` };
+  if (MAPS[id]) return { error: `there's a map "${id}" already` };
+  let map: GameMap;
+  try {
+    map = parseMap(id, file);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  const source = from ? entry(from) : null;
+  entries.set(id, {
+    file,
+    layout: source ? new Map(source.layout) : new Map(),
+    undo: [],
+    redo: [],
+    // nothing saved yet: every edit (and the file itself) is new
+    saved: structuredClone(file),
+    eol: source?.eol ?? "\n",
+  });
+  MAPS[id] = map;
+  return { map };
 }

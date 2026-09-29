@@ -1,11 +1,14 @@
 import { ceilingHeight, floorHeight } from "./map";
 import type { GameMap, MapLight } from "./types";
+import { DIR_VECTOR, rightOf } from "./movement";
 
-// A deck's lights are all placed on its map (MapLight, see the editor's
-// Light tool): ceiling lamps and free-standing lights. Nothing is generated.
+// A deck's lights are placed on its map (MapLight, see the editor's Light
+// tool): ceiling lamps and free-standing lights. Besides them only its
+// windows glow (unless a window says not to).
 
-// a hand-placed free-standing light is a "point" (see MapLight.pos)
-export type LightKind = "ceiling" | "point";
+// a hand-placed free-standing light is a "point" (see MapLight.pos); a
+// window's starlight a "window"
+export type LightKind = "ceiling" | "point" | "window";
 
 export interface LightSpec {
   kind: LightKind;
@@ -18,7 +21,7 @@ export interface LightSpec {
   intensity: number;
   // light range in world units (three.js PointLight `distance`)
   range: number;
-  // its index in the map's lights
+  // its index in the map's lights (-1: a window's)
   source: number;
   // a free-standing one whose bulb shows in the game (see MapLight.bulb)
   bulb?: boolean;
@@ -68,5 +71,29 @@ export function generateLights(map: GameMap): LightSpec[] {
     }
     lights.push(light);
   });
+  // A window's faint cold starlight: from just behind its glass, in the
+  // middle of it - shining in through the (shadowless) wall, it lights the
+  // room without a highlight on the glass itself, which faces away from it.
+  for (const w of map.windows ?? []) {
+    if (!w.glow) continue;
+    const out = DIR_VECTOR[w.wall];
+    const right = DIR_VECTOR[rightOf(w.wall)];
+    const along = (w.width - 1) / 2;
+    lights.push({
+      kind: "window",
+      x: w.cell.x + right.x * along + out.x * (0.5 + WINDOW_GLOW_BEHIND),
+      z: w.cell.y + right.y * along + out.y * (0.5 + WINDOW_GLOW_BEHIND),
+      y: floorHeight(map, w.cell.x, w.cell.y) + 0.6,
+      color: WINDOW_GLOW_COLOR,
+      intensity: 0.7 + 0.2 * (w.width - 1),
+      range: 2 + 0.5 * (w.width - 1),
+      source: -1,
+    });
+  }
   return lights;
 }
+
+// how far behind the glass (world units) a window's glow shines from, and
+// its color
+const WINDOW_GLOW_BEHIND = 0.15;
+const WINDOW_GLOW_COLOR = 0x9db8ff;

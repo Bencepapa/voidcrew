@@ -9,7 +9,18 @@ import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
 // floor in, paint the surface the pointer is on with a texture set, place /
 // change / remove a light, raise or lower a floor or ceiling, or put in /
 // take out a ladder, a bridge, a door or a prop.
-export type EditTool = "dig" | "fill" | "texture" | "light" | "height" | "ladder" | "bridge" | "door" | "prop" | "decal";
+export type EditTool =
+  | "dig"
+  | "fill"
+  | "texture"
+  | "light"
+  | "height"
+  | "ladder"
+  | "bridge"
+  | "door"
+  | "prop"
+  | "decal"
+  | "map";
 
 // The surface under the pointer, which picks the tool's target (a wall's
 // face is seen from the open cell it belongs to - `from`).
@@ -287,3 +298,92 @@ export function removeLight(file: MapFile, index: number): MapFile {
   return file;
 }
 
+
+// Everything placed on the map, moved by (dx, dy) cells - the grid grew or
+// shrank at its north or west edge.
+function shiftAll(file: MapFile, dx: number, dy: number) {
+  const move = (p: { x: number; y: number }) => {
+    p.x += dx;
+    p.y += dy;
+  };
+  move(file.start);
+  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals]) {
+    for (const item of list ?? []) move(item);
+  }
+  for (const actor of file.actors ?? []) {
+    move(actor);
+    actor.patrol = actor.patrol?.map(([x, y]) => [x + dx, y + dy]);
+  }
+}
+
+// every position on the map (to check a strip being cut off is empty)
+function allPositions(file: MapFile): { x: number; y: number }[] {
+  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals];
+  return [
+    file.start,
+    ...lists.flatMap((list) => (list ?? []) as { x: number; y: number }[]),
+    ...(file.actors ?? []).flatMap((a) => [a, ...(a.patrol ?? []).map(([x, y]) => ({ x, y }))]),
+  ];
+}
+
+// Grows the map by a row or column of wall at an edge, or (`grow` false)
+// cuts one off - only if it's all wall with nothing on it. Growing or
+// cutting at the north or west moves everything with it.
+export function resizeMap(file: MapFile, edge: Direction, grow: boolean): MapFile {
+  const height = file.layout.length;
+  const width = file.layout[0]?.length ?? 0;
+  const rowsOf = () => [file.layout, ...Object.values(file.layers ?? {}).map((l) => l!.rows)];
+  if (grow) {
+    for (const rows of rowsOf()) {
+      const fill = rows === file.layout ? "W" : ".";
+      if (edge === "N") rows.unshift(fill.repeat(width));
+      if (edge === "S") rows.push(fill.repeat(width));
+      if (edge === "W") rows.forEach((r, i) => (rows[i] = fill + r));
+      if (edge === "E") rows.forEach((r, i) => (rows[i] = r + fill));
+    }
+    if (edge === "N") shiftAll(file, 0, 1);
+    if (edge === "W") shiftAll(file, 1, 0);
+    return file;
+  }
+  const minSize = 3;
+  if ((edge === "N" || edge === "S") && height <= minSize) throw new Error("the map can't get any shorter");
+  if ((edge === "E" || edge === "W") && width <= minSize) throw new Error("the map can't get any narrower");
+  const strip = (x: number, y: number) =>
+    edge === "N" ? y === 0 : edge === "S" ? y === height - 1 : edge === "W" ? x === 0 : x === width - 1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (strip(x, y) && file.layout[y][x] !== "W") throw new Error(`the ${edge} edge isn't all wall (cell ${x},${y})`);
+    }
+  }
+  const on = allPositions(file).find((p) => strip(p.x, p.y));
+  if (on) throw new Error(`something is placed on the ${edge} edge (at ${on.x},${on.y})`);
+  for (const rows of rowsOf()) {
+    if (edge === "N") rows.shift();
+    if (edge === "S") rows.pop();
+    if (edge === "W") rows.forEach((r, i) => (rows[i] = r.slice(1)));
+    if (edge === "E") rows.forEach((r, i) => (rows[i] = r.slice(0, -1)));
+  }
+  if (edge === "N") shiftAll(file, 0, -1);
+  if (edge === "W") shiftAll(file, -1, 0);
+  return file;
+}
+
+// A new, empty deck: all wall but a small room at the start (with a lamp),
+// in the look of `like` (its textures and colors).
+export function blankMap(name: string, deck: number, width: number, height: number, like?: MapFile): MapFile {
+  const w = Math.max(7, Math.round(width));
+  const h = Math.max(7, Math.round(height));
+  const layout = Array.from({ length: h }, (_, y) =>
+    Array.from({ length: w }, (_, x) => (x >= 2 && x <= 4 && y >= 2 && y <= 4 ? "." : "W")).join(""),
+  );
+  return {
+    name,
+    deck,
+    ...(like?.textures ? { textures: structuredClone(like.textures) } : {}),
+    ...(like?.labelColor ? { labelColor: like.labelColor } : {}),
+    ...(like?.lightColor ? { lightColor: like.lightColor } : {}),
+    start: { x: 3, y: 3, facing: "E" },
+    layout,
+    lights: [{ x: 3, y: 3 }],
+  };
+}

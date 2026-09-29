@@ -67,7 +67,8 @@ export interface MapFile {
   bridges?: { x: number; y: number; height: number; axis: "NS" | "EW" }[];
   lights?: MapLight[];
   // x, y: the (leftmost) cell; wall: the wall it's in; width: panels
-  windows?: { x: number; y: number; wall: Direction; width?: number }[];
+  // glow: false - no starlight glowing in through it
+  windows?: { x: number; y: number; wall: Direction; width?: number; glow?: boolean }[];
   // at: where in the cell (default "center"); rotation: degrees
   props?: {
     prop: string;
@@ -170,7 +171,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       const walled = (cells[y + out.y]?.[x + out.x] ?? "wall") === "wall";
       if (!open || !walled) throw new Error(`window at ${w.x},${w.y} ${w.wall}: panel ${i} isn't a wall of a walkable cell`);
     }
-    return { cell: { x: w.x, y: w.y }, wall: w.wall, width: count };
+    return { cell: { x: w.x, y: w.y }, wall: w.wall, width: count, glow: w.glow !== false };
   });
 
   const floorTextures = readLayer(file.layers?.floorTexture, width, height, "floorTexture");

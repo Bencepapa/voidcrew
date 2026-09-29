@@ -119,6 +119,32 @@ Every edit is checked by the map loader: one that would break the map (a
 ladder with no higher cell, a bridge out of its room's height...) is
 refused, and the log says why.
 
+## Maps
+
+The **Map** tool's panel:
+
+- **Map** dropdown: opens another map straight away (no lift ride), at its
+  start. The URL's `?map=` follows, so a reload stays on it.
+- **+N / −N, +S / −S, +W / −W, +E / −E:** a row or column of wall added
+  at that edge, or cut off (only if it's all wall with nothing placed on
+  it). Adding or cutting at the north or west moves everything on the map
+  (and the party) with it.
+- **New map…:** asks for an id (the file name), a name and a size; all
+  wall but a small lit room at the start, in the current deck's look.
+  Save (or Download) keeps it.
+- **Save as…:** copies the current map under a new id and name, opens it
+  and (dev server) saves it. Its lifts still lead where the original's did
+  - point them at the right decks for a new ship.
+
+## Variations (planned)
+
+Derelict ships as variations of a deck: every prop, decal, light and
+actor gets an optional `chance` (0..1, default 1) of being there. When a
+deck loads for a ship, a random number seeded by the ship (and the deck)
+decides each - the same ship always looks the same, another ship differs.
+The editor shows everything, marks the chancy ones, and sets the chance
+in their panels; a "roll" button previews a variation.
+
 ## Lights
 
 Every light is placed on the map - nothing is generated any more (the old
