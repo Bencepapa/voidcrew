@@ -12,6 +12,7 @@ import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
 import type { MapLight } from "../game/types";
+import { PROP_TYPES } from "../game/props";
 
 interface Props {
   tool: EditTool;
@@ -29,6 +30,11 @@ interface Props {
   onSave: () => void;
   onDownload: () => void;
   onExit: () => void;
+  // the Prop tool: the prop a click puts in, and its turn (degrees)
+  propChoice: string;
+  onPropChoice: (prop: string) => void;
+  propRotation: number;
+  onPropRotate: () => void;
   // the Light tool: what a click places (see App), and the selected light
   lightPlace: LightPlace;
   onLightPlace: (place: LightPlace) => void;
@@ -47,8 +53,10 @@ export interface LightInfo {
   color: string;
   intensity: number;
   range: number;
-  // a free-standing one's spot in its cell (see MapLight.pos)
+  // a free-standing one's spot in its cell (see MapLight.pos), and whether
+  // its bulb shows in the game
   pos?: [number, number, number];
+  bulb?: boolean;
   // its cell's floor-to-ceiling height (wall heights), the most it goes up
   roomHeight: number;
 }
@@ -73,6 +81,22 @@ function slider(label: string, value: number, min: number, max: number, step: nu
     </label>
   );
 }
+// the tools after Light
+const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
+  { tool: "height", label: "Height", title: "Raise or lower a floor or ceiling" },
+  { tool: "ladder", label: "Ladder", title: "Put a ladder up to a higher cell" },
+  { tool: "bridge", label: "Bridge", title: "Span a cell with a bridge" },
+  { tool: "door", label: "Door", title: "Make a cell a door, or back" },
+  { tool: "prop", label: "Prop", title: "Put in or take out props" },
+];
+// what a click does with each (where the toolbar doesn't say otherwise)
+const TOOL_HELP: Partial<Record<EditTool, string>> = {
+  height: "click a floor or ceiling: up 0.25 · right-click: down",
+  ladder: "click near a floor's edge (or a step's face): a ladder up that side · again: take it out",
+  bridge: "click a floor: a bridge across it the way you face, at the ledges' height · again: take it out",
+  door: "click a floor: a door there · click a door: back to floor",
+  prop: "click a floor (near a side or corner to push it there): put it in · right-click: take out the nearest · R: turn",
+};
 const SURFACES: { surface: EditSurface; label: string }[] = [
   { surface: "wall", label: "Wall" },
   { surface: "floor", label: "Floor" },
@@ -111,6 +135,17 @@ export function EditorBar(p: Props) {
       >
         Light
       </button>
+      {MORE_TOOLS.map(({ tool, label, title }) => (
+        <button
+          key={tool}
+          type="button"
+          className={`${BUTTON} ${p.tool === tool ? active : idle}`}
+          onClick={() => p.onTool(tool)}
+          title={title}
+        >
+          {label}
+        </button>
+      ))}
       <span className="w-2" />
       <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canUndo} onClick={p.onUndo} title="Z">
         Undo
@@ -169,6 +204,32 @@ export function EditorBar(p: Props) {
           </div>
         </>
       )}
+      {p.tool === "prop" && (
+        <>
+          <span className="basis-full" />
+          <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
+            {Object.keys(PROP_TYPES).map((name) => (
+              <button
+                key={name}
+                type="button"
+                className={`${BUTTON} ${p.propChoice === name ? active : idle}`}
+                onClick={() => p.onPropChoice(name)}
+              >
+                {name}
+              </button>
+            ))}
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropRotate} title="R">
+              Turn: {p.propRotation}°
+            </button>
+          </div>
+        </>
+      )}
+      {TOOL_HELP[p.tool] && (
+        <>
+          <span className="basis-full" />
+          <span className="text-[10px] text-neutral-400 bg-black/60 px-2 py-0.5 rounded-sm">{TOOL_HELP[p.tool]}</span>
+        </>
+      )}
       {p.tool === "light" && (
         <>
           <span className="basis-full" />
@@ -212,6 +273,14 @@ export function EditorBar(p: Props) {
                     {slider("Height", p.light.pos[1], 0.05, p.light.roomHeight - 0.05, 0.05, (v) =>
                       p.onLightChange({ pos: [p.light!.pos![0], v, p.light!.pos![2]] }),
                     )}
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={!!p.light.bulb}
+                        onChange={(e) => p.onLightChange({ bulb: e.target.checked || undefined })}
+                      />
+                      bulb in game
+                    </label>
                     <span className="text-neutral-500">arrows / PgUp PgDn: move</span>
                   </>
                 )}

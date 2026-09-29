@@ -22,6 +22,8 @@ export interface LightSpec {
   minor?: boolean;
   // a hand-placed one: its index in the map's lights
   source?: number;
+  // a free-standing one whose bulb shows in the game (see MapLight.bulb)
+  bulb?: boolean;
 }
 
 // "#rrggbb" as a number (undefined if it isn't one)
@@ -127,6 +129,7 @@ export function generateLights(map: GameMap): LightSpec[] {
       intensity: own.intensity ?? base.intensity,
       range: own.range ?? base.range,
       source,
+      bulb: own.bulb,
     };
     if (own.pos) {
       const [dx, up, dz] = own.pos;

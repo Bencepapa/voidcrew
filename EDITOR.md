@@ -90,6 +90,27 @@ not two editors.
   direction, and closes the view.
 - Pan and zoom with the mouse or pinch.
 
+## Structure tools
+
+- **Height:** a click raises the floor or ceiling pointed at by 0.25, the
+  right button lowers it (an unset ceiling stays one panel above its
+  floor, so raising a floor lifts it too).
+- **Ladder:** a click near a floor's edge (or on a step's face) puts a
+  ladder up that side to the higher cell; again takes it out.
+- **Bridge:** a click on a floor spans it the way the party faces, at the
+  height of the ledges on either side; again takes it out.
+- **Door:** a click on a floor makes the cell a door (its front along the
+  passage), on a door turns it back into floor. Doors on a cell edge (see
+  below) are still to come.
+- **Prop:** the palette picks the prop; a click on a floor puts it at the
+  nearest side or corner (or the center), a wall-hung one on the nearest
+  side; R turns the next one; the right button takes out the one nearest
+  the click.
+
+Every edit is checked by the map loader: one that would break the map (a
+ladder with no higher cell, a bridge out of its room's height...) is
+refused, and the log says why.
+
 ## Lights
 
 The Light tool works on the map's `lights` (and `lightsOff`, which

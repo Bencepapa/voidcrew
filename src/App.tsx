@@ -6,17 +6,25 @@ import { EditorBar } from "./editor/EditorBar";
 import { applyEdit, canRedo, canUndo, downloadMap, hasUnsavedEdits, redo, saveMap, undo } from "./editor/mapStore";
 import {
   addLight,
+  addProp,
+  anchorAt,
   customizeBuiltInLight,
   dig,
   fill,
   paintTexture,
   removeLight,
+  removeProp,
+  setHeight,
   setLight,
+  toggleBridge,
+  toggleDoor,
+  toggleLadder,
   updateLight,
 } from "./editor/mapEdits";
+import { PROP_TYPES } from "./game/props";
 import type { LightInfo, LightPlace } from "./editor/EditorBar";
-import { ceilingHeight, floorHeight } from "./game/map";
-import type { MapLight } from "./game/types";
+import { cellAt, ceilingHeight, floorHeight } from "./game/map";
+import type { Direction, MapLight } from "./game/types";
 import { DIR_VECTOR, rightOf } from "./game/movement";
 import { autoLightCells, generateLights, hasCeilingLight, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, TextureLayer } from "./editor/mapEdits";
@@ -82,6 +90,9 @@ export default function App() {
   // Shift+click does) a free-standing light where it's pointed
   const [selectedLight, setSelectedLight] = useState<number | null>(null);
   const [lightPlace, setLightPlace] = useState<LightPlace>("ceiling");
+  // the Prop tool: the prop a click puts in, and how it's turned (R turns it)
+  const [propChoice, setPropChoice] = useState<string>(Object.keys(PROP_TYPES)[0]);
+  const [propRotation, setPropRotation] = useState(0);
   // the surface the pointer is on: the Texture tool's palette marks its row
   // (it sticks to the last one when nothing is under the pointer)
   const [editSurface, setEditSurface] = useState<EditSurface>("wall");
@@ -225,6 +236,63 @@ export default function App() {
           : applyEdit(map.id, (file) => addLight(file, { x: cell.x, y: cell.y }));
         setSelectedLight(count);
       }
+    } else if (editTool === "height") {
+      // raise (lower: right button) the floor or ceiling pointed at
+      if (target.kind === "wall") return;
+      const cell = target.cell;
+      const floor = floorHeight(map, cell.x, cell.y);
+      const step = alt ? -0.25 : 0.25;
+      if (target.kind === "ceiling") {
+        const value = ceilingHeight(map, cell.x, cell.y) + step;
+        // one panel above the floor is the default: no need to write it
+        result = applyEdit(map.id, (file) => setHeight(file, "ceiling", cell, value === floor + 1 ? null : value));
+        if (!("error" in result)) pushLog(`Editor: ceiling at ${cell.x},${cell.y} - ${value}.`);
+      } else {
+        const value = floor + step;
+        result = applyEdit(map.id, (file) => setHeight(file, "floor", cell, value === 0 ? null : value));
+        if (!("error" in result)) pushLog(`Editor: floor at ${cell.x},${cell.y} - ${value}.`);
+      }
+    } else if (editTool === "ladder") {
+      // against the side of the cell nearest the click (a click on a step's
+      // face: the lower cell's side toward it)
+      const spot = target.spot;
+      if (!spot) return;
+      const [dx, , dz] = spot.pos;
+      const wall: Direction = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? "E" : "W") : dz > 0 ? "S" : "N";
+      result = applyEdit(map.id, (file) => toggleLadder(file, spot.cell, wall));
+    } else if (editTool === "bridge") {
+      // across the cell the way the party faces, at its ledges' height
+      if (target.kind === "wall") return;
+      const cell = target.cell;
+      const axis = dir === "N" || dir === "S" ? "NS" : "EW";
+      const v = axis === "NS" ? { x: 0, y: 1 } : { x: 1, y: 0 };
+      const ledge = Math.max(
+        ...[-1, 1].map((s) => {
+          const n = { x: cell.x + v.x * s, y: cell.y + v.y * s };
+          return cellAt(map, n.x, n.y) === "wall" ? -Infinity : floorHeight(map, n.x, n.y);
+        }),
+      );
+      result = applyEdit(map.id, (file) => toggleBridge(file, cell, axis, ledge));
+    } else if (editTool === "door") {
+      if (target.kind === "wall") return;
+      const cell = target.cell;
+      const isDoor = cellAt(map, cell.x, cell.y) === "door";
+      if (alt && !isDoor) return;
+      if (cell.x === pos.x && cell.y === pos.y && !isDoor) {
+        pushLog("Editor: can't put a door where the party stands.");
+        return;
+      }
+      result = applyEdit(map.id, (file) => toggleDoor(file, cell));
+    } else if (editTool === "prop") {
+      if (target.kind === "wall") return;
+      const cell = target.cell;
+      const [dx, , dz] = target.spot && target.spot.cell.x === cell.x && target.spot.cell.y === cell.y ? target.spot.pos : [0, 0, 0];
+      if (alt) {
+        result = applyEdit(map.id, (file) => removeProp(file, cell, anchorAt(dx, dz)));
+      } else {
+        const anchor = anchorAt(dx, dz, !!PROP_TYPES[propChoice]?.wall);
+        result = applyEdit(map.id, (file) => addProp(file, propChoice, cell, anchor, propRotation));
+      }
     } else {
       const tool: EditTool = alt ? "fill" : editTool;
       if (tool === "dig" && target.kind === "wall" && target.from) {
@@ -292,6 +360,7 @@ export default function App() {
       intensity: lit.intensity,
       range: lit.range,
       pos: own.pos,
+      bulb: own.bulb,
       roomHeight: ceilingHeight(map, own.x, own.y) - floorHeight(map, own.x, own.y),
     };
   })();
@@ -354,6 +423,16 @@ export default function App() {
     // before the movement keys' handlers
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
+  }, [editMode, editTool]);
+
+  // R: the Prop tool turns the next prop by 90 degrees
+  useEffect(() => {
+    if (!editMode || editTool !== "prop") return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "r" || e.key === "R") setPropRotation((r) => (r + 90) % 360);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [editMode, editTool]);
 
   // L: the headlamp
@@ -451,6 +530,10 @@ export default function App() {
           onSave={editSave}
           onDownload={() => downloadMap(map.id)}
           onExit={() => setEditMode(false)}
+          propChoice={propChoice}
+          onPropChoice={setPropChoice}
+          propRotation={propRotation}
+          onPropRotate={() => setPropRotation((r) => (r + 90) % 360)}
           lightPlace={lightPlace}
           onLightPlace={setLightPlace}
           light={selectedLightInfo}

@@ -15,7 +15,7 @@
     "WWWW...W...W...WW",
     "WWWW...W...W...WW",
     "WWWWWDWWWDWWWDWWW",
-    "W.D.............W",
+    "W.D..............",
     "WWWWWDWWWDWWWDWWW",
     "WWWW...W...W...WW",
     "WWWW...W...W...WW",
@@ -71,13 +71,10 @@
     { "x": 6, "y": 4 },
     { "x": 9, "y": 4 },
     { "x": 12, "y": 4 },
-    { "x": 15, "y": 4 },
-    { "x": 5, "y": 1 },
-    { "x": 9, "y": 1 },
-    { "x": 13, "y": 1 },
-    { "x": 5, "y": 7 },
-    { "x": 9, "y": 7 },
-    { "x": 13, "y": 7 }
+    { "x": 5, "y": 2 },
+    { "x": 5, "y": 6 },
+    { "x": 13, "y": 2 },
+    { "x": 15, "y": 4, "range": 1.1, "intensity": 1.45, "color": "#89704d" }
   ],
   "windows": [
     { "x": 5, "y": 1, "wall": "N" },
@@ -92,7 +89,6 @@
     { "actor": "robot1", "x": 8, "y": 6, "facing": "E" }
   ],
   "props": [
-    { "prop": "crate1", "x": 15, "y": 4, "at": "NE" },
     { "prop": "crewbed1", "x": 4, "y": 1, "at": "N" },
     { "prop": "curtain_open", "x": 5, "y": 1, "at": "N" },
     { "prop": "foldtable1", "x": 6, "y": 1, "at": "E" },
@@ -117,7 +113,9 @@
     { "prop": "shower1", "x": 12, "y": 6, "at": "W" },
     { "prop": "curtain_closed", "x": 13, "y": 7, "at": "S" },
     { "prop": "crewbed1", "x": 14, "y": 7, "at": "S" },
-    { "prop": "plant1", "x": 14, "y": 6, "at": "NE" }
+    { "prop": "plant1", "x": 14, "y": 6, "at": "NE" },
+    { "prop": "crate1", "x": 15, "y": 4, "at": "NE" },
+    { "prop": "crate1", "x": 15, "y": 4, "at": "SW" }
   ],
   "doors": [
     { "x": 2, "y": 4, "kind": "lift", "facing": "E", "label": "CREW", "labelVertical": true },

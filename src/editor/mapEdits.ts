@@ -6,9 +6,10 @@ import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
 // file and returns it changed.
 
 // What a click in the editor does (see EDITOR.md): dig a wall out or fill a
-// floor in, paint the surface the pointer is on with a texture set, or place
-// / remove a ceiling light.
-export type EditTool = "dig" | "fill" | "texture" | "light";
+// floor in, paint the surface the pointer is on with a texture set, place /
+// change / remove a light, raise or lower a floor or ceiling, or put in /
+// take out a ladder, a bridge, a door or a prop.
+export type EditTool = "dig" | "fill" | "texture" | "light" | "height" | "ladder" | "bridge" | "door" | "prop";
 
 // The surface under the pointer, which picks the tool's target (a wall's
 // face is seen from the open cell it belongs to - `from`).
@@ -85,31 +86,132 @@ const CHAR_POOL = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678
 // character no legend uses and no row shows: rows only mean the default for
 // characters their legend doesn't know.
 export function paintTexture(file: MapFile, layer: TextureLayer, cell: Vec2, setId: string | null): MapFile {
+  return setLayerCell(file, layer, cell, setId);
+}
+
+// A cell's value in a layer (a texture set, a height), or - null - the
+// layer's default there (see paintTexture on how the legend grows).
+export function setLayerCell(file: MapFile, layer: keyof Layers, cell: Vec2, value: string | number | null): MapFile {
   const width = file.layout[0]?.length ?? 0;
   const layers = file.layers ?? (file.layers = {});
-  let entry = layers[layer];
-  if (!entry && setId === null) return file;
+  let entry = layers[layer] as { legend: Record<string, string | number>; default?: string | number; rows: string[] } | undefined;
+  if (!entry && value === null) return file;
   if (!entry) {
     entry = { legend: {}, rows: Array.from({ length: file.layout.length }, () => ".".repeat(width)) };
-    layers[layer] = entry;
+    (layers as Record<string, unknown>)[layer] = entry;
   }
   const row = entry.rows[cell.y];
   if (row === undefined || row.length !== width) return file;
   const taken = new Set(Object.keys(entry.legend));
-  const known = setId === null ? undefined : Object.entries(entry.legend).find(([, id]) => id === setId)?.[0];
+  const known = value === null ? undefined : Object.entries(entry.legend).find(([, v]) => v === value)?.[0];
   let char: string | null;
   if (known !== undefined) {
     char = known;
-  } else if (setId === null) {
+  } else if (value === null) {
     char = taken.has(".") ? [...CHAR_POOL].find((c) => !taken.has(c)) ?? null : ".";
   } else {
     const shown = new Set(entry.rows.join(""));
     char = [...CHAR_POOL].find((c) => !taken.has(c) && !shown.has(c)) ?? null;
-    if (char !== null) entry.legend[char] = setId;
+    if (char !== null) entry.legend[char] = value;
   }
   if (char === null) return file;
   entry.rows[cell.y] = setChar(row, cell.x, char);
   return file;
+}
+
+// A cell's floor or ceiling height (wall heights); null: the default - a
+// floor of 0, a ceiling one panel above its floor.
+export function setHeight(file: MapFile, which: "floor" | "ceiling", cell: Vec2, value: number | null): MapFile {
+  return setLayerCell(file, which, cell, value);
+}
+
+const at = (cell: Vec2) => (p: { x: number; y: number }) => p.x === cell.x && p.y === cell.y;
+
+// A ladder in `cell` against its `wall` side (up to the higher neighbour
+// there): put in, or taken out if there is one.
+export function toggleLadder(file: MapFile, cell: Vec2, wall: Direction): MapFile {
+  const ladders = file.ladders ?? [];
+  const i = ladders.findIndex((l) => at(cell)(l) && l.wall === wall);
+  if (i >= 0) ladders.splice(i, 1);
+  else ladders.push({ x: cell.x, y: cell.y, wall });
+  file.ladders = ladders;
+  if (!ladders.length) delete file.ladders;
+  return file;
+}
+
+// A bridge across `cell` (along `axis`, at `height`), or - if it has one -
+// taken out.
+export function toggleBridge(file: MapFile, cell: Vec2, axis: "NS" | "EW", height: number): MapFile {
+  const bridges = file.bridges ?? [];
+  const i = bridges.findIndex(at(cell));
+  if (i >= 0) bridges.splice(i, 1);
+  else bridges.push({ x: cell.x, y: cell.y, height, axis });
+  file.bridges = bridges;
+  if (!bridges.length) delete file.bridges;
+  return file;
+}
+
+// A door in `cell` (its front facing along the passage - see doorAt), or -
+// a door cell - back to floor, its settings dropped.
+export function toggleDoor(file: MapFile, cell: Vec2): MapFile {
+  const isDoor = file.layout[cell.y]?.[cell.x] === "D";
+  file.layout[cell.y] = setChar(file.layout[cell.y], cell.x, isDoor ? "." : "D");
+  if (isDoor && file.doors) {
+    file.doors = file.doors.filter((d) => !at(cell)(d));
+    if (!file.doors.length) delete file.doors;
+  }
+  return file;
+}
+
+// A prop in `cell` at an anchor (turned `rotation` degrees).
+export function addProp(file: MapFile, prop: string, cell: Vec2, anchor: PropAnchor, rotation: number): MapFile {
+  const props = file.props ?? (file.props = []);
+  props.push({ prop, x: cell.x, y: cell.y, at: anchor, ...(rotation ? { rotation } : {}) });
+  return file;
+}
+
+// Takes out the prop in `cell` nearest an anchor (the one pointed at).
+export function removeProp(file: MapFile, cell: Vec2, near: PropAnchor): MapFile {
+  const props = file.props ?? [];
+  const here = props.map((p, i) => ({ p, i })).filter(({ p }) => at(cell)(p));
+  if (!here.length) return file;
+  const [nx, ny] = ANCHOR_OFFSET[near];
+  here.sort((a, b) => {
+    const [ax, ay] = ANCHOR_OFFSET[a.p.at ?? "center"];
+    const [bx, by] = ANCHOR_OFFSET[b.p.at ?? "center"];
+    return Math.hypot(ax - nx, ay - ny) - Math.hypot(bx - nx, by - ny);
+  });
+  props.splice(here[0].i, 1);
+  if (!props.length) delete file.props;
+  return file;
+}
+
+// where each anchor is in its cell (fractions of it, from the center)
+const ANCHOR_OFFSET: Record<PropAnchor, [number, number]> = {
+  center: [0, 0],
+  N: [0, -1],
+  S: [0, 1],
+  E: [1, 0],
+  W: [-1, 0],
+  NE: [1, -1],
+  NW: [-1, -1],
+  SE: [1, 1],
+  SW: [-1, 1],
+};
+
+// The anchor nearest a spot of a cell (dx, dz from its center, -0.5..0.5):
+// the center if it's near the middle, else a side or a corner. A prop
+// hung on a wall only takes a side.
+export function anchorAt(dx: number, dz: number, wallOnly = false): PropAnchor {
+  if (wallOnly || Math.max(Math.abs(dx), Math.abs(dz)) >= 0.15) {
+    const sx = Math.abs(dx) >= 0.15 ? Math.sign(dx) : 0;
+    const sz = Math.abs(dz) >= 0.15 ? Math.sign(dz) : 0;
+    if (wallOnly || !(sx && sz)) {
+      return Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? "E" : "W") : dz > 0 ? "S" : "N";
+    }
+    return `${sz > 0 ? "S" : "N"}${sx > 0 ? "E" : "W"}` as PropAnchor;
+  }
+  return "center";
 }
 
 // Switches the cell's ceiling light on or off. A generated one (`auto`: the

@@ -100,6 +100,9 @@ export interface MapLight {
   intensity?: number;
   // how far it reaches (world units)
   range?: number;
+  // a free-standing one: its bulb shows in the game too (else only while
+  // editing - just the light is there)
+  bulb?: boolean;
 }
 
 export interface PropSpec {

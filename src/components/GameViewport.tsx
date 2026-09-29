@@ -2413,7 +2413,7 @@ export function GameViewport({
     // --- map lights: small glowing fixtures + the shared point-light pool ---
     const ceilingFixtureGeo = new THREE.PlaneGeometry(0.26, 0.26);
     const floorFixtureGeo = new THREE.PlaneGeometry(0.3, 0.05);
-    const bulbGeo = new THREE.SphereGeometry(0.035, 10, 8);
+    const bulbGeo = new THREE.SphereGeometry(0.022, 10, 8);
     geometries.push(bulbGeo);
     geometries.push(ceilingFixtureGeo, floorFixtureGeo);
     const fixtureMats = new Map<number, THREE.MeshBasicMaterial>();
@@ -2447,20 +2447,12 @@ export function GameViewport({
           const bulb = new THREE.Mesh(bulbGeo, fixtureMat(light.color));
           bulb.position.set(light.x, light.y * wallHeight, light.z);
           if (light.source !== undefined) bulb.userData.mapLight = light.source;
+          bulb.userData.bulb = light.bulb ? "always" : "editor";
           group.add(bulb);
           fixtures.push(bulb);
-        } else if (light.kind === "floorGlow" && light.wall) {
-          // a thin strip on the floor along the foot of the wall
-          const v = DIR_VECTOR[light.wall];
-          const strip = new THREE.Mesh(floorFixtureGeo, fixtureMat(light.color));
-          strip.rotation.set(-Math.PI / 2, 0, v.x !== 0 ? Math.PI / 2 : 0);
-          strip.userData.floorY = floorY(Math.round(light.x), Math.round(light.z));
-          strip.position.set(light.x + v.x * 0.1, strip.userData.floorY + floorTop + 0.003, light.z + v.y * 0.1);
-          group.add(strip);
-          fixtures.push(strip);
-          floorStrips.push(strip);
         }
-        // wall glows have no fixture - the light itself reads as a lit patch
+        // floor and wall glows have no fixture - the light itself reads as
+        // a lit patch
       }
     }
     placeFixtures();
@@ -2488,6 +2480,14 @@ export function GameViewport({
       const cells = new Set<string>();
       for (const [ox, oz] of SIGHT_POINTS) {
         for (const c of visibleCells(map, cx + ox, cz + oz, Math.round(range), (k) => doors.has(k))) cells.add(c);
+      }
+      // a door cell seen shut: the walls on its sides still show around the
+      // door (their panels may count as the wall cells beyond, which the
+      // shut door hides from the sight lines)
+      for (const c of [...cells]) {
+        const [x, y] = c.split(",").map(Number);
+        if (cellAt(map, x, y) !== "door") continue;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) cells.add(cellKey(x + dx, y + dy));
       }
       sight = { key, cells };
       return true;
@@ -3364,7 +3364,7 @@ export function GameViewport({
       } else {
         // the surface the tool touches: its ceiling where the tool works on
         // one (the ceiling plate of a light's cell), else its floor
-        const onCeiling = tool === "light" || (tool === "texture" && target.kind === "ceiling");
+        const onCeiling = tool === "light" || ((tool === "texture" || tool === "height") && target.kind === "ceiling");
         const y = onCeiling ? ceilingY(target.cell.x, target.cell.y) - 0.02 : floorY(target.cell.x, target.cell.y) + 0.02;
         editBox.position.set(target.cell.x, y, target.cell.y);
         editBox.scale.set(0.98, 0.04, 0.98);
@@ -3587,6 +3587,11 @@ export function GameViewport({
         s.mapLightIntensity * rideDip,
         dt,
       );
+      // free-standing lights' bulbs: shown while editing (to pick them),
+      // in the game only where the light asks for it
+      for (const obj of fixtures) {
+        if (obj.userData.bulb === "editor") obj.visible = editModeRef.current;
+      }
 
       const liftDoor = ride ? liftDoorOf(map, { x: Math.round(cam.x), y: Math.round(cam.z) }) : undefined;
       if (ride && liftDoor) {
