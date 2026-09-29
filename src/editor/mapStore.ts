@@ -22,6 +22,8 @@ interface Entry {
   saved: MapFile;
   // its line ends (a Windows checkout has CRLF)
   eol: string;
+  // the merge key of the last edit (see applyEdit)
+  lastMerge?: string;
 }
 const entries = new Map<string, Entry>();
 const CRLF = "\r\n";
@@ -65,7 +67,13 @@ function use(id: string, e: Entry, file: MapFile): GameMap {
 
 // An edit: the new file (made from a copy, never changing the given one),
 // checked by parsing it. Returns the deck as edited, or why it can't be.
-export function applyEdit(id: string, edit: (file: MapFile) => MapFile): { map: GameMap } | { error: string } {
+// `merge`: edits in a row with the same key (a slider being dragged) make
+// one undo step
+export function applyEdit(
+  id: string,
+  edit: (file: MapFile) => MapFile,
+  merge?: string,
+): { map: GameMap } | { error: string } {
   const e = entry(id);
   if (!e) return { error: `no map "${id}"` };
   const next = edit(structuredClone(e.file));
@@ -79,8 +87,11 @@ export function applyEdit(id: string, edit: (file: MapFile) => MapFile): { map: 
   // parses, but there's no history entry to step back through and no new
   // scene to build - the deck as it stands
   if (JSON.stringify(next) === JSON.stringify(e.file)) return { map: MAPS[id] ?? map };
-  e.undo.push(e.file);
-  if (e.undo.length > UNDO_LIMIT) e.undo.shift();
+  if (!merge || merge !== e.lastMerge) {
+    e.undo.push(e.file);
+    if (e.undo.length > UNDO_LIMIT) e.undo.shift();
+  }
+  e.lastMerge = merge;
   e.redo = [];
   e.file = next;
   MAPS[id] = map;
@@ -89,6 +100,7 @@ export function applyEdit(id: string, edit: (file: MapFile) => MapFile): { map: 
 
 export function undo(id: string): GameMap | null {
   const e = entries.get(id);
+  if (e) e.lastMerge = undefined;
   const prev = e?.undo.pop();
   if (!e || !prev) return null;
   e.redo.push(e.file);
@@ -97,6 +109,7 @@ export function undo(id: string): GameMap | null {
 
 export function redo(id: string): GameMap | null {
   const e = entries.get(id);
+  if (e) e.lastMerge = undefined;
   const next = e?.redo.pop();
   if (!e || !next) return null;
   e.undo.push(e.file);

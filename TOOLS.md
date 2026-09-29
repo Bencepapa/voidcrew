@@ -243,6 +243,9 @@ Its texture sets also go into `TEXTURE_SETS`. In a map:
    before the next shot (`advance`), no closer than `minRange`. A dumb or
    heavily armored robot, or a zombie, stands its ground:
    `retreat: [0, 0], advance: false`.
+   `glow: { crits: ["OPTICS", "REACTOR VENT"], intensity: 1.4 }` makes the
+   sheet's bright red pixels inside those weak spots glow in their own
+   color, whatever the light (flickering while stunned, out once dead).
 5. **In a map**:
    ```json
    "actors": [{ "actor": "robot1", "x": 9, "y": 1, "facing": "W", "patrol": [[9, 1], [5, 1]] }]

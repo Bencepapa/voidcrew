@@ -1,6 +1,6 @@
 import { DIR_VECTOR, rightOf } from "./movement";
 import { PROP_TYPES } from "./props";
-import type { CellType, DecalSpec, Direction, DoorSpec, GameMap, PropAnchor } from "./types";
+import type { CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
 
 // Map files (src/maps/*.json): a character grid for the cells plus optional
 // per-cell layers, each its own character grid with a legend. Characters
@@ -66,7 +66,7 @@ export interface MapFile {
   // x, y: the lower cell; wall: its side toward the higher one
   ladders?: { x: number; y: number; wall: Direction }[];
   bridges?: { x: number; y: number; height: number; axis: "NS" | "EW" }[];
-  lights?: { x: number; y: number }[];
+  lights?: MapLight[];
   // cells whose generated ceiling light (see autoLights) is switched off
   lightsOff?: { x: number; y: number }[];
   // x, y: the (leftmost) cell; wall: the wall it's in; width: panels
@@ -198,7 +198,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     })),
     ladders,
     bridges,
-    lights: (file.lights ?? []).map((l) => ({ x: l.x, y: l.y })),
+    lights: (file.lights ?? []).map((l) => ({ ...l })),
     lightsOff: (file.lightsOff ?? []).map((l) => ({ x: l.x, y: l.y })),
     structureKey: JSON.stringify({ ...file, lights: undefined, lightsOff: undefined }),
     windows,

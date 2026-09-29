@@ -1,6 +1,6 @@
 import type { MapFile } from "../game/mapFormat";
 import { PROP_TYPES } from "../game/props";
-import type { Direction, PropAnchor, Vec2 } from "../game/types";
+import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
 
 // Edits on a map file (see mapStore.applyEdit): each takes a copy of the
 // file and returns it changed.
@@ -124,5 +124,41 @@ export function setLight(file: MapFile, cell: Vec2, on: boolean, auto: boolean):
   if (!on && auto) file.lightsOff.push({ x: cell.x, y: cell.y });
   if (!file.lights.length) delete file.lights;
   if (!file.lightsOff.length) delete file.lightsOff;
+  return file;
+}
+
+// The map's own lights (MapLight): add one - a ceiling lamp in a cell, or a
+// free-standing one at `pos` there - change one, or remove one. Adding a
+// lamp where the generated lighting has one switches that one off.
+export function addLight(file: MapFile, light: MapLight): MapFile {
+  const lights = file.lights ?? (file.lights = []);
+  if (!light.pos) {
+    file.lightsOff = (file.lightsOff ?? []).filter((l) => l.x !== light.x || l.y !== light.y);
+    if (!file.lightsOff.length) delete file.lightsOff;
+  }
+  lights.push(light);
+  return file;
+}
+
+export function updateLight(file: MapFile, index: number, patch: Partial<MapLight>): MapFile {
+  const light = file.lights?.[index];
+  if (!light) return file;
+  file.lights![index] = { ...light, ...patch };
+  return file;
+}
+
+export function removeLight(file: MapFile, index: number): MapFile {
+  if (!file.lights?.[index]) return file;
+  file.lights.splice(index, 1);
+  if (!file.lights.length) delete file.lights;
+  return file;
+}
+
+// A generated ceiling lamp becomes the map's own (to be colored or moved):
+// the generated one is switched off, an own one takes its place.
+export function customizeBuiltInLight(file: MapFile, cell: Vec2): MapFile {
+  const off = file.lightsOff ?? (file.lightsOff = []);
+  if (!off.some((l) => l.x === cell.x && l.y === cell.y)) off.push({ x: cell.x, y: cell.y });
+  (file.lights ?? (file.lights = [])).push({ x: cell.x, y: cell.y });
   return file;
 }

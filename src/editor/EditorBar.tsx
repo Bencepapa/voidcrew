@@ -11,6 +11,7 @@
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
+import type { MapLight } from "../game/types";
 
 interface Props {
   tool: EditTool;
@@ -28,11 +29,50 @@ interface Props {
   onSave: () => void;
   onDownload: () => void;
   onExit: () => void;
+  // the Light tool: what a click places (see App), and the selected light
+  lightPlace: LightPlace;
+  onLightPlace: (place: LightPlace) => void;
+  light: LightInfo | null;
+  onLightChange: (patch: Partial<MapLight>) => void;
+  onLightDelete: () => void;
+  onLightDeselect: () => void;
   // the phone layout: at the bottom (the minimap and the menu take the top)
   compact?: boolean;
 }
 
+export type LightPlace = "ceiling" | "point";
+
+// the selected light as the panel shows it
+export interface LightInfo {
+  color: string;
+  intensity: number;
+  range: number;
+  // a free-standing one's spot in its cell (see MapLight.pos)
+  pos?: [number, number, number];
+  // its cell's floor-to-ceiling height (wall heights), the most it goes up
+  roomHeight: number;
+}
+
 const BUTTON = "px-2 py-1 border rounded-sm text-[11px] disabled:opacity-30";
+
+// a labeled slider with its value, for the light panel
+function slider(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void) {
+  return (
+    <label className="flex items-center gap-1">
+      {label}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Math.round(parseFloat(e.target.value) * 100) / 100)}
+        className="w-20"
+      />
+      <span className="w-8 text-neutral-400">{value.toFixed(2)}</span>
+    </label>
+  );
+}
 const SURFACES: { surface: EditSurface; label: string }[] = [
   { surface: "wall", label: "Wall" },
   { surface: "floor", label: "Floor" },
@@ -132,9 +172,58 @@ export function EditorBar(p: Props) {
       {p.tool === "light" && (
         <>
           <span className="basis-full" />
-          <span className="text-[11px] text-neutral-400 bg-black/60 px-2 py-0.5 rounded-sm">
-            click a cell to add its ceiling light, click it again to remove it
-          </span>
+          <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
+            <span className="text-[10px] text-neutral-400">Place:</span>
+            <button
+              type="button"
+              className={`${BUTTON} ${p.lightPlace === "ceiling" ? active : idle}`}
+              onClick={() => p.onLightPlace("ceiling")}
+              title="A click on a floor or ceiling hangs a lamp in the cell"
+            >
+              Ceiling lamp
+            </button>
+            <button
+              type="button"
+              className={`${BUTTON} ${p.lightPlace === "point" ? active : idle}`}
+              onClick={() => p.onLightPlace("point")}
+              title="A click puts a light just off the surface pointed at (Shift+click too)"
+            >
+              Point light
+            </button>
+            <span className="text-[10px] text-neutral-500">click: pick / place · right-click: remove</span>
+          </div>
+          {p.light && (
+            <>
+              <span className="basis-full" />
+              <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+                <label className="flex items-center gap-1">
+                  Color
+                  <input
+                    type="color"
+                    value={p.light.color}
+                    onChange={(e) => p.onLightChange({ color: e.target.value })}
+                    className="w-7 h-6 bg-transparent border border-neutral-600"
+                  />
+                </label>
+                {slider("Intensity", p.light.intensity, 0, 4, 0.05, (v) => p.onLightChange({ intensity: v }))}
+                {slider("Range", p.light.range, 0.5, 6, 0.1, (v) => p.onLightChange({ range: v }))}
+                {p.light.pos && (
+                  <>
+                    {slider("Height", p.light.pos[1], 0.05, p.light.roomHeight - 0.05, 0.05, (v) =>
+                      p.onLightChange({ pos: [p.light!.pos![0], v, p.light!.pos![2]] }),
+                    )}
+                    <span className="text-neutral-500">arrows / PgUp PgDn: move</span>
+                  </>
+                )}
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onLightDelete} title="Delete">
+                  Remove
+                </button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onLightDeselect}>
+                  Done
+                </button>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

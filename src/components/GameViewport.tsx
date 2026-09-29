@@ -134,6 +134,12 @@ export interface EditTarget {
   kind: "wall" | "floor" | "ceiling";
   cell: Vec2;
   from?: Vec2;
+  // the Light tool: a hand-placed light pointed at (its index in the map's
+  // lights - a free-standing one's bulb)
+  light?: number;
+  // where a free-standing light would go: just off the surface pointed at -
+  // its cell and its MapLight.pos there
+  spot?: { cell: Vec2; pos: [number, number, number] };
 }
 
 export interface ViewportStats {
@@ -525,6 +531,13 @@ const EDIT_FILL_COLOR = 0x40d0ff;
 // where a click adds a ceiling light, blue where it takes one away
 const EDIT_PAINT_COLOR = 0x60ff80;
 const EDIT_LIGHT_ADD_COLOR = 0xffe040;
+const EDIT_SELECT_COLOR = 0x80f0ff;
+// how far off a surface a free-standing light is placed (world units)
+const LIGHT_SPOT_GAP = 0.12;
+// an actor's glowing pixels (see glowMapOf): at least this red, no more
+// than this green or blue
+const GLOW_MIN_RED = 150;
+const GLOW_MAX_OTHER = 90;
 const EDIT_LIGHT_REMOVE_COLOR = 0x40d0ff;
 const DOOR_PANEL_SETS: Record<DoorSpec["kind"], TextureSetId> = {
   standard: "door1",
@@ -612,7 +625,9 @@ interface GameViewportProps {
   editMode?: boolean;
   // the tool the editor has picked: what the highlight says a click does
   editTool?: EditTool;
-  onEdit?: (target: EditTarget, alt: boolean) => void;
+  onEdit?: (target: EditTarget, alt: boolean, shift: boolean) => void;
+  // the Light tool's selected light (its index in the map's lights)
+  selectedLight?: number | null;
   // the surface under the pointer whenever it changes - the editor's
   // texture palette follows it
   onEditHover?: (target: EditTarget | null) => void;
@@ -763,7 +778,13 @@ interface PartHighlight {
   crits: { value: THREE.Vector4[] };
   critParts: { value: number[] };
   critCount: { value: number };
+  // the actor's glowing parts (see ActorType.glow) and how bright they are
+  glowMap: { value: THREE.Texture };
+  glow: { value: number };
 }
+// no glow (a sampler needs some texture)
+const NO_GLOW = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+NO_GLOW.needsUpdate = true;
 function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight {
   const uniforms: PartHighlight = {
     zones: { value: BODY_PARTS.map(() => new THREE.Vector4()) },
@@ -773,6 +794,8 @@ function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight 
     crits: { value: Array.from({ length: MAX_CRIT_ZONES }, () => new THREE.Vector4()) },
     critParts: { value: new Array(MAX_CRIT_ZONES).fill(-1) },
     critCount: { value: 0 },
+    glowMap: { value: NO_GLOW },
+    glow: { value: 0 },
   };
   material.customProgramCacheKey = () => "actor-part-highlight";
   material.onBeforeCompile = (shader) => {
@@ -783,12 +806,21 @@ function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight 
     shader.uniforms.uCrits = uniforms.crits;
     shader.uniforms.uCritParts = uniforms.critParts;
     shader.uniforms.uCritCount = uniforms.critCount;
+    shader.uniforms.uGlowMap = uniforms.glowMap;
+    shader.uniforms.uGlow = uniforms.glow;
     shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>
+totalEmissiveRadiance += texture2D(uGlowMap, vMapUv).rgb * uGlow;`,
+      )
       .replace(
         "#include <map_pars_fragment>",
         `#include <map_pars_fragment>
 uniform vec4 uPartZones[${BODY_PARTS.length}];
 uniform float uOutline;
+uniform sampler2D uGlowMap;
+uniform float uGlow;
 uniform int uPart;
 uniform vec2 uTexel;
 uniform vec4 uCrits[${MAX_CRIT_ZONES}];
@@ -948,6 +980,7 @@ export function GameViewport({
   editTool,
   onEdit,
   onEditHover,
+  selectedLight,
   onReady,
   freeTick,
   peekRef,
@@ -1021,6 +1054,8 @@ export function GameViewport({
   editModeRef.current = !!editMode;
   const onEditRef = useRef(onEdit);
   onEditRef.current = onEdit;
+  const selectedLightRef = useRef(selectedLight ?? null);
+  selectedLightRef.current = selectedLight ?? null;
   const editToolRef = useRef(editTool ?? "dig");
   editToolRef.current = editTool ?? "dig";
   const onEditHoverRef = useRef(onEditHover);
@@ -1110,6 +1145,9 @@ export function GameViewport({
   }
   const sceneMap = sceneMapRef.current;
   const applyLightsRef = useRef<((next: GameMap) => void) | null>(null);
+  // the map as it is now (lights included - the scene's may be older)
+  const latestMapRef = useRef(map);
+  latestMapRef.current = map;
   useEffect(() => {
     if (map !== sceneMap) applyLightsRef.current?.(map);
   }, [map, sceneMap]);
@@ -1333,6 +1371,11 @@ export function GameViewport({
     const ceilingLightCells = (lights: LightSpec[]) =>
       new Set(lights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`));
     let litCells = ceilingLightCells(mapLights);
+    // the color of each lit cell's ceiling lamp
+    const ceilingLightColors = (lights: LightSpec[]) =>
+      new Map(lights.filter((l) => l.kind === "ceiling").map((l) => [`${Math.round(l.x)},${Math.round(l.z)}`, l.color]));
+    let litColors = ceilingLightColors(mapLights);
+    const deckLampColor = lampColor(map);
 
     const frameKit = createWallKit(isTextureSetId(map.textures?.doorFrame) ? map.textures.doorFrame : DOOR_FRAME_SET, false);
     // window panels (see the wall loop), by their wall's surface key
@@ -1500,13 +1543,29 @@ export function GameViewport({
     // ... and turned to face down from the ceiling; lit slots get the kit's
     // glowing front material (swapped when the lights change: ceilingTiles)
     const ceilingTiles: { cell: string; obj: THREE.Object3D; kit: WallKit; relief: boolean }[] = [];
-    const ceilingMaterial = (kit: WallKit, relief: boolean, lit: boolean) => {
-      const front = lit && kit.litMat ? kit.litMat : kit.wallMat;
+    // a lamp of another color than the deck's glows in its own
+    const coloredLitMats = new Map<WallKit, Map<number, THREE.MeshStandardMaterial>>();
+    const litMatIn = (kit: WallKit, color: number | undefined) => {
+      if (!kit.litMat || color === undefined || color === deckLampColor) return kit.litMat;
+      let byColor = coloredLitMats.get(kit);
+      if (!byColor) coloredLitMats.set(kit, (byColor = new Map()));
+      let mat = byColor.get(color);
+      if (!mat) {
+        mat = kit.litMat.clone();
+        mat.emissive.setHex(color);
+        byColor.set(color, mat);
+        ownMaterials.push(mat);
+      }
+      return mat;
+    };
+    const ceilingMaterial = (kit: WallKit, relief: boolean, lit: boolean, color?: number) => {
+      const front = (lit && litMatIn(kit, color)) || kit.wallMat;
       return relief ? [front, kit.sideMat] : front;
     };
     function placeCeilings(geo: THREE.BufferGeometry, farGeo: THREE.BufferGeometry | null, kit: WallKit, relief: boolean) {
       for (const slot of kit.slots) {
-        const obj = placeSurface(slot, geo, farGeo, ceilingMaterial(kit, relief, !!slot.lit), (o) => (o.rotation.x = Math.PI / 2));
+        const color = litColors.get(`${slot.x},${slot.z}`);
+        const obj = placeSurface(slot, geo, farGeo, ceilingMaterial(kit, relief, !!slot.lit, color), (o) => (o.rotation.x = Math.PI / 2));
         ceilingTiles.push({ cell: `${slot.x},${slot.z}`, obj, kit, relief });
       }
     }
@@ -2354,6 +2413,8 @@ export function GameViewport({
     // --- map lights: small glowing fixtures + the shared point-light pool ---
     const ceilingFixtureGeo = new THREE.PlaneGeometry(0.26, 0.26);
     const floorFixtureGeo = new THREE.PlaneGeometry(0.3, 0.05);
+    const bulbGeo = new THREE.SphereGeometry(0.035, 10, 8);
+    geometries.push(bulbGeo);
     geometries.push(ceilingFixtureGeo, floorFixtureGeo);
     const fixtureMats = new Map<number, THREE.MeshBasicMaterial>();
     const fixtureMat = (color: number) => {
@@ -2378,8 +2439,16 @@ export function GameViewport({
           const panel = new THREE.Mesh(ceilingFixtureGeo, fixtureMat(light.color));
           panel.rotation.x = Math.PI / 2;
           panel.position.set(light.x, ceilingY(Math.round(light.x), Math.round(light.z)) - 0.002, light.z);
+          if (light.source !== undefined) panel.userData.mapLight = light.source;
           group.add(panel);
           fixtures.push(panel);
+        } else if (light.kind === "point") {
+          // a free-standing light: a glowing bulb (the editor picks it by it)
+          const bulb = new THREE.Mesh(bulbGeo, fixtureMat(light.color));
+          bulb.position.set(light.x, light.y * wallHeight, light.z);
+          if (light.source !== undefined) bulb.userData.mapLight = light.source;
+          group.add(bulb);
+          fixtures.push(bulb);
         } else if (light.kind === "floorGlow" && light.wall) {
           // a thin strip on the floor along the foot of the wall
           const v = DIR_VECTOR[light.wall];
@@ -2475,9 +2544,10 @@ export function GameViewport({
       sceneVersion++;
       mapLights = generateLights(next);
       litCells = ceilingLightCells(mapLights);
+      litColors = ceilingLightColors(mapLights);
       lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
       for (const tile of ceilingTiles) {
-        const material = ceilingMaterial(tile.kit, tile.relief, litCells.has(tile.cell));
+        const material = ceilingMaterial(tile.kit, tile.relief, litCells.has(tile.cell), litColors.get(tile.cell));
         tile.obj.traverse((o) => {
           if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = material;
         });
@@ -2571,6 +2641,56 @@ export function GameViewport({
       mirror: boolean;
     }
     const actorMeshes = new Map<number, ActorEntry>();
+    // Each actor type's glow map (see ActorType.glow): its sheet's bright
+    // red pixels within the glowing weak spots of each cell, in their own
+    // color, black elsewhere. Made once its sheet has loaded.
+    const glowMaps = new Map<string, THREE.Texture | null>();
+    const glowMapOf = (typeName: string): THREE.Texture | null => {
+      if (glowMaps.has(typeName)) return glowMaps.get(typeName)!;
+      const type = ACTOR_TYPES[typeName];
+      const image = actorMaterial(typeName).map?.image as HTMLImageElement | undefined;
+      if (!type.glow || !image?.width) return null;
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(image, 0, 0);
+      const src = ctx.getImageData(0, 0, image.width, image.height);
+      const out = ctx.createImageData(image.width, image.height);
+      const cw = image.width / type.cols;
+      const ch = image.height / type.rows;
+      const glowing = type.crits.filter((c) => type.glow!.crits.includes(c.label));
+      for (let row = 0; row < type.rows; row++) {
+        for (let col = 0; col < type.cols; col++) {
+          for (const crit of glowing) {
+            for (const [x0, y0, x1, y1] of crit.zones[col] ?? []) {
+              // a little past the zone: its glow's edge
+              const px0 = Math.max(0, Math.floor((col + x0 - 0.02) * cw));
+              const px1 = Math.min(image.width, Math.ceil((col + x1 + 0.02) * cw));
+              const py0 = Math.max(0, Math.floor((row + y0 - 0.02) * ch));
+              const py1 = Math.min(image.height, Math.ceil((row + y1 + 0.02) * ch));
+              for (let y = py0; y < py1; y++) {
+                for (let x = px0; x < px1; x++) {
+                  const i = (y * image.width + x) * 4;
+                  const [r, g, b, a] = [src.data[i], src.data[i + 1], src.data[i + 2], src.data[i + 3]];
+                  if (a < 128 || r < GLOW_MIN_RED || Math.max(g, b) > GLOW_MAX_OTHER) continue;
+                  out.data[i] = r;
+                  out.data[i + 1] = g;
+                  out.data[i + 2] = b;
+                  out.data[i + 3] = 255;
+                }
+              }
+            }
+          }
+        }
+      }
+      ctx.putImageData(out, 0, 0);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.magFilter = THREE.NearestFilter;
+      glowMaps.set(typeName, tex);
+      return tex;
+    };
     const actorMaterial = (typeName: string) => {
       let mat = actorMaterials.get(typeName);
       if (!mat) {
@@ -2649,6 +2769,12 @@ export function GameViewport({
         const lit = aimingRef.current && focus?.target === actor.id && focus.part ? focus.part : null;
         entry.highlight.part.value = lit ? BODY_PARTS.indexOf(lit) : -1;
         entry.highlight.outline.value = settingsRef.current.enemyScanner && actor.diedAt === null ? 1 : 0;
+        // its optics and vents glow - flickering while stunned, out once dead
+        const glowMap = type.glow ? glowMapOf(actor.type) : null;
+        if (glowMap && entry.highlight.glowMap.value !== glowMap) entry.highlight.glowMap.value = glowMap;
+        const stunned = now < actor.stunnedUntil;
+        entry.highlight.glow.value =
+          !glowMap || actor.diedAt !== null ? 0 : (type.glow?.intensity ?? 0) * (stunned ? (Math.random() < 0.5 ? 0.15 : 0.8) : 1);
         const sheetImage = entry.material.map?.image as HTMLImageElement | undefined;
         if (sheetImage?.width) entry.highlight.texel.value.set(1 / sheetImage.width, 1 / sheetImage.height);
         if (lit) {
@@ -3050,7 +3176,7 @@ export function GameViewport({
       const ndc = viewNdc(e.clientX, e.clientY);
       if (editModeRef.current) {
         const target = editTargetAt(ndc);
-        if (target) onEditRef.current?.(target, e.button === 2);
+        if (target) onEditRef.current?.(target, e.button === 2, e.shiftKey);
         return;
       }
       raycaster.setFromCamera(ndc, camera);
@@ -3087,12 +3213,38 @@ export function GameViewport({
     // geometry is turned to face down.
     function editTargetAt(ndc: THREE.Vector2): EditTarget | null {
       editRaycaster.setFromCamera(ndc, camera);
+      const lightTool = editToolRef.current === "light";
       const hit = editRaycaster
         .intersectObjects(group.children, true)
-        .find((h) => h.face && h.object.userData.actorId === undefined && drawnChain(h.object) && !seeThrough(h.object));
+        .find(
+          (h) =>
+            h.face &&
+            h.object.userData.actorId === undefined &&
+            (lightTool || h.object.userData.mapLight === undefined) &&
+            drawnChain(h.object) &&
+            !seeThrough(h.object),
+        );
       if (!hit?.face) return null;
+      const lightIndex = hit.object.userData.mapLight as number | undefined;
+      const own = lightIndex === undefined ? undefined : latestMapRef.current.lights?.[lightIndex];
+      if (lightIndex !== undefined && own) {
+        return { kind: "floor", cell: { x: own.x, y: own.y }, light: lightIndex };
+      }
       editNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
       const p = hit.point;
+      // a free-standing light's spot: just off the surface, in its cell
+      const sx0 = p.x + editNormal.x * LIGHT_SPOT_GAP;
+      const sy0 = p.y + editNormal.y * LIGHT_SPOT_GAP;
+      const sz0 = p.z + editNormal.z * LIGHT_SPOT_GAP;
+      const spotCell = { x: Math.round(sx0), y: Math.round(sz0) };
+      const round2 = (v: number) => Math.round(v * 100) / 100;
+      const spot: EditTarget["spot"] =
+        cellAt(map, spotCell.x, spotCell.y) === "wall"
+          ? undefined
+          : {
+              cell: spotCell,
+              pos: [round2(sx0 - spotCell.x), round2(sy0 / wallHeight - floorHeight(map, spotCell.x, spotCell.y)), round2(sz0 - spotCell.y)],
+            };
       const flat = Math.abs(editNormal.y) >= Math.max(Math.abs(editNormal.x), Math.abs(editNormal.z));
       if (!flat) {
         // the side it faces, on the grid
@@ -3100,7 +3252,7 @@ export function GameViewport({
         const sz = sx ? 0 : Math.sign(editNormal.z);
         const behind = { x: Math.round(p.x - sx * 0.05), y: Math.round(p.z - sz * 0.05) };
         if (cellAt(map, behind.x, behind.y) === "wall") {
-          return { kind: "wall", cell: behind, from: { x: behind.x + sx, y: behind.y + sz } };
+          return { kind: "wall", cell: behind, from: { x: behind.x + sx, y: behind.y + sz }, spot };
         }
       }
       const cell = { x: Math.round(p.x), y: Math.round(p.z) };
@@ -3108,7 +3260,7 @@ export function GameViewport({
       // floor or ceiling by which the hit is nearer to (a relief's step
       // sides face sideways, so the normal can't tell)
       const nearCeiling = ceilingY(cell.x, cell.y) - p.y < p.y - floorY(cell.x, cell.y);
-      return { kind: nearCeiling ? "ceiling" : "floor", cell };
+      return { kind: nearCeiling ? "ceiling" : "floor", cell, spot };
     }
     const editBox = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
@@ -3140,13 +3292,34 @@ export function GameViewport({
     // Marks what a click with the tool in hand would do: the wall block Dig
     // takes out, or the surface Fill paints over / the Texture tool paints /
     // the Light tool hangs a light in.
+    // the Light tool's selected light, framed
+    const selectBox = new THREE.LineSegments(
+      editBox.geometry,
+      new THREE.LineBasicMaterial({ color: EDIT_SELECT_COLOR, depthTest: false, transparent: true }),
+    );
+    selectBox.renderOrder = 11;
+    selectBox.visible = false;
+    scene.add(selectBox);
+    function updateSelectionBox() {
+      const selected = editModeRef.current ? selectedLightRef.current : null;
+      const l = selected === null ? undefined : mapLights.find((m) => m.source === selected);
+      selectBox.visible = !!l;
+      if (!l) return;
+      if (l.kind === "point") {
+        selectBox.position.set(l.x, l.y * wallHeight, l.z);
+        selectBox.scale.setScalar(0.14);
+      } else {
+        selectBox.position.set(l.x, ceilingY(Math.round(l.x), Math.round(l.z)) - 0.03, l.z);
+        selectBox.scale.set(0.5, 0.05, 0.5);
+      }
+    }
     function updateEditHighlight() {
       const target = editModeRef.current ? editTargetAt(editHover ?? new THREE.Vector2(0, 0)) : null;
       reportHover(target);
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
       const tool = editToolRef.current;
-      let mode: "wall" | "plate" | null = null;
+      let mode: "wall" | "plate" | "bulb" | null = null;
       let color = EDIT_FILL_COLOR;
       if (target) {
         if (tool === "texture") {
@@ -3154,7 +3327,10 @@ export function GameViewport({
           color = EDIT_PAINT_COLOR;
         } else if (tool === "light") {
           // a light hangs in the cell's ceiling, so either surface of it works
-          if (target.kind !== "wall") {
+          if (target.light !== undefined) {
+            mode = "bulb";
+            color = EDIT_LIGHT_ADD_COLOR;
+          } else if (target.kind !== "wall") {
             mode = "plate";
             const lit = litCells.has(`${target.cell.x},${target.cell.y}`);
             color = lit ? EDIT_LIGHT_REMOVE_COLOR : EDIT_LIGHT_ADD_COLOR;
@@ -3170,10 +3346,15 @@ export function GameViewport({
           color = EDIT_FILL_COLOR;
         }
       }
+      updateSelectionBox();
       editBox.visible = mode !== null;
       if (!target || !mode) return;
       const mat = editBox.material as THREE.LineBasicMaterial;
-      if (mode === "wall") {
+      if (mode === "bulb") {
+        const l = mapLights.find((m) => m.source === target.light);
+        if (l) editBox.position.set(l.x, l.y * wallHeight, l.z);
+        editBox.scale.setScalar(0.1);
+      } else if (mode === "wall") {
         // the wall block, as tall as the room it's dug from
         const from = target.from!;
         const bottom = floorY(from.x, from.y);
@@ -3496,6 +3677,7 @@ export function GameViewport({
         (line.material as THREE.Material).dispose();
       }
       for (const mat of actorMaterials.values()) mat.dispose();
+      for (const tex of glowMaps.values()) tex?.dispose();
       floorMat.dispose();
       spaceMat.dispose();
       sheenMat.dispose();
@@ -3505,6 +3687,7 @@ export function GameViewport({
       bridgeMat.dispose();
       ceilMat.dispose();
       for (const mat of fixtureMats.values()) mat.dispose();
+      (selectBox.material as THREE.Material).dispose();
       decals.dispose();
       // the renderer stays for the next build (see SceneCache)
       renderer.renderLists.dispose();

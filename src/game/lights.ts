@@ -1,8 +1,9 @@
 import { cellAt, ceilingHeight, floorHeight } from "./map";
 import { DIR_VECTOR, rightOf } from "./movement";
-import type { Direction, GameMap } from "./types";
+import type { Direction, GameMap, MapLight } from "./types";
 
-export type LightKind = "ceiling" | "floorGlow" | "wallGlow";
+// a hand-placed free-standing light is a "point" (see MapLight.pos)
+export type LightKind = "ceiling" | "point" | "floorGlow" | "wallGlow";
 
 export interface LightSpec {
   kind: LightKind;
@@ -19,6 +20,14 @@ export interface LightSpec {
   wall?: Direction;
   // a faint one: ranks lower for the viewport's light pool
   minor?: boolean;
+  // a hand-placed one: its index in the map's lights
+  source?: number;
+}
+
+// "#rrggbb" as a number (undefined if it isn't one)
+export function parseColor(hex: string | undefined): number | undefined {
+  if (!hex || !/^#?[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+  return parseInt(hex.replace("#", ""), 16);
 }
 
 const DIRECTIONS = Object.keys(DIR_VECTOR) as Direction[];
@@ -84,6 +93,11 @@ export function hasCeilingLight(map: GameMap, cell: { x: number; y: number }): b
   return generateLights(map).some((l) => l.kind === "ceiling" && l.x === cell.x && l.z === cell.y);
 }
 
+// the map's own ceiling lamp in a cell (its index in map.lights), or -1
+export function ownCeilingLight(map: { lights?: MapLight[] }, cell: { x: number; y: number }): number {
+  return (map.lights ?? []).findIndex((l) => !l.pos && l.x === cell.x && l.y === cell.y);
+}
+
 export function generateLights(map: GameMap): LightSpec[] {
   const random = seededRandom(map.name);
   const lights: LightSpec[] = [];
@@ -103,15 +117,28 @@ export function generateLights(map: GameMap): LightSpec[] {
       range: 2.4 + extra * 1.2,
     };
   };
-  // the generated ones (bar those switched off), then the map's own
+  // the map's own - a ceiling lamp, or a free-standing light - then the
+  // generated ones where it has none of its own (bar those switched off)
+  (map.lights ?? []).forEach((own, source) => {
+    const base = ceilingLight(own.x, own.y);
+    const light: LightSpec = {
+      ...base,
+      color: parseColor(own.color) ?? base.color,
+      intensity: own.intensity ?? base.intensity,
+      range: own.range ?? base.range,
+      source,
+    };
+    if (own.pos) {
+      const [dx, up, dz] = own.pos;
+      Object.assign(light, { kind: "point", x: own.x + dx, z: own.y + dz, y: floorHeight(map, own.x, own.y) + up });
+    } else if (lights.some((l) => l.kind === "ceiling" && l.x === own.x && l.z === own.y)) {
+      return;
+    }
+    lights.push(light);
+  });
   const off = new Set((map.lightsOff ?? []).map((c) => `${c.x},${c.y}`));
   for (const { x, y } of autoLightCells(map)) {
-    if (!off.has(`${x},${y}`)) lights.push(ceilingLight(x, y));
-  }
-  for (const cell of map.lights ?? []) {
-    if (!lights.some((l) => l.kind === "ceiling" && l.x === cell.x && l.z === cell.y)) {
-      lights.push(ceilingLight(cell.x, cell.y));
-    }
+    if (!off.has(`${x},${y}`) && !lights.some((l) => l.kind === "ceiling" && l.x === x && l.z === y)) lights.push(ceilingLight(x, y));
   }
   // every lift cabin (the cell behind a lift door) is always lit - softly:
   // its pale plates would glare under a full-strength light

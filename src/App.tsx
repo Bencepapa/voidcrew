@@ -4,8 +4,21 @@ import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { EditorBar } from "./editor/EditorBar";
 import { applyEdit, canRedo, canUndo, downloadMap, hasUnsavedEdits, redo, saveMap, undo } from "./editor/mapStore";
-import { dig, fill, paintTexture, setLight } from "./editor/mapEdits";
-import { autoLightCells, hasCeilingLight } from "./game/lights";
+import {
+  addLight,
+  customizeBuiltInLight,
+  dig,
+  fill,
+  paintTexture,
+  removeLight,
+  setLight,
+  updateLight,
+} from "./editor/mapEdits";
+import type { LightInfo, LightPlace } from "./editor/EditorBar";
+import { ceilingHeight, floorHeight } from "./game/map";
+import type { MapLight } from "./game/types";
+import { DIR_VECTOR, rightOf } from "./game/movement";
+import { autoLightCells, generateLights, hasCeilingLight, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, TextureLayer } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
@@ -64,6 +77,11 @@ export default function App() {
   // walls don't stop the party and the headlamp is lit
   const [editMode, setEditMode] = useState(false);
   const [editTool, setEditTool] = useState<EditTool>("dig");
+  // the Light tool: the selected hand-placed light (its index in the map's
+  // lights), and what a plain click places - a ceiling lamp, or (as a
+  // Shift+click does) a free-standing light where it's pointed
+  const [selectedLight, setSelectedLight] = useState<number | null>(null);
+  const [lightPlace, setLightPlace] = useState<LightPlace>("ceiling");
   // the surface the pointer is on: the Texture tool's palette marks its row
   // (it sticks to the last one when nothing is under the pointer)
   const [editSurface, setEditSurface] = useState<EditSurface>("wall");
@@ -160,7 +178,7 @@ export default function App() {
   // the floor (the Fill tool, or the right button), paints the surface with
   // the set picked in the palette (the right button paints the map's own
   // texture back), or toggles the cell's ceiling light.
-  const onEdit = (target: EditTarget, alt: boolean) => {
+  const onEdit = (target: EditTarget, alt: boolean, shift = false) => {
     let result: ReturnType<typeof applyEdit> | null = null;
     if (editTool === "texture") {
       // a wall's texture set is the open cell its face is seen from
@@ -175,12 +193,37 @@ export default function App() {
         }
       }
     } else if (editTool === "light") {
+      // Light tool: a click picks a light (its bulb, or a cell's ceiling
+      // lamp - a generated one becomes the map's own), or places one where
+      // there's none; the right button removes it
       const cell = target.cell;
-      if (target.kind !== "wall") {
-        // generated lights included (see lights.ts)
-        const lit = hasCeilingLight(map, cell);
-        const auto = autoLightCells(map).some((c) => c.x === cell.x && c.y === cell.y);
-        result = applyEdit(map.id, (file) => setLight(file, cell, alt ? false : !lit, auto));
+      const count = map.lights?.length ?? 0;
+      const own = target.light ?? (target.kind === "wall" ? -1 : ownCeilingLight(map, cell));
+      const auto = autoLightCells(map).some((c) => c.x === cell.x && c.y === cell.y);
+      const builtIn = target.kind !== "wall" && own < 0 && auto && hasCeilingLight(map, cell);
+      if (alt) {
+        if (own >= 0) {
+          result = applyEdit(map.id, (file) => removeLight(file, own));
+          setSelectedLight((sel) => (sel === null || sel === own ? null : sel > own ? sel - 1 : sel));
+        } else if (builtIn) {
+          result = applyEdit(map.id, (file) => setLight(file, cell, false, true));
+        }
+      } else if (target.light !== undefined) {
+        setSelectedLight(target.light);
+        return;
+      } else if ((shift || lightPlace === "point") && target.spot) {
+        const { cell: at, pos } = target.spot;
+        result = applyEdit(map.id, (file) => addLight(file, { x: at.x, y: at.y, pos }));
+        setSelectedLight(count);
+      } else if (target.kind !== "wall") {
+        if (own >= 0) {
+          setSelectedLight(own);
+          return;
+        }
+        result = builtIn
+          ? applyEdit(map.id, (file) => customizeBuiltInLight(file, cell))
+          : applyEdit(map.id, (file) => addLight(file, { x: cell.x, y: cell.y }));
+        setSelectedLight(count);
       }
     } else {
       const tool: EditTool = alt ? "fill" : editTool;
@@ -238,6 +281,81 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editMode]);
 
+  // The selected light, as the panel shows it: its own settings, or the
+  // values it's lit with where it has none (see lights.ts)
+  const selectedLightInfo: LightInfo | null = (() => {
+    const own = selectedLight === null ? undefined : map.lights?.[selectedLight];
+    const lit = own && generateLights(map).find((l) => l.source === selectedLight);
+    if (!own || !lit) return null;
+    return {
+      color: `#${lit.color.toString(16).padStart(6, "0")}`,
+      intensity: lit.intensity,
+      range: lit.range,
+      pos: own.pos,
+      roomHeight: ceilingHeight(map, own.x, own.y) - floorHeight(map, own.x, own.y),
+    };
+  })();
+  // a change from the panel (a slider dragged: one undo step per setting)
+  const changeLight = (patch: Partial<MapLight>) => {
+    if (selectedLight === null) return;
+    const index = selectedLight;
+    const result = applyEdit(map.id, (file) => updateLight(file, index, patch), `light ${index} ${Object.keys(patch).join()}`);
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  const deleteLight = () => {
+    if (selectedLight === null) return;
+    const index = selectedLight;
+    const result = applyEdit(map.id, (file) => removeLight(file, index));
+    if (!("error" in result)) replaceMap(result.map);
+    setSelectedLight(null);
+    setEdits((n) => n + 1);
+  };
+  // the selected free-standing light moves with the arrow keys (across the
+  // cell, in 0.05 steps) and Page Up / Page Down (height) - instead of the
+  // party; Delete removes the selected light
+  const facingRef = useRef(dir);
+  facingRef.current = dir;
+  const lightKeys = useRef({ selectedLightInfo, changeLight, deleteLight });
+  lightKeys.current = { selectedLightInfo, changeLight, deleteLight };
+  useEffect(() => {
+    if (!editMode || editTool !== "light") return;
+    function onKey(e: KeyboardEvent) {
+      const { selectedLightInfo: info, changeLight: change, deleteLight: remove } = lightKeys.current;
+      if (!info) return;
+      if (e.key === "Delete") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        remove();
+        return;
+      }
+      if (!info.pos) return;
+      // as seen by the party: up is away, right is to its right
+      const step = 0.05;
+      const ahead = DIR_VECTOR[facingRef.current];
+      const right = DIR_VECTOR[rightOf(facingRef.current)];
+      const move: Record<string, [number, number, number]> = {
+        ArrowLeft: [-right.x * step, 0, -right.y * step],
+        ArrowRight: [right.x * step, 0, right.y * step],
+        ArrowUp: [ahead.x * step, 0, ahead.y * step],
+        ArrowDown: [-ahead.x * step, 0, -ahead.y * step],
+        PageUp: [0, step, 0],
+        PageDown: [0, -step, 0],
+      };
+      const d = move[e.key];
+      if (!d) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const [x, y, z] = info.pos;
+      const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)) * 100) / 100;
+      change({ pos: [clamp(x + d[0], -0.45, 0.45), clamp(y + d[1], 0.05, info.roomHeight - 0.05), clamp(z + d[2], -0.45, 0.45)] });
+    }
+    // before the movement keys' handlers
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editMode, editTool]);
+
   // L: the headlamp
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -291,6 +409,7 @@ export default function App() {
       editMode={editMode}
       editTool={editTool}
       onEdit={onEdit}
+      selectedLight={selectedLightInfo ? selectedLight : null}
       onEditHover={onEditHover}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
@@ -332,6 +451,12 @@ export default function App() {
           onSave={editSave}
           onDownload={() => downloadMap(map.id)}
           onExit={() => setEditMode(false)}
+          lightPlace={lightPlace}
+          onLightPlace={setLightPlace}
+          light={selectedLightInfo}
+          onLightChange={changeLight}
+          onLightDelete={deleteLight}
+          onLightDeselect={() => setSelectedLight(null)}
           compact={compact}
         />
       )}

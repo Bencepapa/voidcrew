@@ -90,6 +90,30 @@ not two editors.
   direction, and closes the view.
 - Pan and zoom with the mouse or pinch.
 
+## Lights
+
+The Light tool works on the map's `lights` (and `lightsOff`, which
+switches generated lamps off):
+
+```json
+"lights": [
+  { "x": 6, "y": 2 },
+  { "x": 4, "y": 1, "pos": [-0.02, 0.5, 0.38], "color": "#ff2010", "intensity": 3, "range": 2.4 }
+]
+```
+
+- A plain entry is a ceiling lamp; with `pos` (from the cell's center and
+  floor: across, up in wall heights, along) it's a free-standing light,
+  drawn as a small bulb. `color`, `intensity`, `range` default to the
+  deck's lamp.
+- A click on a floor or ceiling picks the cell's lamp (a generated one
+  becomes the map's own) or hangs one; Shift+click (or Place: Point light)
+  puts a light just off the surface pointed at; a click on a bulb picks it;
+  the right button removes. The panel sets color, intensity, range and
+  height; the arrows (as the party sees it) and Page Up / Down move a
+  free-standing light; Delete removes it. Slider drags are one undo step.
+- Light edits don't rebuild the deck: only its lighting is redone.
+
 ## Map file handling
 
 - The editor works on the `MapFile` (the JSON as written), not on the parsed

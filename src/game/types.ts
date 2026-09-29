@@ -58,8 +58,8 @@ export interface GameMap {
   doors?: DoorSpec[];
   ladders?: LadderSpec[];
   bridges?: BridgeSpec[];
-  // hand-placed ceiling lights, on top of the generated mood lighting
-  lights?: Vec2[];
+  // hand-placed lights, on top of the generated mood lighting
+  lights?: MapLight[];
   // cells whose generated ceiling light is switched off
   lightsOff?: Vec2[];
   // everything about the map but its lights (see parseMap): two versions
@@ -85,6 +85,22 @@ export interface ActorSpec {
 // A 3D prop (see props.ts) in a walkable cell, pushed toward `at`: a side,
 // a corner or the center of the cell.
 export type PropAnchor = Direction | "NE" | "NW" | "SE" | "SW" | "center";
+
+// A hand-placed light in a cell: a ceiling lamp, or - given `pos` - a
+// free-standing one at that spot (a bulb). Unset values: the deck's lamp
+// color, and a ceiling lamp's usual strength and reach.
+export interface MapLight {
+  x: number;
+  y: number;
+  // "#rrggbb"
+  color?: string;
+  // from the cell's center and its floor: across (x), up in wall heights,
+  // along (z)
+  pos?: [number, number, number];
+  intensity?: number;
+  // how far it reaches (world units)
+  range?: number;
+}
 
 export interface PropSpec {
   // a props.ts PROP_TYPES name, e.g. "crate1"

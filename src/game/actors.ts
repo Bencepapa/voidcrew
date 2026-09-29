@@ -62,6 +62,10 @@ export interface ActorType {
   alertMs: number;
   // how it moves in a fight (see stepActors)
   tactics: ActorTactics;
+  // parts that glow (optics, vents...): the sheet's bright red pixels within
+  // these weak spots (by label - see crits), shining in their own color
+  // whatever the light; `intensity` scales it
+  glow?: { crits: string[]; intensity: number };
   // its body parts' names (for the aiming overlay) and where they are
   parts: Record<BodyPart, { label: string; zone: Zone }>;
   // weak spots: a hit there counts as a hit on their part, only harder
@@ -130,6 +134,7 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     hearing: 1,
     alertMs: 8000,
     tactics: { shotPauseMs: 250, retreat: [1, 2], seeksCover: true, advance: true, minRange: 2 },
+    glow: { crits: ["OPTICS", "REACTOR VENT"], intensity: 1.4 },
     parts: {
       head: { label: "SENSOR", zone: [0.3, 0.14, 0.7, 0.32] },
       torso: { label: "CORE", zone: [0.3, 0.32, 0.72, 0.62] },
