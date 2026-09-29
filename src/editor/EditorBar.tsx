@@ -18,6 +18,13 @@ import { PROP_TYPES } from "../game/props";
 import { DOOR_EDGE_OFFSET } from "../game/map";
 import { ACTOR_TYPES } from "../game/actors";
 
+export interface MapLook {
+  lightGridDensity?: number;
+  reliefDepth?: number;
+}
+const DENSITIES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
+const RELIEF_DEPTHS = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.12];
+
 interface Props {
   tool: EditTool;
   onTool: (tool: EditTool) => void;
@@ -62,6 +69,10 @@ interface Props {
   onOpenMap: (id: string) => void;
   onNewMap: () => void;
   onSaveMapAs: () => void;
+  // how the map is drawn (see MapFile.lightGridDensity; undefined: the
+  // viewer's default)
+  mapLook: MapLook;
+  onMapLook: (patch: MapLook) => void;
   // the Decal tool: the decal a click puts on, the turn it gets, and the
   // selected one
   decalChoice: string | null;
@@ -470,6 +481,36 @@ export function EditorBar(p: Props) {
             <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSaveMapAs}>
               Save as…
             </button>
+            <label className="flex items-center gap-1" title="Few: softer, light spills to the cells around. Many: sharper shadows.">
+              Baked light
+              <select
+                value={p.mapLook.lightGridDensity ?? ""}
+                onChange={(e) => p.onMapLook({ lightGridDensity: e.target.value ? Number(e.target.value) : undefined })}
+                className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
+              >
+                <option value="">default</option>
+                {DENSITIES.map((d) => (
+                  <option key={d} value={d}>
+                    {d} per cell
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1" title="How deep the walls' relief is (rebuilds the deck)">
+              Relief
+              <select
+                value={p.mapLook.reliefDepth ?? ""}
+                onChange={(e) => p.onMapLook({ reliefDepth: e.target.value ? Number(e.target.value) : undefined })}
+                className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
+              >
+                <option value="">default</option>
+                {RELIEF_DEPTHS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </>
       )}

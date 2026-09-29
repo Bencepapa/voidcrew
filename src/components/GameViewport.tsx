@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
+import { bakeLightGrid, createLightGridUniforms, disposeLightGrid, setLightGrid, useLightGrid } from "../render/lightGrid";
+import type { LightGridMode } from "../render/lightGrid";
 import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween, liftDoorOf, windowPanels } from "../game/map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
@@ -64,6 +66,13 @@ export interface ViewportSettings {
   enemyScanner: boolean;
   // the headlamp: a light that moves with the party (off: map lights only)
   headlamp: boolean;
+  // the map's lights baked (see lightGrid.ts) - any number of them, the
+  // real lights left for flashes; off: every map light a real one
+  bakedLights: boolean;
+  // the baked light's samples per cell, and how they keep it (see
+  // lightGrid.ts)
+  lightGridDensity: number;
+  lightGridMode: LightGridMode;
   // how far (cells) the view reaches: the fog, the lights and what's drawn
   viewDistance: number;
   eyeHeight: number;
@@ -179,6 +188,9 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   noclip: false,
   enemyScanner: false,
   headlamp: false,
+  bakedLights: true,
+  lightGridDensity: 3,
+  lightGridMode: "directional",
   viewDistance: 7,
   eyeHeight: 0.5,
   wallHeight: 1.0,
@@ -543,6 +555,10 @@ const EDIT_LIGHT_ADD_COLOR = 0xffe040;
 const EDIT_SELECT_COLOR = 0x80f0ff;
 // how far off a surface a free-standing light is placed (world units)
 const LIGHT_SPOT_GAP = 0.12;
+// muzzle flashes (see addFlash): the party's, and an actor's (its color,
+// strength, reach and length in ms)
+const PARTY_FLASH_COLOR = 0xffe2a0;
+const ACTOR_FLASH = { color: 0xff9a40, intensity: 3.5, range: 3, duration: 110 };
 // a surface's pixels across one panel (as decals count them - see decals.ts)
 const SURFACE_PIXELS = 256;
 // an actor's glowing pixels (see glowMapOf): at least this red, no more
@@ -1176,6 +1192,8 @@ export function GameViewport({
   }
   const sceneMap = sceneMapRef.current;
   const applyLightsRef = useRef<((next: GameMap) => void) | null>(null);
+  const rebakeRef = useRef<(() => void) | null>(null);
+  useEffect(() => rebakeRef.current?.(), [settings.lightGridDensity, settings.lightGridMode]);
   // the map as it is now (lights included - the scene's may be older)
   const latestMapRef = useRef(map);
   latestMapRef.current = map;
@@ -1257,6 +1275,10 @@ export function GameViewport({
       setTimeout(() => {
         if (disposed || ready || buildsPending > 0 || texturesLoaded < texturesTotal) return;
         ready = true;
+        group.traverse((o) => {
+          const mat = (o as THREE.Mesh).material;
+          for (const m of Array.isArray(mat) ? mat : mat ? [mat] : []) useLightGrid(m, lightGrid);
+        });
         renderer.compile(scene, camera);
         // (behind the loading screen, not on the first aim)
         prepareRaycasts(group);
@@ -1399,6 +1421,19 @@ export function GameViewport({
     }
     // cells with a ceiling light: their ceiling tile's light panel glows
     let mapLights = generateLights(map);
+    // the walls' relief depth: the map's own, else the settings'
+    const reliefDepth = map.reliefDepth ?? settings.reliefDepth;
+    // the static lights, baked (see lightGrid.ts) - every lit material reads
+    // it once the scene is built
+    const lightGrid = createLightGridUniforms();
+    // the map's own density, else the settings'
+    const bakeOptions = (m: GameMap) => ({
+      perCell: m.lightGridDensity ?? settingsRef.current.lightGridDensity,
+      mode: settingsRef.current.lightGridMode,
+    });
+    setLightGrid(lightGrid, bakeLightGrid(map, mapLights, wallHeight, bakeOptions(map)));
+    // baked again when its settings change (see the effect on them)
+    rebakeRef.current = () => setLightGrid(lightGrid, bakeLightGrid(latestMapRef.current, mapLights, wallHeight, bakeOptions(latestMapRef.current)));
     const ceilingLightCells = (lights: LightSpec[]) =>
       new Set(lights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`));
     let litCells = ceilingLightCells(mapLights);
@@ -1584,6 +1619,7 @@ export function GameViewport({
       if (!mat) {
         mat = kit.litMat.clone();
         mat.emissive.setHex(color);
+        useLightGrid(mat, lightGrid);
         byColor.set(color, mat);
         ownMaterials.push(mat);
       }
@@ -1727,7 +1763,7 @@ export function GameViewport({
       const key = [
         kit.depthUrl,
         JSON.stringify(shape),
-        settings.reliefDepth,
+        reliefDepth,
         settings.reliefLevels,
         settings.reliefMinIsland,
         settings.aoRadius,
@@ -1753,7 +1789,7 @@ export function GameViewport({
           const made = createReliefWallGeometry(grid, {
             wallWidth: shape.width ?? 1,
             wallHeight: shape.height,
-            depth: shape.depth ?? settings.reliefDepth,
+            depth: shape.depth ?? reliefDepth,
             levels: settings.reliefLevels,
             minIsland: settings.reliefMinIsland,
             aoRadius: settings.aoRadius,
@@ -2050,7 +2086,7 @@ export function GameViewport({
 
     async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
       const [length, height, depth] = type.size;
-      const relief = settings.reliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
+      const relief = reliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
       const template = new THREE.Group();
       const face = (
         geo: THREE.BufferGeometry,
@@ -2503,8 +2539,8 @@ export function GameViewport({
     const lightPool = Array.from({ length: LIGHT_POOL_SIZE }, () => {
       const light = new THREE.PointLight(0xffffff, 0, 1, 2);
       scene.add(light);
-      // the map light it serves (index into mapLights), and how faded in
-      return { light, source: -1, level: 0 };
+      // the source it serves (see poolSources), and how faded in
+      return { light, key: null as string | null, level: 0 };
     });
     // the cells seen from the party's cell, redone when it changes cell or
     // a door opens or shuts
@@ -2583,7 +2619,6 @@ export function GameViewport({
     // panels, the fixtures and the light pool follow, the rest stays built.
     // A pool slot keeps its light if the new set still has it.
     function applyLights(next: GameMap) {
-      const old = mapLights;
       sceneVersion++;
       mapLights = generateLights(next);
       litCells = ceilingLightCells(mapLights);
@@ -2598,12 +2633,8 @@ export function GameViewport({
       placeFixtures();
       // the new fixtures get culled with the rest on the next frame
       culledCount = -1;
-      for (const slot of lightPool) {
-        if (slot.source < 0) continue;
-        const was = old[slot.source];
-        slot.source = mapLights.findIndex((l) => l.kind === was.kind && l.x === was.x && l.y === was.y && l.z === was.z);
-        if (slot.source < 0) slot.level = 0;
-      }
+      // and the baked light follows
+      setLightGrid(lightGrid, bakeLightGrid(next, mapLights, wallHeight, bakeOptions(next)));
     }
     applyLightsRef.current = applyLights;
     const litNear = (key: string, cells: Set<string>) => {
@@ -2611,6 +2642,47 @@ export function GameViewport({
       const [x, y] = key.split(",").map(Number);
       return cells.has(cellKey(x + 1, y)) || cells.has(cellKey(x - 1, y)) || cells.has(cellKey(x, y + 1)) || cells.has(cellKey(x, y - 1));
     };
+
+    // What the pool of real lights serves: in baked mode (see lightGrid.ts)
+    // only the flashes - a shot, a spark; else the map's lights too. Each by
+    // a key that stays the same while it does (a light edited elsewhere keeps
+    // its slot).
+    interface PoolSource {
+      key: string;
+      x: number;
+      y: number;
+      z: number;
+      color: number;
+      intensity: number;
+      range: number;
+      // the cell it lights (a map light counts only near the cells in sight)
+      cell?: string;
+      flash?: boolean;
+    }
+    function poolSources(baked: boolean, now: number): PoolSource[] {
+      const list: PoolSource[] = [];
+      for (let i = flashes.length - 1; i >= 0; i--) {
+        const f = flashes[i];
+        const t = (now - f.start) / f.duration;
+        if (t >= 1) {
+          flashes.splice(i, 1);
+          continue;
+        }
+        list.push({ key: `flash ${f.id}`, x: f.x, y: f.y, z: f.z, color: f.color, intensity: f.intensity * (1 - t), range: f.range, flash: true });
+      }
+      if (!baked) {
+        mapLights.forEach((l, i) =>
+          list.push({ key: `${l.kind} ${l.x} ${l.y} ${l.z}`, x: l.x, y: l.y * wallHeight, z: l.z, color: l.color, intensity: l.intensity, range: l.range, cell: lightCells[i] }),
+        );
+      }
+      return list;
+    }
+    // a short burst of light (world position; ms), e.g. a muzzle flash
+    const flashes: { id: number; x: number; y: number; z: number; color: number; intensity: number; range: number; start: number; duration: number }[] = [];
+    let flashIds = 0;
+    function addFlash(at: THREE.Vector3, color: number, intensity: number, range: number, duration: number) {
+      flashes.push({ id: flashIds++, x: at.x, y: at.y, z: at.z, color, intensity, range, start: performance.now(), duration });
+    }
 
     function updateLightPool(
       party: { x: number; z: number },
@@ -2623,44 +2695,47 @@ export function GameViewport({
       const fadeStart = range - LIGHT_FADE_SPAN;
       applySight(updateSight(party, range));
 
-      const score = (i: number) => {
-        const l = mapLights[i];
+      const sources = poolSources(lightGrid.scale.value > 0, performance.now());
+      const score = (l: PoolSource) => {
         const dx = l.x - cam.x;
         const dz = l.z - cam.z;
-        const dist = Math.hypot(dx, l.y * wallHeight - cam.y, dz);
+        const dist = Math.hypot(dx, l.y - cam.y, dz);
         const ahead = (dx * cam.fwdX + dz * cam.fwdZ) / (Math.hypot(dx, dz) || 1);
-        const rank = dist + LIGHT_BEHIND_PENALTY * Math.max(0, -ahead) * dist;
+        // a flash first, whatever the rest
+        const rank = l.flash ? -1 : dist + LIGHT_BEHIND_PENALTY * Math.max(0, -ahead) * dist;
         return { dist, rank };
       };
-      const current = new Set(lightPool.map((slot) => slot.source));
-      const ranked = mapLights
-        .map((_, i) => ({ i, ...score(i) }))
-        .filter((c) => c.dist < fadeEnd && litNear(lightCells[c.i], sight.cells))
-        .map((c) => ({ ...c, rank: current.has(c.i) ? c.rank * LIGHT_KEEP_BIAS : c.rank }))
+      const current = new Set(lightPool.map((slot) => slot.key));
+      const ranked = sources
+        .map((l) => ({ l, ...score(l) }))
+        .filter((c) => c.dist < fadeEnd && (!c.l.cell || litNear(c.l.cell, sight.cells)))
+        .map((c) => ({ ...c, rank: current.has(c.l.key) && !c.l.flash ? c.rank * LIGHT_KEEP_BIAS : c.rank }))
         .sort((a, b) => a.rank - b.rank)
         .slice(0, LIGHT_POOL_SIZE);
-      const wanted = new Map(ranked.map((c) => [c.i, c]));
+      const wanted = new Map(ranked.map((c) => [c.l.key, c]));
 
       // slots keep their source while it's wanted; freed slots fade out
-      // before taking a new one
-      const unassigned = ranked.filter((c) => !lightPool.some((slot) => slot.source === c.i));
+      // before taking a new one (a flash takes one at once)
+      const unassigned = ranked.filter((c) => !lightPool.some((slot) => slot.key === c.l.key));
       for (const slot of lightPool) {
-        const keep = wanted.get(slot.source);
-        if (!keep && slot.level <= 0 && unassigned.length) {
-          slot.source = unassigned.shift()!.i;
+        const keep = wanted.get(slot.key ?? "");
+        if (!keep && unassigned.length && (slot.level <= 0 || unassigned[0].l.flash)) {
+          slot.key = unassigned.shift()!.l.key;
+          if (wanted.get(slot.key)?.l.flash) slot.level = 1;
         }
-        const target = wanted.get(slot.source);
+        const target = wanted.get(slot.key ?? "");
         slot.level = Math.min(1, Math.max(0, slot.level + (target ? 1 : -1) * LIGHT_SLOT_FADE * dt));
-        if (slot.source < 0) {
-          slot.light.intensity = 0;
+        if (!target) {
+          if (slot.level <= 0) slot.key = null;
+          slot.light.intensity = slot.level > 0 ? slot.light.intensity * 0.9 : 0;
           continue;
         }
-        const l = mapLights[slot.source];
-        const dist = target?.dist ?? score(slot.source).dist;
+        const l = target.l;
         slot.light.color.setHex(l.color);
-        slot.light.position.set(l.x, l.y * wallHeight, l.z);
+        slot.light.position.set(l.x, l.y, l.z);
         slot.light.distance = l.range;
-        slot.light.intensity = l.intensity * intensityScale * slot.level * (1 - smoothstep(fadeStart, fadeEnd, dist));
+        const scale = l.flash ? 1 : intensityScale;
+        slot.light.intensity = l.intensity * scale * slot.level * (1 - smoothstep(fadeStart, fadeEnd, target.dist));
       }
     }
 
@@ -2682,8 +2757,11 @@ export function GameViewport({
       col: number;
       row: number;
       mirror: boolean;
+      // when it last fired (to flash each new shot)
+      lastAttack: number;
     }
     const actorMeshes = new Map<number, ActorEntry>();
+    const flashAt = new THREE.Vector3();
     // Each actor type's glow map (see ActorType.glow): its sheet's bright
     // red pixels within the glowing weak spots of each cell, in their own
     // color, black elsewhere. Made once its sheet has loaded.
@@ -2772,10 +2850,11 @@ export function GameViewport({
         if (!entry) {
           const material = actorMaterial(actor.type).clone();
           const highlight = highlightMaterial(material);
+          useLightGrid(material, lightGrid);
           const mesh = new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), material);
           mesh.userData.actor = true;
           mesh.userData.actorId = actor.id;
-          entry = { mesh, material, highlight, uvKey: "", col: 0, row: 0, mirror: false };
+          entry = { mesh, material, highlight, uvKey: "", col: 0, row: 0, mirror: false, lastAttack: actor.lastAttack };
           actorMeshes.set(actor.id, entry);
           group.add(mesh);
         }
@@ -2804,6 +2883,14 @@ export function GameViewport({
         const col = Math.min(type.cols - 1, Math.round(Math.abs(angle) / (Math.PI / 4)));
         const mirror = angle < 0 && col > 0 && col < type.cols - 1;
         const row = t < 1 ? type.walkRows[Math.floor(t * type.walkRows.length) % type.walkRows.length] : type.idleRow;
+        // a new shot: its muzzle flash, at its chest
+        if (actor.lastAttack !== entry.lastAttack) {
+          if (actor.lastAttack > entry.lastAttack) {
+            flashAt.set(x, y + h * 0.55, z);
+            addFlash(flashAt, ACTOR_FLASH.color, ACTOR_FLASH.intensity, ACTOR_FLASH.range, ACTOR_FLASH.duration);
+          }
+          entry.lastAttack = actor.lastAttack;
+        }
         entry.col = col;
         entry.row = row;
         entry.mirror = mirror;
@@ -3160,6 +3247,8 @@ export function GameViewport({
     const tracers: { line: THREE.Line; born: number }[] = [];
     function addTracer(to: THREE.Vector3) {
       const from = new THREE.Vector3(0.12, -0.16, -0.3).applyMatrix4(camera.matrixWorld);
+      // the party's muzzle flash
+      addFlash(from, PARTY_FLASH_COLOR, 2.5, 2.8, 90);
       const geo = new THREE.BufferGeometry().setFromPoints([from, to.clone()]);
       const mat = new THREE.LineBasicMaterial({ color: 0xffe2a0, transparent: true });
       const line = new THREE.Line(geo, mat);
@@ -3720,6 +3809,7 @@ export function GameViewport({
 
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.headlamp ? s.pointLightIntensity * rideDip : 0;
+      lightGrid.scale.value = s.bakedLights ? s.mapLightIntensity * rideDip : 0;
       const fogFar = s.viewDistance - FOG_FAR_MARGIN;
       if (fog.far !== fogFar) {
         fog.far = fogFar;
@@ -3874,6 +3964,7 @@ export function GameViewport({
       for (const mat of fixtureMats.values()) mat.dispose();
       (selectBox.material as THREE.Material).dispose();
       decals.dispose();
+      disposeLightGrid(lightGrid);
       // the renderer stays for the next build (see SceneCache)
       renderer.renderLists.dispose();
     };

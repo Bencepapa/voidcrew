@@ -141,6 +141,13 @@ The **Map** tool's panel:
 - **Save as…:** copies the current map under a new id and name, opens it
   and (dev server) saves it. Its lifts still lead where the original's did
   - point them at the right decks for a new ship.
+- **Baked light:** the map's baked light samples per cell (default: the
+  debug panel's). Few (3): softer, light from a lit cell spills into the
+  cells around it. Many (9+): sharper shadows, lightmap-like, but less of
+  that spill. More samples bake slower (about 1 s at 12), on load and on
+  every light edit.
+- **Relief:** how deep the map's wall relief is (default: the debug
+  panel's). Changing it rebuilds the deck.
 
 ## Variations
 
@@ -155,6 +162,15 @@ the current variation.
 
 The Chance slider is in the light, prop, decal and robot panels (all the
 way up: always, left out of the file).
+
+The seed also rolls the ship's mood, the same on all its decks: **light**
+(dark, dim, bright - the lights' chances), **threat** (low, medium, high -
+the actors') and **clutter** (sparse, normal, cluttered - the props' and
+decals'). The low level divides an item's odds by 6, the high one
+multiplies them by 6: a 50% item gets 14% / 50% / 86%, a 20% one 4% / 20%
+/ 60%, an 80% one 40% / 80% / 96%. Items without a chance are always there
+- use that for what a deck can't do without. The debug panel shows the
+rolled mood and can set each part instead.
 
 **Robot:** the palette picks the actor type; a click on a floor puts one
 in (facing the party) and picks it; a click on a robot picks it, the right

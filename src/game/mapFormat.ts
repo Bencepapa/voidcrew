@@ -43,6 +43,11 @@ export interface MapFile {
   };
   labelColor?: string;
   lightColor?: string;
+  // how the deck is drawn, if not the viewer's defaults: its baked light's
+  // samples per cell (few: softer, light spilling to the cells around; many:
+  // sharper shadows, lightmap-like) and its walls' relief depth (world units)
+  lightGridDensity?: number;
+  reliefDepth?: number;
   start: { x: number; y: number; facing: Direction };
   layout: string[];
   layers?: {
@@ -195,6 +200,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
     textures: file.textures,
     labelColor: file.labelColor,
     lightColor: file.lightColor,
+    lightGridDensity: file.lightGridDensity,
+    reliefDepth: file.reliefDepth,
     name: file.name,
     width,
     height,
@@ -216,7 +223,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     ladders,
     bridges,
     lights: (file.lights ?? []).map((l) => ({ ...l })),
-    structureKey: JSON.stringify({ ...file, lights: undefined }),
+    structureKey: JSON.stringify({ ...file, lights: undefined, lightGridDensity: undefined }),
     windows,
     props: (file.props ?? []).map((p) => {
       if (!PROP_TYPES[p.prop]) throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);

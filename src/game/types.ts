@@ -50,6 +50,11 @@ export interface GameMap {
   labelColor?: string;
   // the deck's ceiling lights (hex, e.g. "#ffd08a"); default a neutral warm white
   lightColor?: string;
+  // how the deck is drawn, if not the viewer's defaults: its baked light's
+  // samples per cell (few: softer, light spilling to the cells around; many:
+  // sharper shadows, lightmap-like) and its walls' relief depth (world units) - see MapFile
+  lightGridDensity?: number;
+  reliefDepth?: number;
   decals?: DecalSpec[];
   // door cells that aren't plain standard doors
   doors?: DoorSpec[];
@@ -57,9 +62,9 @@ export interface GameMap {
   bridges?: BridgeSpec[];
   // the deck's lights, all placed (see the editor's Light tool)
   lights?: MapLight[];
-  // everything about the map but its lights (see parseMap): two versions
-  // with the same key differ only in lighting, which the renderer can
-  // change without rebuilding the deck
+  // everything about the map but its lights and baked light density (see
+  // parseMap): two versions with the same key differ only in lighting, which
+  // the renderer can change without rebuilding the deck
   structureKey?: string;
   windows?: WindowSpec[];
   lifts?: LiftSpec[];

@@ -71,29 +71,33 @@ export function generateLights(map: GameMap): LightSpec[] {
     }
     lights.push(light);
   });
-  // A window's faint cold starlight: from just behind its glass, in the
-  // middle of it - shining in through the (shadowless) wall, it lights the
-  // room without a highlight on the glass itself, which faces away from it.
+  // A window's cold starlight: one light per panel, from just behind its
+  // glass - shining in through the (shadowless) wall, it lights the room
+  // without a highlight on the glass itself, which faces away from it.
+  // (Baked, they cost nothing - see lightGrid.ts.)
   for (const w of map.windows ?? []) {
     if (!w.glow) continue;
     const out = DIR_VECTOR[w.wall];
     const right = DIR_VECTOR[rightOf(w.wall)];
-    const along = (w.width - 1) / 2;
-    lights.push({
-      kind: "window",
-      x: w.cell.x + right.x * along + out.x * (0.5 + WINDOW_GLOW_BEHIND),
-      z: w.cell.y + right.y * along + out.y * (0.5 + WINDOW_GLOW_BEHIND),
-      y: floorHeight(map, w.cell.x, w.cell.y) + 0.6,
-      color: WINDOW_GLOW_COLOR,
-      intensity: 0.7 + 0.2 * (w.width - 1),
-      range: 2 + 0.5 * (w.width - 1),
-      source: -1,
-    });
+    for (let i = 0; i < w.width; i++) {
+      lights.push({
+        kind: "window",
+        x: w.cell.x + right.x * i + out.x * (0.5 + WINDOW_GLOW_BEHIND),
+        z: w.cell.y + right.y * i + out.y * (0.5 + WINDOW_GLOW_BEHIND),
+        y: floorHeight(map, w.cell.x, w.cell.y) + 0.6,
+        color: WINDOW_GLOW_COLOR,
+        intensity: WINDOW_GLOW_INTENSITY,
+        range: WINDOW_GLOW_RANGE,
+        source: -1,
+      });
+    }
   }
   return lights;
 }
 
-// how far behind the glass (world units) a window's glow shines from, and
-// its color
+// a window panel's glow: how far behind the glass (world units) it shines
+// from, its color, strength and reach
 const WINDOW_GLOW_BEHIND = 0.15;
 const WINDOW_GLOW_COLOR = 0x9db8ff;
+const WINDOW_GLOW_INTENSITY = 1.1;
+const WINDOW_GLOW_RANGE = 2.4;

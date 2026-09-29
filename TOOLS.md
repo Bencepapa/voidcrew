@@ -269,6 +269,7 @@ main fields:
 | `layers.floor` / `ceiling` | per-cell heights (steps of 0.25) |
 | `textures`, `labelColor` | the deck's texture sets, label paint |
 | `lightColor`, `autoLights` | lamp color (`"#ffcf87"`); `false`: no generated mood lights |
+| `lightGridDensity`, `reliefDepth` | baked light samples per cell, wall relief depth (unset: the viewer's defaults) |
 | `lights` | ceiling light cells |
 | `doors` | lift / standard doors, facing, label (`label`, `labelVertical`) |
 | `lifts` | lift cabin, its button's wall, target map (`to`) |

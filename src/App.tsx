@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
@@ -45,8 +45,9 @@ import {
   updateLight,
 } from "./editor/mapEdits";
 import { PROP_TYPES } from "./game/props";
-import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, PropInfo } from "./editor/EditorBar";
-import { newSeed } from "./game/variation";
+import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo } from "./editor/EditorBar";
+import { moodOf, moodText, newSeed } from "./game/variation";
+import type { ShipMood } from "./game/variation";
 import { ACTOR_TYPES } from "./game/actors";
 import { DOOR_EDGE_OFFSET, cellAt, ceilingHeight, doorAt, floorHeight } from "./game/map";
 import type { Direction, MapLight, Vec2 } from "./game/types";
@@ -138,14 +139,17 @@ export default function App() {
   // the deck variation played (see variation.ts): ?seed= in the URL, else
   // a new one; while editing there's none - everything shows
   const [seed, setSeed] = useState(() => Number(new URLSearchParams(location.search).get("seed")) || newSeed());
-  useEffect(() => setVariation(editMode ? null : seed), [editMode, seed, setVariation]);
+  // the ship's mood: the seed's, unless the debug panel sets a part of it
+  const [moodOverride, setMoodOverride] = useState<Partial<ShipMood>>({});
+  const mood = useMemo(() => ({ ...moodOf(seed), ...moodOverride }), [seed, moodOverride]);
+  useEffect(() => setVariation(editMode ? null : { seed, mood }), [editMode, seed, mood, setVariation]);
   const reroll = () => {
     const next = newSeed();
     setSeed(next);
     const url = new URL(location.href);
     url.searchParams.set("seed", String(next));
     history.replaceState(null, "", url);
-    pushLog(`Variation ${next}.`);
+    pushLog(`Variation ${next}: ${moodText({ ...moodOf(next), ...moodOverride })}.`);
   };
   // the surface the pointer is on: the Texture tool's palette marks its row
   // (it sticks to the last one when nothing is under the pointer)
@@ -485,6 +489,13 @@ export default function App() {
     const url = new URL(location.href);
     url.searchParams.set("map", to.id);
     history.replaceState(null, "", url);
+  };
+  // the map's own look (undefined: back to the viewer's default)
+  const changeMapLook = (patch: MapLook) => {
+    const result = applyEdit(map.id, (file) => Object.assign(file, patch));
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
   };
   const resize = (edge: Direction, grow: boolean) => {
     const result = applyEdit(map.id, (file) => resizeMap(file, edge, grow));
@@ -1005,6 +1016,8 @@ export default function App() {
           onOpenMap={(id) => MAPS[id] && openMap(MAPS[id])}
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
+          mapLook={{ lightGridDensity: map.lightGridDensity, reliefDepth: map.reliefDepth }}
+          onMapLook={changeMapLook}
           decalChoice={decalChoice?.name ?? null}
           onDecalChoice={setDecalChoice}
           decalRotation={decalRotation}
@@ -1092,6 +1105,9 @@ export default function App() {
                 onEditMap={() => setEditMode(true)}
                 seed={seed}
                 onReroll={reroll}
+                mood={mood}
+                moodOverride={moodOverride}
+                onMood={setMoodOverride}
                 compact
               />
             </div>
@@ -1139,6 +1155,9 @@ export default function App() {
               onEditMap={() => setEditMode(true)}
               seed={seed}
               onReroll={reroll}
+              mood={mood}
+              moodOverride={moodOverride}
+              onMood={setMoodOverride}
             />
           </div>
         </div>

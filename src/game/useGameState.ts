@@ -5,6 +5,7 @@ import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
 import type { Direction, GameMap, Vec2 } from "./types";
 import { initialCrew } from "./crew";
 import { variantOf } from "./variation";
+import type { ShipMood } from "./variation";
 import { ACTOR_TYPES, actorAt, createActors, partyHitChance, stepActors } from "./actors";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
@@ -66,8 +67,11 @@ export function useGameState() {
   // the deck as its map has it; `map` - what's played - is its variation
   // (see variation.ts), unless there's none (the editor shows everything)
   const [fullMap, setMap] = useState<GameMap>(START_MAP);
-  const [variation, setVariation] = useState<number | null>(null);
-  const map = useMemo(() => (variation === null ? fullMap : variantOf(fullMap, variation)), [fullMap, variation]);
+  const [variation, setVariation] = useState<{ seed: number; mood: ShipMood } | null>(null);
+  const map = useMemo(
+    () => (variation === null ? fullMap : variantOf(fullMap, variation.seed, variation.mood)),
+    [fullMap, variation],
+  );
   const mapRef = useRef(map);
   mapRef.current = map;
   // arriving in the lift, facing its door
@@ -565,6 +569,8 @@ export function useGameState() {
       __voidcrewPos: () => ({ ...posRef.current, map: mapRef.current.id }),
       __voidcrewActors: () => actorsRef.current,
       __voidcrewTouch: (action: string) => touchRef.current(action),
+      // stops (or restarts) the actors, e.g. for comparing screenshots
+      __voidcrewFreeze: (on: boolean) => (frozenRef.current = on),
     });
   }, []);
 

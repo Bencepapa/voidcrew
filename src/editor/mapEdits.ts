@@ -397,6 +397,8 @@ export function blankMap(name: string, deck: number, width: number, height: numb
     ...(like?.textures ? { textures: structuredClone(like.textures) } : {}),
     ...(like?.labelColor ? { labelColor: like.labelColor } : {}),
     ...(like?.lightColor ? { lightColor: like.lightColor } : {}),
+    ...(like?.lightGridDensity ? { lightGridDensity: like.lightGridDensity } : {}),
+    ...(like?.reliefDepth ? { reliefDepth: like.reliefDepth } : {}),
     start: { x: 3, y: 3, facing: "E" },
     layout,
     lights: [{ x: 3, y: 3 }],

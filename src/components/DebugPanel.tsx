@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { MOOD_LEVELS, moodOf } from "../game/variation";
+import type { ShipMood } from "../game/variation";
 import type { TextureSetId, ViewportSettings, ViewportStats, WallProfileId } from "./GameViewport";
 import { downloadMap } from "../editor/mapStore";
 
@@ -16,6 +18,11 @@ interface DebugPanelProps {
   // the deck variation being played (see variation.ts), and a new one
   seed?: number;
   onReroll?: () => void;
+  // the ship's mood (see variation.ts): as played, and the parts set here
+  // instead of rolled
+  mood?: ShipMood;
+  moodOverride?: Partial<ShipMood>;
+  onMood?: (override: Partial<ShipMood>) => void;
 }
 
 // the wall texture sets still in use (a map can name its own instead)
@@ -60,7 +67,7 @@ const CAMERA_SLIDERS: SliderConfig[] = [
 ];
 
 const RELIEF_SLIDERS: SliderConfig[] = [
-  { key: "reliefDepth", label: "Relief depth", min: 0.005, max: 0.12, step: 0.005 },
+  { key: "reliefDepth", label: "Relief depth (unless the map sets it)", min: 0.005, max: 0.12, step: 0.005 },
   { key: "reliefMinIsland", label: "Min feature size (px, 1 = off)", min: 1, max: 16, step: 1 },
   { key: "aoIntensity", label: "AO strength (ambient)", min: 0, max: 1.5, step: 0.05 },
   { key: "aoDirect", label: "AO on direct light", min: 0, max: 1, step: 0.05 },
@@ -89,7 +96,7 @@ const MATERIAL_SLIDERS: SliderConfig[] = [
 
 const SELECT = "bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm";
 
-export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMap, seed, onReroll }: DebugPanelProps) {
+export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMap, seed, onReroll, mood, moodOverride, onMood }: DebugPanelProps) {
   function set<K extends keyof ViewportSettings>(key: K, value: ViewportSettings[K]) {
     onChange({ ...settings, [key]: value });
   }
@@ -153,6 +160,23 @@ export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMa
       {check("noclip", "Noclip (walk through walls)")}
       {check("enemyScanner", "Scanner: enemy outlines (crew gear)")}
       {check("headlamp", "Headlamp (L)")}
+      {check("bakedLights", "Baked lighting (off: every map light real)")}
+      {settings.bakedLights && (
+        <>
+          <label className="flex items-center justify-between gap-2 text-[11px]">
+            Baked light
+            <select
+              value={settings.lightGridMode}
+              onChange={(e) => set("lightGridMode", e.target.value as ViewportSettings["lightGridMode"])}
+              className="bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm"
+            >
+              <option value="directional">directional (main light + ambient)</option>
+              <option value="cube">cube (six directions)</option>
+            </select>
+          </label>
+          {slider({ key: "lightGridDensity", label: "Baked samples per cell (unless the map sets it)", min: 2, max: 12, step: 1 })}
+        </>
+      )}
       {seed !== undefined && (
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <span>Variation {seed}</span>
@@ -161,6 +185,28 @@ export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMa
               Reroll
             </button>
           )}
+        </div>
+      )}
+      {mood && onMood && (
+        <div className="flex flex-wrap items-center gap-1 text-[11px]">
+          {(Object.keys(MOOD_LEVELS) as (keyof ShipMood)[]).map((key) => (
+            <select
+              key={key}
+              value={moodOverride?.[key] ?? ""}
+              title={`The ship's ${key}: rolled from the variation, or set`}
+              onChange={(e) => onMood({ ...moodOverride, [key]: e.target.value || undefined })}
+              className="bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm"
+            >
+              <option value="">
+                {key}: {moodOf(seed ?? 0)[key]} (rolled)
+              </option>
+              {MOOD_LEVELS[key].map((level) => (
+                <option key={level} value={level}>
+                  {key}: {level}
+                </option>
+              ))}
+            </select>
+          ))}
         </div>
       )}
       {onEditMap && (
