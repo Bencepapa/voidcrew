@@ -21,6 +21,7 @@ export type EditTool =
   | "prop"
   | "decal"
   | "robot"
+  | "item"
   | "wall"
   | "map";
 
@@ -454,5 +455,28 @@ export function updateChanceWall(file: MapFile, index: number, patch: Partial<Ch
 export function removeChanceWall(file: MapFile, index: number): MapFile {
   file.chanceWalls?.splice(index, 1);
   if (file.chanceWalls && !file.chanceWalls.length) delete file.chanceWalls;
+  return file;
+}
+
+type ItemEntry = NonNullable<MapFile["items"]>[number];
+
+// The map's loose items (see MapItem): put one in, change one, take one out.
+export function addItem(file: MapFile, item: ItemEntry): MapFile {
+  (file.items ?? (file.items = [])).push(item);
+  return file;
+}
+
+export function updateItem(file: MapFile, index: number, patch: Partial<ItemEntry>): MapFile {
+  const item = file.items?.[index];
+  if (!item) return file;
+  const next = { ...item, ...patch } as Record<string, unknown>;
+  for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  file.items![index] = next as ItemEntry;
+  return file;
+}
+
+export function removeItem(file: MapFile, index: number): MapFile {
+  file.items?.splice(index, 1);
+  if (file.items && !file.items.length) delete file.items;
   return file;
 }

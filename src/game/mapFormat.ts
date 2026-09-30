@@ -83,6 +83,7 @@ export interface MapFile {
     y: number;
     count?: number;
     offset?: [number, number];
+    elevation?: number;
     chance?: number;
     id?: string;
     with?: string;
@@ -296,6 +297,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         cell: { x: it.x, y: it.y },
         count: it.count,
         offset: it.offset,
+        elevation: it.elevation,
         chance: it.chance,
         id: it.id,
         with: it.with,

@@ -17,6 +17,7 @@ import type { Direction, LightEffect, Linked, MapLight } from "../game/types";
 import { PROP_TYPES } from "../game/props";
 import { DOOR_EDGE_OFFSET } from "../game/map";
 import { ACTOR_TYPES } from "../game/actors";
+import { ITEM_TYPES } from "../game/items";
 
 export interface MapLook {
   lightGridDensity?: number;
@@ -91,6 +92,13 @@ interface Props {
   onPropChange: (patch: { rotation?: number; elevation?: number; chance?: number; texture?: string } & Linked) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
+  // the Item tool: the item a click puts down, and the selected one
+  itemChoice: string;
+  onItemChoice: (item: string) => void;
+  item: ItemInfo | null;
+  onItemChange: (patch: { count?: number; elevation?: number; chance?: number; item?: string } & Linked) => void;
+  onItemDelete: () => void;
+  onItemDeselect: () => void;
   // the Chance wall tool: the picked one
   chanceWall: { chance: number; links: Linked } | null;
   onChanceWallChange: (patch: { chance?: number } & Linked) => void;
@@ -146,6 +154,17 @@ export interface DecalInfo {
   rotation: number;
   // what touching it does (a lift button)
   action?: string;
+  chance: number;
+  links: Linked;
+}
+
+// the selected loose item as the panel shows it
+export interface ItemInfo {
+  item: string;
+  count: number;
+  elevation: number;
+  // its cell's floor-to-ceiling height
+  roomHeight: number;
   chance: number;
   links: Linked;
 }
@@ -288,6 +307,7 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "prop", label: "Prop", title: "Put in or take out props" },
   { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
   { tool: "robot", label: "Robot", title: "Put in robots, their facing, route and chance" },
+  { tool: "item", label: "Item", title: "Put loot on floors, tables, beds and crates" },
   { tool: "wall", label: "Chance wall", title: "Walls left to chance: there in some variations, open floor in others" },
   { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
 ];
@@ -300,6 +320,7 @@ const TOOL_HELP: Partial<Record<EditTool, string>> = {
   robot: "click a floor: a robot there (facing you) · click a robot: pick it · Shift+click a floor: add it to the picked one's route · right-click: take it out",
   decal: "click a wall, floor or ceiling: the decal there · click a decal: pick it · right-click: take it off",
   prop: "click a floor (near a side or corner to push it there): put it in · click a prop: pick it · right-click: take it out",
+  item: "click a floor or a table / bed / crate top: the item there · click an item: pick it · right-click: take it out",
   wall: "click a wall or a floor: a wall left to chance there (picked) · click one: pick it · right-click one: a plain wall again",
 };
 const SURFACES: { surface: EditSurface; label: string }[] = [
@@ -671,6 +692,52 @@ export function EditorBar(p: Props) {
                   Done
                 </button>
                 <span className="text-neutral-500">arrows: nudge · PgUp/PgDn: height · R: turn</span>
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {p.tool === "item" && (
+        <>
+          <span className="basis-full" />
+          <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
+            {Object.entries(ITEM_TYPES).map(([id, type]) => (
+              <button key={id} type="button" className={`${BUTTON} ${p.itemChoice === id ? active : idle}`} onClick={() => p.onItemChoice(id)}>
+                {type.name}
+              </button>
+            ))}
+          </div>
+          {p.item && (
+            <>
+              <span className="basis-full" />
+              <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+                <label className="flex items-center gap-1">
+                  Item
+                  <select
+                    value={p.item.item}
+                    onChange={(e) => p.onItemChange({ item: e.target.value })}
+                    className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
+                  >
+                    {Object.entries(ITEM_TYPES).map(([id, type]) => (
+                      <option key={id} value={id}>
+                        {type.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {slider("Count", p.item.count, 1, 20, 1, (v) => p.onItemChange({ count: v > 1 ? v : undefined }))}
+                {slider("Height", p.item.elevation, 0, Math.max(0, p.item.roomHeight - 0.05), 0.01, (v) =>
+                  p.onItemChange({ elevation: v || undefined }),
+                )}
+                {chanceSlider(p.item.chance, (chance) => p.onItemChange({ chance }))}
+                {linkFields(p.item.links, p.linkIds, p.onItemChange)}
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onItemDelete} title="Delete">
+                  Remove
+                </button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onItemDeselect}>
+                  Done
+                </button>
+                <span className="text-neutral-500">arrows: nudge · PgUp/PgDn: height</span>
               </div>
             </>
           )}

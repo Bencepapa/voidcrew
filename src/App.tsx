@@ -18,9 +18,9 @@ import {
 } from "./editor/mapStore";
 import { MAPS } from "./game/map";
 import type { GameMap, Linked } from "./game/types";
-import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall } from "./editor/mapEdits";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem } from "./editor/mapEdits";
 import { PROP_TYPES, propRetexturable } from "./game/props";
-import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo } from "./editor/EditorBar";
+import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo } from "./editor/EditorBar";
 import { moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
 import { ACTOR_TYPES } from "./game/actors";
@@ -37,6 +37,7 @@ import { PartyPanel } from "./components/PartyPanel";
 import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
 import { HaulPanel } from "./components/HaulPanel";
+import { ITEM_TYPES, itemSpot } from "./game/items";
 import { DebugPanel } from "./components/DebugPanel";
 import { useMediaQuery } from "./components/useMediaQuery";
 import { useViewControls } from "./components/useViewControls";
@@ -405,6 +406,34 @@ export default function App() {
           setSelectedProp(count);
         }
       }
+    } else if (editTool === "item") {
+      // a click on an item picks it (the right button takes it out); on a
+      // floor or a prop's top it puts the palette's item there (picked)
+      const picked = target.item;
+      if (picked !== undefined) {
+        if (!alt) {
+          setSelectedItem(picked);
+          return;
+        }
+        result = applyEdit(map.id, (file) => removeItem(file, picked));
+        setSelectedItem((sel) => (sel === null || sel === picked ? null : sel > picked ? sel - 1 : sel));
+      } else {
+        const point = target.point;
+        if (alt || !point) return;
+        const [dx, up, dz] = point.pos;
+        const clamp = (v: number) => Math.min(0.45, Math.max(-0.45, v));
+        const count = map.items?.length ?? 0;
+        result = applyEdit(map.id, (file) =>
+          addItem(file, {
+            item: itemChoice,
+            x: point.cell.x,
+            y: point.cell.y,
+            offset: [clamp(dx), clamp(dz)],
+            ...(up > 0.03 ? { elevation: Math.round(up * 100) / 100 } : {}),
+          }),
+        );
+        setSelectedItem(count);
+      }
     } else if (editTool === "wall") {
       // a click on a wall left to chance picks it (the right button makes it
       // a plain wall); on another wall or a floor it makes one there
@@ -642,6 +671,84 @@ export default function App() {
   }, [editMode, editTool]);
 
   // The selected decal, as the panel shows it
+  // the Item tool: the palette's item, and the pick (its index in the
+  // map's items)
+  const [itemChoice, setItemChoice] = useState(Object.keys(ITEM_TYPES)[0]);
+  const [selectedItem, setSelectedItem] = useState<number | null>(null);
+  const selectedItemInfo: ItemInfo | null = (() => {
+    const spec = selectedItem === null ? undefined : map.items?.[selectedItem];
+    if (!spec) return null;
+    return {
+      item: spec.item,
+      count: spec.count ?? 1,
+      elevation: spec.elevation ?? 0,
+      roomHeight: ceilingHeight(map, spec.cell.x, spec.cell.y) - floorHeight(map, spec.cell.x, spec.cell.y),
+      chance: spec.chance ?? 1,
+      links: linksOf(spec),
+    };
+  })();
+  const changeItem = (patch: Parameters<typeof updateItem>[2], merge?: string) => {
+    if (selectedItem === null) return;
+    const index = selectedItem;
+    const result = applyEdit(map.id, (file) => updateItem(file, index, patch), merge && `item ${index} ${merge}`);
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  const deleteItem = () => {
+    if (selectedItem === null) return;
+    const index = selectedItem;
+    const result = applyEdit(map.id, (file) => removeItem(file, index));
+    if (!("error" in result)) replaceMap(result.map);
+    setSelectedItem(null);
+    setEdits((n) => n + 1);
+  };
+  // the selected item: arrows nudge it (as the party sees it), Page Up /
+  // Page Down raise and lower it, Delete takes it out
+  const itemKeys = useRef({ selectedItemInfo, changeItem, deleteItem, items: map.items, selectedItem });
+  itemKeys.current = { selectedItemInfo, changeItem, deleteItem, items: map.items, selectedItem };
+  useEffect(() => {
+    if (!editMode || editTool !== "item") return;
+    function onKey(e: KeyboardEvent) {
+      const { selectedItemInfo: info, changeItem: change, deleteItem: remove, items, selectedItem: index } = itemKeys.current;
+      const spec = index === null ? undefined : items?.[index];
+      if (!info || !spec) return;
+      const stop = () => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      if (e.key === "Delete") {
+        stop();
+        remove();
+        return;
+      }
+      const step = e.shiftKey ? 0.1 : 0.03;
+      const ahead = DIR_VECTOR[facingRef.current];
+      const right = DIR_VECTOR[rightOf(facingRef.current)];
+      const round = (v: number) => Math.round(v * 100) / 100;
+      const [ox, oz] = spec.offset ?? itemSpot(undefined, index!);
+      const nudge: Record<string, [number, number]> = {
+        ArrowLeft: [-right.x, -right.y],
+        ArrowRight: [right.x, right.y],
+        ArrowUp: [ahead.x, ahead.y],
+        ArrowDown: [-ahead.x, -ahead.y],
+      };
+      if (nudge[e.key]) {
+        stop();
+        const [dx, dz] = nudge[e.key];
+        const clamp = (v: number) => round(Math.min(0.45, Math.max(-0.45, v)));
+        change({ offset: [clamp(ox + dx * step), clamp(oz + dz * step)] }, "offset");
+      } else if (e.key === "PageUp" || e.key === "PageDown") {
+        stop();
+        const up = (e.key === "PageUp" ? 1 : -1) * (e.shiftKey ? 0.1 : 0.02);
+        const elevation = round(Math.min(info.roomHeight - 0.05, Math.max(0, info.elevation + up)));
+        change({ elevation: elevation || undefined }, "elevation");
+      }
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editMode, editTool]);
+
   // the Chance wall tool's pick (its index in the map's chanceWalls)
   const [selectedChanceWall, setSelectedChanceWall] = useState<number | null>(null);
   const selectedChanceWallInfo = (() => {
@@ -989,6 +1096,7 @@ export default function App() {
       onEdit={onEdit}
       selectedLight={selectedLightInfo ? selectedLight : null}
       selectedProp={selectedPropInfo ? selectedProp : null}
+      selectedItem={selectedItemInfo ? selectedItem : null}
       selectedDecal={selectedDecalInfo ? selectedDecal : null}
       selectedDoor={selectedDoorInfo ? selectedDoor : null}
       selectedActor={selectedActorInfo ? selectedActor : null}
@@ -1078,6 +1186,12 @@ export default function App() {
           onPropDelete={deleteProp}
           onPropDeselect={() => setSelectedProp(null)}
           linkIds={linkIds}
+          itemChoice={itemChoice}
+          onItemChoice={setItemChoice}
+          item={selectedItemInfo}
+          onItemChange={(patch) => changeItem(patch, Object.keys(patch).join())}
+          onItemDelete={deleteItem}
+          onItemDeselect={() => setSelectedItem(null)}
           chanceWall={selectedChanceWallInfo}
           onChanceWallChange={changeChanceWall}
           onChanceWallRemove={() => {

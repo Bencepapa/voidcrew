@@ -169,6 +169,9 @@ export interface MapItem extends Linked {
   // where in the cell (cells from its center: across, along); unset: a
   // spot of its own, scattered
   offset?: [number, number];
+  // how high it lies above the cell's floor (wall heights): on a table, a
+  // bed, a crate - it's only there with what it lies on (see variation.ts)
+  elevation?: number;
   // the chance (0..1) it's there in a variation (see variation.ts)
   chance?: number;
 }

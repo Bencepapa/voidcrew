@@ -160,6 +160,11 @@ export interface EditTarget {
   door?: Vec2;
   // the Robot tool: the actor pointed at (its index in the map's actors)
   actor?: number;
+  // the Item tool: the loose item pointed at (its index in the map's items)
+  item?: number;
+  // the point hit, exactly: its cell, and across, up (wall heights above
+  // the cell's floor) and along from the cell's center - where an item goes
+  point?: { cell: Vec2; pos: [number, number, number] };
   // the surface pointed at as a decal sees it (see DecalSpec): its cell and
   // side, and the point on it in surface pixels (0..255 across a panel;
   // from its top left, a wall's first panel)
@@ -542,8 +547,6 @@ const ITEM_NORMAL_BEND = new THREE.Vector3(0, 1, -0.35);
 const SPILL_OUT_MS = 380;
 const SPILL_REST_MS = 1000;
 const SPILL_IN_MS = 380;
-// how much an emptied container's chalk cross glows (see chalkedMaterial)
-const CHALK_GLOW = 0.3;
 
 // a chalk cross over a whole texture, a few rough strokes (the mark on an
 // emptied container)
@@ -710,6 +713,8 @@ interface GameViewportProps {
   selectedDoor?: Vec2 | null;
   // the Robot tool's selected actor (its index in the map's actors)
   selectedActor?: number | null;
+  // the Item tool's selected item (its index in the map's items)
+  selectedItem?: number | null;
   // the surface under the pointer whenever it changes - the editor's
   // texture palette follows it
   onEditHover?: (target: EditTarget | null) => void;
@@ -1069,6 +1074,7 @@ export function GameViewport({
   onEditHover,
   selectedLight,
   selectedProp,
+  selectedItem,
   selectedDecal,
   selectedDoor,
   selectedActor,
@@ -1154,6 +1160,8 @@ export function GameViewport({
   selectedLightRef.current = selectedLight ?? null;
   const selectedPropRef = useRef(selectedProp ?? null);
   selectedPropRef.current = selectedProp ?? null;
+  const selectedItemRef = useRef(selectedItem ?? null);
+  selectedItemRef.current = selectedItem ?? null;
   const selectedDecalRef = useRef(selectedDecal ?? null);
   selectedDecalRef.current = selectedDecal ?? null;
   const selectedDoorRef = useRef(selectedDoor ?? null);
@@ -2551,8 +2559,10 @@ export function GameViewport({
         if (!template || disposed) return;
         const [dx, dz] = itemSpot(spec.offset, index);
         const obj = template.clone();
-        obj.position.set(spec.cell.x + dx, floorY(spec.cell.x, spec.cell.y) + ITEM_LIFT, spec.cell.y + dz);
+        obj.position.set(spec.cell.x + dx, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight + ITEM_LIFT, spec.cell.y + dz);
         obj.userData.item = true;
+        // the editor picks it by this
+        obj.userData.itemIndex = index;
         obj.visible = false;
         group.add(obj);
         looseItems.set(index, { obj, cell: cellKey(spec.cell.x, spec.cell.y), taken: false });
@@ -2607,22 +2617,8 @@ export function GameViewport({
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.magFilter = kit.wallMat.map!.magFilter;
-      // the chalk alone, a faint glow of its own: it reads even in the dark
-      // corner a crate stands in
-      const glowCanvas = document.createElement("canvas");
-      glowCanvas.width = canvas.width;
-      glowCanvas.height = canvas.height;
-      const glowCtx = glowCanvas.getContext("2d")!;
-      glowCtx.fillStyle = "#000";
-      glowCtx.fillRect(0, 0, canvas.width, canvas.height);
-      drawChalkCross(glowCtx, canvas.width, canvas.height);
-      const glow = new THREE.CanvasTexture(glowCanvas);
-      glow.colorSpace = THREE.SRGBColorSpace;
       const material = new THREE.MeshStandardMaterial({
         map: texture,
-        emissiveMap: glow,
-        emissive: 0xffffff,
-        emissiveIntensity: CHALK_GLOW,
         normalMap: kit.wallMat.normalMap,
         aoMap: kit.wallMat.aoMap,
         aoMapIntensity: kit.wallMat.aoMapIntensity,
@@ -2632,7 +2628,7 @@ export function GameViewport({
       addDirectLightOcclusion(material, cavity);
       useLightGrid(material, lightGrid);
       ownMaterials.push(material);
-      kit.textures.push(texture, glow);
+      kit.textures.push(texture);
       chalked.set(mat, material);
       return material;
     }
@@ -3872,6 +3868,14 @@ export function GameViewport({
           if (at) return { kind: "floor", cell: { ...at }, door: { ...at } };
         }
       }
+      // the Item tool: an item pointed at
+      if (editToolRef.current === "item") {
+        for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
+          if (o.userData.itemIndex === undefined) continue;
+          const spec = latestMapRef.current.items?.[o.userData.itemIndex as number];
+          if (spec) return { kind: "floor", cell: { ...spec.cell }, item: o.userData.itemIndex as number };
+        }
+      }
       // the Prop tool: a prop pointed at (any part of it)
       if (editToolRef.current === "prop") {
         for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
@@ -3918,7 +3922,10 @@ export function GameViewport({
       // sides face sideways, so the normal can't tell)
       const nearCeiling = ceilingY(cell.x, cell.y) - p.y < p.y - floorY(cell.x, cell.y);
       const surface = nearCeiling ? "ceiling" : "floor";
-      return { kind: surface, cell, spot, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(cell, surface, p) };
+      // an upward face (a floor, a table's top): the point itself
+      const point: EditTarget["point"] =
+        editNormal.y > 0.7 ? { cell, pos: [round2(p.x - cell.x), round2((p.y - floorY(cell.x, cell.y)) / wallHeight), round2(p.z - cell.y)] } : undefined;
+      return { kind: surface, cell, spot, point, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(cell, surface, p) };
     }
     const editBox = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
@@ -4001,6 +4008,14 @@ export function GameViewport({
           return;
         }
       }
+      // a selected item: framed around its sprite
+      const itemIndex = editModeRef.current ? selectedItemRef.current : null;
+      const itemObj = itemIndex === null ? undefined : looseItems.get(itemIndex)?.obj;
+      if (itemObj) {
+        frameObject(selectBox, itemObj, 0.03);
+        selectBox.visible = true;
+        return;
+      }
       // a selected prop: framed around its bounds
       const propIndex = editModeRef.current ? selectedPropRef.current : null;
       const prop = propIndex === null ? undefined : propObjects.get(propIndex);
@@ -4031,7 +4046,7 @@ export function GameViewport({
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
       const tool = editToolRef.current;
-      let mode: "wall" | "plate" | "bulb" | "prop" | "decal" | "door" | "actor" | null = null;
+      let mode: "wall" | "plate" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | null = null;
       let color = EDIT_FILL_COLOR;
       if (target) {
         if (tool === "texture") {
@@ -4048,6 +4063,9 @@ export function GameViewport({
           color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "prop" && target.prop !== undefined) {
           mode = "prop";
+          color = EDIT_LIGHT_ADD_COLOR;
+        } else if (tool === "item") {
+          mode = target.item !== undefined ? "item" : null;
           color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "light") {
           // a light hangs in the cell's ceiling, so either surface of it works
@@ -4080,6 +4098,9 @@ export function GameViewport({
       } else if (mode === "door") {
         const obj = doorGroups.get(`${target.door!.x},${target.door!.y}`);
         if (obj) frameObject(editBox, obj, 0.02);
+      } else if (mode === "item") {
+        const item = looseItems.get(target.item!);
+        if (item) frameObject(editBox, item.obj, 0.02);
       } else if (mode === "decal") {
         selectBounds.makeEmpty();
         for (const obj of group.children) {

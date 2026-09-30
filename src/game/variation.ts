@@ -1,4 +1,5 @@
-import { PROP_TYPES, propHeight } from "./props";
+import { PROP_TYPES, propHeight, propPlacement } from "./props";
+import { itemSpot } from "./items";
 import type { CellType, GameMap, Linked } from "./types";
 
 // Variations of a deck: every prop, decal, light and actor with a `chance`
@@ -122,6 +123,20 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
   });
   const decals = (map.decals ?? []).map((d, i) => entry("decal", i, d, odds("clutter")));
   const items = (map.items ?? []).map((it, i) => entry("item", i, it, odds("clutter")));
+  // items lying on a prop: on the one under them
+  (map.items ?? []).forEach((it, i) => {
+    if (!it.elevation) return;
+    const [dx, dz] = itemSpot(it.offset, i);
+    const x = it.cell.x + dx;
+    const z = it.cell.y + dz;
+    const under = (map.props ?? []).findIndex((p) => {
+      if (p.cell.x !== it.cell.x || p.cell.y !== it.cell.y || !PROP_TYPES[p.prop]) return false;
+      const at = propPlacement(p);
+      const top = (p.elevation ?? 0) + propHeight(map, p);
+      return Math.abs(x - at.x) <= at.reachX + 0.02 && Math.abs(z - at.z) <= at.reachZ + 0.02 && it.elevation! <= top + 0.05;
+    });
+    if (under >= 0) items[i].on = props[under];
+  });
   const actors = (map.actors ?? []).map((a, i) => entry("actor", i, a, odds("threat")));
   const lights = (map.lights ?? []).map((l, i) => entry("light", i, l, odds("light")));
   const doors = (map.doors ?? []).map((d, i) => entry("door", i, d, 1));

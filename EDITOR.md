@@ -124,6 +124,13 @@ not two editors.
     texture - a click near a corner puts one there. They move and turn
     like any prop. Decoration: the cell stays walkable (free movement
     collides with a box around it).
+- **Item:** the palette picks a loot item (src/game/items.ts); a click on
+  a floor - or on the top of a table, a bed, a crate - puts it right there
+  and picks it. A click on an item picks it, the right button takes it
+  out. The picked one: arrows nudge it (Shift: more), Page Up / Down raise
+  it, Delete takes it out; its panel sets the item, count, height, chance
+  and links (`items` in the map). An item lying on a prop is only there
+  with it.
 - **Decal:** the palette shows every decal (public/decals/index.json); a
   click on a wall, floor or ceiling puts the picked one there, centered on
   the click, and picks it. A click on a decal picks it, the right button
