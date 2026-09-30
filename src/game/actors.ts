@@ -45,6 +45,11 @@ export interface ActorType {
   // sheet rows: standing, and the walk cycle over one step
   idleRow: number;
   walkRows: number[];
+  // and, if the sheet has them: firing, falling (in order) and the wreck
+  // left lying (without them it fades out when it dies)
+  shootRow?: number;
+  dieRows?: number[];
+  wreckRow?: number;
   // fighting
   hp: number;
   // damage per shot at the party, and how far (cells) and how often it fires
@@ -120,9 +125,9 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     name: "A combat robot",
     sheet: "robot1",
     cols: 5,
-    rows: 3,
-    cellAspect: 0.75,
-    height: 0.82,
+    rows: 7,
+    cellAspect: 1,
+    height: 0.93,
     // fits wherever the party does
     body: { headroom: 0.75, step: 0.25 },
     eyeHeight: 0.62,
@@ -130,6 +135,9 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     waitMs: 1800,
     idleRow: 0,
     walkRows: [1, 0, 2, 0],
+    shootRow: 3,
+    dieRows: [4, 5],
+    wreckRow: 6,
     hp: 60,
     damage: [3, 6],
     attackRange: 4,
@@ -144,72 +152,72 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     tactics: { shotPauseMs: 250, retreat: [1, 2], seeksCover: true, advance: true, minRange: 2 },
     glow: { crits: ["OPTICS", "REACTOR VENT"], intensity: 1.4 },
     parts: {
-      head: { label: "SENSOR", zone: [0.3, 0.14, 0.7, 0.32] },
-      torso: { label: "CORE", zone: [0.3, 0.32, 0.72, 0.62] },
-      armL: { label: "WEAPON ARM", zone: [0.04, 0.27, 0.5, 0.78] },
-      armR: { label: "WEAPON ARM", zone: [0.5, 0.27, 0.96, 0.78] },
-      legs: { label: "LEGS", zone: [0.2, 0.62, 0.8, 0.99] },
+      head: { label: "SENSOR", zone: [0.35, 0.242, 0.65, 0.4] },
+      torso: { label: "CORE", zone: [0.35, 0.4, 0.665, 0.665] },
+      armL: { label: "WEAPON ARM", zone: [0.155, 0.356, 0.5, 0.806] },
+      armR: { label: "WEAPON ARM", zone: [0.5, 0.356, 0.845, 0.806] },
+      legs: { label: "LEGS", zone: [0.275, 0.665, 0.725, 0.991] },
     },
     // columns: front, front-side, side, back-side, back
     crits: [
       {
         part: "head",
         label: "OPTICS",
-        zones: [[[0.4, 0.245, 0.6, 0.31]], [[0.3, 0.25, 0.46, 0.315]], [[0.31, 0.25, 0.41, 0.315]], [], []],
+        zones: [[[0.425, 0.334, 0.575, 0.391]], [[0.35, 0.338, 0.47, 0.396]], [[0.357, 0.338, 0.432, 0.396]], [], []],
       },
       {
         part: "head",
         label: "ANTENNA",
         zones: [
-          [[0.63, 0.15, 0.69, 0.26]],
-          [[0.62, 0.14, 0.68, 0.26]],
-          [[0.62, 0.14, 0.68, 0.24]],
-          [[0.33, 0.14, 0.41, 0.3]],
-          [[0.33, 0.15, 0.39, 0.29]],
+          [[0.598, 0.25, 0.642, 0.347]],
+          [[0.59, 0.242, 0.635, 0.347]],
+          [[0.59, 0.242, 0.635, 0.33]],
+          [[0.372, 0.242, 0.432, 0.383]],
+          [[0.372, 0.25, 0.417, 0.374]],
         ],
       },
       {
         part: "torso",
         label: "REACTOR VENT",
         zones: [
-          [[0.44, 0.38, 0.57, 0.49]],
-          [[0.33, 0.39, 0.43, 0.49]],
-          [[0.38, 0.4, 0.54, 0.5]],
-          [[0.56, 0.33, 0.64, 0.51]],
-          [[0.44, 0.34, 0.54, 0.53]],
+          [[0.455, 0.453, 0.552, 0.55]],
+          [[0.372, 0.462, 0.448, 0.55]],
+          [[0.41, 0.471, 0.53, 0.559]],
+          [[0.545, 0.409, 0.605, 0.568]],
+          [[0.455, 0.418, 0.53, 0.585]],
         ],
       },
       {
         part: "armL",
         label: "ELBOW JOINT",
         zones: [
-          [[0.09, 0.55, 0.29, 0.62]],
-          [[0.08, 0.55, 0.27, 0.62]],
-          [[0.23, 0.58, 0.34, 0.66]],
-          [[0.09, 0.55, 0.25, 0.62]],
-          [[0.09, 0.55, 0.27, 0.62]],
+          [[0.193, 0.603, 0.342, 0.665]],
+          [[0.185, 0.603, 0.328, 0.665]],
+          [[0.297, 0.63, 0.38, 0.7]],
+          [[0.193, 0.603, 0.312, 0.665]],
+          [[0.193, 0.603, 0.328, 0.665]],
         ],
       },
       {
         part: "armR",
         label: "ELBOW JOINT",
         zones: [
-          [[0.72, 0.55, 0.92, 0.62]],
-          [[0.72, 0.55, 0.9, 0.62]],
-          [[0.58, 0.56, 0.76, 0.64]],
-          [[0.64, 0.55, 0.85, 0.62]],
-          [[0.73, 0.55, 0.91, 0.62]],
+          [[0.665, 0.603, 0.815, 0.665]],
+          [[0.665, 0.603, 0.8, 0.665]],
+          [[0.56, 0.612, 0.695, 0.682]],
+          [[0.605, 0.603, 0.762, 0.665]],
+          [[0.672, 0.603, 0.807, 0.665]],
         ],
       },
       {
         part: "legs",
         label: "KNEE JOINT",
         zones: [
-          [[0.29, 0.72, 0.47, 0.8], [0.6, 0.72, 0.76, 0.8]],
-          [[0.31, 0.72, 0.48, 0.8], [0.53, 0.73, 0.72, 0.81]],
-          [[0.4, 0.72, 0.6, 0.8]],
-          [[0.28, 0.72, 0.46, 0.8], [0.54, 0.72, 0.72, 0.8]],
-          [[0.27, 0.73, 0.43, 0.81], [0.58, 0.73, 0.74, 0.81]],
+          [[0.342, 0.753, 0.477, 0.824], [0.575, 0.753, 0.695, 0.824]],
+          [[0.357, 0.753, 0.485, 0.824], [0.522, 0.762, 0.665, 0.832]],
+          [[0.425, 0.753, 0.575, 0.824]],
+          [[0.335, 0.753, 0.47, 0.824], [0.53, 0.753, 0.665, 0.824]],
+          [[0.328, 0.762, 0.448, 0.832], [0.56, 0.762, 0.68, 0.832]],
         ],
       },
     ],

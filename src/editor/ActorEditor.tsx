@@ -13,7 +13,7 @@ import type { ActorOffsets } from "../render/actorOffsets";
 // keys move it (Shift: 5 px). Right: a live preview - walking, turning
 // round, or both.
 
-type PreviewMode = "walk" | "turn" | "both";
+type PreviewMode = "walk" | "turn" | "both" | "fight";
 type Ghost = "none" | "idle" | "prev" | "next";
 
 const ZOOM = 4;
@@ -155,9 +155,23 @@ export function ActorEditor() {
       const walkRow = type.walkRows[step % type.walkRows.length];
       // walk + turn: a whole walk cycle in each view
       const view = TURN[Math.floor(step / (mode === "both" ? type.walkRows.length : 1)) % TURN.length];
-      const col = mode === "walk" ? sel.col : view.col;
-      const row = mode === "turn" ? sel.row : walkRow;
-      const mirror = mode === "walk" ? false : view.mirror;
+      // a fight, in this column: standing, firing twice, falling, the wreck
+      const fight = [
+        type.idleRow,
+        type.idleRow,
+        type.shootRow,
+        type.idleRow,
+        type.shootRow,
+        type.idleRow,
+        ...(type.dieRows ?? []),
+        type.wreckRow,
+        type.wreckRow,
+        type.wreckRow,
+      ].filter((r): r is number => r !== undefined);
+      const still = mode === "walk" || mode === "fight";
+      const col = still ? sel.col : view.col;
+      const row = mode === "turn" ? sel.row : mode === "fight" ? fight[step % fight.length] : walkRow;
+      const mirror = still ? false : view.mirror;
       ctx.fillStyle = "#1a1a1a";
       ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       drawFrame(ctx, col, row, 0, 0, PREVIEW_ZOOM, mirror);
@@ -290,6 +304,7 @@ export function ActorEditor() {
                 ["walk", "walk (this column)"],
                 ["turn", "turn round (this row)"],
                 ["both", "walk + turn"],
+                ["fight", "fire, fall, wreck (this column)"],
               ] as [PreviewMode, string][]
             ).map(([m, label]) => (
               <label key={m} className="flex items-center gap-1">

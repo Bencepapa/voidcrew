@@ -695,6 +695,9 @@ export function useGameState() {
       __voidcrewTouch: (action: string) => touchRef.current(action),
       // stops (or restarts) the actors, e.g. for comparing screenshots
       __voidcrewFreeze: (on: boolean) => (frozenRef.current = on),
+      // kills an actor at once (to see it fall)
+      __voidcrewKill: (id: number) =>
+        updateActors(actorsRef.current.map((a) => (a.id === id ? { ...a, hp: 0, diedAt: gameClock.now() } : a))),
       // plays an edited version of the deck (e.g. from the map store)
       __voidcrewReplaceMap: (next: GameMap) => replaceMap(next),
     });

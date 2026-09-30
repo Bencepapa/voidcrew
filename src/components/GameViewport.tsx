@@ -496,6 +496,9 @@ const CHANCE_GRID = 6;
 // actors: how long a hit flashes and a death fades (game ms)
 const ACTOR_FLASH_MS = 220;
 const ACTOR_FADE_MS = 900;
+// an actor's firing pose, held after a shot; each of its dying frames (ms)
+const ACTOR_SHOOT_POSE_MS = 350;
+const ACTOR_DIE_FRAME_MS = 260;
 // aiming: how often the hit chances are worked out again (real ms), and how
 // long a shot's trace lingers
 const AIM_CHANCE_REFRESH_MS = 250;
@@ -3338,7 +3341,11 @@ export function GameViewport({
         const z = lerp(actor.from.y, actor.cell.y, t);
         const y = lerp(actor.fromY, actor.y, t) * wallHeight;
         const mesh = entry.mesh;
-        const dead = actor.diedAt !== null ? (now - actor.diedAt) / ACTOR_FADE_MS : 0;
+        // dead: it falls (its sheet's dying rows) and its wreck stays - or,
+        // without them, it fades out
+        const sinceDeath = actor.diedAt !== null ? now - actor.diedAt : -1;
+        const falls = type.dieRows !== undefined && type.wreckRow !== undefined;
+        const dead = sinceDeath >= 0 && !falls ? sinceDeath / ACTOR_FADE_MS : 0;
         mesh.visible =
           dead < 1 &&
           (sight.cells.has(cellKey(actor.cell.x, actor.cell.y)) || sight.cells.has(cellKey(actor.from.x, actor.from.y)));
@@ -3357,7 +3364,13 @@ export function GameViewport({
         const angle = Math.atan2(cx * f.y - cz * f.x, cx * f.x + cz * f.y);
         const col = Math.min(type.cols - 1, Math.round(Math.abs(angle) / (Math.PI / 4)));
         const mirror = angle < 0 && col > 0 && col < type.cols - 1;
-        const row = t < 1 ? type.walkRows[Math.floor(t * type.walkRows.length) % type.walkRows.length] : type.idleRow;
+        let row = t < 1 ? type.walkRows[Math.floor(t * type.walkRows.length) % type.walkRows.length] : type.idleRow;
+        if (sinceDeath >= 0 && falls) {
+          const frame = Math.floor(sinceDeath / ACTOR_DIE_FRAME_MS);
+          row = frame < type.dieRows!.length ? type.dieRows![frame] : type.wreckRow!;
+        } else if (type.shootRow !== undefined && now - actor.lastAttack < ACTOR_SHOOT_POSE_MS) {
+          row = type.shootRow;
+        }
         // a new shot: its muzzle flash, at its chest
         if (actor.lastAttack !== entry.lastAttack) {
           if (actor.lastAttack > entry.lastAttack) {

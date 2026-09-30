@@ -207,30 +207,43 @@ Its texture sets also go into `TEXTURE_SETS`. In a map:
 1. **Generate a sprite sheet**: 5 columns (viewing angle) × rows (pose),
    equal cells, magenta background, feet on the same line everywhere.
    - Columns: front, 45° (turned toward the image's left), left profile, 135° from behind to the left, back. The game mirrors these for the right side.
-   - Rows (for `robot1`): standing, left leg forward, right leg forward.
+   - Rows (for `robot1`): standing, left leg forward, right leg forward;
+     firing; hit, collapsing; the wreck (from three sheets - see below).
    - Plus a **depth sheet** with the same layout.
    - To fix a frame, replace just that cell, in the same place.
 2. **Process it** (images in `concept/gen/actors/`):
    ```bash
-   npm run actors:sheet -- --diffuse concept/gen/actors/robot1_sheet_2.png --depth concept/gen/actors/robot1_sheet_2_depth.png --name robot1 --width 192 --height 256
+   npm run actors:sheet -- --diffuse concept/gen/actors/robot1_sheet_2.png,concept/gen/actors/robot1_combat.png,concept/gen/actors/robot1_wreck.png --depth concept/gen/actors/robot1_sheet_2_depth.png,concept/gen/actors/robot1_combat_depth.png,concept/gen/actors/robot1_wreck_depth.png --rows 3,3,1 --source-scale 1,1,1.16 --name robot1 --width 256 --height 256
    ```
+   Several sheets go in comma-separated, their rows one after another,
+   each with its row count and how much bigger than the first sheet it's
+   drawn (`--source-scale`; the AI rarely keeps the scale). The AI never
+   keeps to its grid, so each figure is found as its blobs (sparks and
+   smoke going with the nearest figure) and cut out with only its own
+   pixels - a foot or a muzzle flash reaching past its cell stays with it.
+   A figure lying down (wider than tall) is centered on its middle, not its
+   feet.
    Finds the figure in each cell (skipping grid lines), scales all of them
    alike, stands them on their feet, removes the magenta rim and makes the
    normal map. Output: `public/actors/<name>/diffuse.png`, `normal.png`.
 3. **Align it in the editor** – `?editor=actors`:
    - left: the sheet (click, or W/A/S/D between frames),
    - middle: the frame, zoomed, with baseline and center line over a faint "ghost" (the standing pose, or the previous / next walk frame); arrow keys: 1 px, Shift + arrow: 5 px,
-   - right: a preview – walking, turning round, or both,
+   - right: a preview – walking, turning round, both, or a fight (firing, falling, the wreck),
    - **Save** → `src/actors/<name>.json` (the running game picks it up), **Download JSON** → a download, **Reload sheet** → reload after reprocessing.
 4. **The type**, in `ACTOR_TYPES` in `src/game/actors.ts`:
    ```ts
    robot1: {
-     name: "A combat robot", sheet: "robot1", cols: 5, rows: 3,
-     cellAspect: 0.75, height: 0.82, moveMs: 900, waitMs: 1800,
-     idleRow: 0, walkRows: [1, 0, 2, 0],
+     name: "A combat robot", sheet: "robot1", cols: 5, rows: 7,
+     cellAspect: 1, height: 0.93, moveMs: 900, waitMs: 1800,
+     idleRow: 0, walkRows: [1, 0, 2, 0], shootRow: 3, dieRows: [4, 5], wreckRow: 6,
    },
    ```
-   `height`: in wall heights; `walkRows`: the poses played during one step.
+   `height`: in wall heights; `walkRows`: the poses played during one step;
+   `shootRow`: held a moment after each shot; `dieRows`: played when it
+   dies, then `wreckRow` stays (without them a dead actor fades out). The
+   aiming zones (`parts`, `crits`) are fractions of a cell - widening the
+   cell moves them.
    Fighting and senses are set there too (see `ActorType`): `hp`, `damage`,
    `attackRange`, `attackCooldownMs`, `accuracy`, `falloff`; `sight` and
    `fieldOfView` (unaware), `huntSight` (alert), `hearing`, `alertMs` (how
