@@ -75,6 +75,8 @@ export interface GameMap {
   chanceWalls?: ChanceWall[];
   lifts?: LiftSpec[];
   props?: PropSpec[];
+  // loot lying about
+  items?: MapItem[];
   actors?: ActorSpec[];
 }
 
@@ -152,6 +154,23 @@ export interface PropSpec extends Linked {
   // top, if there's a <texture>_top set); unset: its type's (a pillar's:
   // the deck's walls, a chamfer's: its cell's)
   texture?: string;
+  // a container's contents put in by hand (see items.ts; [] : empty);
+  // unset: rolled from its type's loot table
+  loot?: { item: string; count: number }[];
+}
+
+// A loot item lying in a walkable cell (see items.ts): picked up by
+// stepping into the cell (or Use from the cell before it).
+export interface MapItem extends Linked {
+  item: string;
+  cell: Vec2;
+  // how many (default 1)
+  count?: number;
+  // where in the cell (cells from its center: across, along); unset: a
+  // spot of its own, scattered
+  offset?: [number, number];
+  // the chance (0..1) it's there in a variation (see variation.ts)
+  chance?: number;
 }
 
 // A lift cabin: the cell behind a lift door. Its button (a decal with the

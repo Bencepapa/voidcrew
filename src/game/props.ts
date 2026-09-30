@@ -22,6 +22,9 @@ export type PropType = {
   wall?: boolean;
   // its relief's depth, relative to props' usual (softer for fabric)
   relief?: number;
+  // something to loot (see items.ts): the loot table its contents are
+  // rolled from, unless the map puts some in by hand (PropSpec.loot)
+  container?: string;
 } & (
   | {
       // a relief box: `side` texture set on its four sides, `top` on top
@@ -95,7 +98,7 @@ export type PropType = {
 // Parts are measured off the views (see npm run props:views): x across the
 // front view, y up it, z across the side view (+z = the front).
 export const PROP_TYPES: Record<string, PropType> = {
-  crate1: { kind: "box", size: [0.5, 0.4, 0.5], side: "crate1", top: "crate1_top" },
+  crate1: { kind: "box", size: [0.5, 0.4, 0.5], side: "crate1", top: "crate1_top", container: "crate" },
   // a hospital bed, headboard at -x; parts measured off its front view
   medbed1: {
     kind: "views",
@@ -156,6 +159,7 @@ export const PROP_TYPES: Record<string, PropType> = {
   },
   shelf1: {
     kind: "views",
+    container: "crate",
     views: "shelf1",
     size: [0.7, 0.415, 0.26],
     wall: true,

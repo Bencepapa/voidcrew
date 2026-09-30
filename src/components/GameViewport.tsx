@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
+import { ITEM_TYPES, itemSpot } from "../game/items";
+import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
 import { bakeLightGrid, createLightGridUniforms, disposeLightGrid, setLightGrid, useLightGrid } from "../render/lightGrid";
 import type { LightGridMode } from "../render/lightGrid";
@@ -527,6 +529,50 @@ const WINDOW_SET: TextureSetId = "window1";
 const WINDOW_DEPTH = 0.1;
 // props are small: a shallower relief than the walls'
 const PROP_RELIEF_SCALE = 0.6;
+// loot items' sprites: how tall (world units), how far above the floor, and
+// a spill's timing (ms): out of the container, lying there until, drawn in
+const ITEM_HEIGHT = 0.2;
+const ITEM_LIFT = 0.005;
+// how much they glow (see itemTemplate)
+const ITEM_GLOW = 0.1;
+// how their normals are bent (see itemTemplate): how much of the relief's
+// own normal is kept, and what's added - up, and a little back
+const ITEM_NORMAL_KEEP = 0.6;
+const ITEM_NORMAL_BEND = new THREE.Vector3(0, 1, -0.35);
+const SPILL_OUT_MS = 380;
+const SPILL_REST_MS = 1000;
+const SPILL_IN_MS = 380;
+// how much an emptied container's chalk cross glows (see chalkedMaterial)
+const CHALK_GLOW = 0.3;
+
+// a chalk cross over a whole texture, a few rough strokes (the mark on an
+// emptied container)
+function drawChalkCross(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  ctx.save();
+  ctx.lineCap = "round";
+  const unit = Math.min(w, h) / 128;
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 3 * unit;
+  const stroke = (x0: number, y0: number, x1: number, y1: number) => {
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.strokeStyle = pass ? "rgba(250, 248, 240, 0.95)" : "rgba(235, 232, 222, 0.55)";
+      ctx.lineWidth = (pass ? 4 : 8) * unit;
+      ctx.beginPath();
+      const steps = 10;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = x0 + (x1 - x0) * t + rand();
+        const y = y0 + (y1 - y0) * t + rand();
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  };
+  stroke(w * 0.2, h * 0.18, w * 0.8, h * 0.8);
+  stroke(w * 0.8, h * 0.2, w * 0.22, h * 0.82);
+  ctx.restore();
+}
 // ... and a coarser one: their faces are small, so a full-size height grid
 // packs several times the walls' triangles into them
 const PROP_COARSE = 2;
@@ -677,6 +723,11 @@ interface GameViewportProps {
   peekRef?: MutableRefObject<PeekState>;
   settings: ViewportSettings;
   onStats?: (stats: ViewportStats) => void;
+  // loot (see useGameState): the containers emptied and the loose items
+  // taken (indices in map.props / map.items), and the spills to show
+  lootedProps?: ReadonlySet<number>;
+  takenItems?: ReadonlySet<number>;
+  spills?: readonly LootSpill[];
 }
 
 interface CamTarget {
@@ -1026,7 +1077,12 @@ export function GameViewport({
   peekRef,
   settings,
   onStats,
+  lootedProps,
+  takenItems,
+  spills,
 }: GameViewportProps) {
+  const lootRef = useRef({ lootedProps, takenItems, spills });
+  lootRef.current = { lootedProps, takenItems, spills };
   const containerRef = useRef<HTMLDivElement>(null);
   // kept from one build of the scene to the next (see SceneCache)
   const cacheRef = useRef<SceneCache>({
@@ -1492,6 +1548,8 @@ export function GameViewport({
       }
       return kit;
     };
+    // the loot items' sprites (all of them: a crate may spill any)
+    for (const id of Object.keys(ITEM_TYPES)) propKitFor(`item_${id}`);
     // a prop type's texture sets: a box's side and top, its views, or a
     // cutout's one
     const propSets = (type: PropType): string[] =>
@@ -2430,6 +2488,185 @@ export function GameViewport({
       }).catch((err) => console.error("Prop build failed:", err));
     }
 
+    // ---- loot ----
+    // An item's sprite: an upright relief cutout of its art, standing on
+    // its bottom edge, turned to the camera each frame (see updateLoot).
+    const itemTemplates = new Map<string, Promise<THREE.Group | null>>();
+    function itemTemplate(id: string): Promise<THREE.Group | null> {
+      let made = itemTemplates.get(id);
+      if (!made) {
+        made = (async () => {
+          const kit = propKitFor(`item_${id}`);
+          let gridPromise = cache.grids.get(kit.depthUrl);
+          if (!gridPromise) {
+            gridPromise = loadWithRetry(kit.depthUrl, 4);
+            cache.grids.set(kit.depthUrl, gridPromise);
+          }
+          const grid = await gridPromise;
+          const h = ITEM_HEIGHT;
+          const w = (h * grid.width) / grid.height;
+          const relief = await buildRelief(kit, { width: w, height: h, flushEdges: false, depth: reliefDepth * PROP_RELIEF_SCALE * 0.6 });
+          if (!relief) return null;
+          for (const mat of kitMaterials(kit)) useLightGrid(mat, lightGrid);
+          // a faint glow of their own: loot reads even in a dark room
+          kit.wallMat.emissiveMap = kit.wallMat.map;
+          kit.wallMat.emissive.setHex(0xffffff);
+          kit.wallMat.emissiveIntensity = ITEM_GLOW;
+          kit.wallMat.needsUpdate = true;
+          // Its normals bent up (and a little back): turned to the camera
+          // whichever way it's seen, it would take only the light from the
+          // viewer's side - bent, the lamps above and beyond it light it too.
+          const geometry = relief.geometry.clone();
+          const normals = geometry.getAttribute("normal") as THREE.BufferAttribute;
+          const n = new THREE.Vector3();
+          for (let i = 0; i < normals.count; i++) {
+            n.fromBufferAttribute(normals, i).multiplyScalar(ITEM_NORMAL_KEEP).add(ITEM_NORMAL_BEND).normalize();
+            normals.setXYZ(i, n.x, n.y, n.z);
+          }
+          normals.needsUpdate = true;
+          geometries.push(geometry);
+          const template = new THREE.Group();
+          const mesh = new THREE.Mesh(geometry, [kit.wallMat, kit.sideMat]);
+          mesh.position.y = h / 2;
+          template.add(mesh);
+          return template;
+        })();
+        itemTemplates.set(id, made);
+      }
+      return made;
+    }
+    // the loose items, by index in map.items; and what's flying (spilled
+    // out of a container, or drawn in to the party's feet)
+    const looseItems = new Map<number, { obj: THREE.Object3D; cell: string; taken: boolean }>();
+    interface Flyer {
+      obj: THREE.Object3D;
+      from: THREE.Vector3;
+      rest: THREE.Vector3;
+      start: number;
+    }
+    const flyers: Flyer[] = [];
+    (map.items ?? []).forEach((spec, index) => {
+      track(async () => {
+        const template = await itemTemplate(spec.item);
+        if (!template || disposed) return;
+        const [dx, dz] = itemSpot(spec.offset, index);
+        const obj = template.clone();
+        obj.position.set(spec.cell.x + dx, floorY(spec.cell.x, spec.cell.y) + ITEM_LIFT, spec.cell.y + dz);
+        obj.userData.item = true;
+        obj.visible = false;
+        group.add(obj);
+        looseItems.set(index, { obj, cell: cellKey(spec.cell.x, spec.cell.y), taken: false });
+      }).catch((err) => console.error("Item build failed:", err));
+    });
+    // spills already shown (before this build) aren't shown again
+    let lastSpill = Math.max(0, ...(lootRef.current.spills ?? []).map((s) => s.id));
+    async function spill(event: LootSpill) {
+      const now = performance.now();
+      const from = new THREE.Vector3(event.from.x, event.from.y * wallHeight, event.from.z);
+      const cx = Math.round(event.from.x);
+      const cz = Math.round(event.from.z);
+      let n = 0;
+      for (const stack of event.items) {
+        const template = await itemTemplate(stack.item);
+        if (!template || disposed) continue;
+        for (let k = 0; k < Math.min(stack.count, 3); k++, n++) {
+          const obj = template.clone();
+          obj.userData.item = true;
+          const a = Math.random() * Math.PI * 2;
+          const r = 0.15 + Math.random() * 0.2;
+          const clamp = (v: number, c: number) => Math.min(c + 0.4, Math.max(c - 0.4, v));
+          const rest = new THREE.Vector3(
+            clamp(from.x + Math.cos(a) * r, cx),
+            event.floorY * wallHeight + ITEM_LIFT,
+            clamp(from.z + Math.sin(a) * r, cz),
+          );
+          obj.position.copy(from);
+          group.add(obj);
+          // one after another, a little apart
+          flyers.push({ obj, from: from.clone(), rest, start: now + n * 60 });
+        }
+      }
+    }
+    // an emptied container: its lid lifted a little and askew, a chalk
+    // cross on it (or, lidless, on its front)
+    // (a copy of each face material with the cross chalked into its
+    // diffuse: it follows the relief, and takes the light as the paint does)
+    const chalked = new Map<THREE.Material, THREE.MeshStandardMaterial>();
+    function chalkedMaterial(mat: THREE.Material): THREE.MeshStandardMaterial | null {
+      const known = chalked.get(mat);
+      if (known) return known;
+      const kit = [...propKits.values()].find((k) => k.wallMat === mat);
+      const image = kit?.wallMat.map?.image as HTMLImageElement | undefined;
+      if (!kit || !image?.width) return null;
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(image, 0, 0);
+      drawChalkCross(ctx, canvas.width, canvas.height);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.magFilter = kit.wallMat.map!.magFilter;
+      // the chalk alone, a faint glow of its own: it reads even in the dark
+      // corner a crate stands in
+      const glowCanvas = document.createElement("canvas");
+      glowCanvas.width = canvas.width;
+      glowCanvas.height = canvas.height;
+      const glowCtx = glowCanvas.getContext("2d")!;
+      glowCtx.fillStyle = "#000";
+      glowCtx.fillRect(0, 0, canvas.width, canvas.height);
+      drawChalkCross(glowCtx, canvas.width, canvas.height);
+      const glow = new THREE.CanvasTexture(glowCanvas);
+      glow.colorSpace = THREE.SRGBColorSpace;
+      const material = new THREE.MeshStandardMaterial({
+        map: texture,
+        emissiveMap: glow,
+        emissive: 0xffffff,
+        emissiveIntensity: CHALK_GLOW,
+        normalMap: kit.wallMat.normalMap,
+        aoMap: kit.wallMat.aoMap,
+        aoMapIntensity: kit.wallMat.aoMapIntensity,
+        roughness: kit.wallMat.roughness,
+        metalness: kit.wallMat.metalness,
+      });
+      addDirectLightOcclusion(material, cavity);
+      useLightGrid(material, lightGrid);
+      ownMaterials.push(material);
+      kit.textures.push(texture, glow);
+      chalked.set(mat, material);
+      return material;
+    }
+    const markedProps = new Set<number>();
+    function markLooted(looted: ReadonlySet<number> | undefined) {
+      for (const index of looted ?? []) {
+        if (markedProps.has(index)) continue;
+        const obj = propObjects.get(index);
+        const spec = map.props?.[index];
+        if (!obj || !spec) continue;
+        // its faces' textures (not loaded yet: next frame)
+        const faces: { mesh: THREE.Mesh; mats: THREE.Material[]; chalk: THREE.MeshStandardMaterial }[] = [];
+        let ready = true;
+        obj.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh || !Array.isArray(mesh.material)) return;
+          const chalk = chalkedMaterial(mesh.material[0]);
+          if (chalk) faces.push({ mesh, mats: mesh.material, chalk });
+          else ready = false;
+        });
+        if (!ready) continue;
+        markedProps.add(index);
+        for (const { mesh, mats, chalk } of faces) mesh.material = [chalk, ...mats.slice(1)];
+        if (PROP_TYPES[spec.prop].kind === "box") {
+          // the lid (the box's last face - see buildPropTemplate) lifted a
+          // little and askew
+          const lid = obj.children[obj.children.length - 1];
+          lid.position.y += 0.03;
+          lid.position.z -= 0.02;
+          lid.rotation.x += 0.12;
+        }
+      }
+    }
+
     // a copy of the kit's panel material whose diffuse has the door's label
     // stenciled into the panel's label field
     async function labeledPanelMaterial(spec: DoorSpec, kit: WallKit): Promise<THREE.MeshStandardMaterial> {
@@ -2780,7 +3017,7 @@ export function GameViewport({
       culledCount = group.children.length;
       cullingOff = off;
       for (const obj of group.children) {
-        if (obj.userData.actor) continue;
+        if (obj.userData.actor || obj.userData.item) continue;
         const key = cellOf(obj);
         obj.visible = off || key === null || sight.cells.has(key);
       }
@@ -3025,6 +3262,58 @@ export function GameViewport({
       entry.mesh.geometry.dispose();
       entry.material.dispose();
       actorMeshes.delete(id);
+    }
+
+    // the loot's sprites: the loose ones turned to the camera (shown while
+    // in sight and not taken), new spills let out, the flyers moved
+    function updateLoot(camX: number, camZ: number, feetY: number) {
+      const now = performance.now();
+      const loot = lootRef.current;
+      markLooted(loot.lootedProps);
+      for (const event of loot.spills ?? []) {
+        if (event.id <= lastSpill) continue;
+        lastSpill = event.id;
+        spill(event).catch((err) => console.error("Spill failed:", err));
+      }
+      for (const [index, item] of looseItems) {
+        if (!item.taken && loot.takenItems?.has(index)) {
+          // taken: drawn in from where it lies
+          item.taken = true;
+          flyers.push({ obj: item.obj, from: item.obj.position.clone(), rest: item.obj.position.clone(), start: now - SPILL_REST_MS });
+        }
+        if (item.taken) continue;
+        item.obj.visible = sight.cells.has(item.cell);
+        item.obj.rotation.y = Math.atan2(camX - item.obj.position.x, camZ - item.obj.position.z);
+      }
+      const feet = new THREE.Vector3(camX, feetY + ITEM_LIFT, camZ);
+      for (let i = flyers.length - 1; i >= 0; i--) {
+        const f = flyers[i];
+        const t = now - f.start;
+        const obj = f.obj;
+        if (t < 0) {
+          obj.visible = false;
+          continue;
+        }
+        obj.visible = true;
+        obj.rotation.y = Math.atan2(camX - obj.position.x, camZ - obj.position.z);
+        if (t < SPILL_OUT_MS) {
+          // out of the container in a little arc
+          const p = t / SPILL_OUT_MS;
+          obj.position.lerpVectors(f.from, f.rest, p);
+          obj.position.y += Math.sin(p * Math.PI) * 0.18;
+        } else if (t < SPILL_REST_MS) {
+          obj.position.copy(f.rest);
+        } else if (t < SPILL_REST_MS + SPILL_IN_MS) {
+          // drawn in to the party's feet, shrinking
+          const q = (t - SPILL_REST_MS) / SPILL_IN_MS;
+          obj.position.lerpVectors(f.rest, feet, q * q);
+          obj.scale.setScalar(1 - 0.7 * q);
+        } else {
+          obj.visible = false;
+          group.remove(obj);
+          flyers.splice(i, 1);
+        }
+      }
     }
 
     function updateActors(camX: number, camZ: number) {
@@ -4035,6 +4324,7 @@ export function GameViewport({
         camZ + Math.sin(t * 0.5) * 0.15,
       );
       updateActors(camX, camZ);
+      updateLoot(camX, camZ, cam.y * wallHeight);
       updateTracers();
       camera.updateMatrixWorld();
       updateEditHighlight();

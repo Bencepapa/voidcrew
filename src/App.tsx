@@ -36,6 +36,7 @@ import { Minimap } from "./components/Minimap";
 import { PartyPanel } from "./components/PartyPanel";
 import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
+import { HaulPanel } from "./components/HaulPanel";
 import { DebugPanel } from "./components/DebugPanel";
 import { useMediaQuery } from "./components/useMediaQuery";
 import { useViewControls } from "./components/useViewControls";
@@ -56,6 +57,10 @@ export default function App() {
     elevation,
     jumpDown,
     use,
+    haul,
+    lootedProps,
+    takenItems,
+    spills,
     touch,
     inLift,
     ride,
@@ -950,14 +955,20 @@ export default function App() {
     fireWeapon(index);
   };
 
+  // the haul panel (I, or the Inventory action)
+  const [haulOpen, setHaulOpen] = useState(false);
+  const toggleHaul = () => setHaulOpen((o) => !o);
+
   // Use (Space or Enter) works in both movement modes
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (editMode) return;
       if ((e.key === " " || e.key === "Enter") && !aimRef.current) use();
+      if ((e.key === "i" || e.key === "I") && !aimRef.current) setHaulOpen((o) => !o);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [use]);
+  }, [use, editMode]);
 
   const viewport = (
     <GameViewport
@@ -987,12 +998,16 @@ export default function App() {
       peekRef={view.peekRef}
       settings={viewSettings}
       onStats={setStats}
+      lootedProps={lootedProps}
+      takenItems={takenItems}
+      spills={spills}
     />
   );
   const viewInput = view.handlers;
   // over the view: the aiming overlay, and a red flash when the crew is hit
   const overlays = (
     <>
+      {haulOpen && !editMode && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
       {aim && aimWeapon && (
         <AimOverlay
           key={aim.crew}
@@ -1106,10 +1121,11 @@ export default function App() {
       onTurnRight={turnR}
       onJumpDown={jumpDown ?? undefined}
       onUse={use}
+      onInventory={toggleHaul}
       compact={compact}
     />
   ) : (
-    <ActionMenu onUse={use} compact={compact} />
+    <ActionMenu onUse={use} onInventory={toggleHaul} compact={compact} />
   );
 
   if (compact) {

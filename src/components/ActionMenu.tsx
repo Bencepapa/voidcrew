@@ -6,8 +6,10 @@ interface ActionMenuProps {
   onTurnRight?: () => void;
   // only while standing on a bridge
   onJumpDown?: () => void;
-  // whatever is in front of the party (a lift button)
+  // whatever is in front of the party (a lift button, a crate)
   onUse?: () => void;
+  // the haul panel, open or shut
+  onInventory?: () => void;
   // translucent variant for the mobile overlay layout
   compact?: boolean;
 }
@@ -27,7 +29,7 @@ const ACTIONS = [
   "Rest",
 ] as const;
 
-export function ActionMenu({ onForward, onBack, onTurnLeft, onTurnRight, onJumpDown, onUse, compact }: ActionMenuProps) {
+export function ActionMenu({ onForward, onBack, onTurnLeft, onTurnRight, onJumpDown, onUse, onInventory, compact }: ActionMenuProps) {
   const handlers: Partial<Record<(typeof ACTIONS)[number], () => void>> = {
     Forward: onForward,
     "Step Back": onBack,
@@ -35,6 +37,7 @@ export function ActionMenu({ onForward, onBack, onTurnLeft, onTurnRight, onJumpD
     "Turn Right": onTurnRight,
     "Jump Down": onJumpDown,
     Use: onUse,
+    Inventory: onInventory,
   };
 
   return (

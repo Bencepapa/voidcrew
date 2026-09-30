@@ -94,13 +94,13 @@ export function bakeLightGrid(
 
   const occluders = occludersOf(map);
   // where a sample stands in a room (its cell open, between its floor and
-  // ceiling, not inside a prop or a bridge's deck)
+  // ceiling) - one inside a prop still counts: the prop's own surfaces read
+  // it (see clearLine)
   const open = (x: number, y: number, z: number) => {
     const cx = Math.round(x);
     const cz = Math.round(z);
     if (cellAt(map, cx, cz) === "wall") return false;
-    if (y < floorHeight(map, cx, cz) - 1e-3 || y > ceilingHeight(map, cx, cz) + 1e-3) return false;
-    return !blockedAt(occluders, cx, cz, x, y, z);
+    return y >= floorHeight(map, cx, cz) - 1e-3 && y <= ceilingHeight(map, cx, cz) + 1e-3;
   };
   const valid = new Uint8Array(count);
   for (let j = 0; j < ny; j++) {
@@ -297,11 +297,15 @@ function occludersOf(map: GameMap): Occluders {
   return out;
 }
 
-function blockedAt(occluders: Occluders, cx: number, cz: number, x: number, y: number, z: number): boolean {
+const inside = (b: Occluder, x: number, y: number, z: number) =>
+  x > b.minX && x < b.maxX && y > b.minY && y < b.maxY && z > b.minZ && z < b.maxZ;
+
+// the box around a point in its cell, if any (but `skip`)
+function blockedAt(occluders: Occluders, cx: number, cz: number, x: number, y: number, z: number, skip?: Occluder[]): boolean {
   if (cx < 0 || cx >= occluders.width || cz < 0) return false;
   const boxes = occluders.cells[cz * occluders.width + cx];
   if (!boxes) return false;
-  return boxes.some((b) => x > b.minX && x < b.maxX && y > b.minY && y < b.maxY && z > b.minZ && z < b.maxZ);
+  return boxes.some((b) => inside(b, x, y, z) && !skip?.includes(b));
 }
 
 // whether the line from a sample to a light crosses no wall, floor or
@@ -319,6 +323,11 @@ function clearLine(
   lightCell: { x: number; z: number },
 ): boolean {
   const steps = Math.ceil(Math.hypot(lx - px, lz - pz, ly - py) / MARCH_STEP);
+  // a sample inside a prop isn't in the prop's own shadow (its surfaces read
+  // it, and they're lit as if it weren't there)
+  const cx0 = Math.round(px);
+  const cz0 = Math.round(pz);
+  const own = cx0 >= 0 && cx0 < occluders.width && cz0 >= 0 ? (occluders.cells[cz0 * occluders.width + cx0] ?? []).filter((b) => inside(b, px, py, pz)) : [];
   for (let s = 1; s < steps; s++) {
     const t = s / steps;
     const x = px + (lx - px) * t;
@@ -329,7 +338,7 @@ function clearLine(
     if (cx === lightCell.x && cz === lightCell.z) continue;
     if (cellAt(map, cx, cz) === "wall") return false;
     if (y < floorHeight(map, cx, cz) - 1e-3 || y > ceilingHeight(map, cx, cz) + 1e-3) return false;
-    if (blockedAt(occluders, cx, cz, x, y, z)) return false;
+    if (blockedAt(occluders, cx, cz, x, y, z, own)) return false;
   }
   return true;
 }

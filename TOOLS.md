@@ -274,6 +274,8 @@ main fields:
 | `chance`, `id`, `with`, `without` | on props, decals, lights, actors, doors, chance walls: the chance it's there, its name, the item it's only there with / without |
 | `effect` (lights) | `flicker`, `spark` or `pulse`: not baked, a real light serves it |
 | `texture` (props) | another texture set for a box, pillar, chamfer, panel or plant |
+| `items` | loot lying about: `{ "item": "medkit", "x", "y", "count"?, "offset"?: [across, along] }` (plus `chance`, `id`, `with`, `without`) - picked up by stepping in (or Use from the cell before) |
+| `loot` (containers) | a crate's (or shelf's) contents by hand: `[{ "item": "powercell", "count": 2 }]` (`[]`: empty); unset: rolled from its loot table (src/game/items.ts) |
 | `lights` | ceiling light cells |
 | `doors` | lift / standard doors, facing, label (`label`, `labelVertical`) |
 | `lifts` | lift cabin, its button's wall, target map (`to`) |
@@ -284,3 +286,12 @@ Linking two decks with a lift: both maps need a `lifts` entry pointing at
 the other (`"to": "deck1-medical"`), a `kind: "lift"` door in front of the
 cabin, and a `lift_btn_<deck>_<up|down>` decal with `"action": "lift"` in
 the cabin.
+
+## Loot item art
+
+`npx tsx scripts/make-item-sprites.ts` makes the items' texture sets
+(public/textures/item_<id>). It cuts `concept/gen/items/items.png` and
+`items_depth.png` if they're there - an AI sheet of the ten items in a 5 x 2
+grid in `ITEM_ORDER`, on magenta, and its depth sheet in the same layout
+(white nearest, black behind; prompts in scripts/gen-items.ts) - else it
+draws simple placeholders.

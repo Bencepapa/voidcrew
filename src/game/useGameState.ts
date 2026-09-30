@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MAPS, START_MAP, cellAt, doorAt, doorCrossed, floorHeight, liftAt, liftDoorOf } from "./map";
 import { DIR_VECTOR, behindOf, leftOf, rightOf, stepForward } from "./movement";
 import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
-import type { Direction, GameMap, Vec2 } from "./types";
+import type { Direction, GameMap, Vec2, PropSpec } from "./types";
 import { initialCrew } from "./crew";
 import { variantOf } from "./variation";
+import { rollLoot, stacksText } from "./items";
+import type { ItemStack, LootSpill } from "./items";
+import { PROP_TYPES, propHeight, propPlacement } from "./props";
 import type { ShipMood } from "./variation";
 import { ACTOR_TYPES, actorAt, createActors, partyHitChance, stepActors } from "./actors";
 import type { ActorState } from "./actors";
@@ -518,11 +521,125 @@ export function useGameState() {
   const moveForward = useCallback(() => step(dir), [step, dir]);
   const moveBackward = useCallback(() => step(behindOf(dir)), [step, dir]);
 
-  // Use: whatever is in front of the party - for now a lift's button
+  // The run's haul: how many of each item the party has taken (see
+  // items.ts); the containers emptied and the loose items picked up (by
+  // variation, deck and index in the deck's full map - a variation leaves
+  // some out); and the spills the view shows
+  const [haul, setHaul] = useState<Readonly<Record<string, number>>>({});
+  const [looted, setLooted] = useState<ReadonlySet<string>>(() => new Set());
+  const [spills, setSpills] = useState<LootSpill[]>([]);
+  const spillIdRef = useRef(0);
+  const lootKey = useCallback(
+    (kind: "prop" | "item", index: number) => `${variation?.seed ?? 0}|${fullMap.id}|${kind === "item" ? "item " : ""}${index}`,
+    [variation, fullMap.id],
+  );
+  const addToHaul = useCallback((stacks: ItemStack[]) => {
+    if (!stacks.length) return;
+    setHaul((h) => {
+      const next = { ...h };
+      for (const s of stacks) next[s.item] = (next[s.item] ?? 0) + s.count;
+      return next;
+    });
+  }, []);
+  // a container's contents: put in by hand, or rolled from its table
+  const lootOf = useCallback(
+    (spec: PropSpec) => {
+      const key = lootKey("prop", (fullMap.props ?? []).indexOf(spec));
+      if (looted.has(key)) return { key, items: [] as ItemStack[] };
+      const table = PROP_TYPES[spec.prop]?.container;
+      return { key, items: spec.loot ?? (table ? rollLoot(table, key) : []) };
+    },
+    [fullMap, lootKey, looted],
+  );
+  // the indices (in the played map) of the containers emptied and the loose
+  // items taken, for the view
+  const lootedProps = useMemo(
+    () => new Set((map.props ?? []).flatMap((p, i) => (looted.has(lootKey("prop", (fullMap.props ?? []).indexOf(p))) ? [i] : []))),
+    [map, fullMap, looted, lootKey],
+  );
+  const takenItems = useMemo(
+    () => new Set((map.items ?? []).flatMap((it, i) => (looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))) ? [i] : []))),
+    [map, fullMap, looted, lootKey],
+  );
+  // within reach: in the party's cell (and with `ahead`, the one it faces),
+  // on the surface it stands on
+  const inReach = useCallback(
+    (cell: Vec2, ahead: boolean) => {
+      const front = { x: pos.x + DIR_VECTOR[dir].x, y: pos.y + DIR_VECTOR[dir].y };
+      return (
+        ((cell.x === pos.x && cell.y === pos.y) || (ahead && cell.x === front.x && cell.y === front.y)) &&
+        Math.abs(floorHeight(map, cell.x, cell.y) - elevation) <= 0.25 + 1e-6
+      );
+    },
+    [map, pos, dir, elevation],
+  );
+  // takes the loose items within reach (not yet taken): the haul gets them,
+  // the view draws them in; false if there were none
+  const pickUpItems = useCallback(
+    (ahead: boolean) => {
+      const found = (map.items ?? []).filter(
+        (it) => inReach(it.cell, ahead) && !looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))),
+      );
+      if (!found.length) return false;
+      const stacks = found.map((it) => ({ item: it.item, count: it.count ?? 1 }));
+      pushLog(`You pick up ${stacksText(stacks)}.`);
+      addToHaul(stacks);
+      setLooted((prev) => new Set([...prev, ...found.map((it) => lootKey("item", (fullMap.items ?? []).indexOf(it)))]));
+      return true;
+    },
+    [map, fullMap, inReach, looted, lootKey, pushLog, addToHaul],
+  );
+  // stepping into a cell picks up what lies there
+  const pickUpRef = useRef(pickUpItems);
+  pickUpRef.current = pickUpItems;
+  useEffect(() => {
+    pickUpRef.current(false);
+  }, [pos, elevation, map.id]);
+
+  // Use: whatever is in front of the party - a lift's button, or the
+  // containers within reach: everything in them spills out and goes into
+  // the haul (and loose items there)
   const use = useCallback(() => {
-    if (liftAt(map, pos)?.button === dir) startLift();
-    else pushLog("There's nothing to use here.");
-  }, [map, pos, dir, startLift, pushLog]);
+    if (liftAt(map, pos)?.button === dir) {
+      startLift();
+      return;
+    }
+    const containers = (map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.container && inReach(p.cell, true));
+    const picked = pickUpItems(true);
+    if (!containers.length) {
+      if (!picked) pushLog("There's nothing to use here.");
+      return;
+    }
+    const taken = new Map<string, number>();
+    const keys: string[] = [];
+    const newSpills: LootSpill[] = [];
+    for (const spec of containers) {
+      const { key, items } = lootOf(spec);
+      keys.push(key);
+      for (const s of items) taken.set(s.item, (taken.get(s.item) ?? 0) + s.count);
+      if (items.length) {
+        const at = propPlacement(spec);
+        const floor = floorHeight(map, spec.cell.x, spec.cell.y) + (spec.elevation ?? 0);
+        newSpills.push({
+          id: ++spillIdRef.current,
+          from: { x: at.x, y: floor + propHeight(map, spec), z: at.z },
+          floorY: floorHeight(map, spec.cell.x, spec.cell.y),
+          items,
+        });
+      }
+    }
+    const stacks = [...taken].map(([item, count]) => ({ item, count }));
+    const what = containers.length > 1 ? "the containers" : `the ${PROP_TYPES[containers[0].prop].container === "crate" ? "crate" : "container"}`;
+    if (!stacks.length) {
+      const emptied = keys.every((k) => looted.has(k));
+      pushLog(emptied ? `You've emptied ${what} already.` : `You search ${what}: nothing.`);
+    } else {
+      pushLog(`You take ${stacksText(stacks)} from ${what}.`);
+      addToHaul(stacks);
+      setSpills((prev) => [...prev.slice(-8), ...newSpills]);
+    }
+    setLooted((prev) => new Set([...prev, ...keys]));
+  }, [map, pos, dir, startLift, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul]);
 
   // a touched (clicked, tapped) interactive decal
   const touch = useCallback(
@@ -585,6 +702,10 @@ export function useGameState() {
 
   return {
     map,
+    haul,
+    lootedProps,
+    takenItems,
+    spills,
     pos,
     dir,
     actors,

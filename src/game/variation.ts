@@ -121,16 +121,18 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
     if (under >= 0) props[i].on = props[under];
   });
   const decals = (map.decals ?? []).map((d, i) => entry("decal", i, d, odds("clutter")));
+  const items = (map.items ?? []).map((it, i) => entry("item", i, it, odds("clutter")));
   const actors = (map.actors ?? []).map((a, i) => entry("actor", i, a, odds("threat")));
   const lights = (map.lights ?? []).map((l, i) => entry("light", i, l, odds("light")));
   const doors = (map.doors ?? []).map((d, i) => entry("door", i, d, 1));
   const walls = (map.chanceWalls ?? []).map((w, i) => entry("wall", i, w, 1));
-  const kept = resolve(seed, map, [...props, ...decals, ...actors, ...lights, ...doors, ...walls]);
+  const kept = resolve(seed, map, [...props, ...decals, ...items, ...actors, ...lights, ...doors, ...walls]);
   const keep = <T>(items: T[] | undefined, entries: Entry[]) => items?.filter((_, i) => kept.has(entries[i]));
 
   const out = {
     props: keep(map.props, props),
     decals: keep(map.decals, decals),
+    items: keep(map.items, items),
     actors: keep(map.actors, actors),
     lights: keep(map.lights, lights),
     doors: keep(map.doors, doors),
@@ -140,6 +142,7 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
   if (
     same(out.props, map.props) &&
     same(out.decals, map.decals) &&
+    same(out.items, map.items) &&
     same(out.actors, map.actors) &&
     same(out.lights, map.lights) &&
     same(out.doors, map.doors) &&
@@ -156,7 +159,7 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
   (map.doors ?? []).forEach((d, i) => !kept.has(doors[i]) && open(d.cell.x, d.cell.y));
   (map.chanceWalls ?? []).forEach((w, i) => !kept.has(walls[i]) && open(w.cell.x, w.cell.y));
   // (what's left out is structure - but lights alone can change in place)
-  const structural = ["props", "decals", "actors", "doors", "chanceWalls"].some(
+  const structural = ["props", "decals", "items", "actors", "doors", "chanceWalls"].some(
     (k) => !same(out[k as keyof typeof out], map[k as keyof typeof out]),
   );
   return {

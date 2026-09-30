@@ -1,4 +1,5 @@
 import { DIR_VECTOR, rightOf } from "./movement";
+import { ITEM_TYPES } from "./items";
 import { PROP_TYPES } from "./props";
 import type { CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
 
@@ -75,6 +76,18 @@ export interface MapFile {
     with?: string;
     without?: string;
   }[];
+  // loot lying about (see MapItem)
+  items?: {
+    item: string;
+    x: number;
+    y: number;
+    count?: number;
+    offset?: [number, number];
+    chance?: number;
+    id?: string;
+    with?: string;
+    without?: string;
+  }[];
   // walls left to chance (see ChanceWall): their cells are walls in the
   // layout
   chanceWalls?: { x: number; y: number; chance?: number; id?: string; with?: string; without?: string }[];
@@ -98,6 +111,7 @@ export interface MapFile {
     elevation?: number;
     chance?: number;
     texture?: string;
+    loot?: { item: string; count: number }[];
     id?: string;
     with?: string;
     without?: string;
@@ -268,9 +282,24 @@ export function parseMap(id: string, file: MapFile): GameMap {
         elevation: p.elevation,
         chance: p.chance,
         texture: p.texture,
+        loot: p.loot,
         id: p.id,
         with: p.with,
         without: p.without,
+      };
+    }),
+    items: (file.items ?? []).map((it) => {
+      if (!ITEM_TYPES[it.item]) throw new Error(`item at ${it.x},${it.y}: unknown item "${it.item}"`);
+      if (cells[it.y]?.[it.x] !== "floor") throw new Error(`item at ${it.x},${it.y} isn't in a floor cell`);
+      return {
+        item: it.item,
+        cell: { x: it.x, y: it.y },
+        count: it.count,
+        offset: it.offset,
+        chance: it.chance,
+        id: it.id,
+        with: it.with,
+        without: it.without,
       };
     }),
     actors: (file.actors ?? []).map((a) => {
