@@ -86,17 +86,27 @@ function findFigures(img: Raw, count: number, cols: number, isBg: Background): F
   const { width: W, height: H } = img;
   const fg = new Uint8Array(W * H);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (!isBg(img, x, y)) fg[y * W + x] = 1;
-  // grid lines: rows or columns filled nearly all the way across
+  // grid lines: rows or columns of line-colored pixels nearly all the way
+  // across - black, or the purple of black blended into the magenta
+  // (figures side by side can fill a row too, but not in those colors)
+  const dark = (i: number) => {
+    const [r, g, b] = [img.data[i * 3], img.data[i * 3 + 1], img.data[i * 3 + 2]];
+    return r + g + b < 120 || (g < 40 && Math.abs(r - b) < 60);
+  };
+  const lineRows: number[] = [];
+  const lineCols: number[] = [];
   for (let y = 0; y < H; y++) {
     let n = 0;
-    for (let x = 0; x < W; x++) n += fg[y * W + x];
-    if (n > W * 0.9) fg.fill(0, y * W, (y + 1) * W);
+    for (let x = 0; x < W; x++) if (fg[y * W + x] && dark(y * W + x)) n++;
+    if (n > W * 0.9) lineRows.push(y);
   }
   for (let x = 0; x < W; x++) {
     let n = 0;
-    for (let y = 0; y < H; y++) n += fg[y * W + x];
-    if (n > H * 0.9) for (let y = 0; y < H; y++) fg[y * W + x] = 0;
+    for (let y = 0; y < H; y++) if (fg[y * W + x] && dark(y * W + x)) n++;
+    if (n > H * 0.9) lineCols.push(x);
   }
+  for (const y of lineRows) fg.fill(0, y * W, (y + 1) * W);
+  for (const x of lineCols) for (let y = 0; y < H; y++) fg[y * W + x] = 0;
   // grown by REACH each way, so pixels a little apart touch
   const grow = (src: Uint8Array, horizontal: boolean) => {
     const out = new Uint8Array(W * H);
