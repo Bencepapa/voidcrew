@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import { cellAt, ceilingHeight, floorHeight } from "../game/map";
+import { BRIDGE_THICKNESS, BRIDGE_WIDTH } from "../game/heights";
+import { PROP_TYPES, propHeight, propPlacement } from "../game/props";
 import type { LightSpec } from "../game/lights";
 import type { GameMap } from "../game/types";
 
@@ -90,13 +92,15 @@ export function bakeLightGrid(
   const index = (i: number, k: number, j: number) => i + k * nx + j * nx * nz;
   const count = nx * nz * ny;
 
+  const occluders = occludersOf(map);
   // where a sample stands in a room (its cell open, between its floor and
-  // ceiling)
+  // ceiling, not inside a prop or a bridge's deck)
   const open = (x: number, y: number, z: number) => {
     const cx = Math.round(x);
     const cz = Math.round(z);
     if (cellAt(map, cx, cz) === "wall") return false;
-    return y >= floorHeight(map, cx, cz) - 1e-3 && y <= ceilingHeight(map, cx, cz) + 1e-3;
+    if (y < floorHeight(map, cx, cz) - 1e-3 || y > ceilingHeight(map, cx, cz) + 1e-3) return false;
+    return !blockedAt(occluders, cx, cz, x, y, z);
   };
   const valid = new Uint8Array(count);
   for (let j = 0; j < ny; j++) {
@@ -114,6 +118,8 @@ export function bakeLightGrid(
   const passes = mode === "directional" ? [0, 1] : [1];
   for (const pass of passes) {
     for (const light of lights) {
+      // an unsteady one is a real light instead (see lightEffects.ts)
+      if (light.effect) continue;
       const lx = light.x;
       const lz = light.z;
       const ly = light.y;
@@ -142,7 +148,7 @@ export function bakeLightGrid(
             const dz = lz - pz;
             const d = Math.hypot(dx, dy, dz);
             if (d >= range || d < 1e-4) continue;
-            if (!clearLine(map, px, py, pz, lx, ly, lz, lightCell)) continue;
+            if (!clearLine(map, occluders, px, py, pz, lx, ly, lz, lightCell)) continue;
             // three.js's point light falloff (decay 2, cut off at `distance`)
             const cut = Math.max(0, 1 - (d / range) ** 4);
             const atten = (1 / Math.max(d * d, 0.01)) * cut * cut * light.intensity;
@@ -249,10 +255,61 @@ export function bakeLightGrid(
   };
 }
 
+// What else casts shadows in the bake: the props (but plants - they're
+// mostly leaves and gaps) and the bridges' decks, as boxes (x, z in cells;
+// y in wall heights) listed under each cell they reach into. Doors don't:
+// the grid is baked once, as if they were all open.
+interface Occluder {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
+}
+// (per cell, row by row; none: an empty list)
+interface Occluders {
+  width: number;
+  cells: (Occluder[] | undefined)[];
+}
+
+function occludersOf(map: GameMap): Occluders {
+  const out: Occluders = { width: map.width, cells: [] };
+  const add = (box: Occluder) => {
+    for (let z = Math.max(0, Math.round(box.minZ)); z <= Math.min(map.height - 1, Math.round(box.maxZ)); z++) {
+      for (let x = Math.max(0, Math.round(box.minX)); x <= Math.min(map.width - 1, Math.round(box.maxX)); x++) {
+        (out.cells[z * map.width + x] ??= []).push(box);
+      }
+    }
+  };
+  for (const spec of map.props ?? []) {
+    if (PROP_TYPES[spec.prop]?.kind === "cross") continue;
+    const { x, z, reachX, reachZ } = propPlacement(spec);
+    const bottom = floorHeight(map, spec.cell.x, spec.cell.y) + (spec.elevation ?? 0);
+    add({ minX: x - reachX, maxX: x + reachX, minY: bottom, maxY: bottom + propHeight(map, spec), minZ: z - reachZ, maxZ: z + reachZ });
+  }
+  for (const bridge of map.bridges ?? []) {
+    const half = BRIDGE_WIDTH / 2;
+    const [hx, hz] = bridge.axis === "NS" ? [half, 0.5] : [0.5, half];
+    const { x, y } = bridge.cell;
+    add({ minX: x - hx, maxX: x + hx, minY: bridge.height - BRIDGE_THICKNESS, maxY: bridge.height, minZ: y - hz, maxZ: y + hz });
+  }
+  return out;
+}
+
+function blockedAt(occluders: Occluders, cx: number, cz: number, x: number, y: number, z: number): boolean {
+  if (cx < 0 || cx >= occluders.width || cz < 0) return false;
+  const boxes = occluders.cells[cz * occluders.width + cx];
+  if (!boxes) return false;
+  return boxes.some((b) => x > b.minX && x < b.maxX && y > b.minY && y < b.maxY && z > b.minZ && z < b.maxZ);
+}
+
 // whether the line from a sample to a light crosses no wall, floor or
-// ceiling (the light's own cell doesn't count - it may sit in a wall)
+// ceiling, prop or bridge (the light's own cell doesn't count - it may sit
+// in a wall, or on a prop)
 function clearLine(
   map: GameMap,
+  occluders: Occluders,
   px: number,
   py: number,
   pz: number,
@@ -272,6 +329,7 @@ function clearLine(
     if (cx === lightCell.x && cz === lightCell.z) continue;
     if (cellAt(map, cx, cz) === "wall") return false;
     if (y < floorHeight(map, cx, cz) - 1e-3 || y > ceilingHeight(map, cx, cz) + 1e-3) return false;
+    if (blockedAt(occluders, cx, cz, x, y, z)) return false;
   }
   return true;
 }
@@ -286,6 +344,13 @@ export interface LightGridUniforms {
   scale: { value: number };
   // 0: cube, 1: directional (see LightGridMode)
   mode: { value: number };
+  // directional: 1 when the ambient part comes from a grid of its own - a
+  // coarser one, whose blur spreads a lit room's light into the cells
+  // around it while the main part keeps the fine grid's sharp shadows (its
+  // texture in faces[3]); and where that grid lies
+  split: { value: number };
+  min2: { value: THREE.Vector3 };
+  size2: { value: THREE.Vector3 };
 }
 
 export function createLightGridUniforms(): LightGridUniforms {
@@ -302,12 +367,17 @@ export function createLightGridUniforms(): LightGridUniforms {
     size: { value: new THREE.Vector3(1, 1, 1) },
     scale: { value: 0 },
     mode: { value: 0 },
+    split: { value: 0 },
+    min2: { value: new THREE.Vector3() },
+    size2: { value: new THREE.Vector3(1, 1, 1) },
   };
 }
 
-// puts a bake into the uniforms (the old textures freed)
-export function setLightGrid(uniforms: LightGridUniforms, data: LightGridData) {
-  data.faces.forEach((f, a) => {
+// puts a bake into the uniforms (the old textures freed); `ambient`: a
+// coarser directional bake to take the ambient part from (see
+// LightGridUniforms.split)
+export function setLightGrid(uniforms: LightGridUniforms, data: LightGridData, ambient?: LightGridData) {
+  const put = (f: Float32Array, a: number, grid: LightGridData) => {
     const rgba = new Uint16Array((f.length / 3) * 4);
     for (let n = 0; n < f.length / 3; n++) {
       rgba[n * 4] = THREE.DataUtils.toHalfFloat(f[n * 3]);
@@ -315,7 +385,7 @@ export function setLightGrid(uniforms: LightGridUniforms, data: LightGridData) {
       rgba[n * 4 + 2] = THREE.DataUtils.toHalfFloat(f[n * 3 + 2]);
       rgba[n * 4 + 3] = THREE.DataUtils.toHalfFloat(1);
     }
-    const tex = new THREE.Data3DTexture(rgba, data.nx, data.nz, data.ny);
+    const tex = new THREE.Data3DTexture(rgba, grid.nx, grid.nz, grid.ny);
     tex.format = THREE.RGBAFormat;
     tex.type = THREE.HalfFloatType;
     tex.minFilter = THREE.LinearFilter;
@@ -325,10 +395,18 @@ export function setLightGrid(uniforms: LightGridUniforms, data: LightGridData) {
     tex.needsUpdate = true;
     uniforms.faces[a].value.dispose();
     uniforms.faces[a].value = tex;
-  });
+  };
+  data.faces.forEach((f, a) => put(f, a, data));
   uniforms.min.value.copy(data.min);
   uniforms.size.value.copy(data.size);
   uniforms.mode.value = data.mode === "directional" ? 1 : 0;
+  const split = data.mode === "directional" && ambient?.mode === "directional";
+  uniforms.split.value = split ? 1 : 0;
+  if (split) {
+    put(ambient.faces[0], 3, ambient);
+    uniforms.min2.value.copy(ambient.min);
+    uniforms.size2.value.copy(ambient.size);
+  }
 }
 
 export function disposeLightGrid(uniforms: LightGridUniforms) {
@@ -355,6 +433,9 @@ export function useLightGrid(material: THREE.Material, uniforms: LightGridUnifor
     shader.uniforms.uLgSize = uniforms.size;
     shader.uniforms.uLgScale = uniforms.scale;
     shader.uniforms.uLgMode = uniforms.mode;
+    shader.uniforms.uLgSplit = uniforms.split;
+    shader.uniforms.uLgMin2 = uniforms.min2;
+    shader.uniforms.uLgSize2 = uniforms.size2;
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vLgWorld;")
       .replace("#include <project_vertex>", "#include <project_vertex>\nvLgWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");
@@ -373,6 +454,9 @@ uniform vec3 uLgMin;
 uniform vec3 uLgSize;
 uniform float uLgScale;
 uniform float uLgMode;
+uniform float uLgSplit;
+uniform vec3 uLgMin2;
+uniform vec3 uLgSize2;
 #define LG_SHEEN ${SHEEN.toFixed(2)}
 // the light arriving at a grid point from direction d (an ambient cube)
 vec3 lgCube(vec3 d, vec3 uvw) {
@@ -400,7 +484,12 @@ if (uLgScale > 0.0) {
   } else {
     // the ambient part, and the main part as a real light from its
     // direction - shaded (highlights too) as the real lights are
-    irradiance += texture(uLgFace0, lgUvw).rgb * uLgScale;
+    if (uLgSplit > 0.5) {
+      vec3 lgUvw2 = vec3((lgP.x - uLgMin2.x) / uLgSize2.x, (lgP.z - uLgMin2.z) / uLgSize2.z, (lgP.y - uLgMin2.y) / uLgSize2.y);
+      irradiance += texture(uLgFace3, lgUvw2).rgb * uLgScale;
+    } else {
+      irradiance += texture(uLgFace0, lgUvw).rgb * uLgScale;
+    }
     vec3 lgDir = texture(uLgFace2, lgUvw).xyz;
     float lgLen = length(lgDir);
     if (lgLen > 1e-3) {

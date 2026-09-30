@@ -13,15 +13,19 @@ import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { fetchDecalManifest } from "../render/decals";
 import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
-import type { Direction, MapLight } from "../game/types";
+import type { Direction, LightEffect, Linked, MapLight } from "../game/types";
 import { PROP_TYPES } from "../game/props";
 import { DOOR_EDGE_OFFSET } from "../game/map";
 import { ACTOR_TYPES } from "../game/actors";
 
 export interface MapLook {
   lightGridDensity?: number;
+  lightGridAmbient?: number;
   reliefDepth?: number;
 }
+// what a prop can wear (see PropSpec.texture): the wall and prop face sets
+// (a box's top comes with its side)
+const PROP_TEXTURES = [...textureSetsOfKind("wall"), ...textureSetsOfKind("propFace")].filter((id) => !id.endsWith("_top"));
 const DENSITIES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
 const RELIEF_DEPTHS = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.12];
 
@@ -50,13 +54,13 @@ interface Props {
   robotChoice: string;
   onRobotChoice: (type: string) => void;
   actor: ActorInfo | null;
-  onActorChange: (patch: { facing?: Direction; chance?: number }) => void;
+  onActorChange: (patch: { facing?: Direction; chance?: number } & Linked) => void;
   onActorClearRoute: () => void;
   onActorDelete: () => void;
   onActorDeselect: () => void;
   // the Door tool: the selected door, and what the panel does with it
   door: DoorInfo | null;
-  onDoorChange: (patch: { offset?: number; label?: string }) => void;
+  onDoorChange: (patch: { offset?: number; label?: string; chance?: number } & Linked) => void;
   onDoorFlip: () => void;
   onDoorDelete: () => void;
   onDoorDeselect: () => void;
@@ -79,12 +83,19 @@ interface Props {
   onDecalChoice: (choice: DecalChoice) => void;
   decalRotation: number;
   decal: DecalInfo | null;
-  onDecalChange: (patch: { rotation?: number; chance?: number }) => void;
+  onDecalChange: (patch: { rotation?: number; chance?: number } & Linked) => void;
   onDecalDelete: () => void;
   onDecalDeselect: () => void;
   // the selected prop, and what the panel does with it
   prop: PropInfo | null;
-  onPropChange: (patch: { rotation?: number; elevation?: number; chance?: number }) => void;
+  onPropChange: (patch: { rotation?: number; elevation?: number; chance?: number; texture?: string } & Linked) => void;
+  // every item's name in the map (see Linked), for the link fields
+  linkIds: string[];
+  // the Chance wall tool: the picked one
+  chanceWall: { chance: number; links: Linked } | null;
+  onChanceWallChange: (patch: { chance?: number } & Linked) => void;
+  onChanceWallRemove: () => void;
+  onChanceWallDeselect: () => void;
   onPropStack: () => void;
   onPropDelete: () => void;
   onPropDeselect: () => void;
@@ -115,6 +126,7 @@ export interface ActorInfo {
   chance: number;
   // how many cells its patrol route has (0: it stands)
   route: number;
+  links: Linked;
 }
 
 // the selected door as the panel shows it
@@ -124,6 +136,8 @@ export interface DoorInfo {
   facing: Direction;
   kind: "standard" | "lift";
   label: string;
+  chance: number;
+  links: Linked;
 }
 
 // the selected decal as the panel shows it
@@ -133,11 +147,16 @@ export interface DecalInfo {
   // what touching it does (a lift button)
   action?: string;
   chance: number;
+  links: Linked;
 }
 
 // the selected prop as the panel shows it
 export interface PropInfo {
   name: string;
+  // the texture set it wears instead of its own, and whether it can
+  texture?: string;
+  retexturable: boolean;
+  links: Linked;
   rotation: number;
   elevation: number;
   // its cell's floor-to-ceiling height, and where a prop on it would stand
@@ -159,6 +178,8 @@ export interface LightInfo {
   roomHeight: number;
   // its chance to be there in a variation (see variation.ts)
   chance: number;
+  effect?: LightEffect;
+  links: Linked;
 }
 
 const BUTTON = "px-2 py-1 border rounded-sm text-[11px] disabled:opacity-30";
@@ -210,6 +231,36 @@ function chanceSlider(value: number, onChange: (chance: number | undefined) => v
   return slider("Chance", value, 0, 1, 0.05, (v) => onChange(v >= 1 ? undefined : v));
 }
 
+// the fields linking an item to others (see Linked): its name, and the one
+// it's only there with / without (a list of the map's names to pick from)
+function linkFields(links: Linked, ids: string[], onChange: (patch: Linked) => void) {
+  const field = (key: keyof Linked, label: string, title: string) => (
+    <label className="flex items-center gap-1" title={title}>
+      {label}
+      <input
+        type="text"
+        list={key === "id" ? undefined : "link-ids"}
+        value={links[key] ?? ""}
+        placeholder="-"
+        onChange={(e) => onChange({ [key]: e.target.value.trim() || undefined })}
+        className="w-16 bg-neutral-800 border border-neutral-700 px-1"
+      />
+    </label>
+  );
+  return (
+    <>
+      <datalist id="link-ids">
+        {ids.map((id) => (
+          <option key={id} value={id} />
+        ))}
+      </datalist>
+      {field("id", "Name", "Its name, for other items to link to")}
+      {field("with", "With", "Only there when the item of this name is")}
+      {field("without", "Without", "Only there when the item of this name isn't")}
+    </>
+  );
+}
+
 // a labeled slider with its value, for the light panel
 function slider(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void) {
   return (
@@ -237,6 +288,7 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "prop", label: "Prop", title: "Put in or take out props" },
   { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
   { tool: "robot", label: "Robot", title: "Put in robots, their facing, route and chance" },
+  { tool: "wall", label: "Chance wall", title: "Walls left to chance: there in some variations, open floor in others" },
   { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
 ];
 // what a click does with each (where the toolbar doesn't say otherwise)
@@ -248,6 +300,7 @@ const TOOL_HELP: Partial<Record<EditTool, string>> = {
   robot: "click a floor: a robot there (facing you) · click a robot: pick it · Shift+click a floor: add it to the picked one's route · right-click: take it out",
   decal: "click a wall, floor or ceiling: the decal there · click a decal: pick it · right-click: take it off",
   prop: "click a floor (near a side or corner to push it there): put it in · click a prop: pick it · right-click: take it out",
+  wall: "click a wall or a floor: a wall left to chance there (picked) · click one: pick it · right-click one: a plain wall again",
 };
 const SURFACES: { surface: EditSurface; label: string }[] = [
   { surface: "wall", label: "Wall" },
@@ -390,6 +443,7 @@ export function EditorBar(p: Props) {
                   ))}
                 </span>
                 {chanceSlider(p.actor.chance, (chance) => p.onActorChange({ chance }))}
+                {linkFields(p.actor.links, p.linkIds, p.onActorChange)}
                 <span className="text-neutral-400">{p.actor.route ? `route: ${p.actor.route} cells` : "stands"}</span>
                 {p.actor.route > 0 && (
                   <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorClearRoute}>
@@ -429,6 +483,8 @@ export function EditorBar(p: Props) {
             <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorFlip} title="Turn it round (it stays where it is)">
               Flip front
             </button>
+            {chanceSlider(p.door.chance, (chance) => p.onDoorChange({ chance }))}
+            {linkFields(p.door.links, p.linkIds, p.onDoorChange)}
             <label className="flex items-center gap-1">
               Label
               <input
@@ -496,6 +552,24 @@ export function EditorBar(p: Props) {
                 ))}
               </select>
             </label>
+            <label
+              className="flex items-center gap-1"
+              title="The ambient part of the baked light from a coarser grid: a lit room's light spreads into the cells around it, the main light keeps the sharp shadows"
+            >
+              Ambient
+              <select
+                value={p.mapLook.lightGridAmbient ?? ""}
+                onChange={(e) => p.onMapLook({ lightGridAmbient: e.target.value ? Number(e.target.value) : undefined })}
+                className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
+              >
+                <option value="">same grid</option>
+                {[2, 3, 4].map((d) => (
+                  <option key={d} value={d}>
+                    {d} per cell
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="flex items-center gap-1" title="How deep the walls' relief is (rebuilds the deck)">
               Relief
               <select
@@ -528,6 +602,7 @@ export function EditorBar(p: Props) {
                 </span>
                 {slider("Turn", p.decal.rotation, 0, 345, 15, (v) => p.onDecalChange({ rotation: v || undefined }))}
                 {chanceSlider(p.decal.chance, (chance) => p.onDecalChange({ chance }))}
+                {linkFields(p.decal.links, p.linkIds, p.onDecalChange)}
                 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDecalDelete} title="Delete">
                   Remove
                 </button>
@@ -568,6 +643,24 @@ export function EditorBar(p: Props) {
                   p.onPropChange({ elevation: v || undefined }),
                 )}
                 {chanceSlider(p.prop.chance, (chance) => p.onPropChange({ chance }))}
+                {linkFields(p.prop.links, p.linkIds, p.onPropChange)}
+                {p.prop.retexturable && (
+                  <label className="flex items-center gap-1">
+                    Texture
+                    <select
+                      value={p.prop.texture ?? ""}
+                      onChange={(e) => p.onPropChange({ texture: e.target.value || undefined })}
+                      className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
+                    >
+                      <option value="">its own</option>
+                      {PROP_TEXTURES.map((id) => (
+                        <option key={id} value={id}>
+                          {TEXTURE_SETS[id].label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropStack} title="The palette's prop, on top of this one">
                   Stack {p.propChoice} on top
                 </button>
@@ -581,6 +674,22 @@ export function EditorBar(p: Props) {
               </div>
             </>
           )}
+        </>
+      )}
+      {p.tool === "wall" && p.chanceWall && (
+        <>
+          <span className="basis-full" />
+          <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+            <span className="text-amber-200">chance wall</span>
+            {slider("Chance", p.chanceWall.chance, 0, 1, 0.05, (chance) => p.onChanceWallChange({ chance }))}
+            {linkFields(p.chanceWall.links, p.linkIds, p.onChanceWallChange)}
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onChanceWallRemove} title="Always a wall">
+              Plain wall
+            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onChanceWallDeselect}>
+              Done
+            </button>
+          </div>
         </>
       )}
       {TOOL_HELP[p.tool] && (
@@ -628,6 +737,20 @@ export function EditorBar(p: Props) {
                 {slider("Intensity", p.light.intensity, 0, 4, 0.05, (v) => p.onLightChange({ intensity: v }))}
                 {slider("Range", p.light.range, 0.5, 6, 0.1, (v) => p.onLightChange({ range: v }))}
                 {chanceSlider(p.light.chance, (chance) => p.onLightChange({ chance }))}
+                {linkFields(p.light.links, p.linkIds, p.onLightChange)}
+                <label className="flex items-center gap-1" title="An unsteady light isn't baked: one of the few real lights serves it">
+                  Effect
+                  <select
+                    value={p.light.effect ?? ""}
+                    onChange={(e) => p.onLightChange({ effect: (e.target.value || undefined) as LightEffect | undefined })}
+                    className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
+                  >
+                    <option value="">steady</option>
+                    <option value="flicker">flicker</option>
+                    <option value="spark">spark</option>
+                    <option value="pulse">pulse</option>
+                  </select>
+                </label>
                 {p.light.pos && (
                   <>
                     {slider("Height", p.light.pos[1], 0.05, p.light.roomHeight - 0.05, 0.05, (v) =>

@@ -17,6 +17,16 @@ export const CLIMB_SPEED = 1;
 export const BRIDGE_THICKNESS = 0.06;
 export const BRIDGE_WIDTH = 0.5;
 
+// What fits where: the lowest opening a body gets through, and how high a
+// step it takes without a ladder (the party's: MIN_HEADROOM, MAX_STEP). A
+// big robot may not fit the low corridors the party does; a small one may
+// crawl through ducts the party can't.
+export interface Body {
+  headroom: number;
+  step: number;
+}
+export const PARTY_BODY: Body = { headroom: MIN_HEADROOM, step: MAX_STEP };
+
 export type Passage =
   // `y`: the height of the surface arrived on
   | { kind: "walk"; y: number }
@@ -51,25 +61,27 @@ export function spaceAbove(map: GameMap, cell: Vec2, y: number): number {
 // Whether the party, standing at height `fromY` in a walkable cell, can
 // move to a neighboring one - onto the highest surface there within a step
 // of its feet (or down onto the only one lower), judged by the headroom and
-// any ladder between the cells (doors aside).
-export function passage(map: GameMap, from: Vec2, fromY: number, to: Vec2, dir: Direction): Passage {
+// any ladder between the cells (doors aside). `body`: who moves (default:
+// the party).
+export function passage(map: GameMap, from: Vec2, fromY: number, to: Vec2, dir: Direction, body: Body = PARTY_BODY): Passage {
+  const step = body.step;
   if (cellAt(map, to.x, to.y) === "wall") return { kind: "blocked", reason: "wall" };
 
   const fromFloor = floorHeight(map, from.x, from.y);
   const toFloor = floorHeight(map, to.x, to.y);
   // ladders connect the two cells' floors
-  if (ladderBetween(map, from, to) && Math.abs(fromY - fromFloor) < 1e-6 && Math.abs(toFloor - fromY) > MAX_STEP + 1e-6) {
-    if (headroom(map, from, fromY, to, toFloor) < MIN_HEADROOM - 1e-6) return { kind: "blocked", reason: "low" };
+  if (ladderBetween(map, from, to) && Math.abs(fromY - fromFloor) < 1e-6 && Math.abs(toFloor - fromY) > step + 1e-6) {
+    if (headroom(map, from, fromY, to, toFloor) < body.headroom - 1e-6) return { kind: "blocked", reason: "low" };
     return { kind: "climb", y: toFloor, height: Math.abs(toFloor - fromY), up: toFloor > fromY };
   }
 
-  const reachable = surfaces(map, to, dir).filter((s) => s <= fromY + MAX_STEP + 1e-6);
+  const reachable = surfaces(map, to, dir).filter((s) => s <= fromY + step + 1e-6);
   if (!reachable.length) return { kind: "blocked", reason: "ledge" };
   const y = Math.max(...reachable);
   // a big prop stands on the floor (not in the way of a bridge above it)
   if (Math.abs(y - toFloor) < 1e-6 && propBlocks(map, to)) return { kind: "blocked", reason: "prop" };
-  if (headroom(map, from, fromY, to, y) < MIN_HEADROOM - 1e-6) return { kind: "blocked", reason: "low" };
-  if (y < fromY - MAX_STEP - 1e-6) return { kind: "drop", y, height: fromY - y };
+  if (headroom(map, from, fromY, to, y) < body.headroom - 1e-6) return { kind: "blocked", reason: "low" };
+  if (y < fromY - step - 1e-6) return { kind: "drop", y, height: fromY - y };
   return { kind: "walk", y };
 }
 

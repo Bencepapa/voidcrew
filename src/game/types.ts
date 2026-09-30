@@ -54,6 +54,10 @@ export interface GameMap {
   // samples per cell (few: softer, light spilling to the cells around; many:
   // sharper shadows, lightmap-like) and its walls' relief depth (world units) - see MapFile
   lightGridDensity?: number;
+  // the baked light's ambient part from a coarser grid of its own (samples
+  // per cell): a lit room's light spreads into the cells around it, while
+  // the main part keeps lightGridDensity's sharp shadows; unset: one grid
+  lightGridAmbient?: number;
   reliefDepth?: number;
   decals?: DecalSpec[];
   // door cells that aren't plain standard doors
@@ -67,6 +71,8 @@ export interface GameMap {
   // the renderer can change without rebuilding the deck
   structureKey?: string;
   windows?: WindowSpec[];
+  // walls left to chance (in the full map: walls)
+  chanceWalls?: ChanceWall[];
   lifts?: LiftSpec[];
   props?: PropSpec[];
   actors?: ActorSpec[];
@@ -74,7 +80,7 @@ export interface GameMap {
 
 // A moving actor (see actors.ts): where it starts, which way it looks, and
 // the cells it patrols between, back and forth (empty: it stays put).
-export interface ActorSpec {
+export interface ActorSpec extends Linked {
   // an actors.ts ACTOR_TYPES name, e.g. "robot1"
   actor: string;
   cell: Vec2;
@@ -92,7 +98,17 @@ export type PropAnchor = Direction | "NE" | "NW" | "SE" | "SW" | "center";
 // A hand-placed light in a cell: a ceiling lamp, or - given `pos` - a
 // free-standing one at that spot (a bulb). Unset values: the deck's lamp
 // color, and a ceiling lamp's usual strength and reach.
-export interface MapLight {
+// How an item left to chance (see variation.ts) depends on others: its own
+// name, and another's it's only there with, or only without (e.g. a decal
+// only with the crate it's painted on, a red lamp only without the white
+// one). Names are free text, one per item across all kinds.
+export interface Linked {
+  id?: string;
+  with?: string;
+  without?: string;
+}
+
+export interface MapLight extends Linked {
   x: number;
   y: number;
   // "#rrggbb"
@@ -109,9 +125,16 @@ export interface MapLight {
   // the chance (0..1) it's there in a variation of the deck (see
   // variation.ts); unset: always
   chance?: number;
+  // a light that doesn't hold steady (see lightEffects.ts): it isn't baked,
+  // a real light serves it
+  effect?: LightEffect;
 }
 
-export interface PropSpec {
+// flicker: a failing tube, mostly on; spark: dark, with bursts of sparks;
+// pulse: an alarm's slow throb
+export type LightEffect = "flicker" | "spark" | "pulse";
+
+export interface PropSpec extends Linked {
   // a props.ts PROP_TYPES name, e.g. "crate1"
   prop: string;
   cell: Vec2;
@@ -125,6 +148,10 @@ export interface PropSpec {
   // the chance (0..1) it's there in a variation of the deck (see
   // variation.ts); unset: always
   chance?: number;
+  // a texture set to wear instead of its type's (a box's sides - and its
+  // top, if there's a <texture>_top set); unset: its type's (a pillar's:
+  // the deck's walls, a chamfer's: its cell's)
+  texture?: string;
 }
 
 // A lift cabin: the cell behind a lift door. Its button (a decal with the
@@ -167,7 +194,7 @@ export interface LadderSpec {
   wall: Direction;
 }
 
-export interface DoorSpec {
+export interface DoorSpec extends Linked {
   cell: Vec2;
   // standard: panel slides up and stays open; lift: panel slides to the
   // right (seen from the front) and closes again after a while
@@ -182,12 +209,22 @@ export interface DoorSpec {
   // front from the middle; at +-DOOR_EDGE_OFFSET it's flush with the cell's
   // edge, in line with the walls there (see doorCrossed)
   offset?: number;
+  // the chance (0..1) it's there in a variation (see variation.ts) - if not,
+  // its cell is an open doorway; unset: always
+  chance?: number;
+}
+
+// A wall left to chance (see variation.ts): its cell is a wall with this
+// chance, else an open floor - a caved-in passage, a blocked corridor.
+export interface ChanceWall extends Linked {
+  cell: Vec2;
+  chance?: number;
 }
 
 // A decal (bullet hole, stencil, stain...) projected onto one surface of a
 // walkable cell. Positions are in the surface texture's pixels (256 per
 // cell), so decals line up with the wall's own pixel grid.
-export interface DecalSpec {
+export interface DecalSpec extends Linked {
   // name in public/decals/index.json
   decal: string;
   // the walkable cell the surface belongs to

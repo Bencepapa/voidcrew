@@ -129,6 +129,8 @@ export function useGameState() {
   // player - while they stand in the doorway it checks again shortly.
   const posRef = useRef(pos);
   posRef.current = pos;
+  const elevationRef = useRef(elevation);
+  elevationRef.current = elevation;
   const openDoorsRef = useRef(openDoors);
   openDoorsRef.current = openDoors;
   const prevPosRef = useRef(pos);
@@ -232,8 +234,13 @@ export function useGameState() {
     const timer = setInterval(() => {
       const m = mapRef.current;
       if (readyMapRef.current !== m.id || frozenRef.current) return;
-      const { actors: next, attacks } = stepActors(m, actorsRef.current, gameClock.now(), posRef.current, (cell) =>
-        openDoorsRef.current.has(doorCellKey(cell)),
+      const { actors: next, attacks } = stepActors(
+        m,
+        actorsRef.current,
+        gameClock.now(),
+        posRef.current,
+        (cell) => openDoorsRef.current.has(doorCellKey(cell)),
+        elevationRef.current,
       );
       if (next !== actorsRef.current) updateActors(next);
       // their shots may land on a random conscious crewmate: the farther
@@ -469,15 +476,15 @@ export function useGameState() {
       return;
     }
 
-    const blocker = actorAt(actorsRef.current, next, gameClock.now());
-    if (blocker) {
-      pushLog(`${ACTOR_TYPES[blocker.type].name} blocks the way.`);
-      return;
-    }
-
     const way = passage(map, pos, elevation, next, moveDir);
     if (way.kind === "blocked") {
       pushLog(BLOCKED_MESSAGES[way.reason]);
+      return;
+    }
+    // (one on the floor under a bridge isn't in the way on its deck)
+    const blocker = actorAt(actorsRef.current, next, gameClock.now(), way.y);
+    if (blocker) {
+      pushLog(`${ACTOR_TYPES[blocker.type].name} blocks the way.`);
       return;
     }
     if (way.kind === "drop") pushLog(way.height > 0.5 ? "You jump down." : "You hop down.");
@@ -571,6 +578,8 @@ export function useGameState() {
       __voidcrewTouch: (action: string) => touchRef.current(action),
       // stops (or restarts) the actors, e.g. for comparing screenshots
       __voidcrewFreeze: (on: boolean) => (frozenRef.current = on),
+      // plays an edited version of the deck (e.g. from the map store)
+      __voidcrewReplaceMap: (next: GameMap) => replaceMap(next),
     });
   }, []);
 

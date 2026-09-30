@@ -3,6 +3,7 @@ import { DIR_VECTOR, rightOf } from "./movement";
 import { PROP_TYPES } from "./props";
 import { passage } from "./heights";
 import { lineOfSight } from "./visibility";
+import type { Body } from "./heights";
 import type { ActorSpec, Direction, GameMap, Vec2 } from "./types";
 
 // Moving actors (robots, NPCs, enemies): each stands in a cell, walks cell
@@ -33,6 +34,10 @@ export interface ActorType {
   cellAspect: number;
   // how tall a sheet cell stands (wall heights)
   height: number;
+  // what it fits through (see Body): the lowest opening, the highest step;
+  // its eyes are at eyeHeight above its feet (wall heights)
+  body: Body;
+  eyeHeight: number;
   // how long a step to the next cell takes
   moveMs: number;
   // the pause at each patrol point
@@ -118,6 +123,9 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     rows: 3,
     cellAspect: 0.75,
     height: 0.82,
+    // fits wherever the party does
+    body: { headroom: 0.75, step: 0.25 },
+    eyeHeight: 0.62,
     moveMs: 900,
     waitMs: 1800,
     idleRow: 0,
@@ -211,10 +219,14 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
 export interface ActorState {
   id: number;
   type: string;
-  // where it stands - or, while walking, where it's headed
+  // where it stands - or, while walking, where it's headed - and the
+  // height of the surface it's on there (a floor, or a bridge's deck)
   cell: Vec2;
-  // the cell it's walking from, and when it set off (performance.now())
+  y: number;
+  // the cell it's walking from (and its surface's height), and when it set
+  // off (performance.now())
   from: Vec2;
+  fromY: number;
   moveStart: number;
   facing: Direction;
   patrol: Vec2[];
@@ -258,7 +270,9 @@ export function createActors(map: GameMap, now: number): ActorState[] {
     id,
     type: spec.actor,
     cell: spec.cell,
+    y: floorHeight(map, spec.cell.x, spec.cell.y),
     from: spec.cell,
+    fromY: floorHeight(map, spec.cell.x, spec.cell.y),
     moveStart: now - 1e6,
     facing: spec.facing,
     patrol: spec.patrol.length ? spec.patrol : [spec.cell],
@@ -285,15 +299,20 @@ export function actorMoving(actor: ActorState, now: number): boolean {
   return now - actor.moveStart < actor.moveMs;
 }
 
-// the (living) actor holding a cell (its own, or the one it's leaving)
-export function actorAt(actors: readonly ActorState[], cell: Vec2, now: number): ActorState | undefined {
+// the (living) actor holding a cell (its own, or the one it's leaving) -
+// at the surface of height `y` if given (under a bridge is room for another)
+export function actorAt(actors: readonly ActorState[], cell: Vec2, now: number, y?: number): ActorState | undefined {
+  const level = (h: number) => y === undefined || Math.abs(h - y) < 1e-6;
   return actors.find(
     (a) =>
       a.diedAt === null &&
-      ((a.cell.x === cell.x && a.cell.y === cell.y) ||
-        (actorMoving(a, now) && a.from.x === cell.x && a.from.y === cell.y)),
+      ((a.cell.x === cell.x && a.cell.y === cell.y && level(a.y)) ||
+        (actorMoving(a, now) && a.from.x === cell.x && a.from.y === cell.y && level(a.fromY))),
   );
 }
+
+// the party's eyes above its feet, for the actors' line of sight
+const PARTY_EYE = 0.55;
 
 // an actor's shot at the party
 export interface ActorAttack {
@@ -337,6 +356,8 @@ export function stepActors(
   now: number,
   party: Vec2,
   isDoorOpen: (cell: Vec2) => boolean,
+  // the height the party stands at
+  partyY: number = floorHeight(map, party.x, party.y),
 ): { actors: ActorState[]; attacks: ActorAttack[] } {
   let changed = false;
   const attacks: ActorAttack[] = [];
@@ -344,7 +365,8 @@ export function stepActors(
     const [x, y] = key.split(",").map(Number);
     return isDoorOpen({ x, y });
   };
-  const clearLine = (from: Vec2, to: Vec2) => lineOfSight(map, from, to, doorOpen);
+  // from an actor's eyes (standing at `fromY` in a cell) to the party's
+  const clearLine = (from: Vec2, to: Vec2, eyes: number) => lineOfSight(map, from, to, doorOpen, { from: eyes, to: partyY + PARTY_EYE });
   // cells with a prop to hide by (not the ones hung on walls)
   const propCells = new Set((map.props ?? []).filter((p) => !PROP_TYPES[p.prop]?.wall).map((p) => `${p.cell.x},${p.cell.y}`));
 
@@ -359,24 +381,33 @@ export function stepActors(
       changed = true;
     };
 
-    // a step to a neighbouring cell it can walk into (level, free)
-    const canStep = (to: Vec2, dir: Direction) => {
-      if (cellAt(map, to.x, to.y) === "wall") return false;
+    // the surface it'd walk onto in a neighbouring cell (a walk - no drops,
+    // no ladders - where it fits and nobody stands), or null
+    const stepY = (to: Vec2, dir: Direction): number | null => {
+      if (cellAt(map, to.x, to.y) === "wall") return null;
       const door = doorCrossed(map, a.cell, to);
-      if (door && !isDoorOpen(door)) return false;
-      if (same(to, party) || actors.some((o) => o !== actor && actorAt([o], to, now))) return false;
-      const way = passage(map, a.cell, floorHeight(map, a.cell.x, a.cell.y), to, dir);
-      return way.kind === "walk" && way.y === floorHeight(map, to.x, to.y);
+      if (door && !isDoorOpen(door)) return null;
+      const way = passage(map, a.cell, a.y, to, dir, type.body);
+      if (way.kind !== "walk") return null;
+      if ((same(to, party) && Math.abs(way.y - partyY) < 1e-6) || actors.some((o) => o !== actor && actorAt([o], to, now, way.y))) {
+        return null;
+      }
+      return way.y;
     };
+    const canStep = (to: Vec2, dir: Direction) => stepY(to, dir) !== null;
     const neighbours = () =>
       DIRECTIONS.map((dir) => ({ dir, to: { x: a.cell.x + DIR_VECTOR[dir].x, y: a.cell.y + DIR_VECTOR[dir].y } })).filter(
         ({ to, dir }) => canStep(to, dir),
       );
+    // its eyes, standing at height `y`
+    const eyes = (y: number) => y + type.eyeHeight;
     // takes a step; in a fight it keeps facing the party (backing off, say)
     const stepTo = (to: Vec2, dir: Direction, face?: Vec2) => {
       update({
         from: a.cell,
+        fromY: a.y,
         cell: to,
+        y: stepY(to, dir) ?? a.y,
         moveStart: now,
         moveMs: type.moveMs * (now < a.slowedUntil ? 2 : 1),
         facing: face ? toward(to, face) : dir,
@@ -408,7 +439,7 @@ export function stepActors(
     const inView =
       dist < 1e-6 ||
       ((party.x - a.cell.x) * ahead.x + (party.y - a.cell.y) * ahead.y) / dist >= Math.cos(((type.fieldOfView / 2) * Math.PI) / 180);
-    const line = dist <= type.huntSight && clearLine(a.cell, party);
+    const line = dist <= type.huntSight && clearLine(a.cell, party, eyes(a.y));
     const sees = line && (a.hostile ? dist <= type.huntSight : (inView && dist <= type.sight) || dist <= type.hearing);
 
     // a shot it didn't see coming: now it knows where the party is
@@ -454,7 +485,7 @@ export function stepActors(
         let best: { to: Vec2; dir: Direction; score: number } | null = null;
         for (const { to, dir } of neighbours()) {
           const away = Math.hypot(goal.x - to.x, goal.y - to.y) - Math.hypot(goal.x - a.cell.x, goal.y - a.cell.y);
-          const hidden = !clearLine(to, goal);
+          const hidden = !clearLine(to, goal, eyes(stepY(to, dir) ?? a.y));
           const toParty = { x: to.x + Math.sign(goal.x - to.x), y: to.y + Math.sign(goal.y - to.y) };
           const byProp = propCells.has(`${to.x},${to.y}`) || propCells.has(`${toParty.x},${toParty.y}`);
           const cover = tactics.seeksCover ? (hidden ? 3 : 0) + (byProp ? 2 : 0) : 0;
@@ -471,7 +502,7 @@ export function stepActors(
         let best: { to: Vec2; dir: Direction; d: number } | null = null;
         for (const { to, dir } of neighbours()) {
           const d = Math.hypot(goal.x - to.x, goal.y - to.y);
-          if (d < tactics.minRange || !clearLine(to, goal)) continue;
+          if (d < tactics.minRange || !clearLine(to, goal, eyes(stepY(to, dir) ?? a.y))) continue;
           if (!best || d < best.d) best = { to, dir, d };
         }
         update({ advanced: true });

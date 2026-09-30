@@ -1,5 +1,5 @@
 import { ceilingHeight, floorHeight } from "./map";
-import type { GameMap, MapLight } from "./types";
+import type { GameMap, LightEffect, MapLight } from "./types";
 import { DIR_VECTOR, rightOf } from "./movement";
 
 // A deck's lights are placed on its map (MapLight, see the editor's Light
@@ -25,6 +25,8 @@ export interface LightSpec {
   source: number;
   // a free-standing one whose bulb shows in the game (see MapLight.bulb)
   bulb?: boolean;
+  // not steady: a real light, not baked (see lightEffects.ts)
+  effect?: LightEffect;
 }
 
 // "#rrggbb" as a number (undefined if it isn't one)
@@ -61,6 +63,7 @@ export function generateLights(map: GameMap): LightSpec[] {
       range: own.range ?? 2.4 + extra * 1.2,
       source,
       bulb: own.bulb,
+      effect: own.effect,
     };
     if (own.pos) {
       const [dx, up, dz] = own.pos;

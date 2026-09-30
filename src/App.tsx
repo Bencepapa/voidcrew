@@ -17,34 +17,9 @@ import {
   undo,
 } from "./editor/mapStore";
 import { MAPS } from "./game/map";
-import type { GameMap } from "./game/types";
-import {
-  blankMap,
-  resizeMap,
-  addDecal,
-  removeDecal,
-  updateDecal,
-  addLight,
-  addProp,
-  anchorAt,
-  dig,
-  fill,
-  paintTexture,
-  removeLight,
-  removeProp,
-  removePropIndex,
-  updateProp,
-  setHeight,
-  toggleBridge,
-  toggleDoor,
-  toggleLadder,
-  updateDoor,
-  addActor,
-  removeActor,
-  updateActor,
-  updateLight,
-} from "./editor/mapEdits";
-import { PROP_TYPES } from "./game/props";
+import type { GameMap, Linked } from "./game/types";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall } from "./editor/mapEdits";
+import { PROP_TYPES, propRetexturable } from "./game/props";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo } from "./editor/EditorBar";
 import { moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
@@ -69,6 +44,9 @@ import { useFreeMovement } from "./game/useFreeMovement";
 
 // phones in portrait (narrow) or landscape (short) get the overlay layout
 const COMPACT_QUERY = "(max-width: 767px), (max-height: 540px)";
+
+// an item's links (see Linked), as the editor's panels show them
+const linksOf = (item: Linked): Linked => ({ id: item.id, with: item.with, without: item.without });
 
 export default function App() {
   const {
@@ -422,6 +400,28 @@ export default function App() {
           setSelectedProp(count);
         }
       }
+    } else if (editTool === "wall") {
+      // a click on a wall left to chance picks it (the right button makes it
+      // a plain wall); on another wall or a floor it makes one there
+      const cell = target.kind === "wall" ? target.cell : target.cell;
+      const index = (map.chanceWalls ?? []).findIndex((w) => w.cell.x === cell.x && w.cell.y === cell.y);
+      if (index >= 0) {
+        if (!alt) {
+          setSelectedChanceWall(index);
+          return;
+        }
+        result = applyEdit(map.id, (file) => removeChanceWall(file, index));
+        setSelectedChanceWall(null);
+      } else {
+        if (alt) return;
+        if (cell.x === pos.x && cell.y === pos.y) {
+          pushLog("Editor: can't wall in the cell the party stands in.");
+          return;
+        }
+        const count = map.chanceWalls?.length ?? 0;
+        result = applyEdit(map.id, (file) => addChanceWall(file, cell));
+        setSelectedChanceWall(count);
+      }
     } else {
       const tool: EditTool = alt ? "fill" : editTool;
       if (tool === "dig" && target.kind === "wall" && target.from) {
@@ -549,7 +549,9 @@ export default function App() {
   // The selected actor, as the panel shows it
   const selectedActorInfo: ActorInfo | null = (() => {
     const spec = selectedActor === null ? undefined : map.actors?.[selectedActor];
-    return spec ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length } : null;
+    return spec
+      ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length, links: linksOf(spec) }
+      : null;
   })();
   const changeActor = (patch: Parameters<typeof updateActor>[2], merge?: string) => {
     if (selectedActor === null) return;
@@ -572,9 +574,9 @@ export default function App() {
   const selectedDoorInfo: DoorInfo | null = (() => {
     if (!selectedDoor || cellAt(map, selectedDoor.x, selectedDoor.y) !== "door") return null;
     const spec = doorAt(map, selectedDoor.x, selectedDoor.y);
-    return { offset: spec.offset ?? 0, facing: spec.facing, kind: spec.kind, label: spec.label ?? "" };
+    return { offset: spec.offset ?? 0, facing: spec.facing, kind: spec.kind, label: spec.label ?? "", chance: spec.chance ?? 1, links: linksOf(spec) };
   })();
-  const changeDoor = (patch: { offset?: number; facing?: Direction; label?: string }, merge?: string) => {
+  const changeDoor = (patch: { offset?: number; facing?: Direction; label?: string; chance?: number } & Linked, merge?: string) => {
     if (!selectedDoor) return;
     const cell = selectedDoor;
     const spec = doorAt(map, cell.x, cell.y);
@@ -635,9 +637,34 @@ export default function App() {
   }, [editMode, editTool]);
 
   // The selected decal, as the panel shows it
+  // the Chance wall tool's pick (its index in the map's chanceWalls)
+  const [selectedChanceWall, setSelectedChanceWall] = useState<number | null>(null);
+  const selectedChanceWallInfo = (() => {
+    const wall = selectedChanceWall === null ? undefined : map.chanceWalls?.[selectedChanceWall];
+    return wall ? { chance: wall.chance ?? 1, links: linksOf(wall) } : null;
+  })();
+  const changeChanceWall = (patch: { chance?: number } & Linked) => {
+    if (selectedChanceWall === null) return;
+    const index = selectedChanceWall;
+    const result = applyEdit(map.id, (file) => updateChanceWall(file, index, patch), `wall ${index} ${Object.keys(patch).join()}`);
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  // every name items go by in the map (see Linked)
+  const linkIds = [
+    ...new Set(
+      [map.props, map.decals, map.actors, map.lights, map.doors, map.chanceWalls].flatMap((items) =>
+        (items ?? []).flatMap((i: Linked) => (i.id ? [i.id] : [])),
+      ),
+    ),
+  ].sort();
+
   const selectedDecalInfo: DecalInfo | null = (() => {
     const spec = selectedDecal === null ? undefined : map.decals?.[selectedDecal];
-    return spec ? { name: spec.decal, rotation: spec.rotation ?? 0, action: spec.action, chance: spec.chance ?? 1 } : null;
+    return spec
+      ? { name: spec.decal, rotation: spec.rotation ?? 0, action: spec.action, chance: spec.chance ?? 1, links: linksOf(spec) }
+      : null;
   })();
   const changeDecal = (patch: Parameters<typeof updateDecal>[2], merge?: string) => {
     if (selectedDecal === null) return;
@@ -706,6 +733,9 @@ export default function App() {
     const type = PROP_TYPES[spec.prop];
     return {
       name: spec.prop,
+      texture: spec.texture,
+      retexturable: !!type && propRetexturable(type),
+      links: linksOf(spec),
       rotation: spec.rotation ?? 0,
       elevation: spec.elevation ?? 0,
       chance: spec.chance ?? 1,
@@ -815,6 +845,8 @@ export default function App() {
       pos: own.pos,
       bulb: own.bulb,
       chance: own.chance ?? 1,
+      effect: own.effect,
+      links: linksOf(own),
       roomHeight: ceilingHeight(map, own.x, own.y) - floorHeight(map, own.x, own.y),
     };
   })();
@@ -1016,7 +1048,7 @@ export default function App() {
           onOpenMap={(id) => MAPS[id] && openMap(MAPS[id])}
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
-          mapLook={{ lightGridDensity: map.lightGridDensity, reliefDepth: map.reliefDepth }}
+          mapLook={{ lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth }}
           onMapLook={changeMapLook}
           decalChoice={decalChoice?.name ?? null}
           onDecalChoice={setDecalChoice}
@@ -1030,6 +1062,19 @@ export default function App() {
           onPropStack={stackProp}
           onPropDelete={deleteProp}
           onPropDeselect={() => setSelectedProp(null)}
+          linkIds={linkIds}
+          chanceWall={selectedChanceWallInfo}
+          onChanceWallChange={changeChanceWall}
+          onChanceWallRemove={() => {
+            if (selectedChanceWall === null) return;
+            const index = selectedChanceWall;
+            const result = applyEdit(map.id, (file) => removeChanceWall(file, index));
+            if ("error" in result) pushLog(`Editor: ${result.error}`);
+            else replaceMap(result.map);
+            setSelectedChanceWall(null);
+            setEdits((n) => n + 1);
+          }}
+          onChanceWallDeselect={() => setSelectedChanceWall(null)}
           lightPlace={lightPlace}
           onLightPlace={setLightPlace}
           light={selectedLightInfo}

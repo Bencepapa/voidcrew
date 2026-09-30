@@ -1,4 +1,5 @@
-import type { GameMap } from "./types";
+import { PROP_TYPES, propHeight } from "./props";
+import type { CellType, GameMap, Linked } from "./types";
 
 // Variations of a deck: every prop, decal, light and actor with a `chance`
 // below 1 is there or not, rolled from a seed - the same seed gives the same
@@ -55,27 +56,113 @@ export function moodOf(seed: number): ShipMood {
 
 export const moodText = (mood: ShipMood) => `${mood.light}, ${mood.threat} threat, ${mood.clutter}`;
 
-const kept = (seed: number, map: GameMap, kind: string, index: number, chance: number | undefined, odds: number) =>
-  chance === undefined || chance >= 1 || roll(`${seed}|${map.id}|${kind}|${index}`) < scaleChance(chance, odds);
+// One item's roll: kept if its chance (its odds shifted by the mood) comes
+// up - and the items it's linked to agree (see Linked): the one it's only
+// there with is there, the one it's only there without isn't. A prop
+// stacked on another is only there with it. Links round in a circle, or to
+// a name no item has, don't count.
+interface Entry extends Linked {
+  kind: string;
+  index: number;
+  chance?: number;
+  odds: number;
+  // a stacked prop: the one under it
+  on?: Entry;
+}
+
+function resolve(seed: number, map: GameMap, entries: Entry[]): Set<Entry> {
+  const byId = new Map<string, Entry>();
+  for (const e of entries) if (e.id && !byId.has(e.id)) byId.set(e.id, e);
+  const done = new Map<Entry, boolean>();
+  const busy = new Set<Entry>();
+  const there = (e: Entry): boolean => {
+    const known = done.get(e);
+    if (known !== undefined) return known;
+    if (busy.has(e)) return true;
+    busy.add(e);
+    const own = e.chance === undefined || e.chance >= 1 || roll(`${seed}|${map.id}|${e.kind}|${e.index}`) < scaleChance(e.chance, e.odds);
+    const withOk = !e.with || !byId.has(e.with) || byId.get(e.with) === e || there(byId.get(e.with)!);
+    const withoutOk = !e.without || !byId.has(e.without) || byId.get(e.without) === e || !there(byId.get(e.without)!);
+    const onOk = !e.on || there(e.on);
+    busy.delete(e);
+    const result = own && withOk && withoutOk && onOk;
+    done.set(e, result);
+    return result;
+  };
+  return new Set(entries.filter(there));
+}
 
 // The deck as it is in the variation `seed` (the same map if nothing in it
-// is left to chance), in the ship's mood (default: the seed's).
+// is left to chance), in the ship's mood (default: the seed's). A door left
+// out leaves an open doorway, a chance wall left out an open floor.
 export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(seed)): GameMap {
   const odds = <K extends keyof ShipMood>(key: K) => MOOD_ODDS[MOOD_LEVELS[key].indexOf(mood[key])] ?? 1;
-  const props = map.props?.filter((p, i) => kept(seed, map, "prop", i, p.chance, odds("clutter")));
-  const decals = map.decals?.filter((d, i) => kept(seed, map, "decal", i, d.chance, odds("clutter")));
-  const actors = map.actors?.filter((a, i) => kept(seed, map, "actor", i, a.chance, odds("threat")));
-  const lights = map.lights?.filter((l, i) => kept(seed, map, "light", i, l.chance, odds("light")));
+  const entry = (kind: string, index: number, item: Linked & { chance?: number }, o: number): Entry => ({
+    kind,
+    index,
+    chance: item.chance,
+    odds: o,
+    id: item.id,
+    with: item.with,
+    without: item.without,
+  });
+  const props = (map.props ?? []).map((p, i) => entry("prop", i, p, odds("clutter")));
+  // stacked props: on the one whose top they stand on
+  (map.props ?? []).forEach((p, i) => {
+    if (!p.elevation) return;
+    const under = (map.props ?? []).findIndex(
+      (q, j) =>
+        j !== i &&
+        q.cell.x === p.cell.x &&
+        q.cell.y === p.cell.y &&
+        PROP_TYPES[q.prop] &&
+        Math.abs((q.elevation ?? 0) + propHeight(map, q) - p.elevation!) < 0.03,
+    );
+    if (under >= 0) props[i].on = props[under];
+  });
+  const decals = (map.decals ?? []).map((d, i) => entry("decal", i, d, odds("clutter")));
+  const actors = (map.actors ?? []).map((a, i) => entry("actor", i, a, odds("threat")));
+  const lights = (map.lights ?? []).map((l, i) => entry("light", i, l, odds("light")));
+  const doors = (map.doors ?? []).map((d, i) => entry("door", i, d, 1));
+  const walls = (map.chanceWalls ?? []).map((w, i) => entry("wall", i, w, 1));
+  const kept = resolve(seed, map, [...props, ...decals, ...actors, ...lights, ...doors, ...walls]);
+  const keep = <T>(items: T[] | undefined, entries: Entry[]) => items?.filter((_, i) => kept.has(entries[i]));
+
+  const out = {
+    props: keep(map.props, props),
+    decals: keep(map.decals, decals),
+    actors: keep(map.actors, actors),
+    lights: keep(map.lights, lights),
+    doors: keep(map.doors, doors),
+    chanceWalls: keep(map.chanceWalls, walls),
+  };
   const same = (a?: unknown[], b?: unknown[]) => (a?.length ?? 0) === (b?.length ?? 0);
-  if (same(props, map.props) && same(decals, map.decals) && same(actors, map.actors) && same(lights, map.lights)) return map;
+  if (
+    same(out.props, map.props) &&
+    same(out.decals, map.decals) &&
+    same(out.actors, map.actors) &&
+    same(out.lights, map.lights) &&
+    same(out.doors, map.doors) &&
+    same(out.chanceWalls, map.chanceWalls)
+  ) {
+    return map;
+  }
+  // the doors and walls left out open up their cells
+  let cells = map.cells;
+  const open = (x: number, y: number) => {
+    if (cells === map.cells) cells = map.cells.map((row) => [...row]);
+    cells[y][x] = "floor" as CellType;
+  };
+  (map.doors ?? []).forEach((d, i) => !kept.has(doors[i]) && open(d.cell.x, d.cell.y));
+  (map.chanceWalls ?? []).forEach((w, i) => !kept.has(walls[i]) && open(w.cell.x, w.cell.y));
   // (what's left out is structure - but lights alone can change in place)
-  const structural = !same(props, map.props) || !same(decals, map.decals) || !same(actors, map.actors);
+  const structural = ["props", "decals", "actors", "doors", "chanceWalls"].some(
+    (k) => !same(out[k as keyof typeof out], map[k as keyof typeof out]),
+  );
   return {
     ...map,
-    props,
-    decals,
-    actors,
-    lights,
+    ...out,
+    cells,
     structureKey: structural ? `${map.structureKey}|variation ${seed} ${mood.threat} ${mood.clutter}` : map.structureKey,
   };
 }

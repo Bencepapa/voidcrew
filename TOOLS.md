@@ -269,7 +269,11 @@ main fields:
 | `layers.floor` / `ceiling` | per-cell heights (steps of 0.25) |
 | `textures`, `labelColor` | the deck's texture sets, label paint |
 | `lightColor`, `autoLights` | lamp color (`"#ffcf87"`); `false`: no generated mood lights |
-| `lightGridDensity`, `reliefDepth` | baked light samples per cell, wall relief depth (unset: the viewer's defaults) |
+| `lightGridDensity`, `lightGridAmbient`, `reliefDepth` | baked light samples per cell (and for its ambient part, from a coarser grid), wall relief depth (unset: the viewer's defaults) |
+| `chanceWalls` | walls left to chance: `{ x, y, chance }` (their cells walls in the layout) |
+| `chance`, `id`, `with`, `without` | on props, decals, lights, actors, doors, chance walls: the chance it's there, its name, the item it's only there with / without |
+| `effect` (lights) | `flicker`, `spark` or `pulse`: not baked, a real light serves it |
+| `texture` (props) | another texture set for a box, pillar, chamfer, panel or plant |
 | `lights` | ceiling light cells |
 | `doors` | lift / standard doors, facing, label (`label`, `labelVertical`) |
 | `lifts` | lift cabin, its button's wall, target map (`to`) |

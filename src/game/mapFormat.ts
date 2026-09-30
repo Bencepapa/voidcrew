@@ -47,6 +47,10 @@ export interface MapFile {
   // samples per cell (few: softer, light spilling to the cells around; many:
   // sharper shadows, lightmap-like) and its walls' relief depth (world units)
   lightGridDensity?: number;
+  // the baked light's ambient part from a coarser grid of its own (samples
+  // per cell): a lit room's light spreads into the cells around it, while
+  // the main part keeps lightGridDensity's sharp shadows; unset: one grid
+  lightGridAmbient?: number;
   reliefDepth?: number;
   start: { x: number; y: number; facing: Direction };
   layout: string[];
@@ -66,7 +70,14 @@ export interface MapFile {
     labelVertical?: boolean;
     // where in the cell it stands (see DoorSpec.offset)
     offset?: number;
+    chance?: number;
+    id?: string;
+    with?: string;
+    without?: string;
   }[];
+  // walls left to chance (see ChanceWall): their cells are walls in the
+  // layout
+  chanceWalls?: { x: number; y: number; chance?: number; id?: string; with?: string; without?: string }[];
   // x, y: the cabin; button: the wall its button decal is on; to: map id
   lifts?: { x: number; y: number; button: Direction; to: string }[];
   // x, y: the lower cell; wall: its side toward the higher one
@@ -86,6 +97,10 @@ export interface MapFile {
     offset?: [number, number];
     elevation?: number;
     chance?: number;
+    texture?: string;
+    id?: string;
+    with?: string;
+    without?: string;
   }[];
   // patrol: the cells it walks between ([x, y] each), starting with the first
   actors?: {
@@ -95,6 +110,9 @@ export interface MapFile {
     facing?: Direction;
     patrol?: [number, number][];
     chance?: number;
+    id?: string;
+    with?: string;
+    without?: string;
   }[];
   decals?: {
     decal: string;
@@ -106,6 +124,9 @@ export interface MapFile {
     rotation?: number;
     action?: string;
     chance?: number;
+    id?: string;
+    with?: string;
+    without?: string;
   }[];
 }
 
@@ -135,6 +156,10 @@ export function parseMap(id: string, file: MapFile): GameMap {
     if (row.length !== width) throw new Error(`map row ${y} isn't ${width} wide`);
     return row.split("").map((char): CellType => (char === "W" ? "wall" : char === "D" ? "door" : "floor"));
   });
+  for (const w of file.chanceWalls ?? []) {
+    if (!cells[w.y]?.[w.x]) throw new Error(`chance wall at ${w.x},${w.y} is off the map`);
+    cells[w.y][w.x] = "wall";
+  }
 
   const floors = readLayer(file.layers?.floor, width, height, "floor");
   const ceilings = readLayer(file.layers?.ceiling, width, height, "ceiling");
@@ -201,6 +226,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     labelColor: file.labelColor,
     lightColor: file.lightColor,
     lightGridDensity: file.lightGridDensity,
+    lightGridAmbient: file.lightGridAmbient,
     reliefDepth: file.reliefDepth,
     name: file.name,
     width,
@@ -219,11 +245,16 @@ export function parseMap(id: string, file: MapFile): GameMap {
       label: d.label,
       labelVertical: d.labelVertical,
       offset: d.offset,
+      chance: d.chance,
+      id: d.id,
+      with: d.with,
+      without: d.without,
     })),
+    chanceWalls: (file.chanceWalls ?? []).map((w) => ({ cell: { x: w.x, y: w.y }, chance: w.chance, id: w.id, with: w.with, without: w.without })),
     ladders,
     bridges,
     lights: (file.lights ?? []).map((l) => ({ ...l })),
-    structureKey: JSON.stringify({ ...file, lights: undefined, lightGridDensity: undefined }),
+    structureKey: JSON.stringify({ ...file, lights: undefined, lightGridDensity: undefined, lightGridAmbient: undefined }),
     windows,
     props: (file.props ?? []).map((p) => {
       if (!PROP_TYPES[p.prop]) throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);
@@ -236,6 +267,10 @@ export function parseMap(id: string, file: MapFile): GameMap {
         offset: p.offset,
         elevation: p.elevation,
         chance: p.chance,
+        texture: p.texture,
+        id: p.id,
+        with: p.with,
+        without: p.without,
       };
     }),
     actors: (file.actors ?? []).map((a) => {
@@ -248,6 +283,9 @@ export function parseMap(id: string, file: MapFile): GameMap {
         facing: a.facing ?? "S",
         patrol: (a.patrol ?? []).map(([x, y]) => ({ x, y })),
         chance: a.chance,
+        id: a.id,
+        with: a.with,
+        without: a.without,
       };
     }),
     lifts: (file.lifts ?? []).map((l) => {
@@ -263,6 +301,9 @@ export function parseMap(id: string, file: MapFile): GameMap {
       rotation: d.rotation,
       action: d.action,
       chance: d.chance,
+      id: d.id,
+      with: d.with,
+      without: d.without,
     })),
   };
 }

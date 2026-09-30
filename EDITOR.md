@@ -115,6 +115,15 @@ not two editors.
   Down raise it, R turns it 90 degrees (Shift+R: 15), Delete takes it out;
   its panel sets the turn and height, and **Stack on top** puts the
   palette's prop on top of it (`offset` and `elevation` in the map).
+  **Texture** dresses a box, pillar, chamfer, panel or plant in another
+  set (`texture` in the map; a box's top uses `<set>_top` if there is one).
+  - **Pillars** (`pillar1`, `pillar2`) reach from the floor to the ceiling,
+    widening at the foot and the head; the deck's wall texture by default.
+  - **Chamfers** (`chamfer1`: half of each side cut off, `chamfer2`: 70%)
+    go across a corner of the cell at 45 degrees, in the cell's wall
+    texture - a click near a corner puts one there. They move and turn
+    like any prop. Decoration: the cell stays walkable (free movement
+    collides with a box around it).
 - **Decal:** the palette shows every decal (public/decals/index.json); a
   click on a wall, floor or ceiling puts the picked one there, centered on
   the click, and picks it. A click on a decal picks it, the right button
@@ -160,8 +169,23 @@ new one. While editing there's no variation - everything shows, so the
 panels edit the map as it is; leaving edit mode plays (and so previews)
 the current variation.
 
-The Chance slider is in the light, prop, decal and robot panels (all the
-way up: always, left out of the file).
+The Chance slider is in the light, prop, decal, robot and door panels (all
+the way up: always, left out of the file). A door left out leaves an open
+doorway.
+
+**Links:** every item can have a **Name** (`id`), and be there only
+**With** (`with`) or only **Without** (`without`) the item of another name,
+of any kind - a decal only with the crate it's painted on, a red lamp only
+without the white one. The panels' fields offer the map's names. A prop
+stacked on another is only there with it, without a link. Links round in a
+circle, or to a name nothing has, don't count.
+
+**Chance wall** tool: a click on a wall (or a floor, walled in) leaves it
+to chance - a wall in some variations, an open floor in others (a caved-in
+passage, a blocked corridor); its panel sets the chance and the links, and
+**Plain wall** (or the right button) makes it an ordinary wall again. While
+editing it shows as a wall. In the map: `chanceWalls: [{ "x", "y",
+"chance" }]`, their cells walls in the layout.
 
 The seed also rolls the ship's mood, the same on all its decks: **light**
 (dark, dim, bright - the lights' chances), **threat** (low, medium, high -
@@ -202,6 +226,14 @@ works on the map's `lights`:
   height; the arrows (as the party sees it) and Page Up / Down move a
   free-standing light; Delete removes it. Slider drags are one undo step.
 - Light edits don't rebuild the deck: only its lighting is redone.
+- **Effect** (`effect` in the map): `flicker` (a failing tube: steady, with
+  fits of flickering), `spark` (dark, with bursts of short bright flashes)
+  or `pulse` (an alarm's slow throb). An unsteady light isn't baked: one of
+  the few real lights (see the light grid) serves it while it's near, and a
+  ceiling lamp's glowing panel flickers with it. Keep them few in a room.
+- The baked light is shadowed by walls, floors and ceilings, props (not
+  plants) and bridge decks - not by doors: it's baked as if they were all
+  open.
 
 ## Map file handling
 

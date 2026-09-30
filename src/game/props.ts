@@ -70,6 +70,26 @@ export type PropType = {
       kind: "cross";
       texture: string;
     }
+  | {
+      // a square pillar from the floor to the ceiling (whatever the cell's
+      // height), widening at its foot and head like a door's jamb: `size`
+      // x and z are the foot's width, `shaft` the width between, `flare`
+      // how tall the foot and head blocks stand (cells) below and above
+      // their 45 degree slopes; textured with `texture`, else the deck's
+      // wall set
+      kind: "pillar";
+      shaft: number;
+      flare: number;
+      texture?: string;
+    }
+  | {
+      // a 45 degree wall across a corner of its cell (at a corner anchor),
+      // from the floor to the ceiling, `cut` of the cell off each side it
+      // meets - in the cell's wall texture. Decoration: the cell stays
+      // walkable (its center in front of it).
+      kind: "chamfer";
+      cut: number;
+    }
 );
 
 // Parts are measured off the views (see npm run props:views): x across the
@@ -175,7 +195,44 @@ export const PROP_TYPES: Record<string, PropType> = {
   },
   curtain_open: { kind: "panel", texture: "curtain_open", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12, relief: 0.3 },
   plant1: { kind: "cross", texture: "plant1", size: [0.3, 0.58, 0.3] },
+  // pillars: a slim one and a heavy one (their height: the cell's)
+  pillar1: { kind: "pillar", size: [0.26, 1, 0.26], shaft: 0.16, flare: 0.1 },
+  pillar2: { kind: "pillar", size: [0.42, 1, 0.42], shaft: 0.28, flare: 0.14 },
+  // corner cuts: half the cell's sides, and more of them
+  chamfer1: { kind: "chamfer", size: [0.5 * Math.SQRT2, 1, 0.02], cut: 0.5, wall: true },
+  chamfer2: { kind: "chamfer", size: [0.7 * Math.SQRT2, 1, 0.02], cut: 0.7, wall: true },
 };
+
+// the corner a chamfer cuts (any other anchor: the nearest corner)
+const CHAMFER_CORNER: Record<PropAnchor, "NE" | "NW" | "SE" | "SW"> = {
+  NE: "NE",
+  NW: "NW",
+  SE: "SE",
+  SW: "SW",
+  N: "NE",
+  E: "SE",
+  S: "SW",
+  W: "NW",
+  center: "NE",
+};
+// its turn: facing the cell's center (0: facing south, clockwise)
+const CHAMFER_YAW = { NE: 45, SE: 135, SW: 225, NW: 315 };
+
+// the texture sets a prop can wear instead of its own (see
+// PropSpec.texture): only the one-texture kinds
+export function propRetexturable(type: PropType): boolean {
+  return type.kind === "box" || type.kind === "pillar" || type.kind === "chamfer" || type.kind === "panel" || type.kind === "cross";
+}
+
+// how tall a prop stands in its cell (wall heights): a pillar reaches the
+// ceiling
+export function propHeight(map: GameMap, spec: PropSpec): number {
+  const type = PROP_TYPES[spec.prop];
+  // (the heights read here, not through map.ts: it imports this module)
+  const { x, y } = spec.cell;
+  if (type.kind === "pillar" || type.kind === "chamfer") return (map.ceilingHeights[y]?.[x] ?? 1) - (map.floorHeights[y]?.[x] ?? 0);
+  return type.size[1];
+}
 
 // kept free between a prop and the walls it's pushed against (its relief
 // sticks out a little past its footprint)
@@ -211,6 +268,24 @@ const WALL_FACING: Partial<Record<PropAnchor, number>> = { N: 0, NE: 0, NW: 0, S
 
 export function propPlacement(spec: PropSpec): PropPlacement {
   const type = PROP_TYPES[spec.prop];
+  if (type.kind === "chamfer") {
+    // its middle halfway along the cut, flush with the walls it meets
+    // (nudged and turned from there as any prop)
+    const corner = CHAMFER_CORNER[spec.at];
+    const [ax, az] = ANCHOR_VECTOR[corner];
+    const reach = type.cut / 2;
+    const [ox, oz] = spec.offset ?? [0, 0];
+    const yaw = ((CHAMFER_YAW[corner] + (spec.rotation ?? 0)) * Math.PI) / 180;
+    const half = (Math.abs(Math.cos(yaw)) + Math.abs(Math.sin(yaw))) * (type.size[0] / 2);
+    return {
+      x: spec.cell.x + ax * (0.5 - reach) + ox,
+      z: spec.cell.y + az * (0.5 - reach) + oz,
+      yaw,
+      reachX: Math.min(half, reach * 2),
+      reachZ: Math.min(half, reach * 2),
+      type,
+    };
+  }
   const base = type.wall ? (WALL_FACING[spec.at] ?? 0) : 0;
   const yaw = ((base + (spec.rotation ?? 0)) * Math.PI) / 180;
   const cos = Math.abs(Math.cos(yaw));
@@ -236,8 +311,8 @@ export function propBoxes(map: GameMap, cx: number, cy: number) {
   return (map.props ?? [])
     .filter((p) => p.cell.x === cx && p.cell.y === cy)
     .map((p) => {
-      const { x, z, reachX, reachZ, type } = propPlacement(p);
-      return { minX: x - reachX, maxX: x + reachX, minZ: z - reachZ, maxZ: z + reachZ, height: (p.elevation ?? 0) + type.size[1] };
+      const { x, z, reachX, reachZ } = propPlacement(p);
+      return { minX: x - reachX, maxX: x + reachX, minZ: z - reachZ, maxZ: z + reachZ, height: (p.elevation ?? 0) + propHeight(map, p) };
     });
 }
 

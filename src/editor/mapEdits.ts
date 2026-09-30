@@ -21,6 +21,7 @@ export type EditTool =
   | "prop"
   | "decal"
   | "robot"
+  | "wall"
   | "map";
 
 // The surface under the pointer, which picks the tool's target (a wall's
@@ -398,6 +399,7 @@ export function blankMap(name: string, deck: number, width: number, height: numb
     ...(like?.labelColor ? { labelColor: like.labelColor } : {}),
     ...(like?.lightColor ? { lightColor: like.lightColor } : {}),
     ...(like?.lightGridDensity ? { lightGridDensity: like.lightGridDensity } : {}),
+    ...(like?.lightGridAmbient ? { lightGridAmbient: like.lightGridAmbient } : {}),
     ...(like?.reliefDepth ? { reliefDepth: like.reliefDepth } : {}),
     start: { x: 3, y: 3, facing: "E" },
     layout,
@@ -426,5 +428,31 @@ export function removeActor(file: MapFile, index: number): MapFile {
   if (!file.actors?.[index]) return file;
   file.actors.splice(index, 1);
   if (!file.actors.length) delete file.actors;
+  return file;
+}
+
+type ChanceWallEntry = NonNullable<MapFile["chanceWalls"]>[number];
+
+// Walls left to chance (see ChanceWall): a wall cell made one (a floor
+// filled in first), one changed, one made a plain wall again.
+export function addChanceWall(file: MapFile, cell: Vec2, chance = 0.5): MapFile {
+  const row = file.layout[cell.y];
+  if (row && row[cell.x] !== "W") fill(file, cell);
+  (file.chanceWalls ?? (file.chanceWalls = [])).push({ x: cell.x, y: cell.y, chance });
+  return file;
+}
+
+export function updateChanceWall(file: MapFile, index: number, patch: Partial<ChanceWallEntry>): MapFile {
+  const wall = file.chanceWalls?.[index];
+  if (!wall) return file;
+  const next = { ...wall, ...patch } as Record<string, unknown>;
+  for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  file.chanceWalls![index] = next as ChanceWallEntry;
+  return file;
+}
+
+export function removeChanceWall(file: MapFile, index: number): MapFile {
+  file.chanceWalls?.splice(index, 1);
+  if (file.chanceWalls && !file.chanceWalls.length) delete file.chanceWalls;
   return file;
 }

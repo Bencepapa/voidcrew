@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
+import { lightLevel } from "../game/lightEffects";
 import { bakeLightGrid, createLightGridUniforms, disposeLightGrid, setLightGrid, useLightGrid } from "../render/lightGrid";
 import type { LightGridMode } from "../render/lightGrid";
 import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween, liftDoorOf, windowPanels } from "../game/map";
@@ -12,7 +13,7 @@ import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights, lampColor } from "../game/lights";
 import type { LightSpec } from "../game/lights";
-import { PROP_TYPES, propPlacement } from "../game/props";
+import { PROP_TYPES, propPlacement, propHeight } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
 import type { ActorState, BodyPart } from "../game/actors";
@@ -1431,9 +1432,18 @@ export function GameViewport({
       perCell: m.lightGridDensity ?? settingsRef.current.lightGridDensity,
       mode: settingsRef.current.lightGridMode,
     });
-    setLightGrid(lightGrid, bakeLightGrid(map, mapLights, wallHeight, bakeOptions(map)));
+    // the bake (and a coarser one for the ambient part, if the map asks)
+    const bake = (m: GameMap) => {
+      const options = bakeOptions(m);
+      const ambient =
+        options.mode === "directional" && m.lightGridAmbient && m.lightGridAmbient !== options.perCell
+          ? bakeLightGrid(m, mapLights, wallHeight, { ...options, perCell: m.lightGridAmbient })
+          : undefined;
+      setLightGrid(lightGrid, bakeLightGrid(m, mapLights, wallHeight, options), ambient);
+    };
+    bake(map);
     // baked again when its settings change (see the effect on them)
-    rebakeRef.current = () => setLightGrid(lightGrid, bakeLightGrid(latestMapRef.current, mapLights, wallHeight, bakeOptions(latestMapRef.current)));
+    rebakeRef.current = () => bake(latestMapRef.current);
     const ceilingLightCells = (lights: LightSpec[]) =>
       new Set(lights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`));
     let litCells = ceilingLightCells(mapLights);
@@ -1441,6 +1451,15 @@ export function GameViewport({
     const ceilingLightColors = (lights: LightSpec[]) =>
       new Map(lights.filter((l) => l.kind === "ceiling").map((l) => [`${Math.round(l.x)},${Math.round(l.z)}`, l.color]));
     let litColors = ceilingLightColors(mapLights);
+    // the unsteady ceiling lamps (see lightEffects.ts) by cell: their index
+    // in mapLights - their panels glow with their light
+    const effectLampCells = (lights: LightSpec[]) =>
+      new Map<string, number>(lights.flatMap((l, i) => (l.kind === "ceiling" && l.effect ? [[`${Math.round(l.x)},${Math.round(l.z)}`, i] as [string, number]] : [])));
+    let effectCells = effectLampCells(mapLights);
+    // each such panel's own copy of its glowing material, and its glow
+    const effectPanels = new Map<string, { mat: THREE.MeshStandardMaterial; base: number; light: number }>();
+    // the unsteady lights' levels this frame (by index in mapLights)
+    const effectLevels = new Map<number, number>();
     const deckLampColor = lampColor(map);
 
     const frameKit = createWallKit(isTextureSetId(map.textures?.doorFrame) ? map.textures.doorFrame : DOOR_FRAME_SET, false);
@@ -1482,8 +1501,11 @@ export function GameViewport({
           ? ["front", "side", "top"].map((v) => `${type.views}_${v}`)
           : type.kind === "cabin"
             ? [type.door, type.inside, `${type.views}_side`, `${type.views}_top`]
-            : [type.texture];
-    const propTypes = [...new Set((map.props ?? []).map((p) => p.prop))];
+            : type.kind === "pillar"
+              ? [type.texture ?? primarySet]
+              : type.kind === "chamfer"
+                ? []
+                : [type.texture];
     // door panel kits by door kind, created on demand
     // a deck's own door panels and label paint, else the defaults
     const panelSetFor = (kind: DoorSpec["kind"]): TextureSetId => {
@@ -1625,14 +1647,35 @@ export function GameViewport({
       }
       return mat;
     };
-    const ceilingMaterial = (kit: WallKit, relief: boolean, lit: boolean, color?: number) => {
-      const front = (lit && litMatIn(kit, color)) || kit.wallMat;
+    const ceilingMaterial = (kit: WallKit, relief: boolean, lit: boolean, color?: number, cell?: string) => {
+      let front = (lit && litMatIn(kit, color)) || kit.wallMat;
+      const effect = cell === undefined ? undefined : effectCells.get(cell);
+      if (lit && effect !== undefined && front !== kit.wallMat) {
+        // an unsteady lamp's panel: its own copy, dimmed with it each frame
+        const key = `${cell}|${kitId(kit)}`;
+        let panel = effectPanels.get(key);
+        if (!panel || panel.light !== effect) {
+          const mat = (front as THREE.MeshStandardMaterial).clone();
+          useLightGrid(mat, lightGrid);
+          ownMaterials.push(mat);
+          panel = { mat, base: mat.emissiveIntensity, light: effect };
+          effectPanels.set(key, panel);
+        }
+        front = panel.mat;
+      }
       return relief ? [front, kit.sideMat] : front;
+    };
+    // (kits told apart for effectPanels)
+    const kitIds = new Map<WallKit, number>();
+    const kitId = (kit: WallKit) => {
+      if (!kitIds.has(kit)) kitIds.set(kit, kitIds.size);
+      return kitIds.get(kit)!;
     };
     function placeCeilings(geo: THREE.BufferGeometry, farGeo: THREE.BufferGeometry | null, kit: WallKit, relief: boolean) {
       for (const slot of kit.slots) {
         const color = litColors.get(`${slot.x},${slot.z}`);
-        const obj = placeSurface(slot, geo, farGeo, ceilingMaterial(kit, relief, !!slot.lit, color), (o) => (o.rotation.x = Math.PI / 2));
+        const cell = `${slot.x},${slot.z}`;
+        const obj = placeSurface(slot, geo, farGeo, ceilingMaterial(kit, relief, !!slot.lit, color, cell), (o) => (o.rotation.x = Math.PI / 2));
         ceilingTiles.push({ cell: `${slot.x},${slot.z}`, obj, kit, relief });
       }
     }
@@ -2084,6 +2127,109 @@ export function GameViewport({
     });
     ownMaterials.push(cabinGlass);
 
+    // A pillar `h` tall (world units): its foot, shaft and head as relief
+    // blocks cut from its texture (as a wall of the same height would show
+    // it), the 45 degree slopes between them flat.
+    async function buildPillar(type: Extract<PropType, { kind: "pillar" }>, h: number): Promise<THREE.Group | null> {
+      const kit = propKitFor(type.texture ?? primarySet);
+      const relief = reliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
+      const foot = type.size[0];
+      const shaft = type.shaft;
+      const slope = (foot - shaft) / 2;
+      const flare = Math.min(type.flare, Math.max(0, h / 2 - slope - 0.05));
+      const group = new THREE.Group();
+      // the whole panel first: it gives the kit its AO map
+      if (!(await buildRelief(kit, { width: 1, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE }))) return null;
+      const block = async (w: number, y0: number, y1: number) => {
+        const cut = await buildRelief(kit, {
+          width: w,
+          height: y1 - y0,
+          flushEdges: false,
+          depth: relief,
+          coarse: PROP_COARSE,
+          cols: [0.5 - w / 2, 0.5 + w / 2],
+          rows: [(h - y1) / h, (h - y0) / h],
+        });
+        if (!cut) return false;
+        for (let i = 0; i < 4; i++) {
+          const a = (i * Math.PI) / 2;
+          const mesh = new THREE.Mesh(cut.geometry, [kit.wallMat, kit.sideMat]);
+          mesh.position.set((Math.sin(a) * w) / 2, (y0 + y1) / 2, (Math.cos(a) * w) / 2);
+          mesh.rotation.y = a;
+          group.add(mesh);
+        }
+        return true;
+      };
+      const ok =
+        (await block(foot, 0, flare)) &&
+        (await block(shaft, flare + slope, h - flare - slope)) &&
+        (await block(foot, h - flare, h));
+      if (!ok) return null;
+      // the slopes: a band of four quads each, from `w0` wide at `y0` to
+      // `w1` at `y1`, mapped as the wall texture would be there
+      const positions: number[] = [];
+      const uvs: number[] = [];
+      const band = (w0: number, y0: number, w1: number, y1: number) => {
+        for (let i = 0; i < 4; i++) {
+          const a = (i * Math.PI) / 2;
+          const s = Math.sin(a);
+          const c = Math.cos(a);
+          // (u across the face, its half width, y) to the pillar's space
+          const at = (u: number, half: number, y: number) => [c * u + s * half, y, -s * u + c * half];
+          const corners = [
+            [...at(-w0 / 2, w0 / 2, y0), 0.5 - w0 / 2, y0 / h],
+            [...at(w0 / 2, w0 / 2, y0), 0.5 + w0 / 2, y0 / h],
+            [...at(w1 / 2, w1 / 2, y1), 0.5 + w1 / 2, y1 / h],
+            [...at(-w1 / 2, w1 / 2, y1), 0.5 - w1 / 2, y1 / h],
+          ];
+          for (const k of [0, 1, 2, 0, 2, 3]) {
+            positions.push(corners[k][0], corners[k][1], corners[k][2]);
+            uvs.push(corners[k][3], corners[k][4]);
+          }
+        }
+      };
+      band(foot, flare, shaft, flare + slope);
+      band(shaft, h - flare - slope, foot, h - flare);
+      const slopes = new THREE.BufferGeometry();
+      slopes.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      slopes.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      slopes.setAttribute("uv1", new THREE.Float32BufferAttribute(uvs, 2));
+      slopes.computeVertexNormals();
+      geometries.push(slopes);
+      group.add(new THREE.Mesh(slopes, kit.wallMat));
+      return group;
+    }
+
+    // A chamfer `h` tall (world units) in `kit`'s texture: one relief panel,
+    // cut from the middle of a wall panel as wide.
+    async function buildChamfer(type: Extract<PropType, { kind: "chamfer" }>, kit: WallKit, h: number): Promise<THREE.Group | null> {
+      const w = type.size[0];
+      // after the walls' whole panel, whose AO map it borrows
+      if (!(await wallGeometry(kit, "full"))) return null;
+      const panel = await buildRelief(kit, { width: w, height: h, flushEdges: true, cols: [0.5 - w / 2, 0.5 + w / 2], rows: [0, 1] });
+      if (!panel) return null;
+      const group = new THREE.Group();
+      const mesh = new THREE.Mesh(panel.geometry, [kit.wallMat, kit.sideMat]);
+      mesh.position.y = h / 2;
+      group.add(mesh);
+      return group;
+    }
+
+    // a prop type wearing another texture set (see PropSpec.texture)
+    function retextured(type: PropType, texture: string | undefined): PropType {
+      if (!texture) return type;
+      switch (type.kind) {
+        case "box":
+          return { ...type, side: texture, top: isTextureSetId(`${texture}_top`) ? `${texture}_top` : texture };
+        case "pillar":
+        case "panel":
+        case "cross":
+          return { ...type, texture };
+        default:
+          return type;
+      }
+    }
+
     async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
       const [length, height, depth] = type.size;
       const relief = reliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
@@ -2162,6 +2308,7 @@ export function GameViewport({
         return template;
       }
 
+      if (type.kind === "pillar" || type.kind === "chamfer") return null;
       const [front, side, top] = propSets(type).map((id) => propKitFor(id));
       // What each view covers (see PropType's px): at one pixel scale -
       // the front view's across the prop's length - standing on the floor,
@@ -2237,14 +2384,41 @@ export function GameViewport({
     const doorGroups = new Map<string, THREE.Object3D>();
     // the props placed, by index in the map's props (the editor's selection)
     const propObjects = new Map<number, THREE.Object3D>();
-    for (const name of propTypes) {
+    // each type in each texture it wears
+    const propLooks = [...new Set((map.props ?? []).map((p) => `${p.prop}|${p.texture ?? ""}`))];
+    for (const look of propLooks) {
+      const [name, texture] = look.split("|");
       track(async () => {
-        const template = await buildPropTemplate(PROP_TYPES[name]);
-        if (!template) return;
-        (map.props ?? []).forEach((spec, index) => {
-          if (spec.prop !== name) return;
+        const type = retextured(PROP_TYPES[name], texture || undefined);
+        // a pillar or a chamfer is built for each height it's needed at (a
+        // chamfer in its cell's wall texture)
+        const perCell = type.kind === "pillar" || type.kind === "chamfer";
+        const builds = new Map<string, Promise<THREE.Group | null>>();
+        const template = perCell ? null : await buildPropTemplate(type);
+        if (!template && !perCell) return;
+        for (const [index, spec] of (map.props ?? []).entries()) {
+          if (spec.prop !== name || (spec.texture ?? "") !== texture) continue;
+          let made = template;
+          if (perCell) {
+            const h = propHeight(map, spec) * wallHeight;
+            const own = texture || map.wallTextureAt?.(spec.cell.x, spec.cell.y);
+            const setId = isTextureSetId(own) ? own : primarySet;
+            const key = `${h}|${type.kind === "chamfer" ? setId : ""}`;
+            let built = builds.get(key);
+            if (!built) {
+              built =
+                type.kind === "pillar"
+                  ? buildPillar(type, h)
+                  : type.kind === "chamfer"
+                    ? buildChamfer(type, wallKitFor(setId), h)
+                    : Promise.resolve(null);
+              builds.set(key, built);
+            }
+            made = await built;
+          }
+          if (!made) continue;
           const { x, z, yaw } = propPlacement(spec);
-          const prop = template.clone();
+          const prop = made.clone();
           prop.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
           prop.rotation.y = -yaw;
           prop.userData.prop = true;
@@ -2252,7 +2426,7 @@ export function GameViewport({
           prop.userData.propIndex = index;
           propObjects.set(index, prop);
           group.add(prop);
-        });
+        }
       }).catch((err) => console.error("Prop build failed:", err));
     }
 
@@ -2623,9 +2797,11 @@ export function GameViewport({
       mapLights = generateLights(next);
       litCells = ceilingLightCells(mapLights);
       litColors = ceilingLightColors(mapLights);
+      effectCells = effectLampCells(mapLights);
+      for (const [key, panel] of effectPanels) if (effectCells.get(key.split("|")[0]) !== panel.light) effectPanels.delete(key);
       lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
       for (const tile of ceilingTiles) {
-        const material = ceilingMaterial(tile.kit, tile.relief, litCells.has(tile.cell), litColors.get(tile.cell));
+        const material = ceilingMaterial(tile.kit, tile.relief, litCells.has(tile.cell), litColors.get(tile.cell), tile.cell);
         tile.obj.traverse((o) => {
           if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = material;
         });
@@ -2634,7 +2810,7 @@ export function GameViewport({
       // the new fixtures get culled with the rest on the next frame
       culledCount = -1;
       // and the baked light follows
-      setLightGrid(lightGrid, bakeLightGrid(next, mapLights, wallHeight, bakeOptions(next)));
+      bake(next);
     }
     applyLightsRef.current = applyLights;
     const litNear = (key: string, cells: Set<string>) => {
@@ -2670,11 +2846,25 @@ export function GameViewport({
         }
         list.push({ key: `flash ${f.id}`, x: f.x, y: f.y, z: f.z, color: f.color, intensity: f.intensity * (1 - t), range: f.range, flash: true });
       }
-      if (!baked) {
-        mapLights.forEach((l, i) =>
-          list.push({ key: `${l.kind} ${l.x} ${l.y} ${l.z}`, x: l.x, y: l.y * wallHeight, z: l.z, color: l.color, intensity: l.intensity, range: l.range, cell: lightCells[i] }),
-        );
-      }
+      // the map's lights (baked: only the unsteady ones), at their level now
+      effectLevels.clear();
+      mapLights.forEach((l, i) => {
+        if (baked && !l.effect) return;
+        const level = l.effect ? lightLevel(l.effect, l.source * 7.13 + i, now / 1000) : 1;
+        if (l.effect) effectLevels.set(i, level);
+        list.push({
+          key: `${l.kind} ${l.x} ${l.y} ${l.z}`,
+          x: l.x,
+          y: l.y * wallHeight,
+          z: l.z,
+          color: l.color,
+          intensity: l.intensity * level,
+          range: l.range,
+          cell: lightCells[i],
+        });
+      });
+      // their panels with them
+      for (const panel of effectPanels.values()) panel.mat.emissiveIntensity = panel.base * Math.min(1.3, effectLevels.get(panel.light) ?? 1);
       return list;
     }
     // a short burst of light (world position; ms), e.g. a muzzle flash
@@ -2861,7 +3051,7 @@ export function GameViewport({
         const t = Math.min(1, Math.max(0, (now - actor.moveStart) / actor.moveMs));
         const x = lerp(actor.from.x, actor.cell.x, t);
         const z = lerp(actor.from.y, actor.cell.y, t);
-        const y = lerp(floorY(actor.from.x, actor.from.y), floorY(actor.cell.x, actor.cell.y), t);
+        const y = lerp(actor.fromY, actor.y, t) * wallHeight;
         const mesh = entry.mesh;
         const dead = actor.diedAt !== null ? (now - actor.diedAt) / ACTOR_FADE_MS : 0;
         mesh.visible =
