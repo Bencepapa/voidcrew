@@ -323,9 +323,19 @@ export const TEXTURE_SETS = {
 };
 
 // a texture set that isn't listed: the maps in public/textures/<name>/
+// the unlisted folders (props' views) that have a glow map too - a glow.png
+// next to their diffuse (see TextureSetFiles.glow)
+const FOLDER_GLOWS = new Set(["kitchen1_front"]);
+
 export function textureFolder(name: string): TextureSetFiles {
   const base = `${import.meta.env.BASE_URL}textures/${name}/`;
-  return { diffuse: `${base}diffuse.png`, normal: `${base}normal.png`, depth: `${base}depth.png`, pixelArt: true };
+  return {
+    diffuse: `${base}diffuse.png`,
+    normal: `${base}normal.png`,
+    depth: `${base}depth.png`,
+    pixelArt: true,
+    ...(FOLDER_GLOWS.has(name) ? { glow: `${base}glow.png` } : {}),
+  };
 }
 
 export function isTextureSetId(id: string | undefined): id is TextureSetId {
