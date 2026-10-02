@@ -131,6 +131,20 @@ not two editors.
   it, Delete takes it out; its panel sets the item, count, height, chance
   and links (`items` in the map). An item lying on a prop is only there
   with it.
+- **Smoke:** a click on a wall, floor or anything else puts a smoke
+  emitter just off that spot and picks it (a small wire marker shows it
+  while editing); a click on a marker picks it, the right button takes it
+  out. The picked one: arrows and Page Up / Down move it (Shift: more),
+  Delete takes it out; its panel sets the amount, the puffs' size, the
+  height, the color (white: steam), the chance and the links (`smokes` in
+  the map) - and **Blow**: the speed it's blown out with (a vent, a burst
+  pipe; 0: it just rises), with its heading (0 north, 90 east) and tilt (up
+  or down from level); a line from the marker shows the way. Blown smoke
+  gets about 0.6 cells far for each unit of speed, slows down and rises
+  from there (walls don't stop it - aim it along the room). The puffs rise,
+  widen, gather under the ceiling and fade; each takes its light from the
+  baked light where it is - thick and bright in a lamp's light, thin in the
+  dark.
 - **Exit:** a click on a floor makes it a way off the ship (a glowing
   EXIT plate on the floor) and picks it; a click on one picks it, the
   right button takes it out; its panel sets its name ("Hangar bay" - for

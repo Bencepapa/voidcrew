@@ -66,9 +66,9 @@ export interface GameMap {
   bridges?: BridgeSpec[];
   // the deck's lights, all placed (see the editor's Light tool)
   lights?: MapLight[];
-  // everything about the map but its lights and baked light density (see
-  // parseMap): two versions with the same key differ only in lighting, which
-  // the renderer can change without rebuilding the deck
+  // everything about the map but its lights, baked light density, smoke and
+  // robots (see parseMap): two versions with the same key differ only in
+  // those, which the renderer can change without rebuilding the deck
   structureKey?: string;
   windows?: WindowSpec[];
   // walls left to chance (in the full map: walls)
@@ -79,6 +79,7 @@ export interface GameMap {
   items?: MapItem[];
   // where the party can leave the ship (see ExitSpec)
   exits?: ExitSpec[];
+  smokes?: SmokeSpec[];
   actors?: ActorSpec[];
 }
 
@@ -159,6 +160,26 @@ export interface PropSpec extends Linked {
   // a container's contents put in by hand (see items.ts; [] : empty);
   // unset: rolled from its type's loot table
   loot?: { item: string; count: number }[];
+}
+
+// A smoke emitter (see render/smoke.ts): a leaking pipe, a smouldering
+// console - puffs rising from a point, lit by the light around them.
+export interface SmokeSpec extends Linked {
+  cell: Vec2;
+  // from the cell's center and its floor: across, up (wall heights), along
+  pos: [number, number, number];
+  // how much smoke (default 1), how big its puffs get (default 1), its
+  // color ("#rrggbb"; default a light grey - white: steam)
+  density?: number;
+  size?: number;
+  color?: string;
+  // blown out (a vent, a burst pipe) instead of just rising: how fast
+  // (cells / s - it gets about 0.6 of that far before it slows and rises),
+  // which way (degrees: 0 north, 90 east) and how far up from level
+  // (degrees: 90 straight up, -90 straight down)
+  blow?: { speed: number; yaw: number; pitch?: number };
+  // the chance (0..1) it's there in a variation (see variation.ts)
+  chance?: number;
 }
 
 // A way off the ship - a hangar bay, an airlock, an escape pod: standing in

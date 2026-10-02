@@ -626,6 +626,9 @@ export function useGameState() {
   const pickUpRef = useRef(pickUpItems);
   pickUpRef.current = pickUpItems;
   useEffect(() => {
+    // (not while the map is being edited - no variation is played then:
+    // the editor walks over what lies about)
+    if (variationRef.current === null) return;
     pickUpRef.current(false);
   }, [pos, elevation, map.id]);
 

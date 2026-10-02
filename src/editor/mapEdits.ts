@@ -22,6 +22,7 @@ export type EditTool =
   | "decal"
   | "robot"
   | "item"
+  | "smoke"
   | "exit"
   | "wall"
   | "map";
@@ -497,5 +498,29 @@ export function nameExit(file: MapFile, cell: Vec2, name: string | undefined): M
   if (!exit) return file;
   if (name) exit.name = name;
   else delete exit.name;
+  return file;
+}
+
+type SmokeEntry = NonNullable<MapFile["smokes"]>[number];
+
+// The map's smoke emitters (see SmokeSpec): put one in, change one, take
+// one out.
+export function addSmoke(file: MapFile, smoke: SmokeEntry): MapFile {
+  (file.smokes ?? (file.smokes = [])).push(smoke);
+  return file;
+}
+
+export function updateSmoke(file: MapFile, index: number, patch: Partial<SmokeEntry>): MapFile {
+  const smoke = file.smokes?.[index];
+  if (!smoke) return file;
+  const next = { ...smoke, ...patch } as Record<string, unknown>;
+  for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  file.smokes![index] = next as SmokeEntry;
+  return file;
+}
+
+export function removeSmoke(file: MapFile, index: number): MapFile {
+  file.smokes?.splice(index, 1);
+  if (file.smokes && !file.smokes.length) delete file.smokes;
   return file;
 }

@@ -92,6 +92,20 @@ interface Props {
   onPropChange: (patch: { rotation?: number; elevation?: number; chance?: number; texture?: string } & Linked) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
+  // the Smoke tool: the picked emitter
+  smoke: SmokeInfo | null;
+  onSmokeChange: (
+    patch: {
+      density?: number;
+      size?: number;
+      color?: string;
+      chance?: number;
+      pos?: [number, number, number];
+      blow?: { speed: number; yaw: number; pitch?: number };
+    } & Linked,
+  ) => void;
+  onSmokeDelete: () => void;
+  onSmokeDeselect: () => void;
   // the Exit tool: the picked exit's name
   exit: { name: string } | null;
   onExitName: (name: string | undefined) => void;
@@ -159,6 +173,28 @@ export interface DecalInfo {
   rotation: number;
   // what touching it does (a lift button)
   action?: string;
+  chance: number;
+  links: Linked;
+}
+
+// a smoke emitter's `blow` as the map keeps it: none when it isn't blown,
+// no pitch when it's level
+function smokeBlow(blow: { speed: number; yaw: number; pitch: number }) {
+  if (!blow.speed) return undefined;
+  return blow.pitch ? blow : { speed: blow.speed, yaw: blow.yaw };
+}
+
+// the selected smoke emitter as the panel shows it
+export interface SmokeInfo {
+  density: number;
+  size: number;
+  color: string;
+  // its height above the floor, and its cell's floor-to-ceiling height
+  height: number;
+  roomHeight: number;
+  // blown out: how fast (0: it just rises), which way (degrees from north)
+  // and how far up from level (degrees)
+  blow: { speed: number; yaw: number; pitch: number };
   chance: number;
   links: Linked;
 }
@@ -313,6 +349,7 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
   { tool: "robot", label: "Robot", title: "Put in robots, their facing, route and chance" },
   { tool: "item", label: "Item", title: "Put loot on floors, tables, beds and crates" },
+  { tool: "smoke", label: "Smoke", title: "Smoke emitters: puffs rising from a point, lit by the light around" },
   { tool: "exit", label: "Exit", title: "Ways off the ship: standing there, Use ends the run" },
   { tool: "wall", label: "Chance wall", title: "Walls left to chance: there in some variations, open floor in others" },
   { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
@@ -326,6 +363,7 @@ const TOOL_HELP: Partial<Record<EditTool, string>> = {
   robot: "click a floor: a robot there (facing you) · click a robot: pick it · Shift+click a floor: add it to the picked one's route · right-click: take it out",
   decal: "click a wall, floor or ceiling: the decal there · click a decal: pick it · right-click: take it off",
   prop: "click a floor (near a side or corner to push it there): put it in · click a prop: pick it · right-click: take it out",
+  smoke: "click a wall, floor or anything: smoke from there (picked) · click its marker: pick it · right-click its marker: take it out",
   exit: "click a floor: a way off the ship there (picked) · click one: pick it · right-click: take it out",
   item: "click a floor or a table / bed / crate top: the item there · click an item: pick it · right-click: take it out",
   wall: "click a wall or a floor: a wall left to chance there (picked) · click one: pick it · right-click one: a plain wall again",
@@ -702,6 +740,42 @@ export function EditorBar(p: Props) {
               </div>
             </>
           )}
+        </>
+      )}
+      {p.tool === "smoke" && p.smoke && (
+        <>
+          <span className="basis-full" />
+          <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+            <span className="text-amber-200">smoke</span>
+            {slider("Amount", p.smoke.density, 0.25, 3, 0.25, (v) => p.onSmokeChange({ density: v === 1 ? undefined : v }))}
+            {slider("Puff size", p.smoke.size, 0.4, 2.5, 0.1, (v) => p.onSmokeChange({ size: v === 1 ? undefined : v }))}
+            {slider("Height", p.smoke.height, 0, Math.max(0, p.smoke.roomHeight - 0.05), 0.05, (v) => p.onSmokeChange({ pos: [NaN, v, NaN] }))}
+            {slider("Blow", p.smoke.blow.speed, 0, 4, 0.25, (v) => p.onSmokeChange({ blow: smokeBlow({ ...p.smoke!.blow, speed: v }) }))}
+            {p.smoke.blow.speed > 0 && (
+              <>
+                {slider("Heading", p.smoke.blow.yaw, 0, 345, 15, (v) => p.onSmokeChange({ blow: smokeBlow({ ...p.smoke!.blow, yaw: v }) }))}
+                {slider("Tilt", p.smoke.blow.pitch, -90, 90, 15, (v) => p.onSmokeChange({ blow: smokeBlow({ ...p.smoke!.blow, pitch: v }) }))}
+              </>
+            )}
+            <label className="flex items-center gap-1">
+              Color
+              <input
+                type="color"
+                value={p.smoke.color}
+                onChange={(e) => p.onSmokeChange({ color: e.target.value })}
+                className="w-7 h-6 bg-transparent border border-neutral-600"
+              />
+            </label>
+            {chanceSlider(p.smoke.chance, (chance) => p.onSmokeChange({ chance }))}
+            {linkFields(p.smoke.links, p.linkIds, p.onSmokeChange)}
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSmokeDelete} title="Delete">
+              Remove
+            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSmokeDeselect}>
+              Done
+            </button>
+            <span className="text-neutral-500">arrows / PgUp PgDn: move</span>
+          </div>
         </>
       )}
       {p.tool === "exit" && p.exit && (

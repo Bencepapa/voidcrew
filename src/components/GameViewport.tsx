@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
+import { createSmoke } from "../render/smoke";
 import { ITEM_TYPES, itemSpot } from "../game/items";
 import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
@@ -13,7 +14,7 @@ import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
-import { generateLights, lampColor } from "../game/lights";
+import { generateLights, lampColor, parseColor } from "../game/lights";
 import type { LightSpec } from "../game/lights";
 import { PROP_TYPES, propPlacement, propHeight } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
@@ -162,6 +163,8 @@ export interface EditTarget {
   actor?: number;
   // the Item tool: the loose item pointed at (its index in the map's items)
   item?: number;
+  // the Smoke tool: the emitter pointed at (its index in the map's smokes)
+  smoke?: number;
   // the point hit, exactly: its cell, and across, up (wall heights above
   // the cell's floor) and along from the cell's center - where an item goes
   point?: { cell: Vec2; pos: [number, number, number] };
@@ -644,6 +647,8 @@ const PARTY_FLASH_COLOR = 0xffe2a0;
 const ACTOR_FLASH = { color: 0xff9a40, intensity: 3.5, range: 3, duration: 110 };
 // a surface's pixels across one panel (as decals count them - see decals.ts)
 const SURFACE_PIXELS = 256;
+// smoke's own color where the map gives none (see SmokeSpec)
+const SMOKE_COLOR = 0xb4b8bc;
 // how strongly a texture set's glow map shines (see TextureSetFiles.glow)
 const SURFACE_GLOW = 1.2;
 // an actor's glowing pixels (see glowMapOf): at least this red, no more
@@ -757,6 +762,8 @@ interface GameViewportProps {
   selectedActor?: number | null;
   // the Item tool's selected item (its index in the map's items)
   selectedItem?: number | null;
+  // the Smoke tool's selected emitter (its index in the map's smokes)
+  selectedSmoke?: number | null;
   // the surface under the pointer whenever it changes - the editor's
   // texture palette follows it
   onEditHover?: (target: EditTarget | null) => void;
@@ -1117,6 +1124,7 @@ export function GameViewport({
   selectedLight,
   selectedProp,
   selectedItem,
+  selectedSmoke,
   selectedDecal,
   selectedDoor,
   selectedActor,
@@ -1204,6 +1212,8 @@ export function GameViewport({
   selectedPropRef.current = selectedProp ?? null;
   const selectedItemRef = useRef(selectedItem ?? null);
   selectedItemRef.current = selectedItem ?? null;
+  const selectedSmokeRef = useRef(selectedSmoke ?? null);
+  selectedSmokeRef.current = selectedSmoke ?? null;
   const selectedDecalRef = useRef(selectedDecal ?? null);
   selectedDecalRef.current = selectedDecal ?? null;
   const selectedDoorRef = useRef(selectedDoor ?? null);
@@ -1291,8 +1301,8 @@ export function GameViewport({
   }, [openDoors]);
 
   // The map the scene is built from. A new version of it that differs only
-  // in its lights (the editor's Light tool) keeps the scene: its lighting is
-  // redone in place (applyLights) instead of rebuilding every wall.
+  // in its lights, smoke or robots (the editor's tools for them) keeps the
+  // scene: those are redone in place instead of rebuilding every wall.
   const sceneMapRef = useRef(map);
   if (sceneMapRef.current.id !== map.id || !map.structureKey || sceneMapRef.current.structureKey !== map.structureKey) {
     sceneMapRef.current = map;
@@ -2548,6 +2558,68 @@ export function GameViewport({
       }).catch((err) => console.error("Prop build failed:", err));
     }
 
+    // ---- smoke (see smoke.ts): the map's emitters, and a marker at each for
+    // the editor to pick it by (shown only while editing) ----
+    const smokeMarkers = new Map<number, THREE.Mesh>();
+    const smokeMarkerGeo = new THREE.OctahedronGeometry(0.04);
+    geometries.push(smokeMarkerGeo);
+    const smokeMarkerMat = new THREE.MeshBasicMaterial({ color: 0xb8c4cc, wireframe: true });
+    // (and a line from it the way it blows)
+    const smokeBlowGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]);
+    geometries.push(smokeBlowGeo);
+    const smokeBlowMat = new THREE.LineBasicMaterial({ color: 0xffd060 });
+    const buildSmoke = (m: GameMap) => createSmoke(
+      (m.smokes ?? []).map((spec, index) => {
+        const at = new THREE.Vector3(
+          spec.cell.x + spec.pos[0],
+          (floorHeight(map, spec.cell.x, spec.cell.y) + spec.pos[1]) * wallHeight,
+          spec.cell.y + spec.pos[2],
+        );
+        const marker = new THREE.Mesh(smokeMarkerGeo, smokeMarkerMat);
+        marker.position.copy(at);
+        marker.userData.smokeIndex = index;
+        marker.userData.item = true;
+        marker.visible = false;
+        group.add(marker);
+        smokeMarkers.set(index, marker);
+        let blow: [number, number, number] | undefined;
+        if (spec.blow?.speed) {
+          const yaw = (spec.blow.yaw * Math.PI) / 180;
+          const pitch = ((spec.blow.pitch ?? 0) * Math.PI) / 180;
+          const way = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+          blow = [way.x * spec.blow.speed, way.y * spec.blow.speed, way.z * spec.blow.speed];
+          const line = new THREE.Line(smokeBlowGeo, smokeBlowMat);
+          line.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), way);
+          line.scale.setScalar(0.1 + 0.1 * spec.blow.speed);
+          marker.add(line);
+        }
+        return {
+          x: at.x,
+          y: at.y,
+          z: at.z,
+          ceiling: ceilingY(spec.cell.x, spec.cell.y),
+          floor: floorY(spec.cell.x, spec.cell.y),
+          blow,
+          density: spec.density ?? 1,
+          size: spec.size ?? 1,
+          color: new THREE.Color(parseColor(spec.color) ?? SMOKE_COLOR),
+          cell: cellKey(spec.cell.x, spec.cell.y),
+        };
+      }),
+      lightGrid,
+    );
+    let smoke = buildSmoke(map);
+    scene.add(smoke.mesh);
+    // the editor changed only the smoke: made anew, the rest stays built
+    function applySmoke(next: GameMap) {
+      for (const marker of smokeMarkers.values()) group.remove(marker);
+      smokeMarkers.clear();
+      scene.remove(smoke.mesh);
+      smoke.dispose();
+      smoke = buildSmoke(next);
+      scene.add(smoke.mesh);
+    }
+
     // ---- exits: a glowing plate on the floor of each way off the ship ----
     const exitMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(), transparent: true, depthWrite: false, fog: true });
     const exitGeo = new THREE.PlaneGeometry(0.8, 0.8);
@@ -3109,7 +3181,20 @@ export function GameViewport({
       // and the baked light follows
       bake(next);
     }
-    applyLightsRef.current = applyLights;
+    // A new version of the map with the same structure (see structureKey):
+    // what differs in it is redone in place. Its robots need nothing here -
+    // the scene draws them from the game's state.
+    let applied = map;
+    const lightsOf = (m: GameMap) => JSON.stringify([m.lights, m.lightGridDensity, m.lightGridAmbient]);
+    applyLightsRef.current = (next: GameMap) => {
+      if (lightsOf(next) !== lightsOf(applied)) applyLights(next);
+      if (JSON.stringify(next.smokes) !== JSON.stringify(applied.smokes)) {
+        applySmoke(next);
+        sceneVersion++;
+      }
+      applied = next;
+    };
+    const applyChanges = applyLightsRef.current;
     const litNear = (key: string, cells: Set<string>) => {
       if (cells.has(key)) return true;
       const [x, y] = key.split(",").map(Number);
@@ -3978,6 +4063,12 @@ export function GameViewport({
           if (at) return { kind: "floor", cell: { ...at }, door: { ...at } };
         }
       }
+      // the Smoke tool: an emitter's marker pointed at
+      if (editToolRef.current === "smoke") {
+        const at = hits.find((h) => h.object.userData.smokeIndex !== undefined);
+        const spec = at && latestMapRef.current.smokes?.[at.object.userData.smokeIndex as number];
+        if (at && spec) return { kind: "floor", cell: { ...spec.cell }, smoke: at.object.userData.smokeIndex as number };
+      }
       // the Item tool: an item pointed at
       if (editToolRef.current === "item") {
         for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
@@ -4118,6 +4209,14 @@ export function GameViewport({
           return;
         }
       }
+      // a selected smoke emitter: framed around its marker
+      const smokeIndex = editModeRef.current ? selectedSmokeRef.current : null;
+      const smokeMarker = smokeIndex === null ? undefined : smokeMarkers.get(smokeIndex);
+      if (smokeMarker) {
+        frameObject(selectBox, smokeMarker, 0.05);
+        selectBox.visible = true;
+        return;
+      }
       // a selected item: framed around its sprite
       const itemIndex = editModeRef.current ? selectedItemRef.current : null;
       const itemObj = itemIndex === null ? undefined : looseItems.get(itemIndex)?.obj;
@@ -4156,7 +4255,7 @@ export function GameViewport({
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
       const tool = editToolRef.current;
-      let mode: "wall" | "plate" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | null = null;
+      let mode: "wall" | "plate" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | "smoke" | null = null;
       let color = EDIT_FILL_COLOR;
       if (target) {
         if (tool === "texture") {
@@ -4176,6 +4275,9 @@ export function GameViewport({
           color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "item") {
           mode = target.item !== undefined ? "item" : null;
+          color = EDIT_LIGHT_ADD_COLOR;
+        } else if (tool === "smoke") {
+          mode = target.smoke !== undefined ? "smoke" : null;
           color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "light") {
           // a light hangs in the cell's ceiling, so either surface of it works
@@ -4211,6 +4313,9 @@ export function GameViewport({
       } else if (mode === "item") {
         const item = looseItems.get(target.item!);
         if (item) frameObject(editBox, item.obj, 0.02);
+      } else if (mode === "smoke") {
+        const marker = smokeMarkers.get(target.smoke!);
+        if (marker) frameObject(editBox, marker, 0.03);
       } else if (mode === "decal") {
         selectBounds.makeEmpty();
         for (const obj of group.children) {
@@ -4456,6 +4561,8 @@ export function GameViewport({
       );
       updateActors(camX, camZ);
       updateLoot(camX, camZ, cam.y * wallHeight);
+      smoke.update(dt, camera, sight.cells, s.ambientIntensity);
+      for (const marker of smokeMarkers.values()) marker.visible = editModeRef.current;
       // the exits' plates throb
       exitMat.opacity = 0.75 + 0.25 * Math.sin(performance.now() / 420);
       updateTracers();
@@ -4536,11 +4643,53 @@ export function GameViewport({
       snapshot();
       return { ...renderer.info.render, cellsInSight: sight.cells.size, objects: group.children.length };
     };
-    if (import.meta.env.DEV) Object.assign(window, { __voidcrewSnapshot: snapshot, __voidcrewRenderInfo: renderInfo, __voidcrewScene: group });
+    // dev-only: how long a frame takes (ms; the median of `frames`, each
+    // waited out on the graphics card) at a given size, with the smoke drawn
+    // and without - and how long moving its puffs takes alone
+    const bench = (frames = 120, width = 1280, height = 720) => {
+      const size = renderer.getSize(new THREE.Vector2());
+      const ratio = renderer.getPixelRatio();
+      renderer.setPixelRatio(1);
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      const gl = renderer.getContext();
+      const pixel = new Uint8Array(4);
+      const run = (withSmoke: boolean) => {
+        const times: number[] = [];
+        smoke.mesh.visible = withSmoke;
+        for (let i = 0; i < frames + 10; i++) {
+          const start = performance.now();
+          renderFrame();
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+          if (i >= 10) times.push(performance.now() - start);
+        }
+        smoke.mesh.visible = true;
+        times.sort((a, b) => a - b);
+        return times[times.length >> 1];
+      };
+      const withSmoke = run(true);
+      const without = run(false);
+      const again = run(true);
+      const start = performance.now();
+      for (let i = 0; i < 1000; i++) smoke.update(0, camera, sight.cells, 0.3);
+      const update = (performance.now() - start) / 1000;
+      const puffs = smoke.mesh.geometry instanceof THREE.InstancedBufferGeometry ? smoke.mesh.geometry.instanceCount : 0;
+      renderer.setPixelRatio(ratio);
+      renderer.setSize(size.x, size.y, false);
+      if (size.x > 0 && size.y > 0) {
+        camera.aspect = size.x / size.y;
+        camera.updateProjectionMatrix();
+      }
+      return { withSmoke, without, again, update, puffs, calls: renderer.info.render.calls };
+    };
+    if (import.meta.env.DEV) {
+      Object.assign(window, { __voidcrewSnapshot: snapshot, __voidcrewRenderInfo: renderInfo, __voidcrewScene: group, __voidcrewBench: bench });
+    }
 
     return () => {
       disposed = true;
-      if (applyLightsRef.current === applyLights) applyLightsRef.current = null;
+      if (applyLightsRef.current === applyChanges) applyLightsRef.current = null;
       const w = window as { __voidcrewSnapshot?: () => string };
       if (w.__voidcrewSnapshot === snapshot) delete w.__voidcrewSnapshot;
       cancelAnimationFrame(raf);
@@ -4580,6 +4729,10 @@ export function GameViewport({
       disposeLightGrid(lightGrid);
       exitMat.map?.dispose();
       exitMat.dispose();
+      scene.remove(smoke.mesh);
+      smoke.dispose();
+      smokeMarkerMat.dispose();
+      smokeBlowMat.dispose();
       // the renderer stays for the next build (see SceneCache)
       renderer.renderLists.dispose();
     };

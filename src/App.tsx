@@ -18,9 +18,9 @@ import {
 } from "./editor/mapStore";
 import { MAPS, START_MAP } from "./game/map";
 import type { GameMap, Linked } from "./game/types";
-import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit } from "./editor/mapEdits";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, addSmoke, removeSmoke, updateSmoke } from "./editor/mapEdits";
 import { PROP_TYPES, propRetexturable } from "./game/props";
-import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo } from "./editor/EditorBar";
+import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
 import { moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
 import { ACTOR_TYPES } from "./game/actors";
@@ -447,6 +447,24 @@ export default function App() {
           setSelectedProp(count);
         }
       }
+    } else if (editTool === "smoke") {
+      // a click on an emitter's marker picks it (the right button takes it
+      // out); anywhere else it puts one just off the surface pointed at
+      const picked = target.smoke;
+      if (picked !== undefined) {
+        if (!alt) {
+          setSelectedSmoke(picked);
+          return;
+        }
+        result = applyEdit(map.id, (file) => removeSmoke(file, picked));
+        setSelectedSmoke((sel) => (sel === null || sel === picked ? null : sel > picked ? sel - 1 : sel));
+      } else {
+        if (alt || !target.spot) return;
+        const { cell: at, pos } = target.spot;
+        const count = map.smokes?.length ?? 0;
+        result = applyEdit(map.id, (file) => addSmoke(file, { x: at.x, y: at.y, pos }));
+        setSelectedSmoke(count);
+      }
     } else if (editTool === "exit") {
       // a click on a floor puts a way off the ship there (or picks the one
       // there); the right button takes it out
@@ -725,6 +743,82 @@ export default function App() {
   }, [editMode, editTool]);
 
   // The selected decal, as the panel shows it
+  // the Smoke tool's pick (its index in the map's smokes)
+  const [selectedSmoke, setSelectedSmoke] = useState<number | null>(null);
+  const selectedSmokeSpec = selectedSmoke === null ? undefined : map.smokes?.[selectedSmoke];
+  const selectedSmokeInfo: SmokeInfo | null = selectedSmokeSpec
+    ? {
+        density: selectedSmokeSpec.density ?? 1,
+        size: selectedSmokeSpec.size ?? 1,
+        color: selectedSmokeSpec.color ?? "#b4b8bc",
+        height: selectedSmokeSpec.pos[1],
+        roomHeight:
+          ceilingHeight(map, selectedSmokeSpec.cell.x, selectedSmokeSpec.cell.y) - floorHeight(map, selectedSmokeSpec.cell.x, selectedSmokeSpec.cell.y),
+        blow: { speed: selectedSmokeSpec.blow?.speed ?? 0, yaw: selectedSmokeSpec.blow?.yaw ?? 0, pitch: selectedSmokeSpec.blow?.pitch ?? 0 },
+        chance: selectedSmokeSpec.chance ?? 1,
+        links: linksOf(selectedSmokeSpec),
+      }
+    : null;
+  // (a `pos` patch with NaN parts keeps the emitter's own there: the
+  // panel's Height slider moves it up and down only)
+  const changeSmoke = (patch: Parameters<typeof updateSmoke>[2], merge?: string) => {
+    if (selectedSmoke === null || !selectedSmokeSpec) return;
+    const index = selectedSmoke;
+    const own = selectedSmokeSpec.pos;
+    const fixed = patch.pos ? { ...patch, pos: patch.pos.map((v, i) => (Number.isNaN(v) ? own[i] : v)) as [number, number, number] } : patch;
+    const result = applyEdit(map.id, (file) => updateSmoke(file, index, fixed), merge && `smoke ${index} ${merge}`);
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  const deleteSmoke = () => {
+    if (selectedSmoke === null) return;
+    const index = selectedSmoke;
+    const result = applyEdit(map.id, (file) => removeSmoke(file, index));
+    if (!("error" in result)) replaceMap(result.map);
+    setSelectedSmoke(null);
+    setEdits((n) => n + 1);
+  };
+  // the selected emitter: arrows move it (as the party sees it), Page Up /
+  // Page Down raise and lower it, Delete takes it out
+  const smokeKeys = useRef({ selectedSmokeInfo, selectedSmokeSpec, changeSmoke, deleteSmoke });
+  smokeKeys.current = { selectedSmokeInfo, selectedSmokeSpec, changeSmoke, deleteSmoke };
+  useEffect(() => {
+    if (!editMode || editTool !== "smoke") return;
+    function onKey(e: KeyboardEvent) {
+      const { selectedSmokeInfo: info, selectedSmokeSpec: spec, changeSmoke: change, deleteSmoke: remove } = smokeKeys.current;
+      if (!info || !spec) return;
+      const stop = () => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      if (e.key === "Delete") {
+        stop();
+        remove();
+        return;
+      }
+      const step = e.shiftKey ? 0.2 : 0.05;
+      const ahead = DIR_VECTOR[facingRef.current];
+      const right = DIR_VECTOR[rightOf(facingRef.current)];
+      const move: Record<string, [number, number, number]> = {
+        ArrowLeft: [-right.x * step, 0, -right.y * step],
+        ArrowRight: [right.x * step, 0, right.y * step],
+        ArrowUp: [ahead.x * step, 0, ahead.y * step],
+        ArrowDown: [-ahead.x * step, 0, -ahead.y * step],
+        PageUp: [0, step, 0],
+        PageDown: [0, -step, 0],
+      };
+      const d = move[e.key];
+      if (!d) return;
+      stop();
+      const [x, y, z] = spec.pos;
+      const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)) * 100) / 100;
+      change({ pos: [clamp(x + d[0], -0.5, 0.5), clamp(y + d[1], 0, info.roomHeight - 0.05), clamp(z + d[2], -0.5, 0.5)] }, "pos");
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editMode, editTool]);
+
   // the Exit tool's pick (its cell)
   const [selectedExit, setSelectedExit] = useState<Vec2 | null>(null);
   const selectedExitSpec = selectedExit && (map.exits ?? []).find((e) => e.cell.x === selectedExit.x && e.cell.y === selectedExit.y);
@@ -1160,6 +1254,7 @@ export default function App() {
       selectedLight={selectedLightInfo ? selectedLight : null}
       selectedProp={selectedPropInfo ? selectedProp : null}
       selectedItem={selectedItemInfo ? selectedItem : null}
+      selectedSmoke={selectedSmokeInfo ? selectedSmoke : null}
       selectedDecal={selectedDecalInfo ? selectedDecal : null}
       selectedDoor={selectedDoorInfo ? selectedDoor : null}
       selectedActor={selectedActorInfo ? selectedActor : null}
@@ -1274,6 +1369,10 @@ export default function App() {
           onPropDelete={deleteProp}
           onPropDeselect={() => setSelectedProp(null)}
           linkIds={linkIds}
+          smoke={selectedSmokeInfo}
+          onSmokeChange={(patch) => changeSmoke(patch, Object.keys(patch).join())}
+          onSmokeDelete={deleteSmoke}
+          onSmokeDeselect={() => setSelectedSmoke(null)}
           exit={selectedExitInfo}
           onExitName={(name) => {
             if (!selectedExit) return;

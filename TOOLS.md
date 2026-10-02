@@ -313,6 +313,7 @@ main fields:
 | `effect` (lights) | `flicker`, `spark` or `pulse`: not baked, a real light serves it |
 | `texture` (props) | another texture set for a box, pillar, chamfer, panel or plant |
 | `items` | loot lying about: `{ "item": "medkit", "x", "y", "count"?, "offset"?: [across, along] }` (plus `chance`, `id`, `with`, `without`) - picked up by stepping in (or Use from the cell before) |
+| `smokes` | smoke emitters: `{ "x", "y", "pos": [across, up, along], "density"?, "size"?, "color"?, "blow"?: { "speed", "yaw", "pitch"? } }` (plus `chance`, `id`, `with`, `without`) |
 | `exits` | ways off the ship: `{ "x", "y", "name"?: "Hangar bay" }` - standing there, Use ends the run |
 | `loot` (containers) | a crate's (or shelf's) contents by hand: `[{ "item": "powercell", "count": 2 }]` (`[]`: empty); unset: rolled from its loot table (src/game/items.ts) |
 | `lights` | ceiling light cells |

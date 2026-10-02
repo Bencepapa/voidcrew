@@ -78,6 +78,20 @@ export interface MapFile {
   }[];
   // ways off the ship (see ExitSpec)
   exits?: { x: number; y: number; name?: string }[];
+  // smoke emitters (see SmokeSpec)
+  smokes?: {
+    x: number;
+    y: number;
+    pos: [number, number, number];
+    density?: number;
+    size?: number;
+    color?: string;
+    blow?: { speed: number; yaw: number; pitch?: number };
+    chance?: number;
+    id?: string;
+    with?: string;
+    without?: string;
+  }[];
   // loot lying about (see MapItem)
   items?: {
     item: string;
@@ -271,7 +285,14 @@ export function parseMap(id: string, file: MapFile): GameMap {
     ladders,
     bridges,
     lights: (file.lights ?? []).map((l) => ({ ...l })),
-    structureKey: JSON.stringify({ ...file, lights: undefined, lightGridDensity: undefined, lightGridAmbient: undefined }),
+    structureKey: JSON.stringify({
+      ...file,
+      lights: undefined,
+      lightGridDensity: undefined,
+      lightGridAmbient: undefined,
+      smokes: undefined,
+      actors: undefined,
+    }),
     windows,
     props: (file.props ?? []).map((p) => {
       if (!PROP_TYPES[p.prop]) throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);
@@ -294,6 +315,21 @@ export function parseMap(id: string, file: MapFile): GameMap {
     exits: (file.exits ?? []).map((e) => {
       if (cells[e.y]?.[e.x] !== "floor") throw new Error(`exit at ${e.x},${e.y} isn't in a floor cell`);
       return { cell: { x: e.x, y: e.y }, name: e.name };
+    }),
+    smokes: (file.smokes ?? []).map((s) => {
+      if (cells[s.y]?.[s.x] === undefined || cells[s.y][s.x] === "wall") throw new Error(`smoke at ${s.x},${s.y} isn't in a walkable cell`);
+      return {
+        cell: { x: s.x, y: s.y },
+        pos: s.pos,
+        density: s.density,
+        size: s.size,
+        color: s.color,
+        blow: s.blow,
+        chance: s.chance,
+        id: s.id,
+        with: s.with,
+        without: s.without,
+      };
     }),
     items: (file.items ?? []).map((it) => {
       if (!ITEM_TYPES[it.item]) throw new Error(`item at ${it.x},${it.y}: unknown item "${it.item}"`);
