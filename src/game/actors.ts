@@ -45,13 +45,21 @@ export interface ActorType {
   // sheet rows: standing, and the walk cycle over one step
   idleRow: number;
   walkRows: number[];
-  // and, if the sheet has them: firing, falling (in order) and the wreck
-  // left lying (without them it fades out when it dies)
+  // and, if the sheet has them: firing (one row, or a few played in turn
+  // while it fires), falling (in order) and the wreck left lying (without
+  // them it fades out when it dies)
   shootRow?: number;
+  shootRows?: number[];
   dieRows?: number[];
   wreckRow?: number;
   // what its wreck gives when searched (a loot table - see items.ts)
   loot?: string;
+  // the sheet row shown for a moment when it's hit
+  hitRow?: number;
+  // a harmless one (a cleaning drone): it takes no notice of the party,
+  // never fights, shares a cell with it - and when hit, flees for
+  // `fleeMs`, at `fleeSpeed` times its pace. Without a route it wanders.
+  passive?: { fleeMs: number; fleeSpeed: number };
   // fighting
   hp: number;
   // damage per shot at the party, and how far (cells) and how often it fires
@@ -74,10 +82,11 @@ export interface ActorType {
   alertMs: number;
   // how it moves in a fight (see stepActors)
   tactics: ActorTactics;
-  // parts that glow (optics, vents...): the sheet's bright red pixels within
-  // these weak spots (by label - see crits), shining in their own color
-  // whatever the light; `intensity` scales it
-  glow?: { crits: string[]; intensity: number };
+  // parts that glow (optics, vents...): the sheet's bright pixels of a
+  // color (default red) shining in their own color whatever the light -
+  // within these weak spots (by label - see crits) and these zones (per
+  // sheet column), or with neither anywhere on it; `intensity` scales it
+  glow?: { crits?: string[]; zones?: Zone[][]; color?: "red" | "blue" | "cyan"; intensity: number };
   // its body parts' names (for the aiming overlay) and where they are
   parts: Record<BodyPart, { label: string; zone: Zone }>;
   // weak spots: a hit there counts as a hit on their part, only harder
@@ -99,6 +108,12 @@ export interface ActorTactics {
   advance: boolean;
   // ... no closer to the party than this (cells)
   minRange: number;
+  // a volley: this many shots `gapMs` apart each time it fires (then its
+  // cooldown)
+  volley?: { shots: number; gapMs: number };
+  // while its gun cools down it keeps coming at the party (down to
+  // minRange) instead of standing its ground
+  closesIn?: boolean;
 }
 
 // a rectangle of a sheet cell: x0, y0, x1, y1 as fractions from its top left
@@ -138,6 +153,8 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     idleRow: 0,
     walkRows: [1, 0, 2, 0],
     shootRow: 3,
+    // (its first dying frame, for a moment)
+    hitRow: 4,
     dieRows: [4, 5],
     wreckRow: 6,
     loot: "robot",
@@ -225,6 +242,162 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
       },
     ],
   },
+  // a tracked gun drone: slow and massive (it doesn't fit the low
+  // corridors), it opens with a long volley from its chaingun, then grinds
+  // on toward the party while it spins up again - it never falls back
+  robot2: {
+    name: "A siege drone",
+    sheet: "robot2",
+    cols: 5,
+    rows: 7,
+    cellAspect: 256 / 192,
+    height: 0.85,
+    body: { headroom: 0.75, step: 0.25 },
+    eyeHeight: 0.5,
+    moveMs: 1400,
+    waitMs: 2200,
+    idleRow: 0,
+    walkRows: [0, 1],
+    shootRows: [2, 3],
+    hitRow: 4,
+    dieRows: [4, 5],
+    wreckRow: 6,
+    loot: "tank",
+    // its visor
+    glow: { color: "blue", intensity: 1.5 },
+    hp: 150,
+    damage: [1, 3],
+    attackRange: 5,
+    attackCooldownMs: 5200,
+    accuracy: 0.7,
+    falloff: 0.08,
+    sight: 5,
+    fieldOfView: 110,
+    huntSight: 8,
+    hearing: 1,
+    alertMs: 12000,
+    tactics: {
+      shotPauseMs: 300,
+      retreat: [0, 0],
+      seeksCover: false,
+      advance: false,
+      minRange: 1,
+      volley: { shots: 7, gapMs: 150 },
+      closesIn: true,
+    },
+    parts: {
+      head: { label: "SENSOR", zone: [0.38, 0.22, 0.62, 0.42] },
+      torso: { label: "HULL", zone: [0.3, 0.4, 0.72, 0.68] },
+      armL: { label: "CHAINGUN", zone: [0.08, 0.38, 0.4, 0.62] },
+      armR: { label: "ARM", zone: [0.68, 0.36, 0.9, 0.66] },
+      legs: { label: "TRACKS", zone: [0.14, 0.66, 0.86, 1] },
+    },
+    // columns: front, front-side, side, back-side, back
+    crits: [
+      {
+        part: "head",
+        label: "OPTICS",
+        zones: [[[0.43, 0.26, 0.57, 0.36]], [[0.4, 0.26, 0.54, 0.36]], [[0.38, 0.26, 0.5, 0.36]], [], []],
+      },
+    ],
+  },
+  // a floor-cleaning drone: harmless and low (it fits where the party
+  // doesn't), it wanders about and takes no notice of anyone - until it's
+  // hit: then it runs
+  vacuum1: {
+    name: "A cleaning drone",
+    sheet: "vacuum1",
+    cols: 5,
+    rows: 3,
+    cellAspect: 1.5,
+    height: 0.36,
+    body: { headroom: 0.25, step: 0 },
+    eyeHeight: 0.12,
+    moveMs: 1100,
+    waitMs: 1400,
+    idleRow: 0,
+    walkRows: [0],
+    hitRow: 1,
+    dieRows: [1],
+    wreckRow: 2,
+    loot: "vacuum",
+    // its dome and display
+    glow: { color: "cyan", intensity: 1.3 },
+    passive: { fleeMs: 7000, fleeSpeed: 2.2 },
+    hp: 14,
+    damage: [0, 0],
+    attackRange: 0,
+    attackCooldownMs: 1e9,
+    accuracy: 0,
+    falloff: 0,
+    sight: 0,
+    fieldOfView: 0,
+    huntSight: 0,
+    hearing: 0,
+    alertMs: 0,
+    tactics: { shotPauseMs: 0, retreat: [0, 0], seeksCover: false, advance: false, minRange: 0 },
+    parts: {
+      head: { label: "SENSOR DOME", zone: [0.36, 0.36, 0.64, 0.6] },
+      torso: { label: "CASING", zone: [0.18, 0.55, 0.82, 0.9] },
+      armL: { label: "BRUSH", zone: [0.02, 0.78, 0.3, 1] },
+      armR: { label: "BRUSH", zone: [0.7, 0.78, 0.98, 1] },
+      legs: { label: "WHEELS", zone: [0.3, 0.88, 0.7, 1] },
+    },
+    crits: [],
+  },
+  // a floor-cleaning drone: harmless and low (it fits where the party
+  // doesn't), it wanders about and takes no notice of anyone - until it's
+  // hit: then it runs
+  vacuum2: {
+    name: "A heavy cleaning drone",
+    sheet: "vacuum2",
+    cols: 5,
+    rows: 3,
+    cellAspect: 1.5,
+    height: 0.42,
+    body: { headroom: 0.25, step: 0 },
+    eyeHeight: 0.12,
+    moveMs: 1100,
+    waitMs: 1400,
+    idleRow: 0,
+    walkRows: [0],
+    hitRow: 1,
+    dieRows: [1],
+    wreckRow: 2,
+    loot: "vacuum",
+    // its beacon and its front and back slits (not its red paint)
+    glow: {
+      intensity: 1.5,
+      zones: [
+        [[0.67, 0.23, 0.74, 0.35], [0.38, 0.75, 0.62, 0.83]],
+        [[0.69, 0.17, 0.76, 0.28], [0.24, 0.67, 0.45, 0.79]],
+        [[0.74, 0.22, 0.8, 0.34]],
+        [[0.39, 0.24, 0.46, 0.36]],
+        [[0.47, 0.25, 0.54, 0.37], [0.42, 0.7, 0.58, 0.75]],
+      ],
+    },
+    passive: { fleeMs: 7000, fleeSpeed: 2.2 },
+    hp: 24,
+    damage: [0, 0],
+    attackRange: 0,
+    attackCooldownMs: 1e9,
+    accuracy: 0,
+    falloff: 0,
+    sight: 0,
+    fieldOfView: 0,
+    huntSight: 0,
+    hearing: 0,
+    alertMs: 0,
+    tactics: { shotPauseMs: 0, retreat: [0, 0], seeksCover: false, advance: false, minRange: 0 },
+    parts: {
+      head: { label: "SENSOR DOME", zone: [0.36, 0.36, 0.64, 0.6] },
+      torso: { label: "CASING", zone: [0.18, 0.55, 0.82, 0.9] },
+      armL: { label: "BRUSH", zone: [0.02, 0.78, 0.3, 1] },
+      armR: { label: "BRUSH", zone: [0.7, 0.78, 0.98, 1] },
+      legs: { label: "WHEELS", zone: [0.3, 0.88, 0.7, 1] },
+    },
+    crits: [],
+  },
 };
 
 export interface ActorState {
@@ -260,6 +433,8 @@ export interface ActorState {
   // forward for the next shot yet
   retreatSteps: number;
   advanced: boolean;
+  // shots still to come in the volley it's firing (see ActorTactics.volley)
+  volleyLeft: number;
   lastAttack: number;
   stunnedUntil: number;
   disarmedUntil: number;
@@ -297,6 +472,7 @@ export function createActors(map: GameMap, now: number): ActorState[] {
     lastSeenCell: null,
     retreatSteps: 0,
     advanced: false,
+    volleyLeft: 0,
     lastAttack: -1e9,
     stunnedUntil: 0,
     disarmedUntil: 0,
@@ -400,9 +576,8 @@ export function stepActors(
       if (door && !isDoorOpen(door)) return null;
       const way = passage(map, a.cell, a.y, to, dir, type.body);
       if (way.kind !== "walk") return null;
-      if ((same(to, party) && Math.abs(way.y - partyY) < 1e-6) || actors.some((o) => o !== actor && actorAt([o], to, now, way.y))) {
-        return null;
-      }
+      const partyThere = !type.passive && same(to, party) && Math.abs(way.y - partyY) < 1e-6;
+      if (partyThere || actors.some((o) => o !== actor && actorAt([o], to, now, way.y))) return null;
       return way.y;
     };
     const canStep = (to: Vec2, dir: Direction) => stepY(to, dir) !== null;
@@ -413,14 +588,14 @@ export function stepActors(
     // its eyes, standing at height `y`
     const eyes = (y: number) => y + type.eyeHeight;
     // takes a step; in a fight it keeps facing the party (backing off, say)
-    const stepTo = (to: Vec2, dir: Direction, face?: Vec2) => {
+    const stepTo = (to: Vec2, dir: Direction, face?: Vec2, speed = 1) => {
       update({
         from: a.cell,
         fromY: a.y,
         cell: to,
         y: stepY(to, dir) ?? a.y,
         moveStart: now,
-        moveMs: type.moveMs * (now < a.slowedUntil ? 2 : 1),
+        moveMs: (type.moveMs * (now < a.slowedUntil ? 2 : 1)) / speed,
         facing: face ? toward(to, face) : dir,
       });
       return a;
@@ -444,6 +619,33 @@ export function stepActors(
       return a;
     };
 
+    // A harmless one: hit, it flees - each step to the neighbouring cell
+    // farthest from the party, out of its sight if it can; else it goes
+    // about its route, or wanders (on mostly straight, turning now and then)
+    if (type.passive) {
+      if (now - a.hitAt < type.passive.fleeMs) {
+        let best: { to: Vec2; dir: Direction; score: number } | null = null;
+        for (const { to, dir } of neighbours()) {
+          const away = Math.hypot(party.x - to.x, party.y - to.y) - Math.hypot(party.x - a.cell.x, party.y - a.cell.y);
+          const hidden = !clearLine(to, party, eyes(stepY(to, dir) ?? a.y));
+          const score = away * 2 + (hidden ? 3 : 0) + Math.random() * 0.5;
+          if (!best || score > best.score) best = { to, dir, score };
+        }
+        if (best) return stepTo(best.to, best.dir, undefined, type.passive.fleeSpeed);
+        update({ waitUntil: now + 300 });
+        return a;
+      }
+      if (a.patrol.length < 2) {
+        const open = neighbours();
+        if (!open.length || Math.random() < 0.25) {
+          update({ waitUntil: now + type.waitMs * (0.5 + Math.random()) });
+          return a;
+        }
+        const ahead = open.find((n) => n.dir === a.facing);
+        const next = ahead && Math.random() < 0.7 ? ahead : open[Math.floor(Math.random() * open.length)];
+        return stepTo(next.to, next.dir);
+      }
+    } else {
     // what it senses of the party
     const dist = Math.hypot(party.x - a.cell.x, party.y - a.cell.y);
     const ahead = DIR_VECTOR[a.facing];
@@ -465,11 +667,13 @@ export function stepActors(
     if (sees) update({ lastSeenAt: now, lastSeenCell: party });
     if (a.hostile && !sees && now - a.lastSeenAt > type.alertMs) {
       // lost it: back to its route, unaware
-      update({ hostile: false, lastSeenCell: null, retreatSteps: 0, advanced: false });
+      update({ hostile: false, lastSeenCell: null, retreatSteps: 0, advanced: false, volleyLeft: 0 });
     }
 
     if (a.hostile) {
-      const cooldownLeft = type.attackCooldownMs - (now - a.lastAttack);
+      // (mid-volley: the gap between its shots)
+      const cooldown = a.volleyLeft > 0 && type.tactics.volley ? type.tactics.volley.gapMs : type.attackCooldownMs;
+      const cooldownLeft = cooldown - (now - a.lastAttack);
       const disarmed = now < a.disarmedUntil;
       const soonReady = !disarmed && cooldownLeft <= type.moveMs * 1.1;
       const goal = a.lastSeenCell ?? party;
@@ -479,13 +683,16 @@ export function stepActors(
         const [lo, hi] = type.damage;
         attacks.push({ actor: a.id, damage: lo + Math.floor(Math.random() * (hi - lo + 1)), distance: dist });
         const [fewest, most] = tactics.retreat;
+        // a volley: the shots left after this one
+        const volleyLeft = tactics.volley ? (a.volleyLeft > 0 ? a.volleyLeft : tactics.volley.shots) - 1 : 0;
         update({
           facing: toward(a.cell, party),
           lastAttack: now,
-          retreatSteps: fewest + Math.floor(Math.random() * (most - fewest + 1)),
+          volleyLeft,
+          retreatSteps: volleyLeft > 0 ? 0 : fewest + Math.floor(Math.random() * (most - fewest + 1)),
           advanced: false,
-          // holds still a moment after the shot
-          waitUntil: now + tactics.shotPauseMs,
+          // holds still a moment after the shot (mid-volley: until the next)
+          waitUntil: now + (volleyLeft > 0 ? tactics.volley!.gapMs : tactics.shotPauseMs),
         });
         return a;
       }
@@ -522,6 +729,8 @@ export function stepActors(
 
       if (sees) {
         if (dist > type.attackRange) return walkToward(party);
+        // reloading, it keeps coming (if that's its way)
+        if (tactics.closesIn && a.volleyLeft === 0 && dist > tactics.minRange + 1e-6) return walkToward(party);
         // in range, reloading: keeps an eye on the party
         if (a.facing !== toward(a.cell, party)) update({ facing: toward(a.cell, party) });
         return a;
@@ -534,6 +743,7 @@ export function stepActors(
       if (a.lastSeenCell && !same(a.cell, a.lastSeenCell)) return walkToward(a.lastSeenCell);
       update({ facing: rightOf(a.facing), waitUntil: now + 900 });
       return a;
+    }
     }
 
     let { target, forward } = a;

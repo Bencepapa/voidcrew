@@ -199,6 +199,10 @@ export const PROP_TYPES: Record<string, PropType> = {
   },
   curtain_open: { kind: "panel", texture: "curtain_open", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12, relief: 0.3 },
   plant1: { kind: "cross", texture: "plant1", size: [0.3, 0.58, 0.3] },
+  // a strip curtain over a duct's mouth (the low corridors the cleaning
+  // drones use): as wide as the cell, as tall as the lowest corridor - on
+  // the room's side of the wall the duct opens in
+  blinds1: { kind: "panel", texture: "blinds1", size: [1, 0.27, 0.03], wall: true, relief: 0.4 },
   // pillars: a slim one and a heavy one (their height: the cell's)
   pillar1: { kind: "pillar", size: [0.26, 1, 0.26], shaft: 0.16, flare: 0.1 },
   pillar2: { kind: "pillar", size: [0.42, 1, 0.42], shaft: 0.28, flare: 0.14 },

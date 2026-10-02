@@ -45,6 +45,8 @@ const USAGE = `Usage: npm run texture:process -- --diffuse <file> [--depth <file
   [--emissive-panel]      also write emissive.png: the largest bright, colorless patch (a light panel),
                           and any at least half its size
   [--emissive-luma 150]   how bright a pixel must be to belong to the light panel
+  [--glow <file>]         also write glow.png from this image (same framing as the diffuse, black
+                          where nothing glows): the set's always-shining parts, in their colors
 
 A transparent diffuse (e.g. a door frame's opening) is kept: diffuse.png and depth.png get the
 same alpha holes, which the relief builder leaves out.`;
@@ -70,6 +72,7 @@ const { values: args } = parseArgs({
     key: { type: "string" },
     "key-tolerance": { type: "string", default: "90" },
     "emissive-panel": { type: "boolean", default: false },
+    glow: { type: "string" },
     "emissive-luma": { type: "string", default: "150" },
   },
 });
@@ -723,6 +726,15 @@ async function main() {
     if (rgba[i + 3]) uniqueColors.add((rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]);
   }
   const solidOnly = (values: Float32Array) => (solid ? values.filter((_, i) => solid[i]) : values);
+  // --glow: the glow map, at the diffuse's size (its near-black goes black)
+  if (args.glow) {
+    const { data: glow } = await sharp(args.glow).removeAlpha().resize(outW, outH, { fit: "fill", kernel: "nearest" }).raw().toBuffer({ resolveWithObject: true });
+    for (let i = 0; i < glow.length; i += 3) {
+      if (glow[i] + glow[i + 1] + glow[i + 2] < 60) glow[i] = glow[i + 1] = glow[i + 2] = 0;
+    }
+    await sharp(glow, { raw: { width: outW, height: outH, channels: 3 } }).png({ compressionLevel: 9 }).toFile(path.join(outDir, "glow.png"));
+    console.log("  glow.png");
+  }
 
   if (!depthInput) {
     // e.g. a flat painted decal: no height, so no depth or normal map

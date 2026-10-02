@@ -513,7 +513,12 @@ export function useGameState() {
       return;
     }
     // (one on the floor under a bridge isn't in the way on its deck)
-    const blocker = actorAt(actorsRef.current, next, gameClock.now(), way.y);
+    const blocker = actorAt(
+      actorsRef.current.filter((a) => !ACTOR_TYPES[a.type].passive),
+      next,
+      gameClock.now(),
+      way.y,
+    );
     if (blocker) {
       pushLog(`${ACTOR_TYPES[blocker.type].name} blocks the way.`);
       return;
@@ -779,6 +784,15 @@ export function useGameState() {
       // kills an actor at once (to see it fall)
       __voidcrewKill: (id: number) =>
         updateActors(actorsRef.current.map((a) => (a.id === id ? { ...a, hp: 0, diedAt: gameClock.now() } : a))),
+      // hits an actor for some damage (to see it react)
+      __voidcrewHit: (id: number, damage = 1) =>
+        updateActors(
+          actorsRef.current.map((a) => {
+            if (a.id !== id || a.diedAt !== null) return a;
+            const hp = Math.max(0, a.hp - damage);
+            return { ...a, hp, hitAt: gameClock.now(), diedAt: hp ? null : gameClock.now() };
+          }),
+        ),
       // plays an edited version of the deck (e.g. from the map store)
       __voidcrewReplaceMap: (next: GameMap) => replaceMap(next),
     });

@@ -19,6 +19,7 @@
     "texture:window-strip": "tsx scripts/make-window-strip.ts",
     "decals:lift-buttons": "tsx scripts/make-lift-buttons.ts",
     "actors:sheet": "tsx scripts/make-actor-sheet.ts",
+    "actors:emissive": "tsx scripts/make-actor-emissive.ts",
     "props:views": "tsx scripts/make-prop-views.ts"
   },
   "dependencies": {

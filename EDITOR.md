@@ -197,7 +197,11 @@ to chance - a wall in some variations, an open floor in others (a caved-in
 passage, a blocked corridor); its panel sets the chance and the links, and
 **Plain wall** (or the right button) makes it an ordinary wall again. While
 editing it shows as a wall. In the map: `chanceWalls: [{ "x", "y",
-"chance" }]`, their cells walls in the layout.
+"chance" }]`, their cells walls in the layout. Its chance is the wall's;
+its links speak of its opening: **With** - it opens only when that item is
+there (for another chance wall: when that one opened too), **Without** -
+only when it isn't. So a wide breach's side walls get `with` the middle
+one's name, and loot behind a wall `with` the wall's name.
 
 The seed also rolls the ship's mood, the same on all its decks: **light**
 (dark, dim, bright - the lights' chances), **threat** (low, medium, high -

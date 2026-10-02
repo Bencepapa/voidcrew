@@ -59,7 +59,10 @@ export const moodText = (mood: ShipMood) => `${mood.light}, ${mood.threat} threa
 
 // One item's roll: kept if its chance (its odds shifted by the mood) comes
 // up - and the items it's linked to agree (see Linked): the one it's only
-// there with is there, the one it's only there without isn't. A prop
+// there with is there, the one it's only there without isn't. For a chance
+// wall, "there" is its opening: it opens only with / without the other (a
+// wide breach that opens only where the narrow one did; loot only behind
+// an opened wall). A prop
 // stacked on another is only there with it. Links round in a circle, or to
 // a name no item has, don't count.
 interface Entry extends Linked {
@@ -69,6 +72,10 @@ interface Entry extends Linked {
   odds: number;
   // a stacked prop: the one under it
   on?: Entry;
+  // a chance wall: what's "there" - what its links speak of, and what
+  // others' links to it mean - is its opening, the wall gone (its chance is
+  // still the wall's)
+  opening?: boolean;
 }
 
 function resolve(seed: number, map: GameMap, entries: Entry[]): Set<Entry> {
@@ -81,7 +88,8 @@ function resolve(seed: number, map: GameMap, entries: Entry[]): Set<Entry> {
     if (known !== undefined) return known;
     if (busy.has(e)) return true;
     busy.add(e);
-    const own = e.chance === undefined || e.chance >= 1 || roll(`${seed}|${map.id}|${e.kind}|${e.index}`) < scaleChance(e.chance, e.odds);
+    const rolled = e.chance === undefined || e.chance >= 1 || roll(`${seed}|${map.id}|${e.kind}|${e.index}`) < scaleChance(e.chance, e.odds);
+    const own = e.opening ? !rolled : rolled;
     const withOk = !e.with || !byId.has(e.with) || byId.get(e.with) === e || there(byId.get(e.with)!);
     const withoutOk = !e.without || !byId.has(e.without) || byId.get(e.without) === e || !there(byId.get(e.without)!);
     const onOk = !e.on || there(e.on);
@@ -140,7 +148,7 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
   const actors = (map.actors ?? []).map((a, i) => entry("actor", i, a, odds("threat")));
   const lights = (map.lights ?? []).map((l, i) => entry("light", i, l, odds("light")));
   const doors = (map.doors ?? []).map((d, i) => entry("door", i, d, 1));
-  const walls = (map.chanceWalls ?? []).map((w, i) => entry("wall", i, w, 1));
+  const walls = (map.chanceWalls ?? []).map((w, i) => ({ ...entry("wall", i, w, 1), opening: true }));
   const kept = resolve(seed, map, [...props, ...decals, ...items, ...actors, ...lights, ...doors, ...walls]);
   const keep = <T>(items: T[] | undefined, entries: Entry[]) => items?.filter((_, i) => kept.has(entries[i]));
 
@@ -151,7 +159,8 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
     actors: keep(map.actors, actors),
     lights: keep(map.lights, lights),
     doors: keep(map.doors, doors),
-    chanceWalls: keep(map.chanceWalls, walls),
+    // (a wall stays unless its opening is there)
+    chanceWalls: map.chanceWalls?.filter((_, i) => !kept.has(walls[i])),
   };
   const same = (a?: unknown[], b?: unknown[]) => (a?.length ?? 0) === (b?.length ?? 0);
   if (
@@ -172,7 +181,7 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
     cells[y][x] = "floor" as CellType;
   };
   (map.doors ?? []).forEach((d, i) => !kept.has(doors[i]) && open(d.cell.x, d.cell.y));
-  (map.chanceWalls ?? []).forEach((w, i) => !kept.has(walls[i]) && open(w.cell.x, w.cell.y));
+  (map.chanceWalls ?? []).forEach((w, i) => kept.has(walls[i]) && open(w.cell.x, w.cell.y));
   // (what's left out is structure - but lights alone can change in place)
   const structural = ["props", "decals", "items", "actors", "doors", "chanceWalls"].some(
     (k) => !same(out[k as keyof typeof out], map[k as keyof typeof out]),

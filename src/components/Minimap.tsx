@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import type { ReactElement } from "react";
-import { floorHeight, windowPanels } from "../game/map";
+import { ceilingHeight, floorHeight, windowPanels } from "../game/map";
+import { MIN_HEADROOM } from "../game/heights";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 
 interface MinimapProps {
@@ -56,6 +57,9 @@ export function Minimap({ map, pos, dir, compact }: MinimapProps) {
     for (let x = 0; x < map.width; x++) {
       const cell = map.cells[y][x];
       if (cell === "wall") continue;
+      // too low for the party (a duct the cleaning drones use): as good as
+      // a wall to it
+      if (ceilingHeight(map, x, y) - floorHeight(map, x, y) < MIN_HEADROOM - 1e-6) continue;
       cells.push(
         <rect
           key={`c${x},${y}`}

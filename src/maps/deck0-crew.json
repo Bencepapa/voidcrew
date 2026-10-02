@@ -4,7 +4,11 @@
   "textures": {
     "wall": "crewwall1",
     "floor": "medfloor1",
-    "ceiling": "medceil1"
+    "ceiling": "medceil1",
+    "door": "crewdoor1",
+    "liftDoor": "crewliftdoor1",
+    "doorFrame": "crewdoorframe1",
+    "window": "crewwindow1"
   },
   "labelColor": "#c8901e",
   "lightColor": "#ffcf87",
@@ -12,11 +16,11 @@
   "layout": [
     "WWWWWWWWWWWWWWWWW",
     "WWWW...W...W...WW",
-    "WWWW...W...W...WW",
+    "WWWW.......W...WW",
     "WWWWWDWWWDWWWDWWW",
     "W.D..............",
-    "WWWWWDWWWDWWWDWWW",
-    "WWWW...W...W...WW",
+    "WWWWWDW.WDWWWDWWW",
+    "WWWW.......W...WW",
     "WWWW...W...W...WW",
     "WWWWWWWWWWWWWWWWW"
   ],
@@ -62,6 +66,34 @@
         ".................",
         "................."
       ]
+    },
+    "ceiling": {
+      "legend": { "a": 1.25, "b": 0.75, "c": 0.5, "d": 0.25 },
+      "rows": [
+        ".................",
+        ".................",
+        ".......d.........",
+        ".................",
+        ".................",
+        ".......d.........",
+        ".......d.........",
+        ".................",
+        "................."
+      ]
+    },
+    "floor": {
+      "legend": { "a": -0.25 },
+      "rows": [
+        ".................",
+        ".................",
+        ".................",
+        ".................",
+        ".................",
+        ".................",
+        ".................",
+        ".................",
+        "................."
+      ]
     }
   },
   "lifts": [{ "x": 1, "y": 4, "button": "S", "to": "deck1-medical" }],
@@ -87,7 +119,8 @@
     { "x": 8, "y": 1, "chance": 0.15 },
     { "x": 8, "y": 7, "chance": 0.15, "color": "#009afa", "intensity": 4, "range": 1 },
     { "x": 14, "y": 1, "color": "#47a9bd", "intensity": 0.6, "range": 1.8, "chance": 0.05 },
-    { "x": 12, "y": 6, "color": "#058a20", "range": 1.8, "intensity": 0.65, "chance": 0.05 }
+    { "x": 12, "y": 6, "color": "#058a20", "range": 1.8, "intensity": 0.65, "chance": 0.05 },
+    { "x": 7, "y": 6, "color": "#00fbff", "intensity": 0.1, "range": 0.5, "chance": 0.3 }
   ],
   "windows": [
     { "x": 5, "y": 1, "wall": "N" },
@@ -99,7 +132,40 @@
   ],
   "actors": [
     { "actor": "robot1", "x": 14, "y": 2, "facing": "W", "chance": 0.75 },
-    { "actor": "robot1", "x": 8, "y": 6, "facing": "E", "chance": 0.8 }
+    { "actor": "robot1", "x": 8, "y": 6, "facing": "E", "chance": 0.8 },
+    {
+      "actor": "vacuum1",
+      "x": 7,
+      "y": 5,
+      "facing": "W",
+      "chance": 0.85,
+      "patrol": [[7, 5], [7, 6], [5, 6], [7, 6], [9, 6], [7, 6], [7, 4], [14, 4], [7, 4], [7, 5]]
+    },
+    { "actor": "robot2", "x": 12, "y": 4, "facing": "E", "patrol": [[12, 4], [14, 4], [4, 4]], "chance": 0.1 },
+    {
+      "actor": "vacuum1",
+      "x": 7,
+      "y": 2,
+      "facing": "E",
+      "chance": 0.3,
+      "patrol": [
+        [7, 2],
+        [8, 2],
+        [9, 2],
+        [10, 2],
+        [9, 2],
+        [9, 1],
+        [9, 2],
+        [8, 2],
+        [5, 2],
+        [5, 1],
+        [6, 1],
+        [5, 1],
+        [5, 2],
+        [6, 2],
+        [7, 2]
+      ]
+    }
   ],
   "props": [
     { "prop": "crewbed1", "x": 4, "y": 1, "at": "N", "chance": 0.8 },
@@ -118,7 +184,6 @@
     { "prop": "crewbed1", "x": 4, "y": 7, "at": "S", "rotation": 180 },
     { "prop": "curtain_open", "x": 5, "y": 7, "at": "S", "chance": 0.9 },
     { "prop": "plant1", "x": 6, "y": 7, "at": "SE", "chance": 0.85 },
-    { "prop": "foldtable1", "x": 6, "y": 6, "at": "E", "chance": 0.7 },
     { "prop": "kitchen1", "x": 8, "y": 7, "at": "W", "chance": 0.8 },
     { "prop": "curtain_closed", "x": 9, "y": 7, "at": "S", "chance": 0.8 },
     { "prop": "table1", "x": 10, "y": 6, "at": "center", "chance": 0.85 },
@@ -127,7 +192,7 @@
     { "prop": "curtain_closed", "x": 13, "y": 7, "at": "S", "chance": 0.8 },
     { "prop": "crewbed1", "x": 14, "y": 7, "at": "S" },
     { "prop": "plant1", "x": 14, "y": 6, "at": "NE", "chance": 0.8 },
-    { "prop": "crate1", "x": 15, "y": 4, "at": "NE", "offset": [-0.45, -0.05], "chance": 0.2 },
+    { "prop": "crate1", "x": 15, "y": 4, "at": "NE", "chance": 0.2, "offset": [-0.45, -0.05] },
     { "prop": "crate1", "x": 15, "y": 4, "at": "SW" },
     { "prop": "crate1", "x": 15, "y": 4, "at": "NW", "offset": [-0.05, 0.3], "elevation": 0.4, "rotation": 15, "chance": 0.3 },
     { "prop": "foldtable1", "x": 7, "y": 4, "at": "N", "chance": 0.75 },
@@ -135,8 +200,14 @@
     { "prop": "crewbed1", "x": 4, "y": 2, "at": "W", "chance": 0.2 },
     { "prop": "crate1", "x": 12, "y": 2, "at": "SW", "chance": 0.05 },
     { "prop": "crate1", "x": 12, "y": 7, "at": "SW", "chance": 0.2 },
-    { "prop": "medbed1", "x": 14, "y": 7, "at": "NE", "rotation": 180, "offset": [0, 0.05], "chance": 0.15 },
-    { "prop": "crewbed1", "x": 6, "y": 2, "at": "N", "rotation": 180, "chance": 0.1 }
+    { "prop": "medbed1", "x": 14, "y": 7, "at": "NE", "chance": 0.15, "rotation": 180, "offset": [0, 0.05] },
+    { "prop": "crewbed1", "x": 6, "y": 2, "at": "N", "rotation": 180, "chance": 0.1 },
+    { "prop": "foldtable1", "x": 6, "y": 6, "at": "W", "rotation": 90, "offset": [0.25, -0.3] },
+    { "prop": "blinds1", "x": 7, "y": 4, "at": "S", "offset": [0, 0.05] },
+    { "prop": "blinds1", "x": 6, "y": 6, "at": "E", "offset": [0.05, 0], "chance": 0.65 },
+    { "prop": "blinds1", "x": 8, "y": 6, "at": "W", "offset": [-0.05, 0] },
+    { "prop": "blinds1", "x": 8, "y": 2, "at": "W", "offset": [-0.05, 0], "chance": 0.6 },
+    { "prop": "blinds1", "x": 6, "y": 2, "at": "E", "offset": [0.05, 0], "chance": 0.75 }
   ],
   "doors": [
     { "x": 2, "y": 4, "kind": "lift", "facing": "E", "label": "CREW", "labelVertical": true, "offset": -0.42 },
@@ -154,7 +225,7 @@
     { "decal": "notice_board", "x": 10, "y": 2, "surface": "S", "px": 84, "py": 50, "chance": 0.8 },
     { "decal": "polaroids", "x": 12, "y": 2, "surface": "S", "px": 92, "py": 60, "chance": 0.35 },
     { "decal": "poster_planet", "x": 4, "y": 6, "surface": "N", "px": 92, "py": 40, "chance": 0.85 },
-    { "decal": "photo_frame", "x": 8, "y": 6, "surface": "N", "px": 88, "py": 60 },
+    { "decal": "photo_frame", "x": 8, "y": 6, "surface": "N", "px": 88, "py": 60, "chance": 0.75 },
     { "decal": "kid_drawing", "x": 14, "y": 7, "surface": "E", "px": 90, "py": 60, "chance": 0.7 },
     { "decal": "polaroids", "x": 12, "y": 7, "surface": "W", "px": 92, "py": 60, "chance": 0.75 },
     { "decal": "warning", "x": 9, "y": 5, "surface": "E", "px": 81, "py": 64 },
@@ -182,6 +253,9 @@
     { "decal": "oil", "x": 9, "y": 6, "surface": "floor", "px": 204, "py": 178, "chance": 0.3 },
     { "decal": "scorch", "x": 11, "y": 4, "surface": "N", "px": 14, "py": 23, "chance": 0.1 },
     { "decal": "polaroids", "x": 11, "y": 4, "surface": "N", "px": 139, "py": 61, "chance": 0.2 },
-    { "decal": "warning", "x": 14, "y": 2, "surface": "S", "px": 72, "py": 35, "chance": 0.8 }
+    { "decal": "warning", "x": 14, "y": 2, "surface": "S", "px": 72, "py": 35, "chance": 0.8 },
+    { "decal": "hazard_stripes", "x": 7, "y": 5, "surface": "floor", "px": 76, "py": -28, "chance": 0.3 },
+    { "decal": "hazard_stripes", "x": 7, "y": 6, "surface": "floor", "px": -55, "py": 82, "rotation": 90, "chance": 0.5 },
+    { "decal": "hazard_stripes", "x": 8, "y": 6, "surface": "floor", "px": -64, "py": 78, "rotation": 90, "chance": 0.55 }
   ]
 }

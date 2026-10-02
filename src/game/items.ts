@@ -68,6 +68,29 @@ export const LOOT_TABLES: Record<string, LootTable> = {
       { item: "ammo", weight: 8, count: [1, 2] },
     ],
   },
+  // a siege drone's: a lot
+  tank: {
+    rolls: [3, 4],
+    empty: 0,
+    entries: [
+      { item: "scrap", weight: 20, count: [3, 6] },
+      { item: "servo", weight: 24, count: [1, 3] },
+      { item: "powercell", weight: 20, count: [1, 2] },
+      { item: "ammo", weight: 20, count: [2, 4] },
+      { item: "circuit", weight: 16, count: [1, 2] },
+    ],
+  },
+  // a cleaning drone's: little
+  vacuum: {
+    rolls: [1, 2],
+    empty: 0.25,
+    entries: [
+      { item: "scrap", weight: 40, count: [1, 2] },
+      { item: "wiring", weight: 30, count: [1, 2] },
+      { item: "circuit", weight: 20, count: [1, 1] },
+      { item: "powercell", weight: 10, count: [1, 1] },
+    ],
+  },
   medical: {
     rolls: [1, 2],
     empty: 0.2,

@@ -499,6 +499,10 @@ const ACTOR_FADE_MS = 900;
 // an actor's firing pose, held after a shot; each of its dying frames (ms)
 const ACTOR_SHOOT_POSE_MS = 350;
 const ACTOR_DIE_FRAME_MS = 260;
+// each of its firing rows, when it has several (ActorType.shootRows)
+const ACTOR_SHOOT_FRAME_MS = 70;
+// how long its hit pose shows (ActorType.hitRow)
+const ACTOR_HIT_POSE_MS = 320;
 // aiming: how often the hit chances are worked out again (real ms), and how
 // long a shot's trace lingers
 const AIM_CHANCE_REFRESH_MS = 250;
@@ -640,10 +644,19 @@ const PARTY_FLASH_COLOR = 0xffe2a0;
 const ACTOR_FLASH = { color: 0xff9a40, intensity: 3.5, range: 3, duration: 110 };
 // a surface's pixels across one panel (as decals count them - see decals.ts)
 const SURFACE_PIXELS = 256;
+// how strongly a texture set's glow map shines (see TextureSetFiles.glow)
+const SURFACE_GLOW = 1.2;
 // an actor's glowing pixels (see glowMapOf): at least this red, no more
 // than this green or blue
 const GLOW_MIN_RED = 150;
 const GLOW_MAX_OTHER = 90;
+// ... or, for the other colors that glow (see ActorType.glow), bright and
+// clearly that color
+const GLOW_COLORS: Record<"red" | "blue" | "cyan", (r: number, g: number, b: number) => boolean> = {
+  red: (r, g, b) => r >= GLOW_MIN_RED && Math.max(g, b) <= GLOW_MAX_OTHER,
+  blue: (r, _g, b) => b > 170 && b - r > 70,
+  cyan: (r, g, b) => g > 170 && b > 170 && r < 130,
+};
 const EDIT_LIGHT_REMOVE_COLOR = 0x40d0ff;
 const DOOR_PANEL_SETS: Record<DoorSpec["kind"], TextureSetId> = {
   standard: "door1",
@@ -1436,6 +1449,16 @@ export function GameViewport({
       addDirectLightOcclusion(wallMat, cavity);
       addDirectLightOcclusion(sideMat, cavity);
       const textures = [diffuse, normalMap, depthMap];
+      // the set's glow map, if it has one: always shining
+      if (paths.glow) {
+        const glowMap = kitTexture(paths.glow + bust);
+        glowMap.colorSpace = THREE.SRGBColorSpace;
+        if (paths.pixelArt) glowMap.magFilter = THREE.NearestFilter;
+        wallMat.emissiveMap = glowMap;
+        wallMat.emissive.setHex(0xffffff);
+        wallMat.emissiveIntensity = SURFACE_GLOW;
+        textures.push(glowMap);
+      }
 
       let litMat: THREE.MeshStandardMaterial | undefined;
       if (paths.emissive) {
@@ -3213,6 +3236,8 @@ export function GameViewport({
     // each actor's quad, its own copy of its type's material (for the hit
     // flash and the death fade) and the sheet cell it shows
     interface ActorEntry {
+      // the actor type it was made for (another one with its id: made anew)
+      type: string;
       mesh: THREE.Mesh;
       material: THREE.MeshStandardMaterial;
       // the part highlight's uniforms (see highlightMaterial)
@@ -3229,12 +3254,29 @@ export function GameViewport({
     // Each actor type's glow map (see ActorType.glow): its sheet's bright
     // red pixels within the glowing weak spots of each cell, in their own
     // color, black elsewhere. Made once its sheet has loaded.
+    // Its sheet's own emissive.png if there's one (npm run actors:emissive
+    // writes it; it can be painted by hand) - else worked out here.
     const glowMaps = new Map<string, THREE.Texture | null>();
+    const glowMissing = new Set<string>();
+    const glowLoader = new THREE.TextureLoader();
     const glowMapOf = (typeName: string): THREE.Texture | null => {
       if (glowMaps.has(typeName)) return glowMaps.get(typeName)!;
       const type = ACTOR_TYPES[typeName];
+      if (!type.glow) return null;
+      if (!glowMissing.has(typeName)) {
+        const baked = glowLoader.load(`${import.meta.env.BASE_URL}actors/${type.sheet}/emissive.png${bust}`, undefined, undefined, () => {
+          // no such file: made from the sheet instead (below)
+          baked.dispose();
+          glowMissing.add(typeName);
+          glowMaps.delete(typeName);
+        });
+        baked.colorSpace = THREE.SRGBColorSpace;
+        baked.magFilter = THREE.NearestFilter;
+        glowMaps.set(typeName, baked);
+        return baked;
+      }
       const image = actorMaterial(typeName).map?.image as HTMLImageElement | undefined;
-      if (!type.glow || !image?.width) return null;
+      if (!image?.width) return null;
       const canvas = document.createElement("canvas");
       canvas.width = image.width;
       canvas.height = image.height;
@@ -3244,11 +3286,19 @@ export function GameViewport({
       const out = ctx.createImageData(image.width, image.height);
       const cw = image.width / type.cols;
       const ch = image.height / type.rows;
-      const glowing = type.crits.filter((c) => type.glow!.crits.includes(c.label));
+      // where it glows, per sheet column: its glowing weak spots' zones and
+      // its own - or, with neither, the whole cell
+      const glow = type.glow;
+      const glowing = type.crits.filter((c) => glow.crits?.includes(c.label));
+      const zonesOf = (col: number): [number, number, number, number][] => {
+        const zones = [...glowing.flatMap((c) => c.zones[col] ?? []), ...(glow.zones?.[col] ?? [])];
+        return glow.crits || glow.zones ? zones : [[0, 0, 1, 1]];
+      };
+      const shines = GLOW_COLORS[glow.color ?? "red"];
       for (let row = 0; row < type.rows; row++) {
         for (let col = 0; col < type.cols; col++) {
-          for (const crit of glowing) {
-            for (const [x0, y0, x1, y1] of crit.zones[col] ?? []) {
+          {
+            for (const [x0, y0, x1, y1] of zonesOf(col)) {
               // a little past the zone: its glow's edge
               const px0 = Math.max(0, Math.floor((col + x0 - 0.02) * cw));
               const px1 = Math.min(image.width, Math.ceil((col + x1 + 0.02) * cw));
@@ -3258,7 +3308,7 @@ export function GameViewport({
                 for (let x = px0; x < px1; x++) {
                   const i = (y * image.width + x) * 4;
                   const [r, g, b, a] = [src.data[i], src.data[i + 1], src.data[i + 2], src.data[i + 3]];
-                  if (a < 128 || r < GLOW_MIN_RED || Math.max(g, b) > GLOW_MAX_OTHER) continue;
+                  if (a < 128 || !shines(r, g, b)) continue;
                   out.data[i] = r;
                   out.data[i + 1] = g;
                   out.data[i + 2] = b;
@@ -3363,6 +3413,10 @@ export function GameViewport({
         const type = ACTOR_TYPES[actor.type];
         const h = type.height * wallHeight;
         let entry = actorMeshes.get(actor.id);
+        if (entry && entry.type !== actor.type) {
+          removeActorMesh(actor.id);
+          entry = undefined;
+        }
         if (!entry) {
           const material = actorMaterial(actor.type).clone();
           const highlight = highlightMaterial(material);
@@ -3370,7 +3424,7 @@ export function GameViewport({
           const mesh = new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), material);
           mesh.userData.actor = true;
           mesh.userData.actorId = actor.id;
-          entry = { mesh, material, highlight, uvKey: "", col: 0, row: 0, mirror: false, lastAttack: actor.lastAttack };
+          entry = { type: actor.type, mesh, material, highlight, uvKey: "", col: 0, row: 0, mirror: false, lastAttack: actor.lastAttack };
           actorMeshes.set(actor.id, entry);
           group.add(mesh);
         }
@@ -3406,6 +3460,11 @@ export function GameViewport({
         if (sinceDeath >= 0 && falls) {
           const frame = Math.floor(sinceDeath / ACTOR_DIE_FRAME_MS);
           row = frame < type.dieRows!.length ? type.dieRows![frame] : type.wreckRow!;
+        } else if (type.hitRow !== undefined && now - actor.hitAt < ACTOR_HIT_POSE_MS) {
+          row = type.hitRow;
+        } else if (type.shootRows && now - actor.lastAttack < ACTOR_SHOOT_POSE_MS) {
+          // (its firing rows in turn: the chaingun spinning)
+          row = type.shootRows[Math.floor(now / ACTOR_SHOOT_FRAME_MS) % type.shootRows.length];
         } else if (type.shootRow !== undefined && now - actor.lastAttack < ACTOR_SHOOT_POSE_MS) {
           row = type.shootRow;
         }

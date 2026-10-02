@@ -13,6 +13,9 @@ export interface TextureSetFiles {
   pixelArt: boolean;
   // mask of the parts that glow when lit (a ceiling light panel)
   emissive?: string;
+  // a glow map: what isn't black in it always shines in its own color,
+  // whatever the light (a status strip, indicator lamps, a screen)
+  glow?: string;
   // a grate floor: its lowest this many height levels are the slots, cut
   // open where it's a bridge deck (see through it)
   grateLevels?: number;
@@ -60,6 +63,7 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/wall4/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/wall4/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/wall4/depth.png`,
+    glow: `${import.meta.env.BASE_URL}textures/wall4/glow.png`,
     pixelArt: true,
   },
   wall5: {
@@ -67,6 +71,7 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/wall5/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/wall5/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/wall5/depth.png`,
+    glow: `${import.meta.env.BASE_URL}textures/wall5/glow.png`,
     pixelArt: true,
   },
   // one floor tile per cell: a grate with recessed slots
@@ -157,6 +162,35 @@ export const TEXTURE_SETS = {
     normal: `${import.meta.env.BASE_URL}textures/medceil1/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/medceil1/depth.png`,
     emissive: `${import.meta.env.BASE_URL}textures/medceil1/emissive.png`,
+    pixelArt: true,
+  },
+  // the crew quarters' doors, frame and window
+  crewdoor1: {
+    kind: "door", label: "Crew door",
+    diffuse: `${import.meta.env.BASE_URL}textures/crewdoor1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/crewdoor1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/crewdoor1/depth.png`,
+    pixelArt: true,
+  },
+  crewdoorframe1: {
+    kind: "door", label: "Crew door frame",
+    diffuse: `${import.meta.env.BASE_URL}textures/crewdoorframe1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/crewdoorframe1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/crewdoorframe1/depth.png`,
+    pixelArt: true,
+  },
+  crewliftdoor1: {
+    kind: "door", label: "Crew lift door",
+    diffuse: `${import.meta.env.BASE_URL}textures/crewliftdoor1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/crewliftdoor1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/crewliftdoor1/depth.png`,
+    pixelArt: true,
+  },
+  crewwindow1: {
+    kind: "window", label: "Crew window",
+    diffuse: `${import.meta.env.BASE_URL}textures/crewwindow1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/crewwindow1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/crewwindow1/depth.png`,
     pixelArt: true,
   },
   meddoor1: {

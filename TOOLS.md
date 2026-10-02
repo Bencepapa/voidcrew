@@ -87,6 +87,7 @@ levels). Useful options (full list: `npm run texture:process`):
 
 - `--key ff00ff` – the magenta background becomes transparent (windows, door frames, decals)
 - `--trim` – crop to the opaque area (door frames)
+- `--glow <file>` – also writes `glow.png` from an image framed like the diffuse, black where nothing glows: the set's always-shining parts (indicator lamps, a status strip, a screen). Add `glow: ".../glow.png"` to the set in `TEXTURE_SETS` for the game to use it.
 - `--emissive-panel` – a mask of the glowing panel (ceiling lights)
 - `--flatten-paint` – keep painted stripes out of the relief (when the depth map isn't clean enough)
 - `--size`, `--colors`, `--levels` – size, palette size, depth levels
@@ -244,6 +245,30 @@ Its texture sets also go into `TEXTURE_SETS`. In a map:
    dies, then `wreckRow` stays (without them a dead actor fades out). The
    aiming zones (`parts`, `crits`) are fractions of a cell - widening the
    cell moves them.
+   More of `ActorType`: `shootRows` (several firing rows played in turn),
+   `hitRow` (shown for a moment when it's hit), `body` (the lowest opening
+   it fits through, the highest step it takes), `loot` (its wreck's loot
+   table), `tactics.volley` (a burst of shots each time it fires),
+   `tactics.closesIn` (it keeps coming while it reloads) and `passive` (a
+   harmless one: it ignores the party, shares a cell with it, wanders
+   without a route - and flees when hit).
+
+   **Glow** (`glow` in the type): the sheet's bright pixels of a color
+   (`red`, `blue` or `cyan`) - within its glowing weak spots, its own
+   `zones`, or anywhere on it - shine whatever the light. `npm run
+   actors:emissive` writes them to `public/actors/<sheet>/emissive.png`
+   (black where nothing glows), which the game loads; without the file it
+   works the same out itself. The file can be painted by hand or replaced
+   by a painted one of the sheet's size - `--keep` leaves existing ones
+   alone when the script runs again.
+
+   The types now: `robot1` (combat robot), `robot2` (siege drone: tracked,
+   a 7-shot volley, never falls back), `vacuum1` / `vacuum2` (cleaning
+   drones). Their sheets:
+   ```bash
+   npm run actors:sheet -- --diffuse concept/gen/actors/robot2.png --depth concept/gen/actors/robot2_depth.png --rows 7 --name robot2 --width 256 --height 192
+   npm run actors:sheet -- --diffuse concept/gen/actors/vacuum1.png --depth concept/gen/actors/vacuum1_depth.png --rows 3 --name vacuum1 --width 192 --height 128
+   ```
    Fighting and senses are set there too (see `ActorType`): `hp`, `damage`,
    `attackRange`, `attackCooldownMs`, `accuracy`, `falloff`; `sight` and
    `fieldOfView` (unaware), `huntSight` (alert), `hearing`, `alertMs` (how

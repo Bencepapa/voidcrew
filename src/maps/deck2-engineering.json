@@ -133,11 +133,37 @@
     { "x": 11, "y": 3, "wall": "E" }
   ],
   "lifts": [{ "x": 1, "y": 1, "button": "S", "to": "deck1-medical" }],
-  "actors": [{ "actor": "robot1", "x": 9, "y": 1, "facing": "W", "patrol": [[9, 1], [5, 1]], "chance": 0.7 }, { "actor": "robot1", "x": 4, "y": 5, "facing": "N", "chance": 0.4, "patrol": [[4, 5], [4, 5], [3, 5], [3, 7], [1, 7], [1, 6]] }],
+  "actors": [{ "actor": "robot1", "x": 9, "y": 1, "facing": "W", "patrol": [[9, 1], [5, 1]], "chance": 0.7 }, { "actor": "robot1", "x": 4, "y": 5, "facing": "N", "chance": 0.4, "patrol": [[4, 5], [4, 5], [3, 5], [3, 7], [1, 7], [1, 6]] }, { "actor": "vacuum2", "x": 10, "y": 7, "facing": "N", "chance": 0.2 }, { "actor": "vacuum2", "x": 3, "y": 5, "facing": "S", "chance": 0.1 }],
   "props": [
     { "prop": "crate1", "x": 3, "y": 1, "at": "NE", "chance": 0.75 },
     { "prop": "crate1", "x": 9, "y": 7, "at": "N", "chance": 0.6 },
-    { "prop": "crate1", "x": 1, "y": 3, "at": "NW", "rotation": 180, "chance": 0.3 }
+    { "prop": "crate1", "x": 1, "y": 3, "at": "NW", "rotation": 180, "chance": 0.3 },
+    { "prop": "chamfer2", "x": 10, "y": 1, "at": "N", "offset": [0, -0.15], "chance": 0.25 },
+    { "prop": "chamfer2", "x": 10, "y": 7, "at": "E", "offset": [0.1, 0.35], "chance": 0.2 },
+    { "prop": "pillar2", "x": 10, "y": 4, "at": "E", "offset": [0.25, 0], "chance": 0.25 },
+    {
+      "prop": "pillar2",
+      "x": 6,
+      "y": 1,
+      "at": "SW",
+      "offset": [-0.4, 0.25],
+      "chance": 0.15,
+      "id": "pill1",
+      "rotation": 180
+    },
+    { "prop": "pillar2", "x": 7, "y": 1, "at": "SW", "offset": [-0.1, 0.25], "with": "pill1" },
+    {
+      "prop": "chamfer2",
+      "x": 1,
+      "y": 7,
+      "at": "W",
+      "rotation": 270,
+      "offset": [-0.05, 0.4],
+      "elevation": 0.25,
+      "chance": 0.1
+    },
+    { "prop": "pillar1", "x": 7, "y": 6, "at": "SW", "offset": [-0.2, 0.15], "chance": 0.15 },
+    { "prop": "pillar2", "x": 10, "y": 4, "at": "NW", "offset": [-0.25, 0.2], "chance": 0.35 }
   ],
   "doors": [{ "x": 2, "y": 1, "kind": "lift", "facing": "E", "label": "ENGINE", "labelVertical": true, "offset": -0.42 }, { "x": 4, "y": 4, "kind": "standard", "facing": "S", "offset": -0.42 }, { "x": 4, "y": 7, "kind": "standard", "facing": "E", "offset": -0.42 }],
   "decals": [
@@ -157,5 +183,13 @@
     { "decal": "text_danger", "x": 3, "y": 3, "surface": "S", "px": 100, "py": 40, "chance": 0.4 },
     { "decal": "text_engine", "x": 5, "y": 1, "surface": "S", "px": 120, "py": 40 },
     { "decal": "text_lift", "x": 1, "y": 7, "surface": "W", "px": 36, "py": 40, "chance": 0.7 }
+  ],
+  "chanceWalls": [
+    { "x": 5, "y": 5, "chance": 0.5 },
+    { "x": 9, "y": 6, "chance": 0.8 },
+    { "x": 9, "y": 5, "chance": 0.75 },
+    { "x": 7, "y": 8, "chance": 0.8, "id": "wall1" },
+    { "x": 8, "y": 8, "chance": 0.5, "with": "wall1" },
+    { "x": 6, "y": 8, "chance": 0.5, "with": "wall1" }
   ]
 }
