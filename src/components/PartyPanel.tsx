@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Crewmate } from "../game/types";
 import { gameClock } from "../game/clock";
-import { CREW_WEAPONS } from "../game/combat";
+import { canSwitch, crewWeapon, switchWeapon, useMeta } from "../game/meta";
 
 function Bar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
@@ -40,7 +40,9 @@ function WeaponButton({
   onUse: (index: number) => void;
   compact?: boolean;
 }) {
-  const weapon = CREW_WEAPONS[mate.id];
+  // (the loadout: re-drawn when a weapon is switched)
+  useMeta();
+  const weapon = crewWeapon(mate.id);
   if (!weapon) return null;
   const left = Math.max(0, readyAt - gameClock.now());
   const ready = left === 0 && mate.hp > 0;
@@ -57,6 +59,19 @@ function WeaponButton({
       <span className="relative">
         [{index + 1}] {weapon.name}
       </span>
+      {canSwitch(mate.id) && (
+        <span
+          role="button"
+          title={`Switch weapon (Shift+${index + 1})`}
+          className="pointer-events-auto absolute right-0 inset-y-0 px-1.5 flex items-center text-neutral-300 hover:text-amber-200 bg-black/40"
+          onClick={(e) => {
+            e.stopPropagation();
+            switchWeapon(mate.id);
+          }}
+        >
+          ⇄
+        </span>
+      )}
     </button>
   );
 }

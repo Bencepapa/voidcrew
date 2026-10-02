@@ -1,6 +1,6 @@
 import type { ActorState, BodyPart } from "./actors";
 
-// Combat: each crewmate has one weapon (or tool) with a cooldown. Using it
+// Combat: each crewmate has a weapon (or tool) in hand (see meta.ts), with a cooldown. Using it
 // drops the game into bullet time and opens the aiming overlay: pick an
 // enemy and a body part - then, with the aiming mini-game on, a crosshair
 // sways around that part and the shot goes wherever it is when fired (the
@@ -29,45 +29,6 @@ export interface Weapon {
   // rapid fire: shots per use, each aimed on its own (default 1)
   burst?: number;
 }
-
-export const CREW_WEAPONS: Record<string, Weapon> = {
-  reese: {
-    name: "Pulse rifle",
-    kind: "shot",
-    amount: [5, 9],
-    cooldownMs: 4000,
-    range: 8,
-    accuracy: 0.95,
-    falloff: 0.05,
-    sway: 0.035,
-    aimZoom: 1.8,
-    burst: 3,
-  },
-  lyn: {
-    name: "Arc welder",
-    kind: "shot",
-    amount: [14, 22],
-    cooldownMs: 5000,
-    range: 3,
-    accuracy: 0.9,
-    falloff: 0.15,
-    sway: 0.05,
-    aimZoom: 1,
-  },
-  orion: {
-    name: "Shock emitter",
-    kind: "shot",
-    amount: [4, 8],
-    cooldownMs: 6000,
-    range: 6,
-    accuracy: 0.95,
-    falloff: 0.04,
-    sway: 0.03,
-    aimZoom: 1.3,
-    stunMs: 2500,
-  },
-  kell: { name: "Stim injector", kind: "heal", amount: [8, 14], cooldownMs: 8000 },
-};
 
 // what a hit on each body part does: its damage multiplier and effect
 export const PART_EFFECTS: Record<BodyPart, { damage: number; effect?: "stun" | "disarm" | "slow"; ms?: number }> = {

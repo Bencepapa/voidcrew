@@ -309,3 +309,21 @@ the cabin.
 grid in `ITEM_ORDER`, on magenta, and its depth sheet in the same layout
 (white nearest, black behind; prompts in scripts/gen-items.ts) - else it
 draws simple placeholders.
+
+## The game loop
+
+Base → scan → run → base (`phase` in src/App.tsx; opened with `?map=` or
+`?seed=` the game starts aboard, for looking at a deck).
+
+- **Base** (src/components/BaseScreen.tsx, state in src/game/meta.ts, kept
+  in localStorage): the stash (sell for credits), the shop (weapons), the
+  crew's two weapon slots each and upgrades (credits + parts, up to +3:
+  +15% effect and -7% cooldown a level). The weapons are `WEAPON_TYPES`.
+- **Scan** (ShipPicker.tsx, src/game/ships.ts): three derelicts of
+  different classes (`SHIP_CLASSES`: the entry deck, how the mood tends to
+  turn out, what the crates tend to hold), two at the depth reached and one
+  deeper (more threat, more loot). About a third of each ship's mood shows
+  as unknown.
+- **Run**: Use (Space) searches crates and wrecks and, on an exit, leaves
+  the ship; Shift+1..4 switches a crewmate's weapon. The run's summary banks
+  the haul into the stash.

@@ -31,7 +31,12 @@ import { generateLights, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, TextureLayer } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
-import { CREW_WEAPONS } from "./game/combat";
+import { bankHaul, crewWeapon, getMeta, switchWeapon, useMeta } from "./game/meta";
+import { SHIP_CLASSES, shipOffers } from "./game/ships";
+import type { ShipOffer } from "./game/ships";
+import { setLootContext } from "./game/items";
+import { BaseScreen } from "./components/BaseScreen";
+import { ShipPicker } from "./components/ShipPicker";
 import { Minimap } from "./components/Minimap";
 import { PartyPanel } from "./components/PartyPanel";
 import { LogPanel } from "./components/LogPanel";
@@ -66,7 +71,6 @@ export default function App() {
     kills,
     runEnd,
     runStart,
-    stash,
     nextRun,
     touch,
     inLift,
@@ -131,7 +135,19 @@ export default function App() {
   const [seed, setSeed] = useState(() => Number(new URLSearchParams(location.search).get("seed")) || newSeed());
   // the ship's mood: the seed's, unless the debug panel sets a part of it
   const [moodOverride, setMoodOverride] = useState<Partial<ShipMood>>({});
-  const mood = useMemo(() => ({ ...moodOf(seed), ...moodOverride }), [seed, moodOverride]);
+  const meta = useMeta();
+  // The game goes round: the base (stash, shop, weapons), the scan (pick a
+  // derelict), the run aboard it - and back. Opened with ?map= or ?seed=
+  // (a deck to look at, a variation to see again) it starts aboard.
+  const [phase, setPhase] = useState<"base" | "pick" | "run">(() => {
+    const query = new URLSearchParams(location.search);
+    return query.has("map") || query.has("seed") ? "run" : "base";
+  });
+  // the ship boarded (none: a deck opened straight from the URL)
+  const [ship, setShip] = useState<ShipOffer | null>(null);
+  // the offers on the scan: new ones after every run
+  const offers = useMemo(() => shipOffers(meta.depth, meta.runs), [meta.depth, meta.runs]);
+  const mood = useMemo(() => ({ ...(ship ? ship.mood : moodOf(seed)), ...moodOverride }), [ship, seed, moodOverride]);
   useEffect(() => setVariation(editMode ? null : { seed, mood }), [editMode, seed, mood, setVariation]);
   const reroll = () => {
     const next = newSeed();
@@ -155,11 +171,30 @@ export default function App() {
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
   useEffect(() => setNoclip(viewSettings.noclip), [viewSettings.noclip, setNoclip]);
-  useEffect(() => setWorldFrozen(editMode || !!runEnd), [editMode, runEnd, setWorldFrozen]);
+  useEffect(() => setWorldFrozen(editMode || !!runEnd || phase !== "run"), [editMode, runEnd, phase, setWorldFrozen]);
+  // at the base or the scan, the keys aren't the game's
+  useEffect(() => {
+    if (phase === "run") return;
+    const block = (e: KeyboardEvent) => e.stopImmediatePropagation();
+    window.addEventListener("keydown", block, true);
+    return () => window.removeEventListener("keydown", block, true);
+  }, [phase]);
+  // boarding a derelict: its decks' variation, its mood, what its crates
+  // tend to hold - a clean run, from where the ship is entered
+  const boardShip = (offer: ShipOffer) => {
+    const type = SHIP_CLASSES[offer.classId];
+    setShip(offer);
+    setSeed(offer.seed);
+    setLootContext(type.loot, offer.lootScale);
+    nextRun();
+    enterMap(MAPS[type.entry] ?? START_MAP);
+    setPhase("run");
+    pushLog(`You board the ${offer.name}, a derelict ${type.name.toLowerCase()}.`);
+  };
   if (!aim) aimFocusRef.current = null;
   const aimRef = useRef(aim);
   aimRef.current = aim;
-  const aimWeapon = aim ? (CREW_WEAPONS[crew[aim.crew].id] ?? null) : null;
+  const aimWeapon = aim ? (crewWeapon(crew[aim.crew].id) ?? null) : null;
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");
@@ -1070,8 +1105,13 @@ export default function App() {
   // 1-4: a crewmate's weapon (see combat.ts); aiming needs the pointer
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const n = Number(e.key);
+      const n = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : NaN;
       if (n >= 1 && n <= crew.length && !aim && !editMode) {
+        // with Shift: the crewmate's other weapon in hand
+        if (e.shiftKey) {
+          switchWeapon(crew[n - 1].id);
+          return;
+        }
         if (document.pointerLockElement) document.exitPointerLock();
         fireWeapon(n - 1);
       }
@@ -1143,18 +1183,26 @@ export default function App() {
         <RunSummary
           exit={runEnd.exit}
           haul={haul}
-          stash={stash}
+          stash={meta.stash}
           kills={kills}
           crew={crew}
           minutes={(runEnd.at - runStart) / 60000}
           onContinue={() => {
-            // the haul to the stash, and on to another ship: a new variation
-            // of the decks, boarded where the ship is entered
+            // the haul home to the stash, and back to the base
+            bankHaul(haul, ship?.depth ?? getMeta().depth);
             nextRun();
-            reroll();
-            enterMap(START_MAP);
+            setPhase("base");
           }}
         />
+      )}
+      {phase !== "run" && !editMode && (
+        <div className="fixed inset-0 z-50" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+          {phase === "base" ? (
+            <BaseScreen onLaunch={() => setPhase("pick")} />
+          ) : (
+            <ShipPicker offers={offers} onPick={boardShip} onBack={() => setPhase("base")} />
+          )}
+        </div>
       )}
       {aim && aimWeapon && (
         <AimOverlay

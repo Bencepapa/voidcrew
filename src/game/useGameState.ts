@@ -12,7 +12,8 @@ import type { ShipMood } from "./variation";
 import { ACTOR_TYPES, actorAt, createActors, partyHitChance, stepActors } from "./actors";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
-import { AIM_TIME_RATE, CREW_WEAPONS, applyHit, rollAmount } from "./combat";
+import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
+import { crewWeapon } from "./meta";
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 
@@ -323,7 +324,7 @@ export function useGameState() {
   const fireWeapon = useCallback(
     (index: number) => {
       const mate = crewRef.current[index];
-      const weapon = mate && CREW_WEAPONS[mate.id];
+      const weapon = mate && crewWeapon(mate.id);
       if (!weapon || aimRef.current || busy()) return;
       if (mate.hp === 0) {
         pushLog(`${mate.name} is down.`);
@@ -365,8 +366,8 @@ export function useGameState() {
     const current = aimRef.current;
     if (!current) return;
     if (aimFiredRef.current) {
-      const weapon = CREW_WEAPONS[crewRef.current[current.crew].id];
-      setReadyAt((prev) => prev.map((t, i) => (i === current.crew ? gameClock.now() + weapon.cooldownMs : t)));
+      const cooldown = crewWeapon(crewRef.current[current.crew].id)?.cooldownMs ?? 0;
+      setReadyAt((prev) => prev.map((t, i) => (i === current.crew ? gameClock.now() + cooldown : t)));
     }
     endAim();
   }, [endAim]);
@@ -377,7 +378,8 @@ export function useGameState() {
       const current = aimRef.current;
       if (!current) return;
       const mate = crewRef.current[current.crew];
-      const weapon = CREW_WEAPONS[mate.id];
+      const weapon = crewWeapon(mate.id);
+      if (!weapon) return;
       const now = gameClock.now();
       if (result.kind === "actor") {
         const target = actorsRef.current.find((a) => a.id === result.actor);

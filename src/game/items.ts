@@ -93,21 +93,29 @@ function roll(text: string): number {
   return (h >>> 0) / 4294967296;
 }
 
+// What the ship boarded does to its loot (see ships.ts): weights on the
+// tables' entries by item category, and how much more of each there is.
+let lootContext: { bias: Partial<Record<ItemCategory, number>>; scale: number } = { bias: {}, scale: 1 };
+export function setLootContext(bias: Partial<Record<ItemCategory, number>>, scale: number) {
+  lootContext = { bias, scale };
+}
+
 // A container's contents, rolled from its table: the same `key` (seed,
-// deck, container) gives the same contents each time.
+// deck, container) gives the same contents each time (on the same ship).
 export function rollLoot(tableId: string, key: string): ItemStack[] {
   const table = LOOT_TABLES[tableId];
   if (!table) return [];
   if (roll(`${key}|empty`) < table.empty) return [];
   const [lo, hi] = table.rolls;
   const rolls = lo + Math.floor(roll(`${key}|rolls`) * (hi - lo + 1));
-  const total = table.entries.reduce((sum, e) => sum + e.weight, 0);
+  const weight = (e: LootTable["entries"][number]) => e.weight * (lootContext.bias[ITEM_TYPES[e.item]?.category] ?? 1);
+  const total = table.entries.reduce((sum, e) => sum + weight(e), 0);
   const out = new Map<string, number>();
   for (let r = 0; r < rolls; r++) {
     let pick = roll(`${key}|pick ${r}`) * total;
-    const entry = table.entries.find((e) => (pick -= e.weight) < 0) ?? table.entries[0];
+    const entry = table.entries.find((e) => (pick -= weight(e)) < 0) ?? table.entries[0];
     const [min, max] = entry.count;
-    const count = min + Math.floor(roll(`${key}|count ${r}`) * (max - min + 1));
+    const count = Math.max(1, Math.round((min + Math.floor(roll(`${key}|count ${r}`) * (max - min + 1))) * lootContext.scale));
     out.set(entry.item, (out.get(entry.item) ?? 0) + count);
   }
   return [...out].map(([item, count]) => ({ item, count }));
