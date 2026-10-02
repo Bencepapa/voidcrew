@@ -16,9 +16,9 @@ import {
   saveMap,
   undo,
 } from "./editor/mapStore";
-import { MAPS } from "./game/map";
+import { MAPS, START_MAP } from "./game/map";
 import type { GameMap, Linked } from "./game/types";
-import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem } from "./editor/mapEdits";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit } from "./editor/mapEdits";
 import { PROP_TYPES, propRetexturable } from "./game/props";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo } from "./editor/EditorBar";
 import { moodOf, moodText, newSeed } from "./game/variation";
@@ -37,6 +37,7 @@ import { PartyPanel } from "./components/PartyPanel";
 import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
 import { HaulPanel } from "./components/HaulPanel";
+import { RunSummary } from "./components/RunSummary";
 import { ITEM_TYPES, itemSpot } from "./game/items";
 import { DebugPanel } from "./components/DebugPanel";
 import { useMediaQuery } from "./components/useMediaQuery";
@@ -62,6 +63,11 @@ export default function App() {
     lootedProps,
     takenItems,
     spills,
+    kills,
+    runEnd,
+    runStart,
+    stash,
+    nextRun,
     touch,
     inLift,
     ride,
@@ -149,7 +155,7 @@ export default function App() {
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
   useEffect(() => setNoclip(viewSettings.noclip), [viewSettings.noclip, setNoclip]);
-  useEffect(() => setWorldFrozen(editMode), [editMode, setWorldFrozen]);
+  useEffect(() => setWorldFrozen(editMode || !!runEnd), [editMode, runEnd, setWorldFrozen]);
   if (!aim) aimFocusRef.current = null;
   const aimRef = useRef(aim);
   aimRef.current = aim;
@@ -406,6 +412,19 @@ export default function App() {
           setSelectedProp(count);
         }
       }
+    } else if (editTool === "exit") {
+      // a click on a floor puts a way off the ship there (or picks the one
+      // there); the right button takes it out
+      if (target.kind === "wall") return;
+      const cell = target.cell;
+      const there = (map.exits ?? []).some((e) => e.cell.x === cell.x && e.cell.y === cell.y);
+      if (there && !alt) {
+        setSelectedExit(cell);
+        return;
+      }
+      if (!there && alt) return;
+      result = applyEdit(map.id, (file) => toggleExit(file, cell));
+      setSelectedExit(there ? null : cell);
     } else if (editTool === "item") {
       // a click on an item picks it (the right button takes it out); on a
       // floor or a prop's top it puts the palette's item there (picked)
@@ -671,6 +690,10 @@ export default function App() {
   }, [editMode, editTool]);
 
   // The selected decal, as the panel shows it
+  // the Exit tool's pick (its cell)
+  const [selectedExit, setSelectedExit] = useState<Vec2 | null>(null);
+  const selectedExitSpec = selectedExit && (map.exits ?? []).find((e) => e.cell.x === selectedExit.x && e.cell.y === selectedExit.y);
+  const selectedExitInfo = selectedExitSpec ? { name: selectedExitSpec.name ?? "" } : null;
   // the Item tool: the palette's item, and the pick (its index in the
   // map's items)
   const [itemChoice, setItemChoice] = useState(Object.keys(ITEM_TYPES)[0]);
@@ -1069,13 +1092,13 @@ export default function App() {
   // Use (Space or Enter) works in both movement modes
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (editMode) return;
+      if (editMode || runEnd) return;
       if ((e.key === " " || e.key === "Enter") && !aimRef.current) use();
       if ((e.key === "i" || e.key === "I") && !aimRef.current) setHaulOpen((o) => !o);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [use, editMode]);
+  }, [use, editMode, runEnd]);
 
   const viewport = (
     <GameViewport
@@ -1115,7 +1138,24 @@ export default function App() {
   // over the view: the aiming overlay, and a red flash when the crew is hit
   const overlays = (
     <>
-      {haulOpen && !editMode && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
+      {haulOpen && !editMode && !runEnd && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
+      {runEnd && !editMode && (
+        <RunSummary
+          exit={runEnd.exit}
+          haul={haul}
+          stash={stash}
+          kills={kills}
+          crew={crew}
+          minutes={(runEnd.at - runStart) / 60000}
+          onContinue={() => {
+            // the haul to the stash, and on to another ship: a new variation
+            // of the decks, boarded where the ship is entered
+            nextRun();
+            reroll();
+            enterMap(START_MAP);
+          }}
+        />
+      )}
       {aim && aimWeapon && (
         <AimOverlay
           key={aim.crew}
@@ -1186,6 +1226,24 @@ export default function App() {
           onPropDelete={deleteProp}
           onPropDeselect={() => setSelectedProp(null)}
           linkIds={linkIds}
+          exit={selectedExitInfo}
+          onExitName={(name) => {
+            if (!selectedExit) return;
+            const cell = selectedExit;
+            const result = applyEdit(map.id, (file) => nameExit(file, cell, name), `exit ${cell.x},${cell.y} name`);
+            if ("error" in result) pushLog(`Editor: ${result.error}`);
+            else replaceMap(result.map);
+            setEdits((n) => n + 1);
+          }}
+          onExitRemove={() => {
+            if (!selectedExit) return;
+            const cell = selectedExit;
+            const result = applyEdit(map.id, (file) => toggleExit(file, cell));
+            if (!("error" in result)) replaceMap(result.map);
+            setSelectedExit(null);
+            setEdits((n) => n + 1);
+          }}
+          onExitDeselect={() => setSelectedExit(null)}
           itemChoice={itemChoice}
           onItemChoice={setItemChoice}
           item={selectedItemInfo}

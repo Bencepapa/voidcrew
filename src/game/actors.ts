@@ -50,6 +50,8 @@ export interface ActorType {
   shootRow?: number;
   dieRows?: number[];
   wreckRow?: number;
+  // what its wreck gives when searched (a loot table - see items.ts)
+  loot?: string;
   // fighting
   hp: number;
   // damage per shot at the party, and how far (cells) and how often it fires
@@ -138,6 +140,7 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     shootRow: 3,
     dieRows: [4, 5],
     wreckRow: 6,
+    loot: "robot",
     hp: 60,
     damage: [3, 6],
     attackRange: 4,

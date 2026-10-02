@@ -131,6 +131,11 @@ not two editors.
   it, Delete takes it out; its panel sets the item, count, height, chance
   and links (`items` in the map). An item lying on a prop is only there
   with it.
+- **Exit:** a click on a floor makes it a way off the ship (a glowing
+  EXIT plate on the floor) and picks it; a click on one picks it, the
+  right button takes it out; its panel sets its name ("Hangar bay" - for
+  the log and the run's summary). Standing on it, Use ends the run (`exits`
+  in the map).
 - **Decal:** the palette shows every decal (public/decals/index.json); a
   click on a wall, floor or ceiling puts the picked one there, centered on
   the click, and picks it. A click on a decal picks it, the right button

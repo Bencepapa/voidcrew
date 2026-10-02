@@ -22,6 +22,7 @@ export type EditTool =
   | "decal"
   | "robot"
   | "item"
+  | "exit"
   | "wall"
   | "map";
 
@@ -478,5 +479,23 @@ export function updateItem(file: MapFile, index: number, patch: Partial<ItemEntr
 export function removeItem(file: MapFile, index: number): MapFile {
   file.items?.splice(index, 1);
   if (file.items && !file.items.length) delete file.items;
+  return file;
+}
+
+// A way off the ship in `cell` (see ExitSpec) - or, if there's one, none.
+export function toggleExit(file: MapFile, cell: Vec2): MapFile {
+  const exits = file.exits ?? (file.exits = []);
+  const i = exits.findIndex(at(cell));
+  if (i >= 0) exits.splice(i, 1);
+  else exits.push({ x: cell.x, y: cell.y });
+  if (!exits.length) delete file.exits;
+  return file;
+}
+
+export function nameExit(file: MapFile, cell: Vec2, name: string | undefined): MapFile {
+  const exit = file.exits?.find(at(cell));
+  if (!exit) return file;
+  if (name) exit.name = name;
+  else delete exit.name;
   return file;
 }

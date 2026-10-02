@@ -77,6 +77,8 @@ export interface GameMap {
   props?: PropSpec[];
   // loot lying about
   items?: MapItem[];
+  // where the party can leave the ship (see ExitSpec)
+  exits?: ExitSpec[];
   actors?: ActorSpec[];
 }
 
@@ -157,6 +159,14 @@ export interface PropSpec extends Linked {
   // a container's contents put in by hand (see items.ts; [] : empty);
   // unset: rolled from its type's loot table
   loot?: { item: string; count: number }[];
+}
+
+// A way off the ship - a hangar bay, an airlock, an escape pod: standing in
+// its cell, Use ends the run (see useGameState's leaveShip).
+export interface ExitSpec {
+  cell: Vec2;
+  // for the log and the run's summary, e.g. "Hangar bay"
+  name?: string;
 }
 
 // A loot item lying in a walkable cell (see items.ts): picked up by

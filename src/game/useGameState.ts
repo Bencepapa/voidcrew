@@ -77,6 +77,10 @@ export function useGameState() {
   );
   const mapRef = useRef(map);
   mapRef.current = map;
+  const fullMapRef = useRef(fullMap);
+  fullMapRef.current = fullMap;
+  const variationRef = useRef(variation);
+  variationRef.current = variation;
   // arriving in the lift, facing its door
   const [pos, setPos] = useState<Vec2>(map.start.cell);
   const [dir, setDir] = useState<Direction>(map.start.facing);
@@ -199,13 +203,35 @@ export function useGameState() {
   const [actors, setActors] = useState<ActorState[]>(() => createActors(map, gameClock.now()));
   const actorsRef = useRef(actors);
   actorsRef.current = actors;
-  const updateActors = useCallback((next: ActorState[]) => {
-    actorsRef.current = next;
-    setActors(next);
-  }, []);
+  // the actors destroyed on this run (by variation, deck and index in the
+  // deck's full map): they stay wrecks when the deck is come back to
+  const killedRef = useRef(new Set<string>());
+  const [kills, setKills] = useState(0);
+  const actorKey = useCallback(
+    (m: GameMap, id: number) => `${variationRef.current?.seed ?? 0}|${m.id}|actor ${(fullMapRef.current.actors ?? []).indexOf(m.actors?.[id] as never)}`,
+    [],
+  );
+  const updateActors = useCallback(
+    (next: ActorState[]) => {
+      for (const a of next) {
+        if (a.diedAt === null) continue;
+        const key = actorKey(mapRef.current, a.id);
+        if (!killedRef.current.has(key)) {
+          killedRef.current.add(key);
+          setKills(killedRef.current.size);
+        }
+      }
+      actorsRef.current = next;
+      setActors(next);
+    },
+    [actorKey],
+  );
   useEffect(() => {
-    updateActors(createActors(map, gameClock.now()));
-  }, [map, updateActors]);
+    const now = gameClock.now();
+    updateActors(
+      createActors(map, now).map((a) => (killedRef.current.has(actorKey(map, a.id)) ? { ...a, hp: 0, diedAt: now - 1e6 } : a)),
+    );
+  }, [map, updateActors, actorKey]);
   // the map editor: the world holds still (no enemies moving or firing)
   const frozenRef = useRef(false);
   const setWorldFrozen = useCallback((on: boolean) => {
@@ -606,7 +632,32 @@ export function useGameState() {
     }
     const containers = (map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.container && inReach(p.cell, true));
     const picked = pickUpItems(true);
+    // wrecks within reach, not searched yet: their parts
+    const wrecks = actorsRef.current.filter(
+      (a) => a.diedAt !== null && ACTOR_TYPES[a.type].loot && inReach(a.cell, true) && !looted.has(`${actorKey(map, a.id)} wreck`),
+    );
+    if (wrecks.length) {
+      const parts = new Map<string, number>();
+      const wreckSpills: LootSpill[] = [];
+      for (const a of wrecks) {
+        const items = rollLoot(ACTOR_TYPES[a.type].loot!, actorKey(map, a.id));
+        for (const s of items) parts.set(s.item, (parts.get(s.item) ?? 0) + s.count);
+        if (items.length) wreckSpills.push({ id: ++spillIdRef.current, from: { x: a.cell.x, y: a.y + 0.2, z: a.cell.y }, floorY: a.y, items });
+      }
+      const stacks = [...parts].map(([item, count]) => ({ item, count }));
+      pushLog(stacks.length ? `You salvage ${stacksText(stacks)} from the wreck.` : "You search the wreck: nothing worth taking.");
+      addToHaul(stacks);
+      setSpills((prev) => [...prev.slice(-8), ...wreckSpills]);
+      setLooted((prev) => new Set([...prev, ...wrecks.map((a) => `${actorKey(map, a.id)} wreck`)]));
+      if (!containers.length) return;
+    }
     if (!containers.length) {
+      // a way off the ship underfoot
+      const exit = (map.exits ?? []).find((e) => inReach(e.cell, false));
+      if (exit) {
+        setRunEnd({ exit: exit.name ?? "the airlock", at: gameClock.now() });
+        return;
+      }
       if (!picked) pushLog("There's nothing to use here.");
       return;
     }
@@ -639,7 +690,35 @@ export function useGameState() {
       setSpills((prev) => [...prev.slice(-8), ...newSpills]);
     }
     setLooted((prev) => new Set([...prev, ...keys]));
-  }, [map, pos, dir, startLift, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul]);
+  }, [map, pos, dir, startLift, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey]);
+
+  // The run: it ends when the party leaves the ship through an exit (see
+  // ExitSpec); what it hauled then goes to the stash, and the next run
+  // starts clean - nothing taken, nobody destroyed, the crew patched up.
+  const [runEnd, setRunEnd] = useState<{ exit: string; at: number } | null>(null);
+  const [runStart, setRunStart] = useState(() => gameClock.now());
+  const [stash, setStash] = useState<Readonly<Record<string, number>>>({});
+  const nextRun = useCallback(() => {
+    setStash((s) => {
+      const next = { ...s };
+      for (const [item, count] of Object.entries(haul)) next[item] = (next[item] ?? 0) + count;
+      return next;
+    });
+    setHaul({});
+    setLooted(new Set());
+    setSpills([]);
+    killedRef.current = new Set();
+    setKills(0);
+    setCrew(initialCrew);
+    setRunStart(gameClock.now());
+    setRunEnd(null);
+  }, [haul]);
+  // standing on a way out says so
+  const exitHere = (map.exits ?? []).find((e) => e.cell.x === pos.x && e.cell.y === pos.y);
+  const exitName = exitHere ? (exitHere.name ?? "An airlock") : null;
+  useEffect(() => {
+    if (exitName) pushLog(`${exitName}: Use (Space) to leave the ship.`);
+  }, [exitName, pushLog]);
 
   // a touched (clicked, tapped) interactive decal
   const touch = useCallback(
@@ -709,6 +788,11 @@ export function useGameState() {
     lootedProps,
     takenItems,
     spills,
+    kills,
+    runEnd,
+    runStart,
+    stash,
+    nextRun,
     pos,
     dir,
     actors,

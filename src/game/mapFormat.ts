@@ -76,6 +76,8 @@ export interface MapFile {
     with?: string;
     without?: string;
   }[];
+  // ways off the ship (see ExitSpec)
+  exits?: { x: number; y: number; name?: string }[];
   // loot lying about (see MapItem)
   items?: {
     item: string;
@@ -288,6 +290,10 @@ export function parseMap(id: string, file: MapFile): GameMap {
         with: p.with,
         without: p.without,
       };
+    }),
+    exits: (file.exits ?? []).map((e) => {
+      if (cells[e.y]?.[e.x] !== "floor") throw new Error(`exit at ${e.x},${e.y} isn't in a floor cell`);
+      return { cell: { x: e.x, y: e.y }, name: e.name };
     }),
     items: (file.items ?? []).map((it) => {
       if (!ITEM_TYPES[it.item]) throw new Error(`item at ${it.x},${it.y}: unknown item "${it.item}"`);

@@ -55,6 +55,19 @@ export const LOOT_TABLES: Record<string, LootTable> = {
       { item: "datachip", weight: 2, count: [1, 1] },
     ],
   },
+  // a combat robot's wreck: parts
+  robot: {
+    rolls: [1, 3],
+    empty: 0.05,
+    entries: [
+      { item: "scrap", weight: 25, count: [2, 5] },
+      { item: "wiring", weight: 20, count: [1, 3] },
+      { item: "servo", weight: 20, count: [1, 2] },
+      { item: "circuit", weight: 18, count: [1, 2] },
+      { item: "powercell", weight: 14, count: [1, 1] },
+      { item: "ammo", weight: 8, count: [1, 2] },
+    ],
+  },
   medical: {
     rolls: [1, 2],
     empty: 0.2,

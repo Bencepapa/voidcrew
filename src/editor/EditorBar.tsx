@@ -92,6 +92,11 @@ interface Props {
   onPropChange: (patch: { rotation?: number; elevation?: number; chance?: number; texture?: string } & Linked) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
+  // the Exit tool: the picked exit's name
+  exit: { name: string } | null;
+  onExitName: (name: string | undefined) => void;
+  onExitRemove: () => void;
+  onExitDeselect: () => void;
   // the Item tool: the item a click puts down, and the selected one
   itemChoice: string;
   onItemChoice: (item: string) => void;
@@ -308,6 +313,7 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
   { tool: "robot", label: "Robot", title: "Put in robots, their facing, route and chance" },
   { tool: "item", label: "Item", title: "Put loot on floors, tables, beds and crates" },
+  { tool: "exit", label: "Exit", title: "Ways off the ship: standing there, Use ends the run" },
   { tool: "wall", label: "Chance wall", title: "Walls left to chance: there in some variations, open floor in others" },
   { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
 ];
@@ -320,6 +326,7 @@ const TOOL_HELP: Partial<Record<EditTool, string>> = {
   robot: "click a floor: a robot there (facing you) · click a robot: pick it · Shift+click a floor: add it to the picked one's route · right-click: take it out",
   decal: "click a wall, floor or ceiling: the decal there · click a decal: pick it · right-click: take it off",
   prop: "click a floor (near a side or corner to push it there): put it in · click a prop: pick it · right-click: take it out",
+  exit: "click a floor: a way off the ship there (picked) · click one: pick it · right-click: take it out",
   item: "click a floor or a table / bed / crate top: the item there · click an item: pick it · right-click: take it out",
   wall: "click a wall or a floor: a wall left to chance there (picked) · click one: pick it · right-click one: a plain wall again",
 };
@@ -695,6 +702,30 @@ export function EditorBar(p: Props) {
               </div>
             </>
           )}
+        </>
+      )}
+      {p.tool === "exit" && p.exit && (
+        <>
+          <span className="basis-full" />
+          <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
+            <span className="text-amber-200">exit</span>
+            <label className="flex items-center gap-1">
+              Name
+              <input
+                type="text"
+                value={p.exit.name}
+                placeholder="Airlock"
+                onChange={(e) => p.onExitName(e.target.value || undefined)}
+                className="w-32 bg-neutral-800 border border-neutral-700 px-1"
+              />
+            </label>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExitRemove}>
+              Remove
+            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExitDeselect}>
+              Done
+            </button>
+          </div>
         </>
       )}
       {p.tool === "item" && (

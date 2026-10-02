@@ -551,6 +551,32 @@ const SPILL_OUT_MS = 380;
 const SPILL_REST_MS = 1000;
 const SPILL_IN_MS = 380;
 
+// an exit's floor marker: a green frame with chevrons and EXIT
+function makeExitMarker(): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext("2d")!;
+  ctx.strokeStyle = "#5dffa0";
+  ctx.fillStyle = "#5dffa0";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(8, 8, 112, 112);
+  ctx.lineWidth = 6;
+  ctx.lineJoin = "miter";
+  for (const y of [34, 50]) {
+    ctx.beginPath();
+    ctx.moveTo(40, y + 12);
+    ctx.lineTo(64, y - 6);
+    ctx.lineTo(88, y + 12);
+    ctx.stroke();
+  }
+  ctx.font = "bold 28px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("EXIT", 64, 102);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 // a chalk cross over a whole texture, a few rough strokes (the mark on an
 // emptied container)
 function drawChalkCross(ctx: CanvasRenderingContext2D, w: number, h: number) {
@@ -2499,6 +2525,18 @@ export function GameViewport({
       }).catch((err) => console.error("Prop build failed:", err));
     }
 
+    // ---- exits: a glowing plate on the floor of each way off the ship ----
+    const exitMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(), transparent: true, depthWrite: false, fog: true });
+    const exitGeo = new THREE.PlaneGeometry(0.8, 0.8);
+    geometries.push(exitGeo);
+    for (const exit of map.exits ?? []) {
+      const plate = new THREE.Mesh(exitGeo, exitMat);
+      plate.rotation.x = -Math.PI / 2;
+      // (just above the floor's relief)
+      plate.position.set(exit.cell.x, floorY(exit.cell.x, exit.cell.y) + reliefDepth + 0.006, exit.cell.y);
+      group.add(plate);
+    }
+
     // ---- loot ----
     // An item's sprite: an upright relief cutout of its art, standing on
     // its bottom edge, turned to the camera each frame (see updateLoot).
@@ -4359,6 +4397,8 @@ export function GameViewport({
       );
       updateActors(camX, camZ);
       updateLoot(camX, camZ, cam.y * wallHeight);
+      // the exits' plates throb
+      exitMat.opacity = 0.75 + 0.25 * Math.sin(performance.now() / 420);
       updateTracers();
       camera.updateMatrixWorld();
       updateEditHighlight();
@@ -4479,6 +4519,8 @@ export function GameViewport({
       (selectBox.material as THREE.Material).dispose();
       decals.dispose();
       disposeLightGrid(lightGrid);
+      exitMat.map?.dispose();
+      exitMat.dispose();
       // the renderer stays for the next build (see SceneCache)
       renderer.renderLists.dispose();
     };
