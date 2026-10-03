@@ -4025,7 +4025,23 @@ export function GameViewport({
       if (!hits.length) return;
       // a decal lies on its wall: count it if it's as near as the nearest hit
       const touched = hits.find((h) => h.object.userData.action && h.distance <= hits[0].distance + 0.02);
-      if (touched) onTouchRef.current?.(touched.object.userData.action);
+      if (touched) {
+        onTouchRef.current?.(touched.object.userData.action);
+        return;
+      }
+      // a container or a wreck, nearest: the same as Use (handy on a phone)
+      for (let o: THREE.Object3D | null = hits[0].object; o; o = o.parent) {
+        if (o.userData.propIndex !== undefined) {
+          const spec = map.props?.[o.userData.propIndex as number];
+          if (spec && PROP_TYPES[spec.prop]?.container) onTouchRef.current?.("use");
+          return;
+        }
+        if (o.userData.actorId !== undefined) {
+          const actor = actorsRef.current.find((a) => a.id === o.userData.actorId);
+          if (actor && actor.diedAt !== null) onTouchRef.current?.("use");
+          return;
+        }
+      }
     };
     renderer.domElement.addEventListener("pointerdown", onPress);
     window.addEventListener("pointerup", onRelease);

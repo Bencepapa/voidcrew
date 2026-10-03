@@ -734,8 +734,10 @@ export function useGameState() {
   const touch = useCallback(
     (action: string) => {
       if (action === "lift" && liftAt(map, pos)) startLift();
+      // (a container or a wreck tapped)
+      if (action === "use") use();
     },
-    [map, pos, startLift],
+    [map, pos, startLift, use],
   );
 
   // off a bridge, down onto the floor below it (null: not on one)
