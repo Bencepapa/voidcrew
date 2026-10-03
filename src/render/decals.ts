@@ -17,6 +17,11 @@ const SURFACE_PIXELS = 256;
 // the projection box's depth: comfortably more than the relief's depth,
 // either side of the panel plane
 const DECAL_DEPTH = 0.2;
+// Decals overlapping on one surface would fight over the same depth: each
+// is pulled forward a little more than the one before it in the map's list
+// (so the later one shows on top), up to this many steps.
+const DECAL_LAYERS = 64;
+const LAYER_UNITS = 3;
 
 interface DecalManifestEntry {
   normal: boolean;
@@ -51,6 +56,8 @@ export function fetchDecalManifest(baseUrl: string, bust: string): Promise<Recor
 export class DecalLibrary {
   private manifest: Promise<Record<string, DecalManifestEntry>>;
   private assets = new Map<string, Promise<DecalAsset>>();
+  // each decal's material at its layer (see DECAL_LAYERS), by "name|layer"
+  private layered = new Map<string, THREE.MeshStandardMaterial>();
   // a surface can be several meshes (a tall wall's stacked panels), and they
   // may arrive at different times (each relief variant builds on its own)
   private surfaces = new Map<string, THREE.Mesh[]>();
@@ -204,8 +211,22 @@ export class DecalLibrary {
       position,
       orientation,
       size,
-      material: asset.material,
+      material: this.layer(spec.decal, asset.material, index),
     }));
+  }
+
+  // a decal's material pulled forward as far as its place in the list says
+  private layer(name: string, base: THREE.MeshStandardMaterial, index: number): THREE.MeshStandardMaterial {
+    const layer = Math.min(index, DECAL_LAYERS - 1);
+    const key = `${name}|${layer}`;
+    let material = this.layered.get(key);
+    if (!material) {
+      material = base.clone();
+      material.polygonOffsetUnits = base.polygonOffsetUnits - layer * LAYER_UNITS;
+      this.layered.set(key, material);
+      this.disposables.push(material);
+    }
+    return material;
   }
 
   private build(p: Projection, mesh: THREE.Mesh) {

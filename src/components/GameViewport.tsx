@@ -2188,13 +2188,16 @@ export function GameViewport({
         if (!frame) return;
         const hole = frame.holeBounds ?? { minX: -0.35, maxX: 0.35, minY: -wallHeight / 2, maxY: wallHeight * 0.3 };
         const panelWidth = hole.maxX - hole.minX + 2 * DOOR_PANEL_OVERLAP;
-        // from the floor up behind the frame's header
+        // from the floor up behind the frame's header - its foot just clear
+        // of the floor's relief (which rises up to half its depth: the
+        // panel's own relief ledges would flicker against the floorboards)
         const panelHeight = wallHeight / 2 + hole.maxY + DOOR_PANEL_OVERLAP;
+        const panelLift = reliefDepth / 2 + 0.005;
         const panelCenterX = (hole.minX + hole.maxX) / 2;
         // one panel geometry per door kind (each kit has its own depth map)
         const panelGeos = new Map<DoorSpec["kind"], THREE.BufferGeometry>();
         for (const [kind, kit] of panelKits) {
-          const panel = await buildRelief(kit, { width: panelWidth, height: panelHeight, flushEdges: false });
+          const panel = await buildRelief(kit, { width: panelWidth, height: panelHeight - panelLift, flushEdges: false });
           if (!panel) return;
           panelGeos.set(kind, panel.geometry);
         }
@@ -2225,7 +2228,7 @@ export function GameViewport({
           const slider = new THREE.Group();
           for (const side of [1, -1]) {
             const panelHalf = new THREE.Mesh(panelGeos.get(spec.kind)!, [front, kit.sideMat]);
-            panelHalf.position.set(panelCenterX, panelHeight / 2, side * DOOR_PANEL_HALF_DEPTH);
+            panelHalf.position.set(panelCenterX, panelLift + (panelHeight - panelLift) / 2, side * DOOR_PANEL_HALF_DEPTH);
             panelHalf.rotation.y = side === 1 ? 0 : Math.PI;
             slider.add(panelHalf);
           }
