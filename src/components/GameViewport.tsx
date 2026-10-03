@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
-import { createSmoke } from "../render/smoke";
+import { createSmoke, type SmokeBody, type SmokeStyle, type SmokeWorld } from "../render/smoke";
 import { ITEM_TYPES, itemSpot } from "../game/items";
 import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
@@ -77,6 +77,12 @@ export interface ViewportSettings {
   // lightGrid.ts)
   lightGridDensity: number;
   lightGridMode: LightGridMode;
+  // what the smoke's puffs look like (see smoke.ts), and what they bump
+  // into: the walls (and floors and ceilings), the props, the robots
+  smokeStyle: SmokeStyle;
+  smokeWalls: boolean;
+  smokeProps: boolean;
+  smokeActors: boolean;
   // how far (cells) the view reaches: the fog, the lights and what's drawn
   viewDistance: number;
   eyeHeight: number;
@@ -202,6 +208,10 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   bakedLights: true,
   lightGridDensity: 3,
   lightGridMode: "directional",
+  smokeStyle: "animated",
+  smokeWalls: true,
+  smokeProps: true,
+  smokeActors: true,
   viewDistance: 7,
   eyeHeight: 0.5,
   wallHeight: 1.0,
@@ -1296,7 +1306,7 @@ export function GameViewport({
       const open = openDoors.has(key);
       if (panel.userData.open === open) continue;
       panel.userData.open = open;
-      doorAnimsRef.current.set(key, { panel, from: panel.position.clone(), start: performance.now() });
+      doorAnimsRef.current.set(key, { panel, from: panel.position.clone(), start: gameClock.now() });
     }
   }, [openDoors]);
 
@@ -2607,7 +2617,34 @@ export function GameViewport({
         };
       }),
       lightGrid,
+      smokeWorld(m),
     );
+    // what the smoke bumps into: the deck's walls, floors and ceilings, and
+    // its props as boxes (not the 45-degree cuts: a box would close their
+    // whole corner)
+    function smokeWorld(m: GameMap): SmokeWorld {
+      return {
+        wall: (x, z) => cellAt(m, Math.round(x), Math.round(z)) === "wall",
+        floor: (x, z) => floorY(Math.round(x), Math.round(z)),
+        ceiling: (x, z) => ceilingY(Math.round(x), Math.round(z)),
+        boxes: (m.props ?? [])
+          .filter((p) => PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "chamfer")
+          .map((p) => {
+            const { x, z, reachX, reachZ } = propPlacement(p);
+            const bottom = floorY(p.cell.x, p.cell.y) + (p.elevation ?? 0) * wallHeight;
+            return {
+              minX: x - reachX,
+              maxX: x + reachX,
+              minZ: z - reachZ,
+              maxZ: z + reachZ,
+              minY: bottom,
+              maxY: bottom + propHeight(m, p) * wallHeight,
+            };
+          }),
+      };
+    }
+    // the robots as the smoke feels them (see updateActors)
+    const smokeBodies: SmokeBody[] = [];
     let smoke = buildSmoke(map);
     scene.add(smoke.mesh);
     // the editor changed only the smoke: made anew, the rest stays built
@@ -2707,7 +2744,7 @@ export function GameViewport({
     // spills already shown (before this build) aren't shown again
     let lastSpill = Math.max(0, ...(lootRef.current.spills ?? []).map((s) => s.id));
     async function spill(event: LootSpill) {
-      const now = performance.now();
+      const now = gameClock.now();
       const from = new THREE.Vector3(event.from.x, event.from.y * wallHeight, event.from.z);
       const cx = Math.round(event.from.x);
       const cz = Math.round(event.from.z);
@@ -3253,7 +3290,7 @@ export function GameViewport({
     const flashes: { id: number; x: number; y: number; z: number; color: number; intensity: number; range: number; start: number; duration: number }[] = [];
     let flashIds = 0;
     function addFlash(at: THREE.Vector3, color: number, intensity: number, range: number, duration: number) {
-      flashes.push({ id: flashIds++, x: at.x, y: at.y, z: at.z, color, intensity, range, start: performance.now(), duration });
+      flashes.push({ id: flashIds++, x: at.x, y: at.y, z: at.z, color, intensity, range, start: gameClock.now(), duration });
     }
 
     function updateLightPool(
@@ -3267,7 +3304,7 @@ export function GameViewport({
       const fadeStart = range - LIGHT_FADE_SPAN;
       applySight(updateSight(party, range));
 
-      const sources = poolSources(lightGrid.scale.value > 0, performance.now());
+      const sources = poolSources(lightGrid.scale.value > 0, gameClock.now());
       const score = (l: PoolSource) => {
         const dx = l.x - cam.x;
         const dz = l.z - cam.z;
@@ -3439,7 +3476,7 @@ export function GameViewport({
     // the loot's sprites: the loose ones turned to the camera (shown while
     // in sight and not taken), new spills let out, the flyers moved
     function updateLoot(camX: number, camZ: number, feetY: number) {
-      const now = performance.now();
+      const now = gameClock.now();
       const loot = lootRef.current;
       markLooted(loot.lootedProps);
       for (const event of loot.spills ?? []) {
@@ -3491,6 +3528,7 @@ export function GameViewport({
     function updateActors(camX: number, camZ: number) {
       const now = gameClock.now();
       const current = actorsRef.current;
+      smokeBodies.length = 0;
       for (const id of [...actorMeshes.keys()]) {
         if (!current.some((a) => a.id === id)) removeActorMesh(id);
       }
@@ -3523,6 +3561,7 @@ export function GameViewport({
         const sinceDeath = actor.diedAt !== null ? now - actor.diedAt : -1;
         const falls = type.dieRows !== undefined && type.wreckRow !== undefined;
         const dead = sinceDeath >= 0 && !falls ? sinceDeath / ACTOR_FADE_MS : 0;
+        if (dead < 1) smokeBodies.push({ x, z, bottom: y, top: y + h });
         mesh.visible =
           dead < 1 &&
           (sight.cells.has(cellKey(actor.cell.x, actor.cell.y)) || sight.cells.has(cellKey(actor.from.x, actor.from.y)));
@@ -3923,12 +3962,12 @@ export function GameViewport({
       const mat = new THREE.LineBasicMaterial({ color: 0xffe2a0, transparent: true });
       const line = new THREE.Line(geo, mat);
       scene.add(line);
-      tracers.push({ line, born: performance.now() });
+      tracers.push({ line, born: gameClock.now() });
     }
     function updateTracers() {
       for (let i = tracers.length - 1; i >= 0; i--) {
         const { line, born } = tracers[i];
-        const k = (performance.now() - born) / TRACER_MS;
+        const k = (gameClock.now() - born) / TRACER_MS;
         if (k < 1) {
           (line.material as THREE.LineBasicMaterial).opacity = 1 - k;
           continue;
@@ -4376,6 +4415,11 @@ export function GameViewport({
       // free-moving player through a wall
       const dt = Math.min(0.05, (now - lastFrameAt) / 1000);
       lastFrameAt = now;
+      // the world's own time (bullet time slows it - see clock.ts): what
+      // moves in it - its doors, smoke, flickering lights, flashes, loot -
+      // goes by this; the party's own moves and looking round by real time
+      const gameNow = gameClock.now();
+      const gameDt = dt * gameClock.rate();
 
       const anim = animRef.current;
       const freeTick = freeTickRef.current;
@@ -4426,7 +4470,7 @@ export function GameViewport({
       liveRef.current = cam;
 
       for (const [key, anim] of doorAnimsRef.current) {
-        const p = Math.min(1, (now - anim.start) / DOOR_OPEN_MS);
+        const p = Math.min(1, (gameNow - anim.start) / DOOR_OPEN_MS);
         const target: THREE.Vector3 = anim.panel.userData.open ? anim.panel.userData.openPos : anim.panel.userData.closedPos;
         anim.panel.position.lerpVectors(anim.from, target, easeOutQuad(p));
         if (p >= 1) doorAnimsRef.current.delete(key);
@@ -4561,10 +4605,14 @@ export function GameViewport({
       );
       updateActors(camX, camZ);
       updateLoot(camX, camZ, cam.y * wallHeight);
-      smoke.update(dt, camera, sight.cells, s.ambientIntensity);
+      smoke.update(gameDt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, {
+        walls: s.smokeWalls,
+        props: s.smokeProps,
+        actors: s.smokeActors ? smokeBodies : null,
+      });
       for (const marker of smokeMarkers.values()) marker.visible = editModeRef.current;
       // the exits' plates throb
-      exitMat.opacity = 0.75 + 0.25 * Math.sin(performance.now() / 420);
+      exitMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
       updateTracers();
       camera.updateMatrixWorld();
       updateEditHighlight();

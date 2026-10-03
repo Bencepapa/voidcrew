@@ -177,6 +177,25 @@ export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMa
           {slider({ key: "lightGridDensity", label: "Baked samples per cell (unless the map sets it)", min: 2, max: 12, step: 1 })}
         </>
       )}
+      <label className="flex items-center justify-between gap-2 text-[11px]">
+        Smoke puffs
+        <select
+          value={settings.smokeStyle}
+          onChange={(e) => set("smokeStyle", e.target.value as ViewportSettings["smokeStyle"])}
+          className="bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm"
+        >
+          <option value="noise">noise clouds (made in the game)</option>
+          <option value="painted">painted puffs</option>
+          <option value="animated">painted, played as they live</option>
+          <option value="paintedFew">painted, fewer, thicker, upright</option>
+          <option value="paintedFewAnimated">painted, fewer, thicker, all 36 frames once</option>
+          <option value="squares">see-through squares, upright</option>
+          <option value="turnedSquares">see-through squares, turning</option>
+        </select>
+      </label>
+      {check("smokeWalls", "Smoke bumps into walls, floors, ceilings")}
+      {check("smokeProps", "Smoke bumps into props")}
+      {check("smokeActors", "Robots push smoke aside")}
       {seed !== undefined && (
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <span>Variation {seed}</span>
