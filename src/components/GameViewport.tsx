@@ -1527,6 +1527,9 @@ export function GameViewport({
       }
 
       for (const mat of [wallMat, sideMat, litMat]) if (mat) mat.userData.accent = accent;
+      // (a lamp's panel shines in its lamp's own colour: its trim takes the
+      // livery, its light doesn't)
+      if (litMat) litMat.userData.accentGlow = false;
       return { depthUrl: paths.depth + bust, grateLevels: paths.grateLevels, wallMat, sideMat, litMat, textures, slots: [] };
     }
 
@@ -3629,7 +3632,10 @@ export function GameViewport({
         mesh.rotation.y = yaw;
 
         // the angle it's seen from: 0 in front, + round to its left
-        const f = DIR_VECTOR[actor.facing];
+        // (a fixture with the crew in its eye looks right at it)
+        const look = actor.lookAt && (actor.lookAt.x !== actor.cell.x || actor.lookAt.y !== actor.cell.y) ? actor.lookAt : null;
+        const lookLen = look ? Math.hypot(look.x - actor.cell.x, look.y - actor.cell.y) : 1;
+        const f = look ? { x: (look.x - actor.cell.x) / lookLen, y: (look.y - actor.cell.y) / lookLen } : DIR_VECTOR[actor.facing];
         const cx = camX - x;
         const cz = camZ - z;
         const angle = Math.atan2(cx * f.y - cz * f.x, cx * f.x + cz * f.y);

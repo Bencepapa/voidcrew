@@ -439,7 +439,9 @@ export function useLightGrid(material: THREE.Material, uniforms: LightGridUnifor
   // ceilings, doors: those ask for it; props, decals and actors keep their
   // colours)
   const accent = material.userData.accent === true;
-  material.customProgramCacheKey = () => `${previousKey}|light-grid${accent ? "" : "|no-accent"}`;
+  // (and its glow too, unless it's a light's own colour)
+  const accentGlow = accent && material.userData.accentGlow !== false;
+  material.customProgramCacheKey = () => `${previousKey}|light-grid${accent ? "" : "|no-accent"}${accentGlow ? "" : "|no-accent-glow"}`;
   material.onBeforeCompile = (shader, renderer) => {
     previous.call(material, shader, renderer);
     uniforms.faces.forEach((f, a) => (shader.uniforms[`uLgFace${a}`] = f));
@@ -486,7 +488,7 @@ vec3 lgCube(vec3 d, vec3 uvw) {
       .replace("#include <map_fragment>", `#include <map_fragment>${accent ? "\ndiffuseColor.rgb = accentShift(diffuseColor.rgb);" : ""}`)
       .replace(
         "#include <emissivemap_fragment>",
-        `#include <emissivemap_fragment>${accent ? "\ntotalEmissiveRadiance = accentShift(totalEmissiveRadiance);" : ""}`,
+        `#include <emissivemap_fragment>${accentGlow ? "\ntotalEmissiveRadiance = accentShift(totalEmissiveRadiance);" : ""}`,
       )
       .replace(
         "#include <lights_fragment_begin>",

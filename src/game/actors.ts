@@ -550,6 +550,10 @@ export interface ActorState {
   // turned to the crew's side (a turret, from the security room): it fires
   // at the ship's robots instead
   ally?: boolean;
+  // a fixture's eye on the crew: where it looks (the crew's cell; null: the
+  // way it faces), and the way it faces when it's done looking
+  lookAt?: Vec2 | null;
+  homeFacing?: Direction;
 }
 
 // (the map loader can't check actor types: actors.ts imports the map
@@ -595,6 +599,7 @@ export function actorFromSpec(map: GameMap, spec: ActorSpec, id: number, now: nu
     fromY: floorHeight(map, spec.cell.x, spec.cell.y),
     moveStart: now - 1e6,
     facing: spec.facing,
+    homeFacing: spec.facing,
     patrol: spec.patrol.length ? spec.patrol : [spec.cell],
     target: 0,
     forward: true,
@@ -653,6 +658,9 @@ export interface AllyShot {
 // how much a fooled robot finding the crew in a restricted area puts the
 // alert up
 const RESTRICTED_ALERT = 25;
+// how long a fixture keeps looking where it last saw the crew before it
+// turns back (unless it's raised the alarm: then its type's alertMs)
+const WATCH_HOLD_MS = 3000;
 
 // an actor's shot at the party
 export interface ActorAttack {
@@ -944,12 +952,14 @@ export function stepActors(
   function stepFixture(a: ActorState, type: ActorType, update: (patch: Partial<ActorState>) => void): ActorState {
     const dist = Math.hypot(party.x - a.cell.x, party.y - a.cell.y);
     const ahead = DIR_VECTOR[a.facing];
+    // (once it has the crew in its eye it follows it round)
     const inView =
       type.fieldOfView >= 360 ||
+      !!a.lookAt ||
       dist < 1e-6 ||
       ((party.x - a.cell.x) * ahead.x + (party.y - a.cell.y) * ahead.y) / dist >= Math.cos(((type.fieldOfView / 2) * Math.PI) / 180);
     const eyes = a.y + type.eyeHeight;
-    const seen = dist <= (a.hostile ? type.huntSight : type.sight) && (inView || a.hostile) && clearLine(a.cell, party, eyes);
+    const seen = dist <= (a.hostile || a.lookAt ? type.huntSight : type.sight) && (inView || a.hostile) && clearLine(a.cell, party, eyes);
     if (a.ally) {
       // on the crew's side: the nearest robot in its sight and reach
       if (now - a.lastAttack < type.attackCooldownMs || !type.attackRange) return a;
@@ -965,15 +975,22 @@ export function stepActors(
       }
       return a;
     }
-    if (a.watching !== seen) update({ watching: seen });
-    // (a camera follows the crew round while it has it in view)
-    if (seen && type.watcher && a.facing !== toward(a.cell, party)) update({ facing: toward(a.cell, party) });
+    // seen (even taken for crew): it looks right at the crew; lost a while
+    // (longer once it's raised the alarm), it gives up - back the way it
+    // faced, its light out
+    const hostile = a.hostile;
+    if (seen) {
+      update({ watching: true, lookAt: { ...party }, lastSeenAt: now, facing: toward(a.cell, party) });
+    } else if ((a.watching || hostile) && now - a.lastSeenAt > (hostile ? type.alertMs : WATCH_HOLD_MS)) {
+      update({ watching: false, lookAt: null, hostile: false, lastSeenCell: null, facing: a.homeFacing ?? a.facing });
+    }
     if (a.fooled && seen && partyRestricted) update({ fooled: false });
     if (a.hitAt > a.lastSeenAt) update({ hostile: true, lastSeenAt: a.hitAt, lastSeenCell: party, facing: toward(a.cell, party) });
-    const sees = seen && !a.fooled;
+    const fooled = a.fooled && !(seen && partyRestricted);
+    const sees = seen && !fooled;
     if (sees) {
-      const first = !a.hostile;
-      update({ hostile: true, lastSeenAt: now, lastSeenCell: party, facing: type.fieldOfView >= 360 ? toward(a.cell, party) : a.facing });
+      const first = !hostile;
+      update({ hostile: true, lastSeenCell: party });
       if (type.watcher) {
         // (the first sighting the most, then a little more while it lasts)
         if (first || now - a.lastAttack >= type.attackCooldownMs) {
@@ -985,8 +1002,6 @@ export function stepActors(
         attacks.push({ actor: a.id, damage: lo + Math.floor(Math.random() * (hi - lo + 1)), distance: dist });
         update({ lastAttack: now, waitUntil: now + type.tactics.shotPauseMs });
       }
-    } else if (a.hostile && now - a.lastSeenAt > type.alertMs) {
-      update({ hostile: false, lastSeenCell: null });
     }
     return a;
   }
