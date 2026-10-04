@@ -16,9 +16,15 @@ import type { Vec2 } from "./types";
 // A lock on a door or a terminal: it opens once `key` is up (a code read in
 // a log, a keycard picked up) - or the crew's hacker breaks it, if `hack`
 // (1..3: how hard; it costs them energy and time).
+// A code lock (`code`) has a keypad: its code - a new one each ship - is
+// shown on one of the ship's code-holding terminals (see shipPlan.ts). A lock
+// with a `chance` is on only in some ships (the more, the tighter its
+// security - see ShipMood.locks).
 export interface Lock {
   key?: string;
   hack?: number;
+  code?: boolean;
+  chance?: number;
   // what the party is told when it's shut (default: "It's locked.")
   message?: string;
 }
@@ -26,11 +32,14 @@ export interface Lock {
 // A terminal: a screen of text, opened by touching a decal whose action is
 // "terminal:<id>" (or with Use, facing it). Its `do` runs the first time
 // it's read.
+// A code-holding terminal (`codes`) also shows the codes of some of the
+// ship's code locks: where its text has "{codes}", else after it.
 export interface Terminal {
   title: string;
   text: string;
   lock?: Lock;
   do?: string[];
+  codes?: boolean;
 }
 
 // When a trigger fires: the party steps into a cell ("enter"), reads a

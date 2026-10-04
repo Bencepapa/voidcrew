@@ -111,7 +111,10 @@ not two editors.
   Hack lock it (`lock` in the map): it opens once the party knows its key
   (a flag - a code read on a terminal, a keycard picked up), or when the
   crew's hacker breaks it with Use (easy / hard / very hard: more energy
-  and time); Says is what the party is told at it.
+  and time); Code gives it a keypad, its code (new each ship) shown on one
+  of the ship's code-holding terminals (`"codes": true` in `terminals`);
+  Locked is the chance it's locked on a ship (the ship's security roll
+  shifts it); Says is what the party is told at it.
 - **Prop:** the palette picks the prop; a click on a floor puts it at the
   nearest side or corner (or the center), a wall-hung one on the nearest
   side, and picks it. A click on a prop picks it, the right button takes

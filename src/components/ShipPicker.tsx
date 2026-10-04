@@ -4,7 +4,13 @@ import type { ShipMood } from "../game/variation";
 
 // The ships within reach (see ships.ts): the crew picks one to board. Each
 // card shows what the scan made out - the rest is unknown until aboard.
-const MOOD_LABEL: Record<keyof ShipMood, string> = { light: "Power", threat: "Threat", clutter: "Cargo" };
+const MOOD_LABEL: Partial<Record<keyof ShipMood, string>> = {
+  light: "Power",
+  threat: "Threat",
+  clutter: "Cargo",
+  locks: "Security",
+  smoke: "Fires",
+};
 const MOOD_TEXT: Record<string, string> = {
   dark: "dark",
   dim: "emergency lights",
@@ -15,9 +21,21 @@ const MOOD_TEXT: Record<string, string> = {
   sparse: "stripped",
   normal: "some",
   cluttered: "plenty",
+  few: "lax",
+  some: "some",
+  many: "tight",
+  clear: "none",
+  hazy: "smouldering",
+  smoky: "burning",
 };
 const tone = (key: keyof ShipMood, level: string) =>
-  key === "threat" ? (level === "high" ? "text-red-400" : level === "low" ? "text-emerald-300" : "text-amber-300") : "text-neutral-200";
+  key === "threat" || key === "locks"
+    ? level === "high" || level === "many"
+      ? "text-red-400"
+      : level === "low" || level === "few"
+        ? "text-emerald-300"
+        : "text-amber-300"
+    : "text-neutral-200";
 
 export function ShipPicker({ offers, onPick, onBack }: { offers: ShipOffer[]; onPick: (ship: ShipOffer) => void; onBack: () => void }) {
   return (

@@ -161,7 +161,7 @@ export interface ActorInfo {
 function doorLock(lock: Lock | undefined, patch: Partial<Lock>): Lock | undefined {
   const next: Lock = { ...lock, ...patch };
   for (const key of Object.keys(next) as (keyof Lock)[]) if (next[key] === undefined) delete next[key];
-  return next.key || next.hack ? next : undefined;
+  return next.key || next.hack || next.code ? next : undefined;
 }
 
 // the selected door as the panel shows it
@@ -592,6 +592,18 @@ export function EditorBar(p: Props) {
                 <option value={3}>very hard</option>
               </select>
             </label>
+            <label className="flex items-center gap-1" title="A keypad: its code - a new one each ship - shows on one of the ship's code-holding terminals">
+              <input
+                type="checkbox"
+                checked={!!p.door.lock?.code}
+                onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { code: e.target.checked || undefined }) })}
+              />
+              Code
+            </label>
+            {p.door.lock &&
+              slider("Locked", p.door.lock.chance ?? 1, 0, 1, 0.05, (v) =>
+                p.onDoorChange({ lock: doorLock(p.door!.lock, { chance: v >= 1 ? undefined : v }) }),
+              )}
             {p.door.lock && (
               <label className="flex items-center gap-1" title="What the party is told at the shut door">
                 Says

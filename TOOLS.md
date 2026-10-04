@@ -325,6 +325,12 @@ main fields:
 
 ### The story: terminals, locks, triggers (src/game/story.ts)
 
+Each ship's seed rolls its secret **mood** (src/game/variation.ts): light,
+threat, clutter, smoke, doors and locks - each low, middle or high, leaning
+by the ship's class (src/game/ships.ts). It shifts the chances of the deck's
+lights; actors; props, decals and items; smoke; doors; and locks. The scan
+shows some of it (power, threat, cargo, security, fires), never the doors.
+
 What the crew finds out on a ship are **flags** - plain names, up or down.
 They last for the run; those named `story.*` last for good (saved with the
 base). Terminals and triggers are written into the map file by hand for
@@ -333,7 +339,8 @@ now; locks and a decal's action are set in the editor (Door, Decal tools).
 | field | what it is |
 |---|---|
 | `terminals` | screens to read, by id: `{ "log1": { "title": "Crew log", "text": "line\nline", "lock"?: {...}, "do"?: ["set:code_c1"] } }` - opened by touching a decal with `"action": "terminal:log1"` (or Use, facing it); `do` runs the first time it's read |
-| `lock` (doors, terminals) | `{ "key"?: "code_c1", "hack"?: 1-3, "message"?: "Keypad: ACCESS DENIED." }` - opens once the `key` flag is up, or the hacker (Orion, the android) breaks it with Use: 8 energy and 1.5 s per level |
+| `lock` (doors, terminals) | `{ "key"?: "code_c1", "hack"?: 1-3, "code"?: true, "chance"?: 0.5, "message"?: "Keypad: ACCESS DENIED." }` - opens once the `key` flag is up, or the hacker (Orion, the android) breaks it with Use: 8 energy and 1.5 s per level. `code` (doors): a keypad - its 4-digit code, new each ship, shows on one of the ship's code-holding terminals, on any deck. `chance`: on only in some ships (the ship's secret `locks` roll makes it likelier or not) |
+| `codes` (terminals) | `true`: it can show some of the ship's lock codes - where its text says `{codes}`, else after it (the ship's plan, src/game/shipPlan.ts, picks which terminal shows which code; a code lock with no such terminal on the ship can only be hacked - or, if it can't, is off) |
 | `sets`, `name` (items) | a story item: picking it up raises the flag, and the log calls it by its name (`"name": "red keycard"`) |
 | `triggers` | `{ "on": "enter" \| "open" \| "read" \| "pickup" \| "start", ..., "if"?: ["flag", "!flag"], "do": [...], "repeat"?: true }` - `enter`/`open`: `x`, `y` (a cell, a door's cell); `read`: `terminal`; `pickup`: `item` (unset: any); `start`: arriving on the deck. Once a run, unless `repeat` |
 

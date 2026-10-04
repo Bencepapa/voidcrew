@@ -211,8 +211,8 @@
   ],
   "doors": [
     { "x": 2, "y": 4, "kind": "lift", "facing": "E", "label": "CREW", "labelVertical": true, "offset": -0.42 },
-    { "x": 5, "y": 3, "kind": "standard", "facing": "S", "label": "C1", "offset": 0.42 },
-    { "x": 9, "y": 3, "kind": "standard", "facing": "S", "label": "C2", "offset": 0.42 },
+    { "x": 5, "y": 3, "kind": "standard", "facing": "S", "label": "C1", "offset": 0.42, "lock": { "code": true, "hack": 1, "chance": 0.5 } },
+    { "x": 9, "y": 3, "kind": "standard", "facing": "S", "label": "C2", "offset": 0.42, "lock": { "code": true, "hack": 1, "chance": 0.5 } },
     { "x": 13, "y": 3, "kind": "standard", "facing": "S", "label": "C3", "offset": 0.42 },
     { "x": 5, "y": 5, "kind": "standard", "facing": "N", "label": "C4", "offset": 0.42 },
     { "x": 9, "y": 5, "kind": "standard", "facing": "N", "label": "C5", "offset": 0.42 },
@@ -220,7 +220,7 @@
   ],
   "decals": [
     { "decal": "lift_btn_0_down", "x": 1, "y": 4, "surface": "S", "px": 40, "py": 66, "action": "lift" },
-    { "decal": "poster_home", "x": 4, "y": 2, "surface": "S", "px": 92, "py": 40, "chance": 0.85 },
+    { "decal": "poster_home", "x": 4, "y": 2, "surface": "S", "px": 92, "py": 40, "action": "terminal:noticeboard" },
     { "decal": "kid_drawing", "x": 6, "y": 2, "surface": "S", "px": 80, "py": 70, "chance": 0.8 },
     { "decal": "notice_board", "x": 10, "y": 2, "surface": "S", "px": 84, "py": 50, "chance": 0.8 },
     { "decal": "polaroids", "x": 12, "y": 2, "surface": "S", "px": 92, "py": 60, "chance": 0.35 },
@@ -257,5 +257,12 @@
     { "decal": "hazard_stripes", "x": 7, "y": 5, "surface": "floor", "px": 76, "py": -28, "chance": 0.3 },
     { "decal": "hazard_stripes", "x": 7, "y": 6, "surface": "floor", "px": -55, "py": 82, "rotation": 90, "chance": 0.5 },
     { "decal": "hazard_stripes", "x": 8, "y": 6, "surface": "floor", "px": -64, "py": 78, "rotation": 90, "chance": 0.55 }
-  ]
+  ],
+  "terminals": {
+    "noticeboard": {
+      "title": "Crew notice board",
+      "text": "Cabin codes, as reset last week:\n{codes}\n- Purser",
+      "codes": true
+    }
+  }
 }

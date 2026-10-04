@@ -182,7 +182,8 @@
     { "decal": "patch_plate", "x": 4, "y": 5, "surface": "S", "px": 110, "py": 150, "chance": 0.5 },
     { "decal": "text_danger", "x": 3, "y": 3, "surface": "S", "px": 100, "py": 40, "chance": 0.4 },
     { "decal": "text_engine", "x": 5, "y": 1, "surface": "S", "px": 120, "py": 40 },
-    { "decal": "text_lift", "x": 1, "y": 7, "surface": "W", "px": 36, "py": 40, "chance": 0.7 }
+    { "decal": "text_lift", "x": 1, "y": 7, "surface": "W", "px": 36, "py": 40, "chance": 0.7 },
+    { "decal": "notice_board", "x": 3, "y": 1, "surface": "N", "px": 60, "py": 60, "action": "terminal:englog" }
   ],
   "chanceWalls": [
     { "x": 5, "y": 5, "chance": 0.5 },
@@ -239,5 +240,8 @@
       "size": 1.7,
       "density": 1.25
     }
-  ]
+  ],
+  "terminals": {
+    "englog": { "title": "Engineering log", "text": "Door overrides, for maintenance only:\n{codes}", "codes": true }
+  }
 }

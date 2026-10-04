@@ -1,4 +1,4 @@
-import { MOOD_LEVELS } from "./variation";
+import { MOOD_KEYS, MOOD_LEVELS } from "./variation";
 import type { ShipMood } from "./variation";
 import type { ItemCategory } from "./items";
 
@@ -15,8 +15,8 @@ export interface ShipClass {
   // the deck (map id) it's boarded on; its other decks are reached by lift
   entry: string;
   // how likely each level of a mood is (low, middle, high - see
-  // MOOD_LEVELS), before depth
-  mood: { [K in keyof ShipMood]: [number, number, number] };
+  // MOOD_LEVELS), before depth; unset: the middle a little likelier
+  mood: Partial<Record<keyof ShipMood, [number, number, number]>>;
   // what its containers tend to hold: weights on the loot tables' entries
   // by item category (unset: 1)
   loot: Partial<Record<ItemCategory, number>>;
@@ -27,28 +27,28 @@ export const SHIP_CLASSES: Record<string, ShipClass> = {
     name: "Bulk freighter",
     blurb: "Holds full of cargo, a skeleton crew's worth of security.",
     entry: "deck0-crew",
-    mood: { light: [3, 4, 3], threat: [5, 4, 1], clutter: [1, 3, 6] },
+    mood: { light: [3, 4, 3], threat: [5, 4, 1], clutter: [1, 3, 6], locks: [2, 4, 4] },
     loot: { salvage: 1.6, supplies: 1.2, tech: 0.8 },
   },
   hospital: {
     name: "Hospital ship",
     blurb: "Wards and labs. Medical stores, and not much to guard them.",
     entry: "deck0-crew",
-    mood: { light: [1, 3, 6], threat: [6, 3, 1], clutter: [3, 4, 3] },
+    mood: { light: [1, 3, 6], threat: [6, 3, 1], clutter: [3, 4, 3], smoke: [6, 3, 1], locks: [4, 4, 2] },
     loot: { supplies: 2.5, data: 1.5, salvage: 0.6 },
   },
   corvette: {
     name: "Patrol corvette",
     blurb: "A warship: drones on every deck, and the gear they guarded.",
     entry: "deck0-crew",
-    mood: { light: [4, 4, 2], threat: [1, 3, 6], clutter: [4, 4, 2] },
+    mood: { light: [4, 4, 2], threat: [1, 3, 6], clutter: [4, 4, 2], smoke: [2, 4, 4], locks: [1, 3, 6] },
     loot: { tech: 2, valuables: 1.6, supplies: 1.3, salvage: 0.6 },
   },
   survey: {
     name: "Survey vessel",
     blurb: "Instruments and archives, running on emergency power.",
     entry: "deck0-crew",
-    mood: { light: [6, 3, 1], threat: [3, 5, 2], clutter: [3, 4, 3] },
+    mood: { light: [6, 3, 1], threat: [3, 5, 2], clutter: [3, 4, 3], smoke: [3, 4, 3], locks: [3, 4, 3] },
     loot: { data: 4, tech: 1.5, valuables: 1.3, salvage: 0.7 },
   },
 };
@@ -93,11 +93,14 @@ function pick<T>(weights: number[], items: readonly T[], r: number): T {
 export function makeShip(seed: number, classId: string, depth: number): ShipOffer {
   const type = SHIP_CLASSES[classId];
   const deeper = (w: [number, number, number]): number[] => [w[0] / (1 + depth * 0.5), w[1], w[2] * (1 + depth * 0.5)];
-  const mood: ShipMood = {
-    light: pick(type.mood.light, MOOD_LEVELS.light, roll(`${seed}|light`)),
-    threat: pick(deeper(type.mood.threat), MOOD_LEVELS.threat, roll(`${seed}|threat`)),
-    clutter: pick(type.mood.clutter, MOOD_LEVELS.clutter, roll(`${seed}|clutter`)),
+  // (deeper, the threat and the locks lean higher)
+  const leaning = (key: keyof ShipMood): number[] => {
+    const w = type.mood[key] ?? [3, 4, 3];
+    return key === "threat" || key === "locks" ? deeper(w) : w;
   };
+  const mood = Object.fromEntries(
+    MOOD_KEYS.map((key) => [key, pick(leaning(key), MOOD_LEVELS[key] as string[], roll(`${seed}|${key}`))]),
+  ) as unknown as ShipMood;
   return {
     seed,
     classId,
@@ -105,11 +108,7 @@ export function makeShip(seed: number, classId: string, depth: number): ShipOffe
     depth,
     mood,
     // the scan makes out each part of the mood about two times in three
-    known: {
-      light: roll(`${seed}|known light`) < 0.65,
-      threat: roll(`${seed}|known threat`) < 0.65,
-      clutter: roll(`${seed}|known clutter`) < 0.65,
-    },
+    known: Object.fromEntries(MOOD_KEYS.map((key) => [key, roll(`${seed}|known ${key}`) < 0.65])) as ShipOffer["known"],
     lootScale: 1 + depth * 0.25,
   };
 }

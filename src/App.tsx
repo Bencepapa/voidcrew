@@ -44,6 +44,7 @@ import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
 import { HaulPanel } from "./components/HaulPanel";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { KeypadPanel } from "./components/KeypadPanel";
 import type { Lock } from "./game/story";
 import { RunSummary } from "./components/RunSummary";
 import { ITEM_TYPES, itemSpot } from "./game/items";
@@ -79,6 +80,10 @@ export default function App() {
     terminal,
     closeTerminal,
     wipedAt,
+    keypad,
+    enterCode,
+    hackKeypad,
+    closeKeypad,
     inLift,
     ride,
     actors,
@@ -1296,6 +1301,9 @@ export default function App() {
     <>
       {haulOpen && !editMode && !runEnd && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
       {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
+      {keypad && !editMode && (
+        <KeypadPanel title={keypad.title} hack={keypad.hack} hacker={keypad.hacker} onCode={enterCode} onHack={hackKeypad} onClose={closeKeypad} />
+      )}
       {wipedAt !== null && !editMode && (
         <WipeScreen
           wipedAt={wipedAt}

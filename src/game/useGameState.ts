@@ -16,6 +16,7 @@ import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
 import { crewWeapon, getMeta, setStoryFlag } from "./meta";
 import { HACKER_ROLE, HACK_ENERGY, HACK_MS, conditionsMet, parseAction, triggerMatches, unlockedFlag } from "./story";
 import type { Lock, StoryEvent } from "./story";
+import { planShip } from "./shipPlan";
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 
@@ -57,6 +58,10 @@ const BLOCKED_MESSAGES: Record<"wall" | "ledge" | "low" | "prop", string> = {
 const ACTOR_TICK_MS = 100;
 // a lift door shuts this long after the last time someone passed through it
 const LIFT_DOOR_CLOSE_MS = 15000;
+
+// a lock as it is on this ship: its code (if a code lock with one), and the
+// door's label (for its keypad)
+type ActiveLock = Lock & { pin?: string; label?: string };
 
 export function doorCellKey(cell: Vec2): string {
   return `${cell.x},${cell.y}`;
@@ -203,7 +208,8 @@ export function useGameState() {
     performance.now() < busyUntilRef.current ||
     readyMapRef.current !== mapRef.current.id ||
     aimRef.current !== null ||
-    terminalRef.current !== null;
+    terminalRef.current !== null ||
+    keypadRef.current !== null;
 
   // The whole crew down (real time): the run is lost. The view sinks to
   // the floor and fades; the actors stop hunting and go back to their
@@ -482,15 +488,12 @@ export function useGameState() {
   // A lock opened, if it can be: its key known (at once), else hacked (when
   // `hack` - the hacker's energy and some time); `done` once it's open.
   // False: it stays shut (and the party has been told why).
-  const openLock = useCallback(
-    (lock: Lock, hack: boolean, done: () => void): boolean => {
-      if (lock.key && hasFlag(lock.key)) {
-        pushLog("You have what it takes: the lock clicks open.");
-        done();
-        return true;
-      }
+  // the hacker breaks a lock: energy now, the lock open after a while
+  // (false: they can't)
+  const hackLock = useCallback(
+    (lock: ActiveLock, done: () => void): boolean => {
       const h = hacker();
-      if (!hack || !lock.hack || !h) {
+      if (!lock.hack || !h) {
         pushLog(lockedText(lock));
         return false;
       }
@@ -510,15 +513,95 @@ export function useGameState() {
       }, ms);
       return true;
     },
-    [hasFlag, pushLog],
+    [pushLog],
   );
-  // the lock still on a door, if any
+  // A code lock's keypad on the screen: its code typed in opens the lock -
+  // or the hacker breaks it (see enterCode, hackKeypad).
+  const [keypad, setKeypad] = useState<{ title: string; hack?: number; hacker?: string } | null>(null);
+  const keypadRef = useRef<{ lock: ActiveLock; done: () => void } | null>(null);
+  const closeKeypad = useCallback(() => {
+    keypadRef.current = null;
+    setKeypad(null);
+  }, []);
+  const enterCode = useCallback(
+    (code: string): boolean => {
+      const open = keypadRef.current;
+      if (!open) return false;
+      if (code !== open.lock.pin) {
+        pushLog(`Keypad: ${code || "----"} - ACCESS DENIED.`);
+        return false;
+      }
+      closeKeypad();
+      pushLog("Keypad: ACCESS GRANTED. The lock clicks open.");
+      open.done();
+      return true;
+    },
+    [pushLog, closeKeypad],
+  );
+  const hackKeypad = useCallback(() => {
+    const open = keypadRef.current;
+    if (!open) return;
+    closeKeypad();
+    hackLock(open.lock, open.done);
+  }, [closeKeypad, hackLock]);
+  const openLock = useCallback(
+    (lock: ActiveLock, hack: boolean, done: () => void): boolean => {
+      if (lock.key && hasFlag(lock.key)) {
+        pushLog("You have what it takes: the lock clicks open.");
+        done();
+        return true;
+      }
+      // (a keypad: the code, or the hacker from there)
+      if (lock.pin) {
+        keypadRef.current = { lock, done };
+        const h = lock.hack ? hacker() : undefined;
+        setKeypad({ title: lock.label ?? "Keypad", hack: lock.hack, hacker: h?.name });
+        return false;
+      }
+      if (!hack) {
+        pushLog(lockedText(lock));
+        return false;
+      }
+      return hackLock(lock, done);
+    },
+    [hasFlag, pushLog, hackLock],
+  );
+  // A locked door walked into: open at once with its key (true: go on
+  // through), else its keypad or a word on why not - opened later, if the
+  // code is typed in or it's hacked from there
+  const unlockDoor = useCallback(
+    (lock: ActiveLock, cell: Vec2): boolean => {
+      let now = true;
+      const opened = openLock(lock, false, () => {
+        raiseFlag(unlockedFlag(mapRef.current.id, cell), true);
+        if (!now) storyRef.current.open(cell);
+      });
+      now = false;
+      return opened;
+    },
+    [openLock, raiseFlag],
+  );
+  // The ship's plan (see shipPlan.ts): which of its chance locks are on,
+  // their codes and where they're read - for all its decks, from the seed.
+  const plan = useMemo(
+    () => (variation ? planShip(fullMapRef.current, variation.seed, variation.mood) : null),
+    // (the same ship whichever deck it's planned from)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [variation],
+  );
+  const planRef = useRef(plan);
+  planRef.current = plan;
+  // the lock still on a door, if any: as the ship's plan has it (off in
+  // this ship, or on - with its code), until the party's opened it
   const doorLock = useCallback(
-    (cell: Vec2): Lock | null => {
+    (cell: Vec2): ActiveLock | null => {
       const m = mapRef.current;
       if (cellAt(m, cell.x, cell.y) !== "door") return null;
-      const lock = doorAt(m, cell.x, cell.y).lock;
-      return lock && !hasFlag(unlockedFlag(m.id, cell)) ? lock : null;
+      const door = doorAt(m, cell.x, cell.y);
+      if (!door.lock || hasFlag(unlockedFlag(m.id, cell))) return null;
+      const planned = planRef.current?.locks.get(m.id)?.get(`${cell.x},${cell.y}`);
+      if (planRef.current && !planned) return null;
+      return { ...door.lock, pin: planned?.code, label: door.label?.replace(/\n/g, "") || undefined };
     },
     [hasFlag],
   );
@@ -587,7 +670,15 @@ export function useGameState() {
       }
       const unlocked = `unlocked:${m.id}:terminal ${id}`;
       const show = () => {
-        setTerminal({ id, title: t.title, text: t.text });
+        // (a code-holding one: the ship's codes it shows, in its text)
+        const lines = planRef.current?.codes.get(`${m.id}|${id}`) ?? [];
+        const listed = lines.join("\n");
+        const text = t.text.includes("{codes}")
+          ? t.text.replace("{codes}", listed || "(no entries)")
+          : listed
+            ? `${t.text}\n\n${listed}`
+            : t.text;
+        setTerminal({ id, title: t.title, text });
         const read = `read:${m.id}:${id}`;
         if (hasFlag(read)) return;
         raiseFlag(read, true);
@@ -741,7 +832,7 @@ export function useGameState() {
     if (door && !openDoors.has(doorCellKey(door))) {
       // locked: open only with its key (hacking takes Use)
       const lock = doorLock(door);
-      if (lock && !openLock(lock, false, () => raiseFlag(unlockedFlag(map.id, door), true))) return;
+      if (lock && !unlockDoor(lock, door)) return;
       startOpening(door);
       setTimeout(() => {
         setPos(next);
@@ -753,7 +844,7 @@ export function useGameState() {
 
     setPos(next);
     setElevation(way.y);
-  }, [pos, dir, elevation, map, pushLog, openingDoor, openDoors, startOpening, startLift, doorLock, openLock, raiseFlag]);
+  }, [pos, dir, elevation, map, pushLog, openingDoor, openDoors, startOpening, startLift, doorLock, unlockDoor]);
 
   const moveForward = useCallback(() => step(dir), [step, dir]);
   const moveBackward = useCallback(() => step(behindOf(dir)), [step, dir]);
@@ -1005,11 +1096,11 @@ export function useGameState() {
     (cell: Vec2) => {
       if (openingDoor || openDoors.has(doorCellKey(cell))) return;
       const lock = doorLock(cell);
-      if (lock && !openLock(lock, false, () => raiseFlag(unlockedFlag(mapRef.current.id, cell), true))) return;
+      if (lock && !unlockDoor(lock, cell)) return;
       startOpening(cell);
       setTimeout(() => setOpeningDoor(null), DOOR_ANIM_MS);
     },
-    [openingDoor, openDoors, startOpening, doorLock, openLock, raiseFlag],
+    [openingDoor, openDoors, startOpening, doorLock, unlockDoor],
   );
 
   // dev-only: jump anywhere from the console, e.g. __voidcrewTeleport(6, 3, "S")
@@ -1102,5 +1193,10 @@ export function useGameState() {
     terminal,
     closeTerminal,
     wipedAt,
+    keypad,
+    enterCode,
+    hackKeypad,
+    closeKeypad,
+    plan,
   };
 }

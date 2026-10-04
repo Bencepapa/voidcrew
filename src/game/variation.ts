@@ -8,21 +8,30 @@ import type { CellType, GameMap, Linked } from "./types";
 // another one. Each item's roll depends on the seed, the deck and the item
 // (its kind and place in the map's list), not on the other items.
 //
-// The seed also sets the ship's mood (the same for all its decks): how lit,
-// how dangerous and how cluttered it is. Each shifts its items' chances -
-// lights, actors, props and decals - up or down (see scaleChance). Items
-// with no chance (always there) stay whatever the mood.
+// The seed also sets the ship's mood (the same for all its decks), a few
+// secret rolls: how lit, how dangerous, how cluttered, how smoky it is, how
+// many of its doors are there and how many of its locks are on. Each shifts
+// its items' chances - lights; actors; props, decals and items; smoke;
+// doors; locks (see shipPlan.ts) - up or down (see scaleChance). Items with
+// no chance (always there) stay whatever the mood.
 
 export interface ShipMood {
   light: "bright" | "dim" | "dark";
   threat: "low" | "medium" | "high";
   clutter: "sparse" | "normal" | "cluttered";
+  smoke: "clear" | "hazy" | "smoky";
+  doors: "few" | "some" | "many";
+  locks: "few" | "some" | "many";
 }
 export const MOOD_LEVELS: { [K in keyof ShipMood]: ShipMood[K][] } = {
   light: ["dark", "dim", "bright"],
   threat: ["low", "medium", "high"],
   clutter: ["sparse", "normal", "cluttered"],
+  smoke: ["clear", "hazy", "smoky"],
+  doors: ["few", "some", "many"],
+  locks: ["few", "some", "many"],
 };
+export const MOOD_KEYS = Object.keys(MOOD_LEVELS) as (keyof ShipMood)[];
 // what each level does to an item's odds (the low, middle and high level):
 // a 50% item gets 14%, 50% or 86%; a 20% one 4%, 20% or 60%; an 80% one
 // 40%, 80% or 96% - never quite 0 or 1, and the rarer and the commoner
@@ -34,8 +43,13 @@ export function scaleChance(chance: number, odds: number): number {
   return (chance * odds) / (1 - chance + chance * odds);
 }
 
+// what a mood's level does to the odds of its items
+export function moodOdds(mood: ShipMood, key: keyof ShipMood): number {
+  return MOOD_ODDS[(MOOD_LEVELS[key] as string[]).indexOf(mood[key])] ?? 1;
+}
+
 // a number 0..1 from a text, the same each time (FNV-1a, then scrambled)
-function roll(text: string): number {
+export function roll(text: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);
@@ -50,12 +64,13 @@ function roll(text: string): number {
 // the ship's mood in the variation `seed` (each part rolled on its own, the
 // three levels alike)
 export function moodOf(seed: number): ShipMood {
-  const pick = <K extends keyof ShipMood>(key: K): ShipMood[K] =>
-    MOOD_LEVELS[key][Math.floor(roll(`${seed}|mood|${key}`) * 3)];
-  return { light: pick("light"), threat: pick("threat"), clutter: pick("clutter") };
+  return Object.fromEntries(
+    MOOD_KEYS.map((key) => [key, MOOD_LEVELS[key][Math.floor(roll(`${seed}|mood|${key}`) * 3)]]),
+  ) as unknown as ShipMood;
 }
 
-export const moodText = (mood: ShipMood) => `${mood.light}, ${mood.threat} threat, ${mood.clutter}`;
+export const moodText = (mood: ShipMood) =>
+  `${mood.light}, ${mood.threat} threat, ${mood.clutter}, ${mood.smoke}, ${mood.doors} doors, ${mood.locks} locks`;
 
 // One item's roll: kept if its chance (its odds shifted by the mood) comes
 // up - and the items it's linked to agree (see Linked): the one it's only
@@ -105,7 +120,7 @@ function resolve(seed: number, map: GameMap, entries: Entry[]): Set<Entry> {
 // is left to chance), in the ship's mood (default: the seed's). A door left
 // out leaves an open doorway, a chance wall left out an open floor.
 export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(seed)): GameMap {
-  const odds = <K extends keyof ShipMood>(key: K) => MOOD_ODDS[MOOD_LEVELS[key].indexOf(mood[key])] ?? 1;
+  const odds = (key: keyof ShipMood) => moodOdds(mood, key);
   const entry = (kind: string, index: number, item: Linked & { chance?: number }, o: number): Entry => ({
     kind,
     index,
@@ -146,9 +161,9 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
     if (under >= 0) items[i].on = props[under];
   });
   const actors = (map.actors ?? []).map((a, i) => entry("actor", i, a, odds("threat")));
-  const smokes = (map.smokes ?? []).map((s, i) => entry("smoke", i, s, 1));
+  const smokes = (map.smokes ?? []).map((s, i) => entry("smoke", i, s, odds("smoke")));
   const lights = (map.lights ?? []).map((l, i) => entry("light", i, l, odds("light")));
-  const doors = (map.doors ?? []).map((d, i) => entry("door", i, d, 1));
+  const doors = (map.doors ?? []).map((d, i) => entry("door", i, d, odds("doors")));
   const walls = (map.chanceWalls ?? []).map((w, i) => ({ ...entry("wall", i, w, 1), opening: true }));
   const kept = resolve(seed, map, [...props, ...decals, ...items, ...actors, ...smokes, ...lights, ...doors, ...walls]);
   const keep = <T>(items: T[] | undefined, entries: Entry[]) => items?.filter((_, i) => kept.has(entries[i]));
