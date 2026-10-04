@@ -13,7 +13,9 @@ import { ACTOR_TYPES, actorAt, createActors, partyHitChance, stepActors } from "
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
 import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
-import { crewWeapon } from "./meta";
+import { crewWeapon, getMeta, setStoryFlag } from "./meta";
+import { HACKER_ROLE, HACK_ENERGY, HACK_MS, conditionsMet, parseAction, triggerMatches, unlockedFlag } from "./story";
+import type { Lock, StoryEvent } from "./story";
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 
@@ -197,7 +199,35 @@ export function useGameState() {
   // while the map loads
   const busyUntilRef = useRef(0);
   const busy = () =>
-    performance.now() < busyUntilRef.current || readyMapRef.current !== mapRef.current.id || aimRef.current !== null;
+    wipedRef.current !== null ||
+    performance.now() < busyUntilRef.current ||
+    readyMapRef.current !== mapRef.current.id ||
+    aimRef.current !== null ||
+    terminalRef.current !== null;
+
+  // The whole crew down (real time): the run is lost. The view sinks to
+  // the floor and fades; the actors stop hunting and go back to their
+  // rounds; nothing more can be done.
+  const [wipedAt, setWipedAt] = useState<number | null>(null);
+  const wipedRef = useRef(wipedAt);
+  wipedRef.current = wipedAt;
+
+  // (the last crewmate fallen: the run lost - aiming dropped, the actors
+  // calmed down; true if so)
+  const wipeIfDownRef = useRef<() => boolean>(() => false);
+  wipeIfDownRef.current = () => {
+    if (wipedRef.current !== null || !crewRef.current.every((c) => c.hp === 0)) return false;
+    pushLog("The whole crew is down.");
+    wipedRef.current = performance.now();
+    setWipedAt(wipedRef.current);
+    if (aimRef.current) {
+      gameClock.setRate(1);
+      aimRef.current = null;
+      setAim(null);
+    }
+    updateActorsRef.current(actorsRef.current.map((a) => ({ ...a, hostile: false, lastSeenCell: null, volleyLeft: 0 })));
+    return true;
+  };
 
   // the deck's actors, reset with each deck; they walk on while the deck
   // is shown
@@ -227,6 +257,8 @@ export function useGameState() {
     },
     [actorKey],
   );
+  const updateActorsRef = useRef(updateActors);
+  updateActorsRef.current = updateActors;
   useEffect(() => {
     const now = gameClock.now();
     updateActors(
@@ -264,11 +296,12 @@ export function useGameState() {
     const timer = setInterval(() => {
       const m = mapRef.current;
       if (readyMapRef.current !== m.id || frozenRef.current) return;
+      // (a downed crew is nowhere to them: they lose it and go back)
       const { actors: next, attacks } = stepActors(
         m,
         actorsRef.current,
         gameClock.now(),
-        posRef.current,
+        wipedRef.current !== null ? { x: -1000, y: -1000 } : posRef.current,
         (cell) => openDoorsRef.current.has(doorCellKey(cell)),
         elevationRef.current,
       );
@@ -297,7 +330,7 @@ export function useGameState() {
           `${name} hits ${victim.name} for ${attack.damage}${odds}.` +
             (hp === 0 ? ` ${victim.name} goes down!` : ""),
         );
-        if (crewRef.current.every((c) => c.hp === 0)) pushLog("The whole crew is down.");
+        if (wipeIfDownRef.current()) break;
       }
     }, ACTOR_TICK_MS);
     return () => clearInterval(timer);
@@ -415,15 +448,183 @@ export function useGameState() {
     if (!busy()) setDir((d) => rightOf(d));
   }, []);
 
+  // ---- The story (see story.ts): the run's flags, the triggers fired, the
+  // terminal being read. (Its functions read refs: the latest map, flags
+  // and crew, whenever they're called.)
+  const [flags, setFlags] = useState<ReadonlySet<string>>(() => new Set());
+  const flagsRef = useRef(flags);
+  const firedRef = useRef(new Set<string>());
+  const [terminal, setTerminal] = useState<{ id: string; title: string; text: string } | null>(null);
+  const terminalRef = useRef(terminal);
+  terminalRef.current = terminal;
+  const hasFlag = useCallback(
+    (flag: string) => (flag.startsWith("story.") ? getMeta().story.includes(flag) : flagsRef.current.has(flag)),
+    [],
+  );
+  const raiseFlag = useCallback((flag: string, on: boolean) => {
+    if (flag.startsWith("story.")) {
+      setStoryFlag(flag, on);
+      return;
+    }
+    if (flagsRef.current.has(flag) === on) return;
+    const next = new Set(flagsRef.current);
+    if (on) next.add(flag);
+    else next.delete(flag);
+    flagsRef.current = next;
+    setFlags(next);
+  }, []);
+  // the crew's hacker, if they're standing
+  const hacker = () => crewRef.current.find((c) => c.role === HACKER_ROLE && c.hp > 0);
+  const lockedText = (lock: Lock) => {
+    const h = lock.hack ? hacker() : undefined;
+    return `${lock.message ?? "It's locked."}${h ? ` ${h.name} could hack it (Use).` : ""}`;
+  };
+  // A lock opened, if it can be: its key known (at once), else hacked (when
+  // `hack` - the hacker's energy and some time); `done` once it's open.
+  // False: it stays shut (and the party has been told why).
+  const openLock = useCallback(
+    (lock: Lock, hack: boolean, done: () => void): boolean => {
+      if (lock.key && hasFlag(lock.key)) {
+        pushLog("You have what it takes: the lock clicks open.");
+        done();
+        return true;
+      }
+      const h = hacker();
+      if (!hack || !lock.hack || !h) {
+        pushLog(lockedText(lock));
+        return false;
+      }
+      const cost = HACK_ENERGY * lock.hack;
+      if (h.en < cost) {
+        pushLog(`${h.name} is too drained to hack it (needs ${cost} EN).`);
+        return false;
+      }
+      crewRef.current = crewRef.current.map((c) => (c.id === h.id ? { ...c, en: c.en - cost } : c));
+      setCrew(crewRef.current);
+      const ms = HACK_MS * lock.hack;
+      busyUntilRef.current = performance.now() + ms;
+      pushLog(`${h.name} jacks into the lock... (-${cost} EN)`);
+      setTimeout(() => {
+        pushLog(`${h.name} cracks it: the lock clicks open.`);
+        done();
+      }, ms);
+      return true;
+    },
+    [hasFlag, pushLog],
+  );
+  // the lock still on a door, if any
+  const doorLock = useCallback(
+    (cell: Vec2): Lock | null => {
+      const m = mapRef.current;
+      if (cellAt(m, cell.x, cell.y) !== "door") return null;
+      const lock = doorAt(m, cell.x, cell.y).lock;
+      return lock && !hasFlag(unlockedFlag(m.id, cell)) ? lock : null;
+    },
+    [hasFlag],
+  );
+  // (set below, once the doors and terminals can be opened)
+  const storyRef = useRef<{ open: (cell: Vec2) => void; show: (id: string, forced: boolean) => void }>({
+    open: () => {},
+    show: () => {},
+  });
+  const runActions = useCallback(
+    (actions: string[] | undefined) => {
+      for (const action of actions ?? []) {
+        const step = parseAction(action);
+        if (!step) {
+          console.warn(`Story: "${action}" isn't an action (see story.ts)`);
+          continue;
+        }
+        if (step.kind === "set" || step.kind === "clear") raiseFlag(step.value, step.kind === "set");
+        else if (step.kind === "log") pushLog(step.value);
+        else if (step.kind === "show") storyRef.current.show(step.value, true);
+        else if (step.kind === "unlock" || step.kind === "open") {
+          raiseFlag(unlockedFlag(mapRef.current.id, step.cell), true);
+          if (step.kind === "open") storyRef.current.open(step.cell);
+        }
+      }
+    },
+    [raiseFlag, pushLog],
+  );
+  // something happened: the deck's triggers waiting for it go off (not
+  // while editing - no variation is played then)
+  const fireEvent = useCallback(
+    (event: StoryEvent) => {
+      if (variationRef.current === null) return;
+      const m = mapRef.current;
+      (m.triggers ?? []).forEach((trigger, i) => {
+        const key = `${m.id}|${i}`;
+        if (!trigger.repeat && firedRef.current.has(key)) return;
+        if (!triggerMatches(trigger, event) || !conditionsMet(trigger.if, hasFlag)) return;
+        firedRef.current.add(key);
+        runActions(trigger.do);
+      });
+    },
+    [hasFlag, runActions],
+  );
+
   const startOpening = useCallback(
     (cell: Vec2) => {
       const m = mapRef.current;
       pushLog(doorAt(m, cell.x, cell.y).kind === "lift" ? "The lift door slides open." : "The door slides open.");
       setOpeningDoor(cell);
       setOpenDoors((prev) => new Set(prev).add(doorCellKey(cell)));
+      fireEvent({ on: "open", cell });
     },
-    [pushLog],
+    [pushLog, fireEvent],
   );
+
+  // A terminal on the screen: its lock opened first (unless `forced` - a
+  // trigger shows it); read the first time, its own actions and the
+  // triggers waiting for it go off.
+  const showTerminal = useCallback(
+    (id: string, forced: boolean) => {
+      const m = mapRef.current;
+      const t = m.terminals?.[id];
+      if (!t) {
+        pushLog("The screen stays dark.");
+        return;
+      }
+      const unlocked = `unlocked:${m.id}:terminal ${id}`;
+      const show = () => {
+        setTerminal({ id, title: t.title, text: t.text });
+        const read = `read:${m.id}:${id}`;
+        if (hasFlag(read)) return;
+        raiseFlag(read, true);
+        runActions(t.do);
+        fireEvent({ on: "read", terminal: id });
+      };
+      if (!forced && t.lock && !hasFlag(unlocked)) {
+        openLock(t.lock, true, () => {
+          raiseFlag(unlocked, true);
+          show();
+        });
+        return;
+      }
+      show();
+    },
+    [hasFlag, raiseFlag, runActions, fireEvent, openLock, pushLog],
+  );
+  const closeTerminal = useCallback(() => setTerminal(null), []);
+  storyRef.current = {
+    show: showTerminal,
+    open: (cell) => {
+      if (cellAt(mapRef.current, cell.x, cell.y) !== "door" || openDoorsRef.current.has(doorCellKey(cell))) return;
+      startOpening(cell);
+      setTimeout(() => setOpeningDoor(null), DOOR_ANIM_MS);
+    },
+  };
+  // the deck arrived on, then each cell stepped into
+  const storyMapRef = useRef<string | null>(null);
+  // (not while editing: the story waits for a variation to be played)
+  useEffect(() => {
+    if (variation === null) return;
+    if (storyMapRef.current !== map.id) {
+      storyMapRef.current = map.id;
+      fireEvent({ on: "start" });
+    }
+    fireEvent({ on: "enter", cell: pos });
+  }, [pos, map.id, variation, fireEvent]);
 
   // Takes the lift the party stands in to its other deck: shuts the door,
   // rides (the next map is swapped in mid-ride, behind the closed door),
@@ -538,6 +739,9 @@ export function useGameState() {
     // a shut door on the way (in the next cell, or this one's far side)
     const door = doorCrossed(map, pos, next);
     if (door && !openDoors.has(doorCellKey(door))) {
+      // locked: open only with its key (hacking takes Use)
+      const lock = doorLock(door);
+      if (lock && !openLock(lock, false, () => raiseFlag(unlockedFlag(map.id, door), true))) return;
       startOpening(door);
       setTimeout(() => {
         setPos(next);
@@ -549,7 +753,7 @@ export function useGameState() {
 
     setPos(next);
     setElevation(way.y);
-  }, [pos, dir, elevation, map, pushLog, openingDoor, openDoors, startOpening, startLift]);
+  }, [pos, dir, elevation, map, pushLog, openingDoor, openDoors, startOpening, startLift, doorLock, openLock, raiseFlag]);
 
   const moveForward = useCallback(() => step(dir), [step, dir]);
   const moveBackward = useCallback(() => step(behindOf(dir)), [step, dir]);
@@ -615,12 +819,20 @@ export function useGameState() {
       );
       if (!found.length) return false;
       const stacks = found.map((it) => ({ item: it.item, count: it.count ?? 1 }));
-      pushLog(`You pick up ${stacksText(stacks)}.`);
+      // (a story item says what it is)
+      const named = found.filter((it) => it.name);
+      const plain = stacks.filter((_, i) => !found[i].name);
+      if (plain.length) pushLog(`You pick up ${stacksText(plain)}.`);
+      for (const it of named) pushLog(`You pick up the ${it.name}.`);
       addToHaul(stacks);
       setLooted((prev) => new Set([...prev, ...found.map((it) => lootKey("item", (fullMap.items ?? []).indexOf(it)))]));
+      for (const it of found) {
+        if (it.sets) raiseFlag(it.sets, true);
+        fireEvent({ on: "pickup", item: it.item });
+      }
       return true;
     },
-    [map, fullMap, inReach, looted, lootKey, pushLog, addToHaul],
+    [map, fullMap, inReach, looted, lootKey, pushLog, addToHaul, raiseFlag, fireEvent],
   );
   // stepping into a cell picks up what lies there
   const pickUpRef = useRef(pickUpItems);
@@ -638,6 +850,24 @@ export function useGameState() {
   const use = useCallback(() => {
     if (liftAt(map, pos)?.button === dir) {
       startLift();
+      return;
+    }
+    // a terminal on the wall faced
+    const screen = (map.decals ?? []).find(
+      (d) => d.action?.startsWith("terminal:") && d.cell.x === pos.x && d.cell.y === pos.y && d.surface === dir,
+    );
+    if (screen) {
+      showTerminal(screen.action!.slice("terminal:".length), false);
+      return;
+    }
+    // a locked door ahead
+    const ahead = doorCrossed(map, pos, stepForward(pos, dir));
+    const lock = ahead && !openDoors.has(doorCellKey(ahead)) ? doorLock(ahead) : null;
+    if (ahead && lock) {
+      openLock(lock, true, () => {
+        raiseFlag(unlockedFlag(map.id, ahead), true);
+        storyRef.current.open(ahead);
+      });
       return;
     }
     const containers = (map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.container && inReach(p.cell, true));
@@ -700,7 +930,7 @@ export function useGameState() {
       setSpills((prev) => [...prev.slice(-8), ...newSpills]);
     }
     setLooted((prev) => new Set([...prev, ...keys]));
-  }, [map, pos, dir, startLift, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey]);
+  }, [map, pos, dir, startLift, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey, showTerminal, openDoors, doorLock, openLock, raiseFlag]);
 
   // The run: it ends when the party leaves the ship through an exit (see
   // ExitSpec); what it hauled then goes to the stash, and the next run
@@ -708,17 +938,27 @@ export function useGameState() {
   const [runEnd, setRunEnd] = useState<{ exit: string; at: number } | null>(null);
   const [runStart, setRunStart] = useState(() => gameClock.now());
   const [stash, setStash] = useState<Readonly<Record<string, number>>>({});
-  const nextRun = useCallback(() => {
-    setStash((s) => {
-      const next = { ...s };
-      for (const [item, count] of Object.entries(haul)) next[item] = (next[item] ?? 0) + count;
-      return next;
-    });
+  // (`lost`: the haul doesn't come home - the crew didn't)
+  const nextRun = useCallback((lost = false) => {
+    if (!lost) {
+      setStash((s) => {
+        const next = { ...s };
+        for (const [item, count] of Object.entries(haul)) next[item] = (next[item] ?? 0) + count;
+        return next;
+      });
+    }
+    setWipedAt(null);
+    wipedRef.current = null;
     setHaul({});
     setLooted(new Set());
     setSpills([]);
     killedRef.current = new Set();
     setKills(0);
+    flagsRef.current = new Set();
+    setFlags(flagsRef.current);
+    firedRef.current = new Set();
+    storyMapRef.current = null;
+    setTerminal(null);
     setCrew(initialCrew);
     setRunStart(gameClock.now());
     setRunEnd(null);
@@ -736,8 +976,9 @@ export function useGameState() {
       if (action === "lift" && liftAt(map, pos)) startLift();
       // (a container or a wreck tapped)
       if (action === "use") use();
+      if (action.startsWith("terminal:")) showTerminal(action.slice("terminal:".length), false);
     },
-    [map, pos, startLift, use],
+    [map, pos, startLift, use, showTerminal],
   );
 
   // off a bridge, down onto the floor below it (null: not on one)
@@ -763,10 +1004,12 @@ export function useGameState() {
   const openDoorAt = useCallback(
     (cell: Vec2) => {
       if (openingDoor || openDoors.has(doorCellKey(cell))) return;
+      const lock = doorLock(cell);
+      if (lock && !openLock(lock, false, () => raiseFlag(unlockedFlag(mapRef.current.id, cell), true))) return;
       startOpening(cell);
       setTimeout(() => setOpeningDoor(null), DOOR_ANIM_MS);
     },
-    [openingDoor, openDoors, startOpening],
+    [openingDoor, openDoors, startOpening, doorLock, openLock, raiseFlag],
   );
 
   // dev-only: jump anywhere from the console, e.g. __voidcrewTeleport(6, 3, "S")
@@ -798,6 +1041,12 @@ export function useGameState() {
             return { ...a, hp, hitAt: gameClock.now(), diedAt: hp ? null : gameClock.now() };
           }),
         ),
+      // the whole crew down at once (to see a lost run)
+      __voidcrewDownAll: () => {
+        crewRef.current = crewRef.current.map((c) => ({ ...c, hp: 0 }));
+        setCrew(crewRef.current);
+        wipeIfDownRef.current();
+      },
       // plays an edited version of the deck (e.g. from the map store)
       __voidcrewReplaceMap: (next: GameMap) => replaceMap(next),
     });
@@ -849,5 +1098,9 @@ export function useGameState() {
     sceneReady,
     syncPose,
     openDoorAt,
+    flags,
+    terminal,
+    closeTerminal,
+    wipedAt,
   };
 }

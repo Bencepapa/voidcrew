@@ -46,6 +46,7 @@ textures (e.g. a height map edited in GIMP shows up right away).
 | `__voidcrewPos()` | the party's cell and the map id |
 | `__voidcrewActors()` | the actors' state (cell, facing, patrol target) |
 | `__voidcrewTouch("lift")` | touches an interactive decal (e.g. a lift button) |
+| `__voidcrewDownAll()` | the whole crew down at once (to see a lost run) |
 | `voidcrew.set({ ambientIntensity: 0.2 })` | changes a debug setting |
 | `await voidcrew.capture("name")` | saves a screenshot to `concept/gen/captures/` |
 | `__voidcrewPose` / `__voidcrewInput` | the free movement pose and input |
@@ -322,6 +323,31 @@ main fields:
 | `windows`, `ladders`, `bridges` | windows, ladders, bridges |
 | `props`, `actors`, `decals` | see above |
 
+### The story: terminals, locks, triggers (src/game/story.ts)
+
+What the crew finds out on a ship are **flags** - plain names, up or down.
+They last for the run; those named `story.*` last for good (saved with the
+base). Terminals and triggers are written into the map file by hand for
+now; locks and a decal's action are set in the editor (Door, Decal tools).
+
+| field | what it is |
+|---|---|
+| `terminals` | screens to read, by id: `{ "log1": { "title": "Crew log", "text": "line\nline", "lock"?: {...}, "do"?: ["set:code_c1"] } }` - opened by touching a decal with `"action": "terminal:log1"` (or Use, facing it); `do` runs the first time it's read |
+| `lock` (doors, terminals) | `{ "key"?: "code_c1", "hack"?: 1-3, "message"?: "Keypad: ACCESS DENIED." }` - opens once the `key` flag is up, or the hacker (Orion, the android) breaks it with Use: 8 energy and 1.5 s per level |
+| `sets`, `name` (items) | a story item: picking it up raises the flag, and the log calls it by its name (`"name": "red keycard"`) |
+| `triggers` | `{ "on": "enter" \| "open" \| "read" \| "pickup" \| "start", ..., "if"?: ["flag", "!flag"], "do": [...], "repeat"?: true }` - `enter`/`open`: `x`, `y` (a cell, a door's cell); `read`: `terminal`; `pickup`: `item` (unset: any); `start`: arriving on the deck. Once a run, unless `repeat` |
+
+Actions (`do`): `set:flag`, `clear:flag`, `log:text`, `show:terminal`
+(opens it, past its lock), `unlock:x,y` (a door's lock off), `open:x,y`
+(unlocked and opened).
+
+```json
+"doors": [{ "x": 5, "y": 3, "kind": "standard", "facing": "S", "lock": { "key": "code_c1", "hack": 1 } }],
+"decals": [{ "decal": "poster_home", "x": 4, "y": 2, "surface": "S", "px": 92, "py": 40, "action": "terminal:log1" }],
+"terminals": { "log1": { "title": "Crew log 0412", "text": "Cabin C1 code is 7741", "do": ["set:code_c1", "log:You note the code."] } },
+"triggers": [{ "on": "open", "x": 5, "y": 3, "do": ["log:The cabin smells of old coffee."] }]
+```
+
 Linking two decks with a lift: both maps need a `lifts` entry pointing at
 the other (`"to": "deck1-medical"`), a `kind: "lift"` door in front of the
 cabin, and a `lift_btn_<deck>_<up|down>` decal with `"action": "lift"` in
@@ -353,3 +379,8 @@ Base → scan → run → base (`phase` in src/App.tsx; opened with `?map=` or
 - **Run**: Use (Space) searches crates and wrecks and, on an exit, leaves
   the ship; Shift+1..4 switches a crewmate's weapon. The run's summary banks
   the haul into the stash.
+- **Lost run**: the last crewmate down, the view drops to the floor and
+  fades while the robots go back to their rounds; the haul stays aboard.
+- **Recovery** (meta.ts `revivalBill`): back at the base the crew is whole
+  again - the wounded heal for free, each downed crewmate is cloned for a
+  medkit from the stash, else 40 credits (as far as there are any).

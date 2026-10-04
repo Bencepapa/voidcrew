@@ -1,3 +1,5 @@
+import type { Lock, Terminal, Trigger } from "./story";
+
 export type Direction = "N" | "E" | "S" | "W";
 
 export interface Vec2 {
@@ -79,6 +81,9 @@ export interface GameMap {
   items?: MapItem[];
   // where the party can leave the ship (see ExitSpec)
   exits?: ExitSpec[];
+  // the deck's story (see story.ts): its terminals by id, and its triggers
+  terminals?: Record<string, Terminal>;
+  triggers?: Trigger[];
   smokes?: SmokeSpec[];
   actors?: ActorSpec[];
 }
@@ -205,6 +210,10 @@ export interface MapItem extends Linked {
   elevation?: number;
   // the chance (0..1) it's there in a variation (see variation.ts)
   chance?: number;
+  // a story item: what it's called when picked up (a keycard, say), and the
+  // flag it raises (see story.ts)
+  name?: string;
+  sets?: string;
 }
 
 // A lift cabin: the cell behind a lift door. Its button (a decal with the
@@ -265,6 +274,8 @@ export interface DoorSpec extends Linked {
   // the chance (0..1) it's there in a variation (see variation.ts) - if not,
   // its cell is an open doorway; unset: always
   chance?: number;
+  // locked: it stays shut until its key is known or it's hacked (see story.ts)
+  lock?: Lock;
 }
 
 // A wall left to chance (see variation.ts): its cell is a wall with this

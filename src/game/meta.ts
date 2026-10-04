@@ -120,6 +120,8 @@ export interface Meta {
   depth: number;
   runs: number;
   nextId: number;
+  // the story's lasting flags ("story.*" - see story.ts)
+  story: string[];
 }
 
 const STARTING: [string, string][] = [
@@ -140,6 +142,7 @@ function fresh(): Meta {
     depth: 0,
     runs: 0,
     nextId: weapons.length,
+    story: [],
   };
 }
 
@@ -209,6 +212,38 @@ export function canSwitch(crewId: string): boolean {
 export function switchWeapon(crewId: string) {
   if (!canSwitch(crewId)) return;
   set({ ...meta, active: { ...meta.active, [crewId]: (meta.active[crewId] ?? 0) === 0 ? 1 : 0 } });
+}
+
+// Bringing the downed back for the next run: each a clone, paid with a
+// medkit from the stash, else credits (as far as there are any - a crew is
+// never left unrevived). The rest of the crew heals for free.
+export const CLONE_CREDITS = 40;
+export function revivalBill(
+  down: number,
+  stash: Readonly<Record<string, number>> = meta.stash,
+  credits = meta.credits,
+): { medkits: number; credits: number } {
+  const medkits = Math.min(down, stash.medkit ?? 0);
+  return { medkits, credits: Math.min(credits, (down - medkits) * CLONE_CREDITS) };
+}
+export function payRevival(down: number) {
+  if (down <= 0) return;
+  const bill = revivalBill(down);
+  const stash: Record<string, number> = { ...meta.stash, medkit: (meta.stash.medkit ?? 0) - bill.medkits };
+  if (!stash.medkit) delete stash.medkit;
+  set({ ...meta, stash, credits: meta.credits - bill.credits });
+}
+
+// a run lost with the whole crew: its haul with it
+export function failRun() {
+  set({ ...meta, runs: meta.runs + 1 });
+}
+
+// a lasting story flag up or down
+export function setStoryFlag(flag: string, on: boolean) {
+  const has = meta.story.includes(flag);
+  if (has === on) return;
+  set({ ...meta, story: on ? [...meta.story, flag] : meta.story.filter((f) => f !== flag) });
 }
 
 // a run's haul comes home

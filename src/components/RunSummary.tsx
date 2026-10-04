@@ -1,6 +1,14 @@
 import { ITEM_TYPES } from "../game/items";
 import type { Crewmate } from "../game/types";
 
+// what bringing the downed back costs, in words
+export function revivalText({ down, medkits, credits, crew }: { down: number; medkits: number; credits: number; crew: number }): string {
+  const paid = [medkits ? `${medkits} medkit${medkits > 1 ? "s" : ""}` : "", credits ? `${credits} cr` : ""].filter(Boolean);
+  const cost = paid.length ? paid.join(" + ") : "free (nothing left to pay with)";
+  const who = down >= crew ? "the whole crew" : `${down} downed crewmate${down > 1 ? "s" : ""}`;
+  return `Cloning ${who}: ${cost}.${down < crew ? " Everyone else is patched up." : ""}`;
+}
+
 // The end of a run (see useGameState's runEnd): what the party brought off
 // the ship, what it's worth, how the crew fared - and on to the next ship.
 export function RunSummary({
@@ -10,6 +18,7 @@ export function RunSummary({
   kills,
   crew,
   minutes,
+  revival,
   onContinue,
 }: {
   exit: string;
@@ -19,6 +28,8 @@ export function RunSummary({
   kills: number;
   crew: readonly Crewmate[];
   minutes: number;
+  // the downed brought back as clones, and what it costs
+  revival: { down: number; medkits: number; credits: number; crew: number };
   onContinue: () => void;
 }) {
   const rows = Object.entries(haul)
@@ -68,7 +79,7 @@ export function RunSummary({
         </div>
 
         <div className="text-neutral-500 mb-1">CREW</div>
-        <div className="mb-4">
+        <div className={revival.down ? "mb-1" : "mb-4"}>
           {crew.map((c) => (
             <div key={c.id} className="flex justify-between">
               <span>{c.name}</span>
@@ -78,6 +89,7 @@ export function RunSummary({
             </div>
           ))}
         </div>
+        {revival.down > 0 && <div className="text-neutral-400 mb-4">{revivalText(revival)}</div>}
 
         <button type="button" onClick={onContinue} className="w-full border border-amber-500/70 text-amber-200 py-1.5 hover:bg-amber-500/10">
           Next ship

@@ -639,6 +639,12 @@ const SHAFT_LIGHT_PERIOD_MS = 700;
 const SHAFT_LIGHT_SWEEP = 1.2;
 // how far away an interactive decal can be touched (world units)
 const TOUCH_REACH = 1.4;
+// the crew down: how long the view takes to fall, the eye's height above
+// the floor then, how far up it looks and how far over the head rolls
+const DOWN_FALL_MS = 900;
+const DOWN_EYE = 0.09;
+const DOWN_LOOK_UP = 0.35;
+const DOWN_ROLL = 1.25;
 // the map editor: how far (world units) it picks cells, and the highlight's
 // colors - a wall to dig out, a floor to fill in
 const EDIT_REACH = 8;
@@ -747,6 +753,8 @@ interface GameViewportProps {
   // a crewmate aiming this weapon: each frame fills aimFrameRef for the
   // aiming overlay
   aiming?: Weapon | null;
+  // the whole crew down since (performance.now()): the view drops to the floor
+  downAt?: number | null;
   aimFrameRef?: MutableRefObject<AimFrame | null>;
   aimFocusRef?: MutableRefObject<AimFocus | null>;
   // written here: how much of the party each hostile actor sees past cover
@@ -1123,6 +1131,7 @@ export function GameViewport({
   ride,
   actors,
   aiming,
+  downAt,
   aimFrameRef: aimFrameRefProp,
   aimFocusRef: aimFocusRefProp,
   partyCoverRef,
@@ -1173,6 +1182,8 @@ export function GameViewport({
   actorsRef.current = actors ?? [];
   const aimingRef = useRef(aiming ?? null);
   aimingRef.current = aiming ?? null;
+  const downAtRef = useRef(downAt ?? null);
+  downAtRef.current = downAt ?? null;
   const ownAimFrameRef = useRef<AimFrame | null>(null);
   const aimFrameRef = aimFrameRefProp ?? ownAimFrameRef;
   const ownAimFocusRef = useRef<AimFocus | null>(null);
@@ -4550,7 +4561,13 @@ export function GameViewport({
       // dev-only: the view's actual heading, for checking turn continuity
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewViewYaw: Math.atan2(lookX, -lookZ) });
 
-      const eyeY = cam.y * wallHeight + s.eyeHeight + bobY;
+      // the crew down: the eye falls to the floor (faster and faster, a
+      // little bounce) and the head rolls onto its side, looking up a bit
+      const downAtMs = downAtRef.current;
+      const down = downAtMs === null ? 0 : Math.min(1, (now - downAtMs) / DOWN_FALL_MS);
+      const fall = down < 0.8 ? (down / 0.8) ** 2 : 1 - Math.sin(((down - 0.8) / 0.2) * Math.PI) * 0.08;
+      const standY = cam.y * wallHeight + s.eyeHeight + bobY * (1 - down);
+      const eyeY = standY + (cam.y * wallHeight + DOWN_EYE - standY) * fall;
       camera.position.set(camX, eyeY, camZ);
 
       // aiming: turn to the target and zoom - framing it while a part is
@@ -4580,10 +4597,10 @@ export function GameViewport({
       aimZoom = Math.tan(THREE.MathUtils.degToRad(fov) / 2) / Math.tan(THREE.MathUtils.degToRad(viewFov) / 2);
       camera.lookAt(
         camX + lookX + (aimLookAt.x - camX - lookX) * aimBlend,
-        eyeY + (aimLookAt.y - eyeY) * aimBlend,
+        eyeY + (aimLookAt.y - eyeY) * aimBlend + DOWN_LOOK_UP * fall,
         camZ + lookZ + (aimLookAt.z - camZ - lookZ) * aimBlend,
       );
-      camera.rotateZ(bobRoll * (1 - aimBlend));
+      camera.rotateZ(bobRoll * (1 - aimBlend) + DOWN_ROLL * fall);
 
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.headlamp ? s.pointLightIntensity * rideDip : 0;

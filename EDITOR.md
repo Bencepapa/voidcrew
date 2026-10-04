@@ -107,7 +107,11 @@ not two editors.
   with the walls (`offset` in the map, +-0.42 toward its front). A door
   blocks only where its plane is crossed: flush with one edge, its cell is
   walkable from that side, and it opens when gone through. Flip front
-  turns it round where it stands; Label stencils the panel.
+  turns it round where it stands; Label stencils the panel. Lock key and
+  Hack lock it (`lock` in the map): it opens once the party knows its key
+  (a flag - a code read on a terminal, a keycard picked up), or when the
+  crew's hacker breaks it with Use (easy / hard / very hard: more energy
+  and time); Says is what the party is told at it.
 - **Prop:** the palette picks the prop; a click on a floor puts it at the
   nearest side or corner (or the center), a wall-hung one on the nearest
   side, and picks it. A click on a prop picks it, the right button takes
@@ -155,6 +159,8 @@ not two editors.
   the click, and picks it. A click on a decal picks it, the right button
   takes it off. The picked one: arrows move it over its surface (4 pixels,
   Shift: 16), R turns it (Shift+R: 15 degrees), Delete takes it off.
+  Action is what touching it does: `terminal:<id>` opens that terminal
+  of the map (also Use, facing it), `lift` is a lift's button.
 
 Every edit is checked by the map loader: one that would break the map (a
 ladder with no higher cell, a bridge out of its room's height...) is

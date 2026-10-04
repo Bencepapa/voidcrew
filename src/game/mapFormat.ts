@@ -2,6 +2,7 @@ import { DIR_VECTOR, rightOf } from "./movement";
 import { ITEM_TYPES } from "./items";
 import { PROP_TYPES } from "./props";
 import type { CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
+import type { Lock, Terminal, Trigger } from "./story";
 
 // Map files (src/maps/*.json): a character grid for the cells plus optional
 // per-cell layers, each its own character grid with a legend. Characters
@@ -72,6 +73,7 @@ export interface MapFile {
     // where in the cell it stands (see DoorSpec.offset)
     offset?: number;
     chance?: number;
+    lock?: Lock;
     id?: string;
     with?: string;
     without?: string;
@@ -101,10 +103,16 @@ export interface MapFile {
     offset?: [number, number];
     elevation?: number;
     chance?: number;
+    // a story item (see MapItem)
+    name?: string;
+    sets?: string;
     id?: string;
     with?: string;
     without?: string;
   }[];
+  // the deck's story (see story.ts): terminals by id, and triggers
+  terminals?: Record<string, Terminal>;
+  triggers?: Trigger[];
   // walls left to chance (see ChanceWall): their cells are walls in the
   // layout
   chanceWalls?: { x: number; y: number; chance?: number; id?: string; with?: string; without?: string }[];
@@ -277,10 +285,13 @@ export function parseMap(id: string, file: MapFile): GameMap {
       labelVertical: d.labelVertical,
       offset: d.offset,
       chance: d.chance,
+      lock: d.lock,
       id: d.id,
       with: d.with,
       without: d.without,
     })),
+    terminals: file.terminals,
+    triggers: file.triggers,
     chanceWalls: (file.chanceWalls ?? []).map((w) => ({ cell: { x: w.x, y: w.y }, chance: w.chance, id: w.id, with: w.with, without: w.without })),
     ladders,
     bridges,
@@ -292,6 +303,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
       lightGridAmbient: undefined,
       smokes: undefined,
       actors: undefined,
+      terminals: undefined,
+      triggers: undefined,
     }),
     windows,
     props: (file.props ?? []).map((p) => {
@@ -341,6 +354,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
         offset: it.offset,
         elevation: it.elevation,
         chance: it.chance,
+        name: it.name,
+        sets: it.sets,
         id: it.id,
         with: it.with,
         without: it.without,

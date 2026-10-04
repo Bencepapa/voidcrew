@@ -31,7 +31,8 @@ import { generateLights, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, TextureLayer } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
-import { bankHaul, crewWeapon, getMeta, switchWeapon, useMeta } from "./game/meta";
+import { bankHaul, crewWeapon, failRun, getMeta, payRevival, revivalBill, switchWeapon, useMeta } from "./game/meta";
+import { WipeScreen } from "./components/WipeScreen";
 import { SHIP_CLASSES, shipOffers } from "./game/ships";
 import type { ShipOffer } from "./game/ships";
 import { setLootContext } from "./game/items";
@@ -42,6 +43,8 @@ import { PartyPanel } from "./components/PartyPanel";
 import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
 import { HaulPanel } from "./components/HaulPanel";
+import { TerminalPanel } from "./components/TerminalPanel";
+import type { Lock } from "./game/story";
 import { RunSummary } from "./components/RunSummary";
 import { ITEM_TYPES, itemSpot } from "./game/items";
 import { DebugPanel } from "./components/DebugPanel";
@@ -73,6 +76,9 @@ export default function App() {
     runStart,
     nextRun,
     touch,
+    terminal,
+    closeTerminal,
+    wipedAt,
     inLift,
     ride,
     actors,
@@ -680,9 +686,17 @@ export default function App() {
   const selectedDoorInfo: DoorInfo | null = (() => {
     if (!selectedDoor || cellAt(map, selectedDoor.x, selectedDoor.y) !== "door") return null;
     const spec = doorAt(map, selectedDoor.x, selectedDoor.y);
-    return { offset: spec.offset ?? 0, facing: spec.facing, kind: spec.kind, label: spec.label ?? "", chance: spec.chance ?? 1, links: linksOf(spec) };
+    return {
+      offset: spec.offset ?? 0,
+      facing: spec.facing,
+      kind: spec.kind,
+      label: spec.label ?? "",
+      chance: spec.chance ?? 1,
+      links: linksOf(spec),
+      lock: spec.lock,
+    };
   })();
-  const changeDoor = (patch: { offset?: number; facing?: Direction; label?: string; chance?: number } & Linked, merge?: string) => {
+  const changeDoor = (patch: { offset?: number; facing?: Direction; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => {
     if (!selectedDoor) return;
     const cell = selectedDoor;
     const spec = doorAt(map, cell.x, cell.y);
@@ -1244,6 +1258,7 @@ export default function App() {
       ride={ride}
       actors={actors}
       aiming={aimWeapon}
+      downAt={wipedAt}
       aimFrameRef={aimFrameRef}
       aimFocusRef={aimFocusRef}
       partyCoverRef={partyCoverRef}
@@ -1271,9 +1286,30 @@ export default function App() {
   );
   const viewInput = view.handlers;
   // over the view: the aiming overlay, and a red flash when the crew is hit
+  // the crew brought back for the next run: the downed as clones (a medkit
+  // each - the haul's own count, if it comes home - else credits)
+  const down = crew.filter((c) => c.hp <= 0).length;
+  const homeStash = { ...meta.stash };
+  if (!wipedAt) for (const [item, count] of Object.entries(haul)) homeStash[item] = (homeStash[item] ?? 0) + count;
+  const revival = { down, crew: crew.length, ...revivalBill(down, homeStash, meta.credits) };
   const overlays = (
     <>
       {haulOpen && !editMode && !runEnd && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
+      {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
+      {wipedAt !== null && !editMode && (
+        <WipeScreen
+          wipedAt={wipedAt}
+          lost={Object.values(haul).reduce((n, c) => n + c, 0)}
+          revival={revival}
+          onContinue={() => {
+            // the haul lost, the whole crew cloned, back to the base
+            failRun();
+            payRevival(down);
+            nextRun(true);
+            setPhase("base");
+          }}
+        />
+      )}
       {runEnd && !editMode && (
         <RunSummary
           exit={runEnd.exit}
@@ -1282,9 +1318,11 @@ export default function App() {
           kills={kills}
           crew={crew}
           minutes={(runEnd.at - runStart) / 60000}
+          revival={revival}
           onContinue={() => {
-            // the haul home to the stash, and back to the base
+            // the haul home to the stash, the downed cloned, and back to the base
             bankHaul(haul, ship?.depth ?? getMeta().depth);
+            payRevival(down);
             nextRun();
             setPhase("base");
           }}

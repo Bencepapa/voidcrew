@@ -8,6 +8,7 @@
 // the pointer on its way to it: a click paints the surface with its row's
 // pick. The row of the surface under the pointer is marked.
 
+import type { Lock } from "../game/story";
 import { useEffect, useState } from "react";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { fetchDecalManifest } from "../render/decals";
@@ -61,7 +62,7 @@ interface Props {
   onActorDeselect: () => void;
   // the Door tool: the selected door, and what the panel does with it
   door: DoorInfo | null;
-  onDoorChange: (patch: { offset?: number; label?: string; chance?: number } & Linked) => void;
+  onDoorChange: (patch: { offset?: number; label?: string; chance?: number; lock?: Lock } & Linked) => void;
   onDoorFlip: () => void;
   onDoorDelete: () => void;
   onDoorDeselect: () => void;
@@ -84,7 +85,7 @@ interface Props {
   onDecalChoice: (choice: DecalChoice) => void;
   decalRotation: number;
   decal: DecalInfo | null;
-  onDecalChange: (patch: { rotation?: number; chance?: number } & Linked) => void;
+  onDecalChange: (patch: { rotation?: number; chance?: number; action?: string } & Linked) => void;
   onDecalDelete: () => void;
   onDecalDeselect: () => void;
   // the selected prop, and what the panel does with it
@@ -156,6 +157,13 @@ export interface ActorInfo {
   links: Linked;
 }
 
+// a door's lock with a change: none once it has neither a key nor a hack
+function doorLock(lock: Lock | undefined, patch: Partial<Lock>): Lock | undefined {
+  const next: Lock = { ...lock, ...patch };
+  for (const key of Object.keys(next) as (keyof Lock)[]) if (next[key] === undefined) delete next[key];
+  return next.key || next.hack ? next : undefined;
+}
+
 // the selected door as the panel shows it
 export interface DoorInfo {
   // where it stands in its cell, toward its front (see DoorSpec.offset)
@@ -165,6 +173,8 @@ export interface DoorInfo {
   label: string;
   chance: number;
   links: Linked;
+  // locked (see story.ts)
+  lock?: Lock;
 }
 
 // the selected decal as the panel shows it
@@ -560,6 +570,40 @@ export function EditorBar(p: Props) {
                 className="w-16 bg-neutral-800 border border-neutral-700 px-1"
               />
             </label>
+            <label className="flex items-center gap-1" title="The flag that opens it: a code read on a terminal, a keycard picked up (empty: no key)">
+              Lock key
+              <input
+                type="text"
+                value={p.door.lock?.key ?? ""}
+                onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { key: e.target.value || undefined }) })}
+                className="w-20 bg-neutral-800 border border-neutral-700 px-1"
+              />
+            </label>
+            <label className="flex items-center gap-1" title="Whether the crew's hacker can break it, and how hard it is (energy and time)">
+              Hack
+              <select
+                value={p.door.lock?.hack ?? 0}
+                onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { hack: Number(e.target.value) || undefined }) })}
+                className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
+              >
+                <option value={0}>no</option>
+                <option value={1}>easy</option>
+                <option value={2}>hard</option>
+                <option value={3}>very hard</option>
+              </select>
+            </label>
+            {p.door.lock && (
+              <label className="flex items-center gap-1" title="What the party is told at the shut door">
+                Says
+                <input
+                  type="text"
+                  value={p.door.lock.message ?? ""}
+                  placeholder="It's locked."
+                  onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { message: e.target.value || undefined }) })}
+                  className="w-32 bg-neutral-800 border border-neutral-700 px-1"
+                />
+              </label>
+            )}
             <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorDelete} title="Delete">
               Remove
             </button>
@@ -667,6 +711,16 @@ export function EditorBar(p: Props) {
                   {p.decal.action ? ` (${p.decal.action})` : ""}
                 </span>
                 {slider("Turn", p.decal.rotation, 0, 345, 15, (v) => p.onDecalChange({ rotation: v || undefined }))}
+                <label className="flex items-center gap-1" title='What touching it does: "terminal:<id>" opens that terminal of the map, "lift" a lift button'>
+                  Action
+                  <input
+                    type="text"
+                    value={p.decal.action ?? ""}
+                    placeholder="terminal:log1"
+                    onChange={(e) => p.onDecalChange({ action: e.target.value || undefined })}
+                    className="w-28 bg-neutral-800 border border-neutral-700 px-1"
+                  />
+                </label>
                 {chanceSlider(p.decal.chance, (chance) => p.onDecalChange({ chance }))}
                 {linkFields(p.decal.links, p.linkIds, p.onDecalChange)}
                 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDecalDelete} title="Delete">
