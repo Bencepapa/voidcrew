@@ -3,6 +3,7 @@ import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
 import { createSmoke, type SmokeBody, type SmokeStyle, type SmokeWorld } from "../render/smoke";
+import { ACCENT_UNIFORMS } from "../render/accent";
 import { ITEM_TYPES, itemSpot } from "../game/items";
 import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
@@ -80,6 +81,11 @@ export interface ViewportSettings {
   // what the smoke's puffs look like (see smoke.ts), and what they bump
   // into: the walls (and floors and ceilings), the props, the robots
   smokeStyle: SmokeStyle;
+  // the ship's livery (see variation.ts accentOf): "rolled" (the ship's),
+  // "painted" (none), or a hue (degrees) to try; and how saturated a
+  // texture's pixel must be to count as accent
+  shipAccent: "rolled" | "painted" | number;
+  accentMinSat: number;
   smokeWalls: boolean;
   smokeProps: boolean;
   smokeActors: boolean;
@@ -209,6 +215,8 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   lightGridDensity: 3,
   lightGridMode: "directional",
   smokeStyle: "animated",
+  shipAccent: "rolled",
+  accentMinSat: 0.35,
   smokeWalls: true,
   smokeProps: true,
   smokeActors: true,
@@ -755,6 +763,8 @@ interface GameViewportProps {
   aiming?: Weapon | null;
   // the whole crew down since (performance.now()): the view drops to the floor
   downAt?: number | null;
+  // the ship's livery hue (see variation.ts accentOf; null: as painted)
+  shipAccent?: number | null;
   aimFrameRef?: MutableRefObject<AimFrame | null>;
   aimFocusRef?: MutableRefObject<AimFocus | null>;
   // written here: how much of the party each hostile actor sees past cover
@@ -1132,6 +1142,7 @@ export function GameViewport({
   actors,
   aiming,
   downAt,
+  shipAccent,
   aimFrameRef: aimFrameRefProp,
   aimFocusRef: aimFocusRefProp,
   partyCoverRef,
@@ -1184,6 +1195,8 @@ export function GameViewport({
   aimingRef.current = aiming ?? null;
   const downAtRef = useRef(downAt ?? null);
   downAtRef.current = downAt ?? null;
+  const shipAccentRef = useRef(shipAccent ?? null);
+  shipAccentRef.current = shipAccent ?? null;
   const ownAimFrameRef = useRef<AimFrame | null>(null);
   const aimFrameRef = aimFrameRefProp ?? ownAimFrameRef;
   const ownAimFocusRef = useRef<AimFocus | null>(null);
@@ -4627,6 +4640,14 @@ export function GameViewport({
         mat.normalScale.set(s.normalStrength, s.normalStrength);
       }
       cavity.value = s.aoDirect;
+      // the deck's accent turned to the ship's livery (none: as painted)
+      const deckAccent = latestMapRef.current.accent;
+      const livery = s.shipAccent === "painted" ? null : s.shipAccent === "rolled" ? (shipAccentRef.current ?? null) : s.shipAccent;
+      const turn = deckAccent && livery !== null ? (((livery - deckAccent.hue) % 360) + 360) % 360 : 0;
+      ACCENT_UNIFORMS.uAccentShift.value = turn / 360;
+      ACCENT_UNIFORMS.uAccentFrom.value = (deckAccent?.hue ?? 0) / 360;
+      ACCENT_UNIFORMS.uAccentWidth.value = (deckAccent?.range ?? 30) / 360;
+      ACCENT_UNIFORMS.uAccentMinSat.value = s.accentMinSat;
       // a headlamp-like light orbiting the camera; the small radius keeps it
       // well inside the side walls of the current cell - a light that slips
       // behind a wall plane lights the back of its front faces and only the

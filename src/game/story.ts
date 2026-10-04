@@ -12,6 +12,9 @@ import type { Vec2 } from "./types";
 //   "unlock:x,y"    the door there unlocked (it stays shut)
 //   "open:x,y"      the door there unlocked and opened
 //   "alert:20"      the ship's alert up (or down: "alert:-20") that much
+//   "power:on"      the ship's power back (or "power:off")
+//   "stance:fooled" every robot aboard takes the crew for its own (new IDs
+//                   from the security room) - or "dormant", "hostile"
 // Conditions: a flag that must be up ("flag") or down ("!flag").
 
 // A lock on a door or a terminal: it opens once `key` is up (a code read in
@@ -87,7 +90,9 @@ export function conditionsMet(conditions: string[] | undefined, has: (flag: stri
 export type StoryStep =
   | { kind: "set" | "clear" | "log" | "show"; value: string }
   | { kind: "unlock" | "open"; cell: Vec2 }
-  | { kind: "alert"; amount: number };
+  | { kind: "alert"; amount: number }
+  | { kind: "power"; on: boolean }
+  | { kind: "stance"; stance: "dormant" | "fooled" | "hostile" };
 
 // an action string as a step; null: one that makes no sense
 export function parseAction(action: string): StoryStep | null {
@@ -96,6 +101,8 @@ export function parseAction(action: string): StoryStep | null {
   const kind = action.slice(0, colon).trim();
   const value = action.slice(colon + 1).trim();
   if (kind === "set" || kind === "clear" || kind === "log" || kind === "show") return { kind, value };
+  if (kind === "power" && (value === "on" || value === "off")) return { kind, on: value === "on" };
+  if (kind === "stance" && (value === "dormant" || value === "fooled" || value === "hostile")) return { kind, stance: value };
   if (kind === "alert") {
     const amount = Number(value);
     return Number.isFinite(amount) ? { kind, amount } : null;

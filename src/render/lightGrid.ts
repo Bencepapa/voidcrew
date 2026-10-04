@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { ACCENT_GLSL, ACCENT_UNIFORMS } from "./accent";
 import { cellAt, ceilingHeight, floorHeight } from "../game/map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH } from "../game/heights";
 import { PROP_TYPES, propHeight, propPlacement } from "../game/props";
@@ -445,6 +446,8 @@ export function useLightGrid(material: THREE.Material, uniforms: LightGridUnifor
     shader.uniforms.uLgSplit = uniforms.split;
     shader.uniforms.uLgMin2 = uniforms.min2;
     shader.uniforms.uLgSize2 = uniforms.size2;
+    // the ship's accent color (see accent.ts)
+    Object.assign(shader.uniforms, ACCENT_UNIFORMS);
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vLgWorld;")
       .replace("#include <project_vertex>", "#include <project_vertex>\nvLgWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");
@@ -466,6 +469,7 @@ uniform float uLgMode;
 uniform float uLgSplit;
 uniform vec3 uLgMin2;
 uniform vec3 uLgSize2;
+${ACCENT_GLSL}
 #define LG_SHEEN ${SHEEN.toFixed(2)}
 // the light arriving at a grid point from direction d (an ambient cube)
 vec3 lgCube(vec3 d, vec3 uvw) {
@@ -475,6 +479,8 @@ vec3 lgCube(vec3 d, vec3 uvw) {
     d2.z * (d.z > 0.0 ? texture(uLgFace4, uvw).rgb : texture(uLgFace5, uvw).rgb);
 }`,
       )
+      .replace("#include <map_fragment>", "#include <map_fragment>\ndiffuseColor.rgb = accentShift(diffuseColor.rgb);")
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance = accentShift(totalEmissiveRadiance);")
       .replace(
         "#include <lights_fragment_begin>",
         `#include <lights_fragment_begin>

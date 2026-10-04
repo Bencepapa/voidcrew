@@ -45,6 +45,8 @@ export interface MapFile {
   };
   labelColor?: string;
   lightColor?: string;
+  // the deck's accent hue (see GameMap.accent)
+  accent?: { hue: number; range?: number };
   // how the deck is drawn, if not the viewer's defaults: its baked light's
   // samples per cell (few: softer, light spilling to the cells around; many:
   // sharper shadows, lightmap-like) and its walls' relief depth (world units)
@@ -265,6 +267,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     textures: file.textures,
     labelColor: file.labelColor,
     lightColor: file.lightColor,
+    accent: file.accent,
     lightGridDensity: file.lightGridDensity,
     lightGridAmbient: file.lightGridAmbient,
     reliefDepth: file.reliefDepth,
@@ -306,6 +309,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       actors: undefined,
       terminals: undefined,
       triggers: undefined,
+      accent: undefined,
     }),
     windows,
     props: (file.props ?? []).map((p) => {

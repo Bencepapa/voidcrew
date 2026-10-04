@@ -163,7 +163,9 @@ not two editors.
   takes it off. The picked one: arrows move it over its surface (4 pixels,
   Shift: 16), R turns it (Shift+R: 15 degrees), Delete takes it off.
   Action is what touching it does: `terminal:<id>` opens that terminal
-  of the map (also Use, facing it), `lift` is a lift's button.
+  of the map (also Use, facing it), `lift` is a lift's button, `power` the
+  ship's breaker (on the deck it's boarded on: without one its power is
+  never down).
 
 Every edit is checked by the map loader: one that would break the map (a
 ladder with no higher cell, a bridge out of its room's height...) is
@@ -192,6 +194,11 @@ The **Map** tool's panel:
   every light edit.
 - **Relief:** how deep the map's wall relief is (default: the debug
   panel's). Changing it rebuilds the deck.
+- **Accent:** the hue the deck's textures' trim is painted in (degrees: 0
+  red, 37 the crew deck's orange, 152 the medical green) and how far
+  either side still counts (+-). A ship's livery turns it to its own
+  colour (or leaves it as painted); unticked, the deck keeps its colours.
+  Try liveries with the debug panel's Ship livery.
 
 ## Variations
 

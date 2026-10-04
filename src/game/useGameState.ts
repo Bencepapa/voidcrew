@@ -46,7 +46,9 @@ export const ALERT_MAX = 100;
 export const ALERT_LEVELS = [0, 34, 67, 100];
 export const ALERT_NAMES = ["calm", "suspicious", "alert", "lockdown"];
 const ALERT_FULL_S = 480;
-export const ALERT_NOISE = { shot: 4, kill: 8, hack: 8, wrongCode: 4 };
+export const ALERT_NOISE = { shot: 4, kill: 8, hack: 8, wrongCode: 4, force: 6, breaker: 6 };
+// prying a door open without power (real ms)
+const FORCE_DOOR_MS = 2200;
 // at lockdown, how often every unit is told where the crew is (game ms)
 const LOCKDOWN_HUNT_MS = 4000;
 // reinforcements: how often by default (game s), and how many by default
@@ -99,9 +101,15 @@ export function useGameState() {
   // (see variation.ts), unless there's none (the editor shows everything)
   const [fullMap, setMap] = useState<GameMap>(START_MAP);
   const [variation, setVariation] = useState<{ seed: number; mood: ShipMood } | null>(null);
+  // the ship's power thrown back on: its lights up (only its lights change -
+  // see variantOf - so the view relights in place)
+  const [lightsUp, setLightsUp] = useState(false);
   const map = useMemo(
-    () => (variation === null ? fullMap : variantOf(fullMap, variation.seed, variation.mood)),
-    [fullMap, variation],
+    () =>
+      variation === null
+        ? fullMap
+        : variantOf(fullMap, variation.seed, lightsUp ? { ...variation.mood, light: "bright" } : variation.mood),
+    [fullMap, variation, lightsUp],
   );
   const mapRef = useRef(map);
   mapRef.current = map;
@@ -268,7 +276,7 @@ export function useGameState() {
         // the ones waiting for it wake (and know roughly where the crew is)
         actors = actors.map((a) => {
           const spec = m.actors?.[a.id];
-          const wake = spec && actorWake(spec, variationRef.current!.mood.robots);
+          const wake = spec && actorWake(spec, stanceRef.current ?? variationRef.current!.mood.robots);
           if (!wake || wake.level > level || (!a.dormant && !a.fooled)) return a;
           return { ...a, dormant: false, fooled: false };
         });
@@ -300,6 +308,10 @@ export function useGameState() {
     if (actors !== actorsRef.current) updateActorsRef.current(actors);
   };
   const alertShownRef = useRef(0);
+  // (set further down, once they can be)
+  const throwBreakerRef = useRef(() => {});
+  const setPowerRef = useRef<(on: boolean) => boolean>(() => false);
+  const setStanceRef = useRef<(stance: "dormant" | "fooled" | "hostile") => void>(() => {});
 
   // (the last crewmate fallen: the run lost - aiming dropped, the actors
   // calmed down; true if so)
@@ -323,11 +335,18 @@ export function useGameState() {
   // actors waiting for it (see ActorWake), and at lockdown every unit hunts
   // the crew. Game time: bullet time slows it too.
   const alertRef = useRef(0);
+  // the robots' stance as the security room set it (see "stance:" actions),
+  // in place of the ship's own
+  const stanceRef = useRef<"dormant" | "fooled" | "hostile" | null>(null);
   const [alertShown, setAlertShown] = useState(0);
   const alertLevelRef = useRef(0);
   const raiseAlert = useCallback((amount: number) => {
     alertRef.current = Math.max(0, Math.min(ALERT_MAX, alertRef.current + amount));
   }, []);
+
+  // (the deck's actors as the map has them: when they change, they're made
+  // again - not when only its lights do)
+  const actorsKey = useMemo(() => JSON.stringify(map.actors ?? []), [map.actors]);
 
   // the deck's actors, reset with each deck; they walk on while the deck
   // is shown
@@ -366,11 +385,12 @@ export function useGameState() {
     const now = gameClock.now();
     nextArrivalRef.current = new Map();
     updateActors(
-      createActors(map, now, alertLevelRef.current, variationRef.current === null, variationRef.current?.mood.robots).map((a) =>
+      createActors(map, now, alertLevelRef.current, variationRef.current === null, stanceRef.current ?? variationRef.current?.mood.robots).map((a) =>
         killedRef.current.has(actorKey(map, a.id)) ? { ...a, hp: 0, diedAt: now - 1e6 } : a,
       ),
     );
-  }, [map, updateActors, actorKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map.id, actorsKey, updateActors, actorKey]);
   // reinforcements: when each "arrive" actor comes next (by its index)
   const nextArrivalRef = useRef(new Map<number, number>());
   const spawnIdRef = useRef(SPAWN_ID);
@@ -659,6 +679,11 @@ export function useGameState() {
         return true;
       }
       // (a keypad: the code, or the hacker from there)
+      if (lock.pin && !powerRef.current) {
+        pushLog("The keypad is dark - no power.");
+        if (!hack) return false;
+        return hackLock(lock, done);
+      }
       if (lock.pin) {
         keypadRef.current = { lock, done };
         const h = lock.hack ? hacker() : undefined;
@@ -698,6 +723,40 @@ export function useGameState() {
   );
   const planRef = useRef(plan);
   planRef.current = plan;
+  // the ship's power (see ShipPlan.powerOff): down on some ships until its
+  // breaker is thrown
+  const [powerOn, setPowerOn] = useState(true);
+  const powerRef = useRef(powerOn);
+  powerRef.current = powerOn;
+  useEffect(() => {
+    setPowerOn(!plan?.powerOff);
+    powerRef.current = !plan?.powerOff;
+    setLightsUp(false);
+    if (plan?.powerOff) pushLog("The ship is dead dark - its power is down. Somewhere aboard there's a breaker.");
+  }, [plan, pushLog]);
+  const setPower = useCallback(
+    (on: boolean) => {
+      if (powerRef.current === on) return false;
+      powerRef.current = on;
+      setPowerOn(on);
+      if (on) setLightsUp(true);
+      pushLog(on ? "Power hums back through the ship: lights, doors, lifts." : "The power dies. Doors, lifts and keypads go dark.");
+      return true;
+    },
+    [pushLog],
+  );
+  // a door without power, pried open by hand: some time, some noise
+  const forceDoor = useCallback(
+    (cell: Vec2) => {
+      const who = crewRef.current.find((c) => c.hp > 0);
+      if (!who) return;
+      busyUntilRef.current = performance.now() + FORCE_DOOR_MS;
+      raiseAlert(ALERT_NOISE.force);
+      pushLog(`${who.name} braces against the dead door and forces it open...`);
+      setTimeout(() => storyRef.current.open(cell), FORCE_DOOR_MS);
+    },
+    [pushLog, raiseAlert],
+  );
   // the lock still on a door, if any: as the ship's plan has it (off in
   // this ship, or on - with its code), until the party's opened it
   const doorLock = useCallback(
@@ -729,6 +788,8 @@ export function useGameState() {
         else if (step.kind === "log") pushLog(step.value);
         else if (step.kind === "show") storyRef.current.show(step.value, true);
         else if (step.kind === "alert") raiseAlert(step.amount);
+        else if (step.kind === "power") setPowerRef.current(step.on);
+        else if (step.kind === "stance") setStanceRef.current(step.stance);
         else if (step.kind === "unlock" || step.kind === "open") {
           raiseFlag(unlockedFlag(mapRef.current.id, step.cell), true);
           if (step.kind === "open") storyRef.current.open(step.cell);
@@ -833,6 +894,10 @@ export function useGameState() {
     const cabin = posRef.current;
     const lift = liftAt(from, cabin);
     if (!lift || busy() || openingDoor) return;
+    if (!powerRef.current) {
+      pushLog("The lift panel is dark - no power.");
+      return;
+    }
     const to = MAPS[lift.to];
     const arrival = to?.lifts?.find((l) => l.to === from.id) ?? to?.lifts?.[0];
     if (!to || !arrival) {
@@ -941,6 +1006,10 @@ export function useGameState() {
       // locked: open only with its key (hacking takes Use)
       const lock = doorLock(door);
       if (lock && !unlockDoor(lock, door)) return;
+      if (!powerRef.current) {
+        pushLog("No power to the door. Use to force it open.");
+        return;
+      }
       startOpening(door);
       setTimeout(() => {
         setPos(next);
@@ -1060,8 +1129,12 @@ export function useGameState() {
     }
     // a terminal on the wall faced
     const screen = (map.decals ?? []).find(
-      (d) => d.action?.startsWith("terminal:") && d.cell.x === pos.x && d.cell.y === pos.y && d.surface === dir,
+      (d) => (d.action?.startsWith("terminal:") || d.action === "power") && d.cell.x === pos.x && d.cell.y === pos.y && d.surface === dir,
     );
+    if (screen?.action === "power") {
+      throwBreaker();
+      return;
+    }
     if (screen) {
       showTerminal(screen.action!.slice("terminal:".length), false);
       return;
@@ -1072,8 +1145,15 @@ export function useGameState() {
     if (ahead && lock) {
       openLock(lock, true, () => {
         raiseFlag(unlockedFlag(map.id, ahead), true);
-        storyRef.current.open(ahead);
+        // (no power: unlocked, but it still has to be forced)
+        if (powerRef.current) storyRef.current.open(ahead);
+        else pushLog("Unlocked - but without power it has to be forced (Use).");
       });
+      return;
+    }
+    // a dead door ahead: forced open
+    if (ahead && !powerRef.current && !openDoors.has(doorCellKey(ahead))) {
+      forceDoor(ahead);
       return;
     }
     const containers = (map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.container && inReach(p.cell, true));
@@ -1138,6 +1218,33 @@ export function useGameState() {
     setLooted((prev) => new Set([...prev, ...keys]));
   }, [map, pos, dir, startLift, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey, showTerminal, openDoors, doorLock, openLock, raiseFlag]);
 
+  // The breaker: the ship's power back on (if it's down)
+  const throwBreaker = () => {
+    if (setPower(true)) raiseAlert(ALERT_NOISE.breaker);
+    else pushLog("The breaker is already on.");
+  };
+  throwBreakerRef.current = throwBreaker;
+  setPowerRef.current = setPower;
+  // every robot aboard takes the crew the new way (those on this deck at
+  // once; the others when their deck is reached)
+  setStanceRef.current = (stance) => {
+    stanceRef.current = stance;
+    updateActorsRef.current(
+      actorsRef.current.map((a) => {
+        if (a.diedAt !== null || ACTOR_TYPES[a.type].passive) return a;
+        if (stance === "hostile") return { ...a, dormant: false, fooled: false };
+        return { ...a, dormant: stance === "dormant", fooled: stance === "fooled", hostile: false, lastSeenCell: null, volleyLeft: 0 };
+      }),
+    );
+    pushLog(
+      stance === "fooled"
+        ? "Security accepts the new IDs: the robots take you for crew."
+        : stance === "dormant"
+          ? "Security powers the robots down."
+          : "Security flags the crew as intruders.",
+    );
+  };
+
   // What the map shows of the deck's loot (a scan of sorts): where some
   // lies - in containers not yet searched, on the floor, in wrecks not yet
   // salvaged - and whether it's a little or a lot (a lot: behind a lock, or
@@ -1188,6 +1295,8 @@ export function useGameState() {
     wipedRef.current = null;
     alertRef.current = 0;
     alertLevelRef.current = 0;
+    stanceRef.current = null;
+    setLightsUp(false);
     alertShownRef.current = 0;
     setAlertShown(0);
     setHaul({});
@@ -1218,6 +1327,7 @@ export function useGameState() {
       // (a container or a wreck tapped)
       if (action === "use") use();
       if (action.startsWith("terminal:")) showTerminal(action.slice("terminal:".length), false);
+      if (action === "power") throwBreakerRef.current();
     },
     [map, pos, startLift, use, showTerminal],
   );
@@ -1247,6 +1357,10 @@ export function useGameState() {
       if (openingDoor || openDoors.has(doorCellKey(cell))) return;
       const lock = doorLock(cell);
       if (lock && !unlockDoor(lock, cell)) return;
+      if (!powerRef.current) {
+        pushLog("No power to the door. Use to force it open.");
+        return;
+      }
       startOpening(cell);
       setTimeout(() => setOpeningDoor(null), DOOR_ANIM_MS);
     },
@@ -1353,5 +1467,6 @@ export function useGameState() {
     closeKeypad,
     plan,
     alert: alertShown,
+    powerOn,
   };
 }

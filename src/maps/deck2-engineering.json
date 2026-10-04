@@ -243,5 +243,6 @@
   ],
   "terminals": {
     "englog": { "title": "Engineering log", "text": "Door overrides, for maintenance only:\n{codes}", "codes": true }
-  }
+  },
+  "accent": { "hue": 5 }
 }

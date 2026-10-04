@@ -74,6 +74,16 @@ export function moodOf(seed: number): ShipMood {
   ) as unknown as ShipMood;
 }
 
+// A ship's livery: the hue its decks' accents are turned to (each deck
+// names its own - see GameMap.accent), or none (null: as painted). Rolled
+// from the seed like its mood, and never shown on the scan.
+export const LIVERY_HUES = [0, 30, 55, 120, 185, 215, 280];
+const LIVERY_KEPT = 0.35;
+export function accentOf(seed: number): number | null {
+  if (roll(`${seed}|livery`) < LIVERY_KEPT) return null;
+  return LIVERY_HUES[Math.floor(roll(`${seed}|livery hue`) * LIVERY_HUES.length)];
+}
+
 export const moodText = (mood: ShipMood) =>
   `${mood.light}, ${mood.threat} threat, ${mood.clutter}, ${mood.smoke}, ${mood.doors} doors, ${mood.locks} locks, ${mood.robots} robots`;
 

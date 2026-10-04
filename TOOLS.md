@@ -307,6 +307,7 @@ main fields:
 | `layout` | `W` wall, `.` floor, `D` door |
 | `layers.floor` / `ceiling` | per-cell heights (steps of 0.25) |
 | `textures`, `labelColor` | the deck's texture sets, label paint |
+| `accent` | `{ "hue": 37, "range"?: 30 }`: the hue of the deck's trim (degrees), which a ship's livery turns - each ship rolls one (`accentOf` in variation.ts: about 1 in 3 keep their painted colours), never shown on the scan |
 | `lightColor`, `autoLights` | lamp color (`"#ffcf87"`); `false`: no generated mood lights |
 | `lightGridDensity`, `lightGridAmbient`, `reliefDepth` | baked light samples per cell (and for its ambient part, from a coarser grid), wall relief depth (unset: the viewer's defaults) |
 | `chanceWalls` | walls left to chance: `{ x, y, chance }` (their cells walls in the layout) |
@@ -345,7 +346,10 @@ now; locks and a decal's action are set in the editor (Door, Decal tools).
 | `triggers` | `{ "on": "enter" \| "open" \| "read" \| "pickup" \| "start", ..., "if"?: ["flag", "!flag"], "do": [...], "repeat"?: true }` - `enter`/`open`: `x`, `y` (a cell, a door's cell); `read`: `terminal`; `pickup`: `item` (unset: any); `start`: arriving on the deck. Once a run, unless `repeat` |
 
 Actions (`do`): `set:flag`, `clear:flag`, `log:text`, `alert:N` (the
-ship's alert up by N, or down), `show:terminal`
+ship's alert up by N, or down), `power:on` / `power:off`,
+`stance:fooled` / `dormant` / `hostile` (every robot aboard takes the crew
+that way - a security room's terminal: new IDs, robots powered down),
+`show:terminal`
 (opens it, past its lock), `unlock:x,y` (a door's lock off), `open:x,y`
 (unlocked and opened).
 
@@ -405,6 +409,12 @@ Base → scan → run → base (`phase` in src/App.tsx; opened with `?map=` or
   with its own `wake` keeps it (special ships). Bullet time slows it like
   the rest. Console:
   `__voidcrewAlert(40)`.
+- **Power** (ShipPlan.powerOff): a dark ship's power is often down (3 in
+  4 dark ships, 1 in 3 dim ones, never a bright one) - if its entry deck has
+  a breaker: a decal whose action is `power`. Down, doors don't slide (Use
+  forces one open: some time, some noise), lifts and keypads are dead (a
+  code lock can still be hacked), the lights are low. Throwing the breaker
+  (touch or Use it) brings it all back and lights the ship up.
 - **Lost run**: the last crewmate down, the view drops to the floor and
   fades while the robots go back to their rounds; the haul stays aboard.
 - **Recovery** (meta.ts `revivalBill`): back at the base the crew is whole

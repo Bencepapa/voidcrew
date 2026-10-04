@@ -21,7 +21,7 @@ import type { GameMap, Linked } from "./game/types";
 import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, addSmoke, removeSmoke, updateSmoke } from "./editor/mapEdits";
 import { PROP_TYPES, propRetexturable } from "./game/props";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
-import { moodOf, moodText, newSeed } from "./game/variation";
+import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
 import { ACTOR_TYPES } from "./game/actors";
 import { DOOR_EDGE_OFFSET, cellAt, ceilingHeight, doorAt, floorHeight } from "./game/map";
@@ -88,6 +88,7 @@ export default function App() {
     hackKeypad,
     closeKeypad,
     alert,
+    powerOn,
     inLift,
     ride,
     actors,
@@ -1268,6 +1269,7 @@ export default function App() {
       actors={actors}
       aiming={aimWeapon}
       downAt={wipedAt}
+      shipAccent={editMode ? null : accentOf(seed)}
       aimFrameRef={aimFrameRef}
       aimFocusRef={aimFocusRef}
       partyCoverRef={partyCoverRef}
@@ -1304,7 +1306,7 @@ export default function App() {
   const overlays = (
     <>
       {haulOpen && !editMode && !runEnd && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
-      {!editMode && phase === "run" && !runEnd && <AlertMeter alert={alert} compact={compact} />}
+      {!editMode && phase === "run" && !runEnd && <AlertMeter alert={alert} compact={compact} powerOn={powerOn} />}
       {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
       {keypad && !editMode && (
         <KeypadPanel title={keypad.title} hack={keypad.hack} hacker={keypad.hacker} onCode={enterCode} onHack={hackKeypad} onClose={closeKeypad} />
@@ -1405,7 +1407,7 @@ export default function App() {
           onOpenMap={(id) => MAPS[id] && openMap(MAPS[id])}
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
-          mapLook={{ lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth }}
+          mapLook={{ lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent }}
           onMapLook={changeMapLook}
           decalChoice={decalChoice?.name ?? null}
           onDecalChoice={setDecalChoice}

@@ -264,5 +264,6 @@
       "text": "Cabin codes, as reset last week:\n{codes}\n- Purser",
       "codes": true
     }
-  }
+  },
+  "accent": { "hue": 37 }
 }

@@ -1,5 +1,5 @@
 import { MAPS } from "./map";
-import { moodOdds, roll, scaleChance, variantOf } from "./variation";
+import { MOOD_LEVELS, moodOdds, roll, scaleChance, variantOf } from "./variation";
 import type { ShipMood } from "./variation";
 import type { GameMap } from "./types";
 
@@ -21,7 +21,13 @@ export interface ShipPlan {
   locks: Map<string, Map<string, PlannedLock>>;
   // the codes each code-holding terminal shows, by "deck|terminal"
   codes: Map<string, string[]>;
+  // the ship's power is down: its doors don't slide, its lifts and keypads
+  // are dead, its lights are low - until its breaker (a decal whose action
+  // is "power", on the deck it's boarded on) is thrown
+  powerOff: boolean;
 }
+// how likely the power is down on a dark, a dim and a bright ship
+const POWER_OFF_ODDS = [0.75, 0.35, 0];
 
 // The cells of a deck that are only reached through a door whose lock is
 // on in this ship (as "x,y"): walking from where the party can come aboard
@@ -146,5 +152,7 @@ export function planShip(entry: GameMap, seed: number, mood: ShipMood): ShipPlan
     }
   }
   for (const lock of waiting) if (!lock.hackable) locks.get(lock.deck.id)!.delete(lock.key);
-  return { locks, codes };
+  const breaker = (decks[0]?.decals ?? []).some((d) => d.action === "power");
+  const powerOff = breaker && roll(`${seed}|power`) < POWER_OFF_ODDS[MOOD_LEVELS.light.indexOf(mood.light)];
+  return { locks, codes, powerOff };
 }

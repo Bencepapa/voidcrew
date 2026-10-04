@@ -4,7 +4,7 @@ import { ALERT_LEVELS, ALERT_MAX, ALERT_NAMES } from "../game/useGameState";
 // name, and a bar filling toward lockdown with a tick at each level.
 const COLORS = ["#4ade80", "#facc15", "#fb923c", "#ef4444"];
 
-export function AlertMeter({ alert, compact }: { alert: number; compact?: boolean }) {
+export function AlertMeter({ alert, compact, powerOn = true }: { alert: number; compact?: boolean; powerOn?: boolean }) {
   const level = ALERT_LEVELS.reduce((l, from, i) => (alert >= from ? i : l), 0);
   const color = COLORS[level];
   return (
@@ -22,6 +22,9 @@ export function AlertMeter({ alert, compact }: { alert: number; compact?: boolea
           <div key={from} className="absolute inset-y-0 w-px bg-neutral-400/60" style={{ left: `${(from / ALERT_MAX) * 100}%` }} />
         ))}
       </div>
+      {!powerOn && (
+        <div className={`text-center uppercase tracking-wider text-sky-300 animate-pulse ${compact ? "text-[8px]" : "text-[10px]"}`}>power down</div>
+      )}
     </div>
   );
 }

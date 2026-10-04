@@ -25,6 +25,8 @@ export interface MapLook {
   lightGridDensity?: number;
   lightGridAmbient?: number;
   reliefDepth?: number;
+  // the deck's accent hue (see GameMap.accent)
+  accent?: { hue: number; range?: number };
 }
 // what a prop can wear (see PropSpec.texture): the wall and prop face sets
 // (a box's top comes with its side)
@@ -728,6 +730,20 @@ export function EditorBar(p: Props) {
                 ))}
               </select>
             </label>
+            <label className="flex items-center gap-1" title="The hue the deck's trim is painted in: a ship's livery turns it (none: it's left as painted)">
+              <input
+                type="checkbox"
+                checked={!!p.mapLook.accent}
+                onChange={(e) => p.onMapLook({ accent: e.target.checked ? { hue: 0 } : undefined })}
+              />
+              Accent
+            </label>
+            {p.mapLook.accent &&
+              slider("Hue", p.mapLook.accent.hue, 0, 359, 1, (v) => p.onMapLook({ accent: { ...p.mapLook.accent!, hue: v } }))}
+            {p.mapLook.accent &&
+              slider("+-", p.mapLook.accent.range ?? 30, 5, 90, 1, (v) =>
+                p.onMapLook({ accent: { ...p.mapLook.accent!, range: v === 30 ? undefined : v } }),
+              )}
             <label className="flex items-center gap-1" title="How deep the walls' relief is (rebuilds the deck)">
               Relief
               <select

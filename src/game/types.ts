@@ -52,6 +52,10 @@ export interface GameMap {
   labelColor?: string;
   // the deck's ceiling lights (hex, e.g. "#ffd08a"); default a neutral warm white
   lightColor?: string;
+  // the deck's accent: the hue (degrees: 0 red, 120 green, 215 blue) its
+  // textures' trim is painted in, and how far either side still counts - a
+  // ship's livery turns it (see render/accent.ts, variation.ts accentOf)
+  accent?: { hue: number; range?: number };
   // how the deck is drawn, if not the viewer's defaults: its baked light's
   // samples per cell (few: softer, light spilling to the cells around; many:
   // sharper shadows, lightmap-like) and its walls' relief depth (world units) - see MapFile

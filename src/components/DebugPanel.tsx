@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { MOOD_LEVELS, moodOf } from "../game/variation";
+import { LIVERY_HUES, MOOD_LEVELS, moodOf } from "../game/variation";
 import type { ShipMood } from "../game/variation";
 import type { TextureSetId, ViewportSettings, ViewportStats, WallProfileId } from "./GameViewport";
 import { downloadMap } from "../editor/mapStore";
@@ -59,6 +59,10 @@ const LIGHT_SLIDERS: SliderConfig[] = [
 ];
 
 const ACCENT_RATIO_SLIDER: SliderConfig = { key: "accentRatio", label: "Accent share of walls", min: 0, max: 1, step: 0.05 };
+
+// how vivid a texture's pixel must be to count as accent (see accent.ts)
+const ACCENT_SLIDERS: SliderConfig[] = [{ key: "accentMinSat", label: "Accent: min saturation", min: 0, max: 1, step: 0.05 }];
+const LIVERY_NAMES: Record<number, string> = { 0: "red", 30: "orange", 55: "yellow", 120: "green", 185: "cyan", 215: "blue", 280: "purple" };
 
 const CAMERA_SLIDERS: SliderConfig[] = [
   { key: "eyeHeight", label: "Eye height", min: 0.1, max: 0.9, step: 0.01 },
@@ -266,6 +270,26 @@ export function DebugPanel({ settings, onChange, stats, compact, mapId, onEditMa
 
       {heading("Lights")}
       {LIGHT_SLIDERS.map(slider)}
+      <label className="flex items-center justify-between gap-2 text-[11px]">
+        Ship livery
+        <select
+          value={String(settings.shipAccent)}
+          onChange={(e) => {
+            const v = e.target.value;
+            set("shipAccent", v === "rolled" || v === "painted" ? v : Number(v));
+          }}
+          className="bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm"
+        >
+          <option value="rolled">rolled for the ship</option>
+          <option value="painted">as painted</option>
+          {LIVERY_HUES.map((hue) => (
+            <option key={hue} value={hue}>
+              {LIVERY_NAMES[hue] ?? hue}
+            </option>
+          ))}
+        </select>
+      </label>
+      {ACCENT_SLIDERS.map(slider)}
 
       {stats && (
         <div className="text-[10px] text-neutral-500 flex flex-col">

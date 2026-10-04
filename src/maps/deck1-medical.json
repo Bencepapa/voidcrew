@@ -143,5 +143,6 @@
       "chance": 0.35
     },
     { "decal": "kid_drawing", "x": 1, "y": 3, "surface": "W", "px": 129, "py": 57, "chance": 0.2 }
-  ]
+  ],
+  "accent": { "hue": 152 }
 }
