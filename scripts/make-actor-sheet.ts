@@ -32,6 +32,14 @@ const { values: args } = parseArgs({
     cols: { type: "string", default: "5" },
     rows: { type: "string", default: "3" },
     "source-scale": { type: "string" },
+    // cut the sheet as an exact grid of `cols` x rows cells, every pixel
+    // of a cell its figure's (for sheets drawn neatly in a grid whose smoke
+    // and flashes would throw the blob finding off)
+    grid: { type: "boolean", default: false },
+    // "top": figures hanging from the ceiling (a turret, a camera) - each
+    // hung from its cell's top edge, centered on its mount (default
+    // "bottom": standing on the cell's bottom edge, centered on its feet)
+    anchor: { type: "string", default: "bottom" },
     // output cell size
     width: { type: "string", default: "96" },
     height: { type: "string", default: "128" },
@@ -74,6 +82,8 @@ interface Figure {
   x1: number;
   y1: number;
   footX: number;
+  // its mount's horizontal center (its highest tenth's pixels)
+  topX: number;
   mask: Uint8Array;
 }
 
@@ -82,6 +92,90 @@ interface Figure {
 // are one blob; the `count` biggest are the figures, and every smaller one
 // (a spark, a puff of smoke) goes with the figure nearest to it.
 const REACH = 3;
+// the figures of a sheet drawn as an exact grid: each cell's own pixels
+function gridFigures(img: Raw, count: number, cols: number, isBg: Background): Figure[] {
+  const rows = count / cols;
+  const cw = img.width / cols;
+  const ch = img.height / rows;
+  return Array.from({ length: count }, (_, i) => {
+    const cx0 = Math.round((i % cols) * cw);
+    const cy0 = Math.round(Math.floor(i / cols) * ch);
+    const cx1 = Math.round(((i % cols) + 1) * cw);
+    const cy1 = Math.round((Math.floor(i / cols) + 1) * ch);
+    // (the next row's figure reaching up into the cell: the bits touching
+    // its bottom edge, unless they're the cell's biggest)
+    const cwInt = cx1 - cx0;
+    const own = new Uint8Array(cwInt * (cy1 - cy0));
+    const comp = new Int32Array(cwInt * (cy1 - cy0)).fill(-1);
+    const sizes: number[] = [];
+    const touchesBottom: boolean[] = [];
+    for (let start = 0; start < own.length; start++) {
+      const sx = cx0 + (start % cwInt);
+      const sy = cy0 + Math.floor(start / cwInt);
+      if (comp[start] >= 0 || isBg(img, sx, sy)) continue;
+      const id = sizes.length;
+      sizes.push(0);
+      touchesBottom.push(false);
+      const stack = [start];
+      comp[start] = id;
+      while (stack.length) {
+        const k = stack.pop()!;
+        sizes[id]++;
+        const kx = k % cwInt;
+        const ky = Math.floor(k / cwInt);
+        if (cy0 + ky === cy1 - 1) touchesBottom[id] = true;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = kx + dx;
+          const ny = ky + dy;
+          if (nx < 0 || ny < 0 || nx >= cwInt || ny >= cy1 - cy0) continue;
+          const nk = ny * cwInt + nx;
+          if (comp[nk] >= 0 || isBg(img, cx0 + nx, cy0 + ny)) continue;
+          comp[nk] = id;
+          stack.push(nk);
+        }
+      }
+    }
+    const biggest = sizes.indexOf(Math.max(...sizes));
+    for (let k = 0; k < own.length; k++) if (comp[k] >= 0 && (!touchesBottom[comp[k]] || comp[k] === biggest)) own[k] = 1;
+    const mine = (x: number, y: number) => own[(y - cy0) * cwInt + (x - cx0)] === 1;
+    let x0 = cx1;
+    let y0 = cy1;
+    let x1 = cx0;
+    let y1 = cy0;
+    for (let y = cy0; y < cy1; y++) {
+      for (let x = cx0; x < cx1; x++) {
+        if (!mine(x, y)) continue;
+        x0 = Math.min(x0, x);
+        y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x + 1);
+        y1 = Math.max(y1, y + 1);
+      }
+    }
+    const w = x1 - x0;
+    const mask = new Uint8Array(Math.max(0, w * (y1 - y0)));
+    let footSum = 0;
+    let footN = 0;
+    let topSum = 0;
+    let topN = 0;
+    const tenth = Math.max(1, Math.round((y1 - y0) / 10));
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        if (!mine(x, y)) continue;
+        mask[(y - y0) * w + (x - x0)] = 1;
+        if (y >= y1 - tenth) {
+          footSum += x;
+          footN++;
+        }
+        if (y < y0 + tenth) {
+          topSum += x;
+          topN++;
+        }
+      }
+    }
+    return { x0, y0, x1, y1, footX: footN ? footSum / footN : (x0 + x1) / 2, topX: topN ? topSum / topN : (x0 + x1) / 2, mask };
+  });
+}
+
 function findFigures(img: Raw, count: number, cols: number, isBg: Background): Figure[] {
   const { width: W, height: H } = img;
   const fg = new Uint8Array(W * H);
@@ -208,7 +302,17 @@ function findFigures(img: Raw, count: number, cols: number, isBg: Background): F
       }
     }
     const lying = w > (y1 - y0) * 1.2;
-    return { x0, y0, x1, y1, footX: n && !lying ? sum / n : (x0 + x1) / 2, mask };
+    let topSum = 0;
+    let topN = 0;
+    for (let y = y0; y < Math.min(y1, y0 + Math.max(1, Math.round((y1 - y0) / 10))); y++) {
+      for (let x = x0; x < x1; x++) {
+        if (mask[(y - y0) * w + (x - x0)]) {
+          topSum += x;
+          topN++;
+        }
+      }
+    }
+    return { x0, y0, x1, y1, footX: n && !lying ? sum / n : (x0 + x1) / 2, topX: topN ? topSum / topN : (x0 + x1) / 2, mask };
   });
 }
 
@@ -269,6 +373,9 @@ async function main() {
   const rows = rowCounts.reduce((a, b) => a + b, 0);
   const cw = Number(args.width);
   const ch = Number(args.height);
+  const hanging = args.anchor === "top";
+  // what a figure is centered on: its feet, or (hanging) its mount
+  const centerX = (f: Figure) => (hanging ? f.topX : f.footX);
 
   // every figure, with the sheets it's from (and their scale)
   const colorFigures: (Figure & { image: Raw; depthImage: Raw; unit: number })[] = [];
@@ -277,14 +384,15 @@ async function main() {
     const unit = 1 / sourceScales[i];
     const color = await load(file);
     const depth = await load(depthFiles[i]);
-    colorFigures.push(...findFigures(color, rowCounts[i] * cols, cols, isKey).map((f) => ({ ...f, image: color, depthImage: depth, unit })));
-    depthFigures.push(...findFigures(depth, rowCounts[i] * cols, cols, darkBackground));
+    const figures = args.grid ? gridFigures : findFigures;
+    colorFigures.push(...figures(color, rowCounts[i] * cols, cols, isKey).map((f) => ({ ...f, image: color, depthImage: depth, unit })));
+    depthFigures.push(...figures(depth, rowCounts[i] * cols, cols, darkBackground));
   }
 
   // one scale for every figure (each sheet's own taken out): the tallest
   // fits the cell's height, the widest (either side of its feet) its width
   const fit = (f: (typeof colorFigures)[number]) =>
-    Math.min((ch - MARGIN) / ((f.y1 - f.y0) * f.unit), (cw / 2 - MARGIN) / (Math.max(f.footX - f.x0, f.x1 - f.footX) * f.unit));
+    Math.min((ch - MARGIN) / ((f.y1 - f.y0) * f.unit), (cw / 2 - MARGIN) / (Math.max(centerX(f) - f.x0, f.x1 - centerX(f)) * f.unit));
   const scale = Math.min(...colorFigures.map(fit));
   const tightest = colorFigures.findIndex((f) => fit(f) === scale);
   const t = colorFigures[tightest];
@@ -320,8 +428,8 @@ async function main() {
     const k = scale * f.unit;
     const w = Math.max(1, Math.round((f.x1 - f.x0) * k));
     const h = Math.max(1, Math.round((f.y1 - f.y0) * k));
-    const left = (i % cols) * cw + Math.round(cw / 2 - (f.footX - f.x0) * k);
-    const top = Math.floor(i / cols) * ch + ch - h;
+    const left = (i % cols) * cw + Math.round(cw / 2 - (centerX(f) - f.x0) * k);
+    const top = Math.floor(i / cols) * ch + (hanging ? 0 : ch - h);
     colorParts.push({ input: await cut(f.image, f, [255, 0, 255], w, h), left, top });
     depthParts.push({ input: await cut(f.depthImage, depthFigures[i], [0, 0, 0], w, h), left, top });
   }

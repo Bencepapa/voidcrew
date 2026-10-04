@@ -14,6 +14,9 @@ interface MinimapProps {
   loot?: { x: number; y: number; big: boolean }[];
   // the door cells still locked ("x,y")
   locked?: string[];
+  // the restricted cells shaded (the editor: the crew finds out the hard
+  // way)
+  showRestricted?: boolean;
 }
 
 // how many cells the window shows either side of the player
@@ -41,7 +44,7 @@ const BIG_LOOT_COLOR = "#ffd84a";
 // map sliding past), drawn as SVG in cell units: floors shaded by height,
 // doors, ladders (yellow) and windows (blue) on their cell's side, bridges
 // as a band along their axis, and the party as an arrow turning smoothly.
-export function Minimap({ map, pos, dir, compact, loot, locked }: MinimapProps) {
+export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted }: MinimapProps) {
   const radius = compact ? RADIUS_COMPACT : RADIUS;
   const span = radius * 2 + 1;
 
@@ -79,6 +82,11 @@ export function Minimap({ map, pos, dir, compact, loot, locked }: MinimapProps) 
       );
     }
   }
+  const restricted = showRestricted
+    ? (map.restricted ?? []).map((c) => (
+        <rect key={`r${c.x},${c.y}`} x={c.x + 0.04} y={c.y + 0.04} width={0.92} height={0.92} fill="rgba(220, 40, 40, 0.45)" />
+      ))
+    : [];
   const bridges = (map.bridges ?? []).map((b) => (
     <rect
       key={`b${b.cell.x},${b.cell.y}`}
@@ -144,6 +152,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked }: MinimapProps) 
           }}
         >
           {cells}
+          {restricted}
           {bridges}
           {ladders}
           {windows}

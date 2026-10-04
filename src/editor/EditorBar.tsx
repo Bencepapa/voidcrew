@@ -366,6 +366,7 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "item", label: "Item", title: "Put loot on floors, tables, beds and crates" },
   { tool: "smoke", label: "Smoke", title: "Smoke emitters: puffs rising from a point, lit by the light around" },
   { tool: "exit", label: "Exit", title: "Ways off the ship: standing there, Use ends the run" },
+  { tool: "restricted", label: "Restricted", title: "Where the crew mustn't be: cameras and robots that take it for crew still call it in here" },
   { tool: "wall", label: "Chance wall", title: "Walls left to chance: there in some variations, open floor in others" },
   { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
 ];
@@ -380,6 +381,7 @@ const TOOL_HELP: Partial<Record<EditTool, string>> = {
   prop: "click a floor (near a side or corner to push it there): put it in · click a prop: pick it · right-click: take it out",
   smoke: "click a wall, floor or anything: smoke from there (picked) · click its marker: pick it · right-click its marker: take it out",
   exit: "click a floor: a way off the ship there (picked) · click one: pick it · right-click: take it out",
+  restricted: "click a floor: restricted (shaded red on the map) · again: not any more",
   item: "click a floor or a table / bed / crate top: the item there · click an item: pick it · right-click: take it out",
   wall: "click a wall or a floor: a wall left to chance there (picked) · click one: pick it · right-click one: a plain wall again",
 };

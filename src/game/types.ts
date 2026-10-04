@@ -85,6 +85,9 @@ export interface GameMap {
   items?: MapItem[];
   // where the party can leave the ship (see ExitSpec)
   exits?: ExitSpec[];
+  // where the crew mustn't be (a vault, the bridge, the engine core): a
+  // camera or a robot taking it for crew still calls it in here
+  restricted?: Vec2[];
   // the deck's story (see story.ts): its terminals by id, and its triggers
   terminals?: Record<string, Terminal>;
   triggers?: Trigger[];

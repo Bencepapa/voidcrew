@@ -92,6 +92,15 @@ export interface ActorType {
   // weak spots: a hit there counts as a hit on their part, only harder
   // (see CRIT_DAMAGE)
   crits: CritSpot[];
+  // a fixture (a turret, a camera): never moves, turns to what it sees; hung
+  // from the ceiling (drawn from it down; nobody bumps into it)
+  stationary?: boolean;
+  ceiling?: boolean;
+  // a camera: never fires - seeing the crew where it shouldn't be, it calls
+  // it in (the ship's alert up by `alert`, again every attackCooldownMs
+  // while it keeps seeing it); its rows: watching the crew, raising the
+  // alarm
+  watcher?: { alert: number; watchRow: number; alarmRow: number };
 }
 
 // How an actor fights around its gun's cooldown. A dumb or heavily armored
@@ -398,6 +407,93 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     },
     crits: [],
   },
+  // A ceiling turret: hangs over a cell, turns all round to whatever it
+  // sees and fires short bursts; it never moves
+  turret1: {
+    name: "A ceiling turret",
+    sheet: "turret1",
+    cols: 5,
+    rows: 5,
+    cellAspect: 96 / 112,
+    height: 0.5,
+    body: { headroom: 0, step: 0 },
+    // (its sensor near the ceiling)
+    eyeHeight: 0.78,
+    moveMs: 400,
+    waitMs: 1000,
+    idleRow: 0,
+    walkRows: [0],
+    shootRows: [1, 2],
+    hitRow: 3,
+    dieRows: [3],
+    wreckRow: 4,
+    loot: "robot",
+    stationary: true,
+    ceiling: true,
+    hp: 45,
+    damage: [2, 5],
+    attackRange: 6,
+    attackCooldownMs: 1500,
+    accuracy: 0.85,
+    falloff: 0.1,
+    sight: 6,
+    fieldOfView: 360,
+    huntSight: 7,
+    hearing: 1,
+    alertMs: 6000,
+    tactics: { shotPauseMs: 300, retreat: [0, 0], seeksCover: false, advance: false, minRange: 0 },
+    parts: {
+      head: { label: "SENSOR EYE", zone: [0.3, 0.3, 0.7, 0.55] },
+      torso: { label: "GUN POD", zone: [0.15, 0.3, 0.85, 0.72] },
+      armL: { label: "BARRELS", zone: [0.15, 0.6, 0.5, 0.85] },
+      armR: { label: "BARRELS", zone: [0.5, 0.6, 0.85, 0.85] },
+      legs: { label: "MOUNT ARM", zone: [0.35, 0.05, 0.65, 0.3] },
+    },
+    crits: [],
+  },
+  // A security camera: hangs from the ceiling, watching one way; it never
+  // fires, but the crew seen where it shouldn't be (anywhere, on a ship
+  // that takes it for intruders) puts the ship's alert up
+  camera1: {
+    name: "A security camera",
+    sheet: "camera1",
+    cols: 5,
+    rows: 4,
+    cellAspect: 1,
+    height: 0.36,
+    body: { headroom: 0, step: 0 },
+    eyeHeight: 0.8,
+    moveMs: 400,
+    waitMs: 1000,
+    idleRow: 0,
+    walkRows: [0],
+    hitRow: 3,
+    dieRows: [3],
+    wreckRow: 3,
+    stationary: true,
+    ceiling: true,
+    watcher: { alert: 30, watchRow: 1, alarmRow: 2 },
+    hp: 14,
+    damage: [0, 0],
+    attackRange: 0,
+    attackCooldownMs: 5000,
+    accuracy: 0,
+    falloff: 0,
+    sight: 6,
+    fieldOfView: 110,
+    huntSight: 6,
+    hearing: 0,
+    alertMs: 5000,
+    tactics: { shotPauseMs: 0, retreat: [0, 0], seeksCover: false, advance: false, minRange: 0 },
+    parts: {
+      head: { label: "LENS", zone: [0.3, 0.38, 0.7, 0.75] },
+      torso: { label: "HOUSING", zone: [0.15, 0.35, 0.85, 0.85] },
+      armL: { label: "BRACKET", zone: [0.3, 0.12, 0.7, 0.38] },
+      armR: { label: "BRACKET", zone: [0.3, 0.12, 0.7, 0.38] },
+      legs: { label: "CABLES", zone: [0.2, 0.75, 0.8, 0.95] },
+    },
+    crits: [],
+  },
 };
 
 export interface ActorState {
@@ -449,6 +545,11 @@ export interface ActorState {
   // one of the reinforcements of an "arrive" actor (its index in the map's
   // actors)
   spawnOf?: number;
+  // a camera with the crew in its view (taking it for its own, or not)
+  watching?: boolean;
+  // turned to the crew's side (a turret, from the security room): it fires
+  // at the ship's robots instead
+  ally?: boolean;
 }
 
 // (the map loader can't check actor types: actors.ts imports the map
@@ -528,6 +629,7 @@ export function actorAt(actors: readonly ActorState[], cell: Vec2, now: number, 
   return actors.find(
     (a) =>
       a.diedAt === null &&
+      !ACTOR_TYPES[a.type]?.ceiling &&
       ((a.cell.x === cell.x && a.cell.y === cell.y && level(a.y)) ||
         (actorMoving(a, now) && a.from.x === cell.x && a.from.y === cell.y && level(a.fromY))),
   );
@@ -535,6 +637,22 @@ export function actorAt(actors: readonly ActorState[], cell: Vec2, now: number, 
 
 // the party's eyes above its feet, for the actors' line of sight
 const PARTY_EYE = 0.55;
+
+// An actor calling the crew in (a camera seeing it, a fooled robot finding
+// it where it mustn't be): the ship's alert up by `alert`
+export interface ActorAlarm {
+  actor: number;
+  alert: number;
+}
+// a fixture on the crew's side firing at a robot
+export interface AllyShot {
+  actor: number;
+  target: number;
+  damage: number;
+}
+// how much a fooled robot finding the crew in a restricted area puts the
+// alert up
+const RESTRICTED_ALERT = 25;
 
 // an actor's shot at the party
 export interface ActorAttack {
@@ -580,9 +698,14 @@ export function stepActors(
   isDoorOpen: (cell: Vec2) => boolean,
   // the height the party stands at
   partyY: number = floorHeight(map, party.x, party.y),
-): { actors: ActorState[]; attacks: ActorAttack[] } {
+): { actors: ActorState[]; attacks: ActorAttack[]; alarms: ActorAlarm[]; allyShots: AllyShot[] } {
   let changed = false;
   const attacks: ActorAttack[] = [];
+  const alarms: ActorAlarm[] = [];
+  const allyShots: AllyShot[] = [];
+  // where the crew mustn't be (see GameMap.restricted)
+  const restricted = new Set((map.restricted ?? []).map((c) => `${c.x},${c.y}`));
+  const partyRestricted = restricted.has(`${party.x},${party.y}`);
   const doorOpen = (key: string) => {
     const [x, y] = key.split(",").map(Number);
     return isDoorOpen({ x, y });
@@ -605,7 +728,15 @@ export function stepActors(
     // waiting for the alert: a hit wakes it (then it knows where the party
     // is); else a dormant one stands still, a fooled one goes its rounds
     if ((a.dormant || a.fooled) && a.hitAt > a.lastSeenAt) update({ dormant: false, fooled: false });
-    if (a.dormant) return a;
+    if (a.dormant) {
+      if (a.watching) update({ watching: false });
+      return a;
+    }
+    // (its changes land on `a` here, through update)
+    if (type.stationary) {
+      stepFixture(a, type, update);
+      return a;
+    }
 
     // the surface it'd walk onto in a neighbouring cell (a walk - no drops,
     // no ladders - where it fits and nobody stands), or null
@@ -692,6 +823,13 @@ export function stepActors(
       dist < 1e-6 ||
       ((party.x - a.cell.x) * ahead.x + (party.y - a.cell.y) * ahead.y) / dist >= Math.cos(((type.fieldOfView / 2) * Math.PI) / 180);
     const line = dist <= type.huntSight && clearLine(a.cell, party, eyes(a.y));
+    // fooled, it takes the crew for its own - unless it catches it where
+    // it mustn't be: then it calls it in and turns on it
+    const noticed = line && ((inView && dist <= type.sight) || dist <= type.hearing);
+    if (a.fooled && noticed && partyRestricted && !type.passive) {
+      update({ fooled: false });
+      alarms.push({ actor: a.id, alert: RESTRICTED_ALERT });
+    }
     const sees = !a.fooled && line && (a.hostile ? dist <= type.huntSight : (inView && dist <= type.sight) || dist <= type.hearing);
 
     // a shot it didn't see coming: now it knows where the party is
@@ -798,5 +936,58 @@ export function stepActors(
     }
     return walkToward(a.patrol[target]);
   });
-  return { actors: changed ? next : actors, attacks };
+  return { actors: changed ? next : actors, attacks, alarms, allyShots };
+
+  // A fixture's turn: it turns to the crew if it sees it - a turret fires
+  // (or, on the crew's side, fires at the robots it sees), a camera calls
+  // it in; fooled, only where the crew mustn't be
+  function stepFixture(a: ActorState, type: ActorType, update: (patch: Partial<ActorState>) => void): ActorState {
+    const dist = Math.hypot(party.x - a.cell.x, party.y - a.cell.y);
+    const ahead = DIR_VECTOR[a.facing];
+    const inView =
+      type.fieldOfView >= 360 ||
+      dist < 1e-6 ||
+      ((party.x - a.cell.x) * ahead.x + (party.y - a.cell.y) * ahead.y) / dist >= Math.cos(((type.fieldOfView / 2) * Math.PI) / 180);
+    const eyes = a.y + type.eyeHeight;
+    const seen = dist <= (a.hostile ? type.huntSight : type.sight) && (inView || a.hostile) && clearLine(a.cell, party, eyes);
+    if (a.ally) {
+      // on the crew's side: the nearest robot in its sight and reach
+      if (now - a.lastAttack < type.attackCooldownMs || !type.attackRange) return a;
+      const target = actors
+        .filter((o) => o.diedAt === null && !o.ally && o.id !== a.id && !ACTOR_TYPES[o.type].passive && !ACTOR_TYPES[o.type].watcher)
+        .map((o) => ({ o, d: Math.hypot(o.cell.x - a.cell.x, o.cell.y - a.cell.y) }))
+        .filter(({ o, d }) => d <= type.attackRange && lineOfSight(map, a.cell, o.cell, doorOpen, { from: eyes, to: o.y + ACTOR_TYPES[o.type].eyeHeight }))
+        .sort((p, q) => p.d - q.d)[0];
+      if (target) {
+        const [lo, hi] = type.damage;
+        allyShots.push({ actor: a.id, target: target.o.id, damage: lo + Math.floor(Math.random() * (hi - lo + 1)) });
+        update({ facing: toward(a.cell, target.o.cell), lastAttack: now, waitUntil: now + type.tactics.shotPauseMs });
+      }
+      return a;
+    }
+    if (a.watching !== seen) update({ watching: seen });
+    // (a camera follows the crew round while it has it in view)
+    if (seen && type.watcher && a.facing !== toward(a.cell, party)) update({ facing: toward(a.cell, party) });
+    if (a.fooled && seen && partyRestricted) update({ fooled: false });
+    if (a.hitAt > a.lastSeenAt) update({ hostile: true, lastSeenAt: a.hitAt, lastSeenCell: party, facing: toward(a.cell, party) });
+    const sees = seen && !a.fooled;
+    if (sees) {
+      const first = !a.hostile;
+      update({ hostile: true, lastSeenAt: now, lastSeenCell: party, facing: type.fieldOfView >= 360 ? toward(a.cell, party) : a.facing });
+      if (type.watcher) {
+        // (the first sighting the most, then a little more while it lasts)
+        if (first || now - a.lastAttack >= type.attackCooldownMs) {
+          alarms.push({ actor: a.id, alert: first ? type.watcher.alert : type.watcher.alert / 4 });
+          update({ lastAttack: now });
+        }
+      } else if (dist <= type.attackRange && now >= a.disarmedUntil && now - a.lastAttack >= type.attackCooldownMs) {
+        const [lo, hi] = type.damage;
+        attacks.push({ actor: a.id, damage: lo + Math.floor(Math.random() * (hi - lo + 1)), distance: dist });
+        update({ lastAttack: now, waitUntil: now + type.tactics.shotPauseMs });
+      }
+    } else if (a.hostile && now - a.lastSeenAt > type.alertMs) {
+      update({ hostile: false, lastSeenCell: null });
+    }
+    return a;
+  }
 }

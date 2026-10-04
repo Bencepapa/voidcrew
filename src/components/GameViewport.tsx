@@ -647,6 +647,9 @@ const SHAFT_LIGHT_PERIOD_MS = 700;
 const SHAFT_LIGHT_SWEEP = 1.2;
 // how far away an interactive decal can be touched (world units)
 const TOUCH_REACH = 1.4;
+// a camera's light on the crew: watching, raising the alarm
+const CAMERA_WATCH_LIGHT = 0xffc23a;
+const CAMERA_ALARM_LIGHT = 0xff2418;
 // the crew down: how long the view takes to fall, the eye's height above
 // the floor then, how far up it looks and how far over the head rolls
 const DOWN_FALL_MS = 900;
@@ -1464,7 +1467,9 @@ export function GameViewport({
     // displacement - not for floors, whose single quad would only tilt
     // `setId`: a TEXTURE_SETS entry, or (for props) any folder under
     // public/textures/ with the usual diffuse, normal and depth maps
-    function createWallKit(setId: string, displace = true): WallKit {
+    // (`accent`: its materials take the ship's livery - the deck's own
+    // surfaces do, props don't)
+    function createWallKit(setId: string, displace = true, accent = true): WallKit {
       const paths: TextureSetFiles = isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
       const diffuse = kitTexture(paths.diffuse + bust);
       const normalMap = kitTexture(paths.normal + bust);
@@ -1521,6 +1526,7 @@ export function GameViewport({
         addDirectLightOcclusion(litMat, cavity);
       }
 
+      for (const mat of [wallMat, sideMat, litMat]) if (mat) mat.userData.accent = accent;
       return { depthUrl: paths.depth + bust, grateLevels: paths.grateLevels, wallMat, sideMat, litMat, textures, slots: [] };
     }
 
@@ -1647,7 +1653,7 @@ export function GameViewport({
     const propKitFor = (setId: string) => {
       let kit = propKits.get(setId);
       if (!kit) {
-        kit = createWallKit(setId, false);
+        kit = createWallKit(setId, false, false);
         propKits.set(setId, kit);
       }
       return kit;
@@ -2923,6 +2929,8 @@ export function GameViewport({
         metalness: settingsRef.current.metalness,
       });
       addDirectLightOcclusion(material, cavity);
+      // (a door panel is the deck's own: it takes the ship's livery)
+      material.userData.accent = true;
       ownMaterials.push(material);
       kit.textures.push(texture);
       return material;
@@ -3292,6 +3300,26 @@ export function GameViewport({
         }
         list.push({ key: `flash ${f.id}`, x: f.x, y: f.y, z: f.z, color: f.color, intensity: f.intensity * (1 - t), range: f.range, flash: true });
       }
+      // a camera's light on the crew: a steady yellow while it watches, a
+      // pulsing red while it raises the alarm (just below its lens)
+      for (const actor of actorsRef.current) {
+        const type = ACTOR_TYPES[actor.type];
+        const entry = actorMeshes.get(actor.id);
+        if (!type.watcher || actor.diedAt !== null || actor.dormant || !entry?.mesh.visible) continue;
+        if (!actor.hostile && !actor.watching) continue;
+        const alarm = actor.hostile;
+        const p = entry.mesh.position;
+        list.push({
+          key: `camera ${actor.id}`,
+          x: p.x,
+          y: p.y - 0.08,
+          z: p.z,
+          color: alarm ? CAMERA_ALARM_LIGHT : CAMERA_WATCH_LIGHT,
+          intensity: alarm ? 1.6 + 1.3 * Math.sin(now / 160) : 1.5,
+          range: alarm ? 3 : 2.2,
+          cell: cellKey(actor.cell.x, actor.cell.y),
+        });
+      }
       // the map's lights (baked: only the unsteady ones), at their level now
       effectLevels.clear();
       mapLights.forEach((l, i) => {
@@ -3616,13 +3644,17 @@ export function GameViewport({
         } else if (type.shootRows && now - actor.lastAttack < ACTOR_SHOOT_POSE_MS) {
           // (its firing rows in turn: the chaingun spinning)
           row = type.shootRows[Math.floor(now / ACTOR_SHOOT_FRAME_MS) % type.shootRows.length];
+        } else if (type.watcher && actor.diedAt === null) {
+          // a camera's light: red raising the alarm, amber watching the crew
+          row = actor.hostile ? type.watcher.alarmRow : actor.watching ? type.watcher.watchRow : type.idleRow;
         } else if (type.shootRow !== undefined && now - actor.lastAttack < ACTOR_SHOOT_POSE_MS) {
           row = type.shootRow;
         }
-        // a new shot: its muzzle flash, at its chest
+        // a new shot: its muzzle flash, at its chest - or a hung turret's
+        // barrels (a camera only calls it in: no flash)
         if (actor.lastAttack !== entry.lastAttack) {
-          if (actor.lastAttack > entry.lastAttack) {
-            flashAt.set(x, y + h * 0.55, z);
+          if (actor.lastAttack > entry.lastAttack && !type.watcher) {
+            flashAt.set(x, type.ceiling ? ceilingY(actor.cell.x, actor.cell.y) - h * 0.75 : y + h * 0.55, z);
             addFlash(flashAt, ACTOR_FLASH.color, ACTOR_FLASH.intensity, ACTOR_FLASH.range, ACTOR_FLASH.duration);
           }
           entry.lastAttack = actor.lastAttack;
@@ -3676,7 +3708,9 @@ export function GameViewport({
         const [dx, dy] = fix?.offsets[row * type.cols + col] ?? [0, 0];
         const px = fix ? h / fix.cell[1] : 0;
         const shift = (mirror ? -dx : dx) * px;
-        mesh.position.set(x + Math.cos(yaw) * shift, y + h / 2 - dy * px, z - Math.sin(yaw) * shift);
+        // (hung from the ceiling: its top against it)
+        const centerY = type.ceiling ? ceilingY(actor.cell.x, actor.cell.y) - h / 2 : y + h / 2;
+        mesh.position.set(x + Math.cos(yaw) * shift, centerY - dy * px, z - Math.sin(yaw) * shift);
 
         const uvKey = `${col},${row},${mirror}`;
         if (uvKey === entry.uvKey) continue;

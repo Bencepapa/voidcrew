@@ -24,6 +24,7 @@ export type EditTool =
   | "item"
   | "smoke"
   | "exit"
+  | "restricted"
   | "wall"
   | "map";
 
@@ -490,6 +491,16 @@ export function toggleExit(file: MapFile, cell: Vec2): MapFile {
   if (i >= 0) exits.splice(i, 1);
   else exits.push({ x: cell.x, y: cell.y });
   if (!exits.length) delete file.exits;
+  return file;
+}
+
+// a cell where the crew mustn't be, or not any more (see GameMap.restricted)
+export function toggleRestricted(file: MapFile, cell: Vec2): MapFile {
+  const cells = file.restricted ?? (file.restricted = []);
+  const i = cells.findIndex(([x, y]) => x === cell.x && y === cell.y);
+  if (i >= 0) cells.splice(i, 1);
+  else cells.push([cell.x, cell.y]);
+  if (!cells.length) delete file.restricted;
   return file;
 }
 

@@ -312,6 +312,21 @@ export function useGameState() {
   const throwBreakerRef = useRef(() => {});
   const setPowerRef = useRef<(on: boolean) => boolean>(() => false);
   const setStanceRef = useRef<(stance: "dormant" | "fooled" | "hostile") => void>(() => {});
+  const setFixturesRef = useRef<(which: "turrets" | "cameras", mode: "ally" | "off" | "hostile") => void>(() => {});
+  // the security room's word on the ship's turrets and cameras (for the
+  // decks still to come too)
+  const fixturesRef = useRef<{ turrets?: "ally" | "off" | "hostile"; cameras?: "off" | "hostile" }>({});
+
+  // a turret or a camera as the security room has set them
+  const applyFixtureMode = (a: ActorState): ActorState => {
+    const type = ACTOR_TYPES[a.type];
+    if (!type.stationary || a.diedAt !== null) return a;
+    const mode = type.watcher ? fixturesRef.current.cameras : fixturesRef.current.turrets;
+    if (!mode) return a;
+    if (mode === "off") return { ...a, dormant: true, hostile: false, ally: false, watching: false };
+    if (mode === "ally") return { ...a, dormant: false, fooled: false, hostile: false, ally: true };
+    return { ...a, dormant: false, ally: false };
+  };
 
   // (the last crewmate fallen: the run lost - aiming dropped, the actors
   // calmed down; true if so)
@@ -386,11 +401,13 @@ export function useGameState() {
     nextArrivalRef.current = new Map();
     updateActors(
       createActors(map, now, alertLevelRef.current, variationRef.current === null, stanceRef.current ?? variationRef.current?.mood.robots).map((a) =>
-        killedRef.current.has(actorKey(map, a.id)) ? { ...a, hp: 0, diedAt: now - 1e6 } : a,
+        killedRef.current.has(actorKey(map, a.id)) ? { ...a, hp: 0, diedAt: now - 1e6 } : applyFixtureModeRef.current(a),
       ),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map.id, actorsKey, updateActors, actorKey]);
+  // (defined further down)
+  const applyFixtureModeRef = useRef((a: ActorState) => a);
   // reinforcements: when each "arrive" actor comes next (by its index)
   const nextArrivalRef = useRef(new Map<number, number>());
   const spawnIdRef = useRef(SPAWN_ID);
@@ -427,7 +444,7 @@ export function useGameState() {
       if (readyMapRef.current !== m.id || frozenRef.current) return;
       if (variationRef.current && wipedRef.current === null) alertTick(m);
       // (a downed crew is nowhere to them: they lose it and go back)
-      const { actors: next, attacks } = stepActors(
+      const { actors: stepped, attacks, alarms, allyShots } = stepActors(
         m,
         actorsRef.current,
         gameClock.now(),
@@ -435,6 +452,31 @@ export function useGameState() {
         (cell) => openDoorsRef.current.has(doorCellKey(cell)),
         elevationRef.current,
       );
+      let next = stepped;
+      // the crew called in: by a camera, or a robot finding it where it
+      // mustn't be
+      for (const alarm of alarms) {
+        const who = next.find((a) => a.id === alarm.actor);
+        const type = who && ACTOR_TYPES[who.type];
+        raiseAlert(alarm.alert);
+        pushLog(
+          type?.watcher
+            ? `${type.name} spots you - security is alerted.`
+            : `${type?.name ?? "Something"} challenges you: restricted area. Security is alerted.`,
+        );
+      }
+      // the crew's turrets firing at the robots
+      for (const shot of allyShots) {
+        const now = gameClock.now();
+        next = next.map((a) => {
+          if (a.id !== shot.target || a.diedAt !== null) return a;
+          const hp = Math.max(0, a.hp - shot.damage);
+          // (it doesn't take the hit for the crew's)
+          return { ...a, hp, hitAt: now, lastSeenAt: now, diedAt: hp ? null : now };
+        });
+        const target = next.find((a) => a.id === shot.target);
+        if (target?.diedAt !== null && target) pushLog(`Your turret destroys ${ACTOR_TYPES[target.type].name.toLowerCase()}.`);
+      }
       if (next !== actorsRef.current) updateActors(next);
       // their shots may land on a random conscious crewmate: the farther
       // and the better covered the party, the likelier they miss
@@ -790,6 +832,8 @@ export function useGameState() {
         else if (step.kind === "alert") raiseAlert(step.amount);
         else if (step.kind === "power") setPowerRef.current(step.on);
         else if (step.kind === "stance") setStanceRef.current(step.stance);
+        else if (step.kind === "turrets") setFixturesRef.current("turrets", step.mode);
+        else if (step.kind === "cameras") setFixturesRef.current("cameras", step.on ? "hostile" : "off");
         else if (step.kind === "unlock" || step.kind === "open") {
           raiseFlag(unlockedFlag(mapRef.current.id, step.cell), true);
           if (step.kind === "open") storyRef.current.open(step.cell);
@@ -1245,6 +1289,25 @@ export function useGameState() {
     );
   };
 
+  applyFixtureModeRef.current = applyFixtureMode;
+  // the ship's turrets (or cameras) set from the security room: on the
+  // crew's side, powered down, or back on guard
+  setFixturesRef.current = (which, mode) => {
+    fixturesRef.current = { ...fixturesRef.current, [which]: mode };
+    updateActorsRef.current(actorsRef.current.map((a) => applyFixtureMode(a)));
+    pushLog(
+      which === "cameras"
+        ? mode === "off"
+          ? "The security cameras go dark."
+          : "The security cameras come back on."
+        : mode === "ally"
+          ? "The turrets swing round: they're on your side now."
+          : mode === "off"
+            ? "The turrets power down."
+            : "The turrets are back on guard.",
+    );
+  };
+
   // What the map shows of the deck's loot (a scan of sorts): where some
   // lies - in containers not yet searched, on the floor, in wrecks not yet
   // salvaged - and whether it's a little or a lot (a lot: behind a lock, or
@@ -1296,6 +1359,7 @@ export function useGameState() {
     alertRef.current = 0;
     alertLevelRef.current = 0;
     stanceRef.current = null;
+    fixturesRef.current = {};
     setLightsUp(false);
     alertShownRef.current = 0;
     setAlertShown(0);

@@ -435,7 +435,11 @@ export function useLightGrid(material: THREE.Material, uniforms: LightGridUnifor
   material.userData.lightGrid = true;
   const previous = material.onBeforeCompile;
   const previousKey = material.customProgramCacheKey();
-  material.customProgramCacheKey = () => `${previousKey}|light-grid`;
+  // (the ship's livery only on the deck's own surfaces - its walls, floors,
+  // ceilings, doors: those ask for it; props, decals and actors keep their
+  // colours)
+  const accent = material.userData.accent === true;
+  material.customProgramCacheKey = () => `${previousKey}|light-grid${accent ? "" : "|no-accent"}`;
   material.onBeforeCompile = (shader, renderer) => {
     previous.call(material, shader, renderer);
     uniforms.faces.forEach((f, a) => (shader.uniforms[`uLgFace${a}`] = f));
@@ -479,8 +483,11 @@ vec3 lgCube(vec3 d, vec3 uvw) {
     d2.z * (d.z > 0.0 ? texture(uLgFace4, uvw).rgb : texture(uLgFace5, uvw).rgb);
 }`,
       )
-      .replace("#include <map_fragment>", "#include <map_fragment>\ndiffuseColor.rgb = accentShift(diffuseColor.rgb);")
-      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance = accentShift(totalEmissiveRadiance);")
+      .replace("#include <map_fragment>", `#include <map_fragment>${accent ? "\ndiffuseColor.rgb = accentShift(diffuseColor.rgb);" : ""}`)
+      .replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>${accent ? "\ntotalEmissiveRadiance = accentShift(totalEmissiveRadiance);" : ""}`,
+      )
       .replace(
         "#include <lights_fragment_begin>",
         `#include <lights_fragment_begin>

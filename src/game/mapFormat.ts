@@ -82,6 +82,8 @@ export interface MapFile {
   }[];
   // ways off the ship (see ExitSpec)
   exits?: { x: number; y: number; name?: string }[];
+  // the cells where the crew mustn't be (see GameMap.restricted)
+  restricted?: [number, number][];
   // smoke emitters (see SmokeSpec)
   smokes?: {
     x: number;
@@ -296,6 +298,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     })),
     terminals: file.terminals,
     triggers: file.triggers,
+    restricted: (file.restricted ?? []).map(([x, y]) => ({ x, y })),
     chanceWalls: (file.chanceWalls ?? []).map((w) => ({ cell: { x: w.x, y: w.y }, chance: w.chance, id: w.id, with: w.with, without: w.without })),
     ladders,
     bridges,
@@ -310,6 +313,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       terminals: undefined,
       triggers: undefined,
       accent: undefined,
+      restricted: undefined,
     }),
     windows,
     props: (file.props ?? []).map((p) => {

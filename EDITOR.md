@@ -242,7 +242,12 @@ multiplies them by 6: a 50% item gets 14% / 50% / 86%, a 20% one 4% / 20%
 - use that for what a deck can't do without. The debug panel shows the
 rolled mood and can set each part instead.
 
-**Robot:** the palette picks the actor type; a click on a floor puts one
+**Restricted:** a click on a floor marks the cell restricted (shaded red
+on the editor's minimap), again unmarks it: on a ship whose robots take the
+crew for their own, cameras and robots still call it in there.
+
+**Robot:** the palette picks the actor type (the turret and the camera
+too: they hang from the ceiling); a click on a floor puts one
 in (facing the party) and picks it; a click on a robot picks it, the right
 button takes it out. With one picked, Shift+click on a floor adds that
 cell to its patrol route (starting from where it stands); its panel sets

@@ -310,6 +310,7 @@ main fields:
 | `accent` | `{ "hue": 37, "range"?: 30 }`: the hue of the deck's trim (degrees), which a ship's livery turns - each ship rolls one (`accentOf` in variation.ts: about 1 in 3 keep their painted colours), never shown on the scan |
 | `lightColor`, `autoLights` | lamp color (`"#ffcf87"`); `false`: no generated mood lights |
 | `lightGridDensity`, `lightGridAmbient`, `reliefDepth` | baked light samples per cell (and for its ambient part, from a coarser grid), wall relief depth (unset: the viewer's defaults) |
+| `restricted` | `[[x, y], ...]`: cells where the crew mustn't be (see the game loop's restricted cells) |
 | `chanceWalls` | walls left to chance: `{ x, y, chance }` (their cells walls in the layout) |
 | `chance`, `id`, `with`, `without` | on props, decals, lights, actors, doors, chance walls: the chance it's there, its name, the item it's only there with / without |
 | `effect` (lights) | `flicker`, `spark` or `pulse`: not baked, a real light serves it |
@@ -347,6 +348,8 @@ now; locks and a decal's action are set in the editor (Door, Decal tools).
 
 Actions (`do`): `set:flag`, `clear:flag`, `log:text`, `alert:N` (the
 ship's alert up by N, or down), `power:on` / `power:off`,
+`turrets:ally` / `off` / `hostile` (the ship's turrets fire at its robots,
+power down, or go back on guard), `cameras:off` / `on`,
 `stance:fooled` / `dormant` / `hostile` (every robot aboard takes the crew
 that way - a security room's terminal: new IDs, robots powered down),
 `show:terminal`
@@ -409,6 +412,15 @@ Base → scan → run → base (`phase` in src/App.tsx; opened with `?map=` or
   with its own `wake` keeps it (special ships). Bullet time slows it like
   the rest. Console:
   `__voidcrewAlert(40)`.
+- **Turrets and cameras** (actor types `turret1`, `camera1`, placed with
+  the Robot tool): hung from the ceiling, never moving, nobody bumps into
+  them. A turret turns all round and fires bursts; a camera watches one way
+  (its light green, amber when it sees the crew, red raising the alarm)
+  and never fires: seeing the crew it puts the alert up (30, then a little
+  more while it keeps seeing it). Both follow the ship's robot stance.
+- **Restricted cells** (`restricted` in the map, the editor's Restricted
+  tool): on a fooled ship, a camera or a robot that sees the crew there
+  still calls it in (and turns hostile).
 - **Power** (ShipPlan.powerOff): a dark ship's power is often down (3 in
   4 dark ships, 1 in 3 dim ones, never a bright one) - if its entry deck has
   a breaker: a decal whose action is `power`. Down, doors don't slide (Use

@@ -18,7 +18,7 @@ import {
 } from "./editor/mapStore";
 import { MAPS, START_MAP } from "./game/map";
 import type { GameMap, Linked } from "./game/types";
-import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, addSmoke, removeSmoke, updateSmoke } from "./editor/mapEdits";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke } from "./editor/mapEdits";
 import { PROP_TYPES, propRetexturable } from "./game/props";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
@@ -494,6 +494,11 @@ export default function App() {
       if (!there && alt) return;
       result = applyEdit(map.id, (file) => toggleExit(file, cell));
       setSelectedExit(there ? null : cell);
+    } else if (editTool === "restricted") {
+      // a click on a floor: restricted, or not any more
+      if (target.kind === "wall") return;
+      const cell = target.cell;
+      result = applyEdit(map.id, (file) => toggleRestricted(file, cell));
     } else if (editTool === "item") {
       // a click on an item picks it (the right button takes it out); on a
       // floor or a prop's top it puts the palette's item there (picked)
@@ -1513,7 +1518,7 @@ export default function App() {
         </div>
 
         <div className="absolute top-2 left-2 w-28 flex flex-col gap-1 pointer-events-none">
-          <Minimap map={map} pos={pos} dir={dir} compact loot={editMode ? undefined : lootMarks} locked={lockedDoors} />
+          <Minimap map={map} pos={pos} dir={dir} compact loot={editMode ? undefined : lootMarks} locked={lockedDoors} showRestricted={editMode} />
           <div className="h-16">
             <LogPanel log={log} compact />
           </div>
@@ -1561,7 +1566,7 @@ export default function App() {
     <div className="h-screen w-screen flex flex-col p-2 gap-2 font-sans">
       <div className="flex-1 flex gap-2 min-h-0">
         <div className="w-56 flex flex-col gap-2">
-          <Minimap map={map} pos={pos} dir={dir} loot={editMode ? undefined : lootMarks} locked={lockedDoors} />
+          <Minimap map={map} pos={pos} dir={dir} loot={editMode ? undefined : lootMarks} locked={lockedDoors} showRestricted={editMode} />
           <div className="text-[10px] text-neutral-500 px-1">
             <div>{map.name}</div>
             <div>Deck {map.deck} &middot; Day 17</div>

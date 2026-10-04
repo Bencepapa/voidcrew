@@ -1,10 +1,11 @@
-// A ship's accent color, without new textures: every lit material (see
-// useLightGrid) turns the strongly colored parts of its texture - and of its
-// glow - whose hue is near `from` round the hue circle by `shift`: the blue
-// trim of a deck and its robots' lights cyan, yellow, green... Grey metal,
-// dark and pale pixels and other hues stay as they are. Hues 0..1 (0 red,
-// 1/3 green, 2/3 blue); `width`: how far from `from` a hue still counts;
-// `minSat`: how saturated a pixel must be.
+// A ship's accent color, without new textures: the deck's own surfaces
+// (walls, floors, ceilings, doors - see useLightGrid, createWallKit) turn
+// the strongly colored parts of their textures - and of their glow - whose
+// hue is near `from` round the hue circle by `shift`: the orange trim of a
+// deck cyan, yellow, green... Grey metal, dark and pale pixels and other
+// hues stay as they are. Hues 0..1 (0 red, 1/3 green, 2/3 blue); `width`:
+// how far from `from` a hue still counts; `minSat`: how saturated a pixel
+// must be.
 export const ACCENT_UNIFORMS = {
   uAccentFrom: { value: 0.6 },
   uAccentWidth: { value: 0.08 },
