@@ -1,7 +1,7 @@
 import { DIR_VECTOR, rightOf } from "./movement";
 import { ITEM_TYPES } from "./items";
 import { PROP_TYPES } from "./props";
-import type { CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
+import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
 import type { Lock, Terminal, Trigger } from "./story";
 
 // Map files (src/maps/*.json): a character grid for the cells plus optional
@@ -149,6 +149,7 @@ export interface MapFile {
     facing?: Direction;
     patrol?: [number, number][];
     chance?: number;
+    wake?: ActorWake;
     id?: string;
     with?: string;
     without?: string;
@@ -371,6 +372,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         facing: a.facing ?? "S",
         patrol: (a.patrol ?? []).map(([x, y]) => ({ x, y })),
         chance: a.chance,
+        wake: a.wake,
         id: a.id,
         with: a.with,
         without: a.without,

@@ -10,6 +10,10 @@ interface MinimapProps {
   dir: Direction;
   // translucent variant for the mobile overlay layout
   compact?: boolean;
+  // where loot lies, a little or a lot (see useGameState's lootMarks)
+  loot?: { x: number; y: number; big: boolean }[];
+  // the door cells still locked ("x,y")
+  locked?: string[];
 }
 
 // how many cells the window shows either side of the player
@@ -29,12 +33,15 @@ const WINDOW_COLOR = "#9fc4ff";
 const BRIDGE_COLOR = "rgba(120, 190, 130, 0.85)";
 const DOOR_COLOR = "#5a2626";
 const PLAYER_COLOR = "#7dffa8";
+const LOCKED_COLOR = "#a8741a";
+const LOOT_COLOR = "#e9c46a";
+const BIG_LOOT_COLOR = "#ffd84a";
 
 // A window onto the map around the player (who stays in its middle, the
 // map sliding past), drawn as SVG in cell units: floors shaded by height,
 // doors, ladders (yellow) and windows (blue) on their cell's side, bridges
 // as a band along their axis, and the party as an arrow turning smoothly.
-export function Minimap({ map, pos, dir, compact }: MinimapProps) {
+export function Minimap({ map, pos, dir, compact, loot, locked }: MinimapProps) {
   const radius = compact ? RADIUS_COMPACT : RADIUS;
   const span = radius * 2 + 1;
 
@@ -67,7 +74,7 @@ export function Minimap({ map, pos, dir, compact }: MinimapProps) {
           y={y + 0.04}
           width={0.92}
           height={0.92}
-          fill={cell === "door" ? DOOR_COLOR : floor(x, y)}
+          fill={cell === "door" ? (locked?.includes(`${x},${y}`) ? LOCKED_COLOR : DOOR_COLOR) : floor(x, y)}
         />,
       );
     }
@@ -99,6 +106,27 @@ export function Minimap({ map, pos, dir, compact }: MinimapProps) {
   };
   const ladders = (map.ladders ?? []).map((l) => edge(`l${l.cell.x},${l.cell.y},${l.wall}`, l.cell, l.wall, LADDER_COLOR));
   const windows = windowPanels(map).map((p) => edge(`w${p.cell.x},${p.cell.y},${p.wall}`, p.cell, p.wall, WINDOW_COLOR));
+  // loot: a dot for a little, a glowing diamond for a lot (one mark a cell,
+  // the bigger)
+  const lootCells = new Map<string, { x: number; y: number; big: boolean }>();
+  for (const m of loot ?? []) {
+    const key = `${m.x},${m.y}`;
+    if (!lootCells.get(key)?.big) lootCells.set(key, m);
+  }
+  const lootMarks = [...lootCells.values()].map((m) =>
+    m.big ? (
+      <polygon
+        key={`loot${m.x},${m.y}`}
+        points={`${m.x + 0.5},${m.y + 0.22} ${m.x + 0.78},${m.y + 0.5} ${m.x + 0.5},${m.y + 0.78} ${m.x + 0.22},${m.y + 0.5}`}
+        fill={BIG_LOOT_COLOR}
+        stroke="#5a3d00"
+        strokeWidth={0.05}
+        style={{ filter: "drop-shadow(0 0 0.15px #ffd84a)" }}
+      />
+    ) : (
+      <circle key={`loot${m.x},${m.y}`} cx={m.x + 0.5} cy={m.y + 0.5} r={0.12} fill={LOOT_COLOR} />
+    ),
+  );
 
   return (
     <div className={`border border-green-800 ${compact ? "bg-black/25 p-1" : "bg-black/60 p-2"}`}>
@@ -119,6 +147,7 @@ export function Minimap({ map, pos, dir, compact }: MinimapProps) {
           {bridges}
           {ladders}
           {windows}
+          {lootMarks}
         </g>
         {/* the party: an arrowhead with a notched tail, pointing its way */}
         <g

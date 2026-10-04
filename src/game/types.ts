@@ -99,6 +99,21 @@ export interface ActorSpec extends Linked {
   // the chance (0..1) it's there in a variation of the deck (see
   // variation.ts); unset: always
   chance?: number;
+  // what it does until the ship's alert reaches `level` (see useGameState's
+  // alert): unset - it's on guard from the start
+  wake?: ActorWake;
+}
+
+// An actor waiting for the ship's alert level (1 suspicious, 2 alert, 3
+// lockdown): "dormant" stands powered down; "fooled" goes its rounds taking
+// the crew for its own (their fake IDs); "arrive" isn't there yet - then
+// comes, and again every `every` seconds while fewer than `max` of it stand
+// (reinforcements from a drone bay). A hit wakes a dormant or fooled one.
+export interface ActorWake {
+  level: 1 | 2 | 3;
+  mode: "dormant" | "fooled" | "arrive";
+  every?: number;
+  max?: number;
 }
 
 // A 3D prop (see props.ts) in a walkable cell, pushed toward `at`: a side,

@@ -5,18 +5,19 @@ import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
 import type { Direction, GameMap, Vec2, PropSpec } from "./types";
 import { initialCrew } from "./crew";
 import { variantOf } from "./variation";
-import { rollLoot, stacksText } from "./items";
+import { rollLoot, stacksText, stacksValue } from "./items";
 import type { ItemStack, LootSpill } from "./items";
 import { PROP_TYPES, propHeight, propPlacement } from "./props";
 import type { ShipMood } from "./variation";
-import { ACTOR_TYPES, actorAt, createActors, partyHitChance, stepActors } from "./actors";
+import { ACTOR_TYPES, actorAt, actorFromSpec, actorWake, createActors, partyHitChance, stepActors } from "./actors";
+import { moodOdds } from "./variation";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
 import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
 import { crewWeapon, getMeta, setStoryFlag } from "./meta";
 import { HACKER_ROLE, HACK_ENERGY, HACK_MS, conditionsMet, parseAction, triggerMatches, unlockedFlag } from "./story";
 import type { Lock, StoryEvent } from "./story";
-import { planShip } from "./shipPlan";
+import { lockedAway, planShip } from "./shipPlan";
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 
@@ -37,7 +38,26 @@ export interface LiftRide {
 
 let logId = 0;
 
+// The ship's alert (see useGameState's alert): 0..ALERT_MAX, rising with
+// the time aboard (all of it in ALERT_FULL_S seconds, at a middling
+// security) and with the noise the crew makes; its levels - calm,
+// suspicious, alert, lockdown - start at these values.
+export const ALERT_MAX = 100;
+export const ALERT_LEVELS = [0, 34, 67, 100];
+export const ALERT_NAMES = ["calm", "suspicious", "alert", "lockdown"];
+const ALERT_FULL_S = 480;
+export const ALERT_NOISE = { shot: 4, kill: 8, hack: 8, wrongCode: 4 };
+// at lockdown, how often every unit is told where the crew is (game ms)
+const LOCKDOWN_HUNT_MS = 4000;
+// reinforcements: how often by default (game s), and how many by default
+const ARRIVE_EVERY_S = 30;
+// the ids of reinforcements (see ActorWake) start here
+const SPAWN_ID = 1000;
+const levelOf = (alert: number) => ALERT_LEVELS.reduce((level, from, i) => (alert >= from ? i : level), 0);
+
 const DOOR_ANIM_MS = 450;
+// loot worth this much (credits) shows on the map as a lot
+const LOOT_BIG = 60;
 // roughly the walk to and from a ladder around the climb itself (the
 // viewport's move duration)
 const CLIMB_WALK_MS = 250;
@@ -218,6 +238,69 @@ export function useGameState() {
   const wipedRef = useRef(wipedAt);
   wipedRef.current = wipedAt;
 
+  // One tick of the alert (ACTOR_TICK_MS of game time): it rises; a new
+  // level is announced and wakes the actors waiting for it; the
+  // reinforcements due arrive; at lockdown every unit is told where the
+  // crew is.
+  const lastHuntRef = useRef(0);
+  const alertTick = (m: GameMap) => {
+    const now = gameClock.now();
+    const security = moodOdds(variationRef.current!.mood, "locks");
+    const rate = (ALERT_MAX / ALERT_FULL_S) * (security > 1 ? 1.4 : security < 1 ? 0.7 : 1);
+    raiseAlert((rate * ACTOR_TICK_MS * gameClock.rate()) / 1000);
+    const level = levelOf(alertRef.current);
+    if (Math.round(alertRef.current) !== alertShownRef.current) {
+      alertShownRef.current = Math.round(alertRef.current);
+      setAlertShown(alertShownRef.current);
+    }
+    let actors = actorsRef.current;
+    if (level !== alertLevelRef.current) {
+      const up = level > alertLevelRef.current;
+      alertLevelRef.current = level;
+      if (up) {
+        pushLog(
+          level === 3
+            ? "SHIP SECURITY: LOCKDOWN. Every unit aboard is hunting you."
+            : level === 2
+              ? "SHIP SECURITY: ALERT. Your IDs are flagged - drones are powering up."
+              : "Ship security: suspicious. Something is checking your IDs.",
+        );
+        // the ones waiting for it wake (and know roughly where the crew is)
+        actors = actors.map((a) => {
+          const spec = m.actors?.[a.id];
+          const wake = spec && actorWake(spec, variationRef.current!.mood.robots);
+          if (!wake || wake.level > level || (!a.dormant && !a.fooled)) return a;
+          return { ...a, dormant: false, fooled: false };
+        });
+      }
+    }
+    // reinforcements (on the deck shown)
+    (m.actors ?? []).forEach((spec, index) => {
+      const wake = spec.wake;
+      if (wake?.mode !== "arrive" || level < wake.level || !ACTOR_TYPES[spec.actor]) return;
+      const due = nextArrivalRef.current.get(index) ?? now;
+      if (now < due) return;
+      const standing = actors.filter((a) => a.spawnOf === index && a.diedAt === null).length;
+      const party = posRef.current;
+      const blocked = actors.some((a) => a.diedAt === null && a.cell.x === spec.cell.x && a.cell.y === spec.cell.y);
+      if (standing >= (wake.max ?? 1) || blocked || (party.x === spec.cell.x && party.y === spec.cell.y)) return;
+      nextArrivalRef.current.set(index, now + (wake.every ?? ARRIVE_EVERY_S) * 1000);
+      const arrival = actorFromSpec(m, spec, spawnIdRef.current++, now);
+      actors = [...actors, { ...arrival, spawnOf: index, hostile: true, lastSeenAt: now, lastSeenCell: { ...party } }];
+      pushLog(`${ACTOR_TYPES[spec.actor].name} arrives${standing ? " - another one" : ""}.`);
+    });
+    // lockdown: every unit knows where the crew is
+    if (level === 3 && now - lastHuntRef.current > LOCKDOWN_HUNT_MS) {
+      lastHuntRef.current = now;
+      const party = { ...posRef.current };
+      actors = actors.map((a) =>
+        a.diedAt !== null || a.dormant || ACTOR_TYPES[a.type].passive ? a : { ...a, fooled: false, hostile: true, lastSeenAt: now, lastSeenCell: party },
+      );
+    }
+    if (actors !== actorsRef.current) updateActorsRef.current(actors);
+  };
+  const alertShownRef = useRef(0);
+
   // (the last crewmate fallen: the run lost - aiming dropped, the actors
   // calmed down; true if so)
   const wipeIfDownRef = useRef<() => boolean>(() => false);
@@ -235,6 +318,17 @@ export function useGameState() {
     return true;
   };
 
+  // The ship's alert: up with time aboard (faster on a ship with tight
+  // security - its `locks` mood) and with noise; each level up wakes the
+  // actors waiting for it (see ActorWake), and at lockdown every unit hunts
+  // the crew. Game time: bullet time slows it too.
+  const alertRef = useRef(0);
+  const [alertShown, setAlertShown] = useState(0);
+  const alertLevelRef = useRef(0);
+  const raiseAlert = useCallback((amount: number) => {
+    alertRef.current = Math.max(0, Math.min(ALERT_MAX, alertRef.current + amount));
+  }, []);
+
   // the deck's actors, reset with each deck; they walk on while the deck
   // is shown
   const [actors, setActors] = useState<ActorState[]>(() => createActors(map, gameClock.now()));
@@ -245,7 +339,10 @@ export function useGameState() {
   const killedRef = useRef(new Set<string>());
   const [kills, setKills] = useState(0);
   const actorKey = useCallback(
-    (m: GameMap, id: number) => `${variationRef.current?.seed ?? 0}|${m.id}|actor ${(fullMapRef.current.actors ?? []).indexOf(m.actors?.[id] as never)}`,
+    (m: GameMap, id: number) =>
+      id >= SPAWN_ID
+        ? `${variationRef.current?.seed ?? 0}|${m.id}|spawn ${id}`
+        : `${variationRef.current?.seed ?? 0}|${m.id}|actor ${(fullMapRef.current.actors ?? []).indexOf(m.actors?.[id] as never)}`,
     [],
   );
   const updateActors = useCallback(
@@ -267,10 +364,16 @@ export function useGameState() {
   updateActorsRef.current = updateActors;
   useEffect(() => {
     const now = gameClock.now();
+    nextArrivalRef.current = new Map();
     updateActors(
-      createActors(map, now).map((a) => (killedRef.current.has(actorKey(map, a.id)) ? { ...a, hp: 0, diedAt: now - 1e6 } : a)),
+      createActors(map, now, alertLevelRef.current, variationRef.current === null, variationRef.current?.mood.robots).map((a) =>
+        killedRef.current.has(actorKey(map, a.id)) ? { ...a, hp: 0, diedAt: now - 1e6 } : a,
+      ),
     );
   }, [map, updateActors, actorKey]);
+  // reinforcements: when each "arrive" actor comes next (by its index)
+  const nextArrivalRef = useRef(new Map<number, number>());
+  const spawnIdRef = useRef(SPAWN_ID);
   // the map editor: the world holds still (no enemies moving or firing)
   const frozenRef = useRef(false);
   const setWorldFrozen = useCallback((on: boolean) => {
@@ -302,6 +405,7 @@ export function useGameState() {
     const timer = setInterval(() => {
       const m = mapRef.current;
       if (readyMapRef.current !== m.id || frozenRef.current) return;
+      if (variationRef.current && wipedRef.current === null) alertTick(m);
       // (a downed crew is nowhere to them: they lose it and go back)
       const { actors: next, attacks } = stepActors(
         m,
@@ -436,6 +540,7 @@ export function useGameState() {
         pushLog(`${mate.name} misses${result.hit === "nothing" ? "." : ` and hits the ${result.hit}.`}`);
       }
       aimFiredRef.current = true;
+      raiseAlert(ALERT_NOISE.shot + (result.kind === "actor" && actorsRef.current.find((a) => a.id === result.actor)?.diedAt != null ? ALERT_NOISE.kill : 0));
       if (!last) return;
       setReadyAt((prev) => prev.map((t, i) => (i === current.crew ? now + weapon.cooldownMs : t)));
       endAim();
@@ -507,6 +612,7 @@ export function useGameState() {
       const ms = HACK_MS * lock.hack;
       busyUntilRef.current = performance.now() + ms;
       pushLog(`${h.name} jacks into the lock... (-${cost} EN)`);
+      raiseAlert(ALERT_NOISE.hack);
       setTimeout(() => {
         pushLog(`${h.name} cracks it: the lock clicks open.`);
         done();
@@ -529,6 +635,7 @@ export function useGameState() {
       if (!open) return false;
       if (code !== open.lock.pin) {
         pushLog(`Keypad: ${code || "----"} - ACCESS DENIED.`);
+        raiseAlert(ALERT_NOISE.wrongCode);
         return false;
       }
       closeKeypad();
@@ -621,6 +728,7 @@ export function useGameState() {
         if (step.kind === "set" || step.kind === "clear") raiseFlag(step.value, step.kind === "set");
         else if (step.kind === "log") pushLog(step.value);
         else if (step.kind === "show") storyRef.current.show(step.value, true);
+        else if (step.kind === "alert") raiseAlert(step.amount);
         else if (step.kind === "unlock" || step.kind === "open") {
           raiseFlag(unlockedFlag(mapRef.current.id, step.cell), true);
           if (step.kind === "open") storyRef.current.open(step.cell);
@@ -870,14 +978,21 @@ export function useGameState() {
     });
   }, []);
   // a container's contents: put in by hand, or rolled from its table
+  // (behind a lock that's on in this ship: the vault's on top)
+  const behindLock = useMemo(() => lockedAway(map, plan), [map, plan]);
   const lootOf = useCallback(
     (spec: PropSpec) => {
       const key = lootKey("prop", (fullMap.props ?? []).indexOf(spec));
-      if (looted.has(key)) return { key, items: [] as ItemStack[] };
+      if (looted.has(key)) return { key, items: [] as ItemStack[], vault: false };
       const table = PROP_TYPES[spec.prop]?.container;
-      return { key, items: spec.loot ?? (table ? rollLoot(table, key) : []) };
+      const vault = !spec.loot && !!table && behindLock.has(`${spec.cell.x},${spec.cell.y}`);
+      const own = spec.loot ?? (table ? rollLoot(table, key) : []);
+      if (!vault) return { key, items: own, vault };
+      const items = new Map(own.map((s) => [s.item, s.count]));
+      for (const s of rollLoot("vault", `${key}|vault`)) items.set(s.item, (items.get(s.item) ?? 0) + s.count);
+      return { key, items: [...items].map(([item, count]) => ({ item, count })), vault };
     },
-    [fullMap, lootKey, looted],
+    [fullMap, lootKey, looted, behindLock],
   );
   // the indices (in the played map) of the containers emptied and the loose
   // items taken, for the view
@@ -1023,6 +1138,37 @@ export function useGameState() {
     setLooted((prev) => new Set([...prev, ...keys]));
   }, [map, pos, dir, startLift, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey, showTerminal, openDoors, doorLock, openLock, raiseFlag]);
 
+  // What the map shows of the deck's loot (a scan of sorts): where some
+  // lies - in containers not yet searched, on the floor, in wrecks not yet
+  // salvaged - and whether it's a little or a lot (a lot: behind a lock, or
+  // worth LOOT_BIG credits); and the doors still locked.
+  const lootMarks = useMemo(() => {
+    const marks: { x: number; y: number; big: boolean }[] = [];
+    for (const spec of map.props ?? []) {
+      if (!PROP_TYPES[spec.prop]?.container) continue;
+      const { items, vault } = lootOf(spec);
+      if (items.length) marks.push({ ...spec.cell, big: vault || stacksValue(items) >= LOOT_BIG });
+    }
+    (map.items ?? []).forEach((it, i) => {
+      if (takenItems.has(i)) return;
+      marks.push({ ...it.cell, big: stacksValue([{ item: it.item, count: it.count ?? 1 }]) >= LOOT_BIG });
+    });
+    for (const a of actors) {
+      const table = ACTOR_TYPES[a.type].loot;
+      if (a.diedAt === null || !table || looted.has(`${actorKey(map, a.id)} wreck`)) continue;
+      const items = rollLoot(table, actorKey(map, a.id));
+      if (items.length) marks.push({ ...a.cell, big: stacksValue(items) >= LOOT_BIG });
+    }
+    return marks;
+  }, [map, lootOf, takenItems, actors, looted, actorKey]);
+  const lockedDoors = useMemo(
+    () =>
+      (map.doors ?? []).flatMap((d) => (doorLock(d.cell) ? [`${d.cell.x},${d.cell.y}`] : [])),
+    // (a door unlocked raises a flag)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [map, doorLock, plan, flags],
+  );
+
   // The run: it ends when the party leaves the ship through an exit (see
   // ExitSpec); what it hauled then goes to the stash, and the next run
   // starts clean - nothing taken, nobody destroyed, the crew patched up.
@@ -1040,6 +1186,10 @@ export function useGameState() {
     }
     setWipedAt(null);
     wipedRef.current = null;
+    alertRef.current = 0;
+    alertLevelRef.current = 0;
+    alertShownRef.current = 0;
+    setAlertShown(0);
     setHaul({});
     setLooted(new Set());
     setSpills([]);
@@ -1132,6 +1282,8 @@ export function useGameState() {
             return { ...a, hp, hitAt: gameClock.now(), diedAt: hp ? null : gameClock.now() };
           }),
         ),
+      // the ship's alert up (or down) that much, e.g. 40 (to see its levels)
+      __voidcrewAlert: (amount: number) => raiseAlert(amount),
       // the whole crew down at once (to see a lost run)
       __voidcrewDownAll: () => {
         crewRef.current = crewRef.current.map((c) => ({ ...c, hp: 0 }));
@@ -1148,6 +1300,8 @@ export function useGameState() {
     haul,
     lootedProps,
     takenItems,
+    lootMarks,
+    lockedDoors,
     spills,
     kills,
     runEnd,
@@ -1198,5 +1352,6 @@ export function useGameState() {
     hackKeypad,
     closeKeypad,
     plan,
+    alert: alertShown,
   };
 }

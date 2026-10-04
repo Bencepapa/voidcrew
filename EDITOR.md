@@ -239,7 +239,11 @@ rolled mood and can set each part instead.
 in (facing the party) and picks it; a click on a robot picks it, the right
 button takes it out. With one picked, Shift+click on a floor adds that
 cell to its patrol route (starting from where it stands); its panel sets
-its facing and chance, and clears its route.
+its facing and chance, and clears its route. Until alert makes it wait for
+the ship's alert level (`wake` in the map): dormant (powered down), fooled
+by the crew's IDs (goes its rounds, ignores them), or arrives (not there
+yet - then comes, again every few seconds up to Max: reinforcements). A
+hit wakes a dormant or fooled one at once.
 
 ## Lights
 

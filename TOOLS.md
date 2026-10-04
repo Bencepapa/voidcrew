@@ -344,7 +344,8 @@ now; locks and a decal's action are set in the editor (Door, Decal tools).
 | `sets`, `name` (items) | a story item: picking it up raises the flag, and the log calls it by its name (`"name": "red keycard"`) |
 | `triggers` | `{ "on": "enter" \| "open" \| "read" \| "pickup" \| "start", ..., "if"?: ["flag", "!flag"], "do": [...], "repeat"?: true }` - `enter`/`open`: `x`, `y` (a cell, a door's cell); `read`: `terminal`; `pickup`: `item` (unset: any); `start`: arriving on the deck. Once a run, unless `repeat` |
 
-Actions (`do`): `set:flag`, `clear:flag`, `log:text`, `show:terminal`
+Actions (`do`): `set:flag`, `clear:flag`, `log:text`, `alert:N` (the
+ship's alert up by N, or down), `show:terminal`
 (opens it, past its lock), `unlock:x,y` (a door's lock off), `open:x,y`
 (unlocked and opened).
 
@@ -386,6 +387,24 @@ Base → scan → run → base (`phase` in src/App.tsx; opened with `?map=` or
 - **Run**: Use (Space) searches crates and wrecks and, on an exit, leaves
   the ship; Shift+1..4 switches a crewmate's weapon. The run's summary banks
   the haul into the stash.
+- **Behind a lock** (shipPlan.ts `lockedAway`): a container only reached
+  through a door whose lock is on in this ship holds the `vault` table's
+  loot on top of its own. A code is never placed behind its own lock.
+- **The map's loot marks**: a dot where a little loot lies (a container not
+  yet searched, an item, a wreck not yet salvaged), a glowing diamond where
+  a lot does (behind a lock, or worth 60+ credits); locked doors show amber.
+- **Ship security (alert)**: a meter over the view, 0-100: calm,
+  suspicious (34), alert (67), lockdown (100). It rises with the time aboard
+  (full in 8 min; faster on tight-security ships, slower on lax ones - the
+  `locks` mood) and with noise: each shot 4, a kill 8 more, a hack 8, a
+  wrong code 4, and a trigger's `alert:N`. Each level wakes the actors
+  waiting for it (`wake` - see EDITOR.md, Robot); at lockdown every unit
+  hunts the crew. The ship also rolls (secretly, never on the scan) how
+  its robots take the crew until the alert: `robots` dormant, fooled by
+  their IDs, or hostile - all the same, so the players find out; a robot
+  with its own `wake` keeps it (special ships). Bullet time slows it like
+  the rest. Console:
+  `__voidcrewAlert(40)`.
 - **Lost run**: the last crewmate down, the view drops to the floor and
   fades while the robots go back to their rounds; the haul stays aboard.
 - **Recovery** (meta.ts `revivalBill`): back at the base the crew is whole

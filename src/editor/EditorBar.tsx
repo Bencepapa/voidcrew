@@ -9,6 +9,7 @@
 // pick. The row of the surface under the pointer is marked.
 
 import type { Lock } from "../game/story";
+import type { ActorWake } from "../game/types";
 import { useEffect, useState } from "react";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { fetchDecalManifest } from "../render/decals";
@@ -56,7 +57,7 @@ interface Props {
   robotChoice: string;
   onRobotChoice: (type: string) => void;
   actor: ActorInfo | null;
-  onActorChange: (patch: { facing?: Direction; chance?: number } & Linked) => void;
+  onActorChange: (patch: { facing?: Direction; chance?: number; wake?: ActorWake } & Linked) => void;
   onActorClearRoute: () => void;
   onActorDelete: () => void;
   onActorDeselect: () => void;
@@ -155,6 +156,8 @@ export interface ActorInfo {
   // how many cells its patrol route has (0: it stands)
   route: number;
   links: Linked;
+  // waiting for the ship's alert (see ActorWake)
+  wake?: ActorWake;
 }
 
 // a door's lock with a change: none once it has neither a key nor a hack
@@ -519,6 +522,39 @@ export function EditorBar(p: Props) {
                   ))}
                 </span>
                 {chanceSlider(p.actor.chance, (chance) => p.onActorChange({ chance }))}
+                <label
+                  className="flex items-center gap-1"
+                  title="Until the ship's alert reaches a level: powered down, taking the crew for its own (fake IDs), or not there yet (reinforcements)"
+                >
+                  Until alert
+                  <select
+                    value={p.actor.wake ? `${p.actor.wake.mode} ${p.actor.wake.level}` : ""}
+                    onChange={(e) => {
+                      const [mode, level] = e.target.value.split(" ");
+                      const keep = p.actor!.wake?.mode === "arrive" && mode === "arrive" ? p.actor!.wake : {};
+                      p.onActorChange({
+                        wake: mode ? ({ ...keep, mode, level: Number(level) } as ActorWake) : undefined,
+                      });
+                    }}
+                    className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
+                  >
+                    <option value="">on guard from the start</option>
+                    {(["dormant", "fooled", "arrive"] as const).flatMap((mode) =>
+                      ([1, 2, 3] as const).map((level) => (
+                        <option key={`${mode} ${level}`} value={`${mode} ${level}`}>
+                          {mode === "dormant" ? "dormant" : mode === "fooled" ? "fooled by IDs" : "arrives"} until{" "}
+                          {["", "suspicious", "alert", "lockdown"][level]}
+                        </option>
+                      )),
+                    )}
+                  </select>
+                </label>
+                {p.actor.wake?.mode === "arrive" &&
+                  slider("Every (s)", p.actor.wake.every ?? 30, 10, 120, 5, (v) =>
+                    p.onActorChange({ wake: { ...p.actor!.wake!, every: v === 30 ? undefined : v } }),
+                  )}
+                {p.actor.wake?.mode === "arrive" &&
+                  slider("Max", p.actor.wake.max ?? 1, 1, 5, 1, (v) => p.onActorChange({ wake: { ...p.actor!.wake!, max: v === 1 ? undefined : v } }))}
                 {linkFields(p.actor.links, p.linkIds, p.onActorChange)}
                 <span className="text-neutral-400">{p.actor.route ? `route: ${p.actor.route} cells` : "stands"}</span>
                 {p.actor.route > 0 && (

@@ -4,7 +4,7 @@ import { PROP_TYPES } from "./props";
 import { passage } from "./heights";
 import { lineOfSight } from "./visibility";
 import type { Body } from "./heights";
-import type { ActorSpec, Direction, GameMap, Vec2 } from "./types";
+import type { ActorSpec, Direction, GameMap, Vec2, ActorWake } from "./types";
 
 // Moving actors (robots, NPCs, enemies): each stands in a cell, walks cell
 // to cell along its patrol route and is drawn as a Doom-style sprite that
@@ -442,17 +442,50 @@ export interface ActorState {
   // when it was last hit (a flash) and when it died (game time)
   hitAt: number;
   diedAt: number | null;
+  // waiting for the alert (see ActorWake): powered down, or taking the crew
+  // for its own
+  dormant: boolean;
+  fooled: boolean;
+  // one of the reinforcements of an "arrive" actor (its index in the map's
+  // actors)
+  spawnOf?: number;
 }
 
 // (the map loader can't check actor types: actors.ts imports the map
 // module, so this does)
-export function createActors(map: GameMap, now: number): ActorState[] {
-  const known = (map.actors ?? []).filter((spec) => {
-    if (ACTOR_TYPES[spec.actor]) return true;
-    console.error(`${map.id}: unknown actor "${spec.actor}" at ${spec.cell.x},${spec.cell.y}`);
-    return false;
+// The deck's actors (each with its index in the map's actors as its id), as
+// they are at the ship's alert `level`: the ones waiting for a higher one
+// dormant or fooled - and the ones yet to arrive not there (unless `all`:
+// the map editor shows every one).
+// `stance`: how the ship's robots take the crew (see ShipMood.robots).
+export function createActors(map: GameMap, now: number, level = 0, all = false, stance: Stance = "hostile"): ActorState[] {
+  return (map.actors ?? []).flatMap((spec, id) => {
+    if (!ACTOR_TYPES[spec.actor]) {
+      console.error(`${map.id}: unknown actor "${spec.actor}" at ${spec.cell.x},${spec.cell.y}`);
+      return [];
+    }
+    const wake = actorWake(spec, stance);
+    const waiting = wake && level < wake.level && !all;
+    if (waiting && wake.mode === "arrive") return [];
+    const actor = actorFromSpec(map, spec, id, now);
+    return [{ ...actor, dormant: !!waiting && wake.mode === "dormant", fooled: !!waiting && wake.mode === "fooled" }];
   });
-  return known.map((spec: ActorSpec, id) => ({
+}
+
+export type Stance = "dormant" | "fooled" | "hostile";
+// the level an actor waits for, and how: its own (set by hand), else the
+// ship's stance - dormant or fooled until the alert (not for the harmless
+// ones: they keep to themselves anyway)
+export const STANCE_WAKES_AT = 2;
+export function actorWake(spec: ActorSpec, stance: Stance): ActorWake | undefined {
+  if (spec.wake) return spec.wake;
+  if (stance === "hostile" || ACTOR_TYPES[spec.actor]?.passive) return undefined;
+  return { level: STANCE_WAKES_AT, mode: stance };
+}
+
+// an actor as its spec places it, on guard
+export function actorFromSpec(map: GameMap, spec: ActorSpec, id: number, now: number): ActorState {
+  return {
     id,
     type: spec.actor,
     cell: spec.cell,
@@ -479,7 +512,9 @@ export function createActors(map: GameMap, now: number): ActorState[] {
     slowedUntil: 0,
     hitAt: -1e9,
     diedAt: null,
-  }));
+    dormant: false,
+    fooled: false,
+  };
 }
 
 export function actorMoving(actor: ActorState, now: number): boolean {
@@ -567,6 +602,10 @@ export function stepActors(
       a = { ...a, ...patch };
       changed = true;
     };
+    // waiting for the alert: a hit wakes it (then it knows where the party
+    // is); else a dormant one stands still, a fooled one goes its rounds
+    if ((a.dormant || a.fooled) && a.hitAt > a.lastSeenAt) update({ dormant: false, fooled: false });
+    if (a.dormant) return a;
 
     // the surface it'd walk onto in a neighbouring cell (a walk - no drops,
     // no ladders - where it fits and nobody stands), or null
@@ -653,7 +692,7 @@ export function stepActors(
       dist < 1e-6 ||
       ((party.x - a.cell.x) * ahead.x + (party.y - a.cell.y) * ahead.y) / dist >= Math.cos(((type.fieldOfView / 2) * Math.PI) / 180);
     const line = dist <= type.huntSight && clearLine(a.cell, party, eyes(a.y));
-    const sees = line && (a.hostile ? dist <= type.huntSight : (inView && dist <= type.sight) || dist <= type.hearing);
+    const sees = !a.fooled && line && (a.hostile ? dist <= type.huntSight : (inView && dist <= type.sight) || dist <= type.hearing);
 
     // a shot it didn't see coming: now it knows where the party is
     if (a.hitAt > a.lastSeenAt) {

@@ -22,6 +22,10 @@ export interface ShipMood {
   smoke: "clear" | "hazy" | "smoky";
   doors: "few" | "some" | "many";
   locks: "few" | "some" | "many";
+  // how the ship's robots take the crew until its alert is up (see
+  // ActorWake): powered down, fooled by their IDs, or on guard - the same
+  // for all of them (one set by hand keeps its own); never shown on the scan
+  robots: "dormant" | "fooled" | "hostile";
 }
 export const MOOD_LEVELS: { [K in keyof ShipMood]: ShipMood[K][] } = {
   light: ["dark", "dim", "bright"],
@@ -30,6 +34,7 @@ export const MOOD_LEVELS: { [K in keyof ShipMood]: ShipMood[K][] } = {
   smoke: ["clear", "hazy", "smoky"],
   doors: ["few", "some", "many"],
   locks: ["few", "some", "many"],
+  robots: ["dormant", "fooled", "hostile"],
 };
 export const MOOD_KEYS = Object.keys(MOOD_LEVELS) as (keyof ShipMood)[];
 // what each level does to an item's odds (the low, middle and high level):
@@ -70,7 +75,7 @@ export function moodOf(seed: number): ShipMood {
 }
 
 export const moodText = (mood: ShipMood) =>
-  `${mood.light}, ${mood.threat} threat, ${mood.clutter}, ${mood.smoke}, ${mood.doors} doors, ${mood.locks} locks`;
+  `${mood.light}, ${mood.threat} threat, ${mood.clutter}, ${mood.smoke}, ${mood.doors} doors, ${mood.locks} locks, ${mood.robots} robots`;
 
 // One item's roll: kept if its chance (its odds shifted by the mood) comes
 // up - and the items it's linked to agree (see Linked): the one it's only

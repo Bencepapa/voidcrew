@@ -45,6 +45,7 @@ import { ActionMenu } from "./components/ActionMenu";
 import { HaulPanel } from "./components/HaulPanel";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { KeypadPanel } from "./components/KeypadPanel";
+import { AlertMeter } from "./components/AlertMeter";
 import type { Lock } from "./game/story";
 import { RunSummary } from "./components/RunSummary";
 import { ITEM_TYPES, itemSpot } from "./game/items";
@@ -71,6 +72,8 @@ export default function App() {
     haul,
     lootedProps,
     takenItems,
+    lootMarks,
+    lockedDoors,
     spills,
     kills,
     runEnd,
@@ -84,6 +87,7 @@ export default function App() {
     enterCode,
     hackKeypad,
     closeKeypad,
+    alert,
     inLift,
     ride,
     actors,
@@ -667,7 +671,7 @@ export default function App() {
   const selectedActorInfo: ActorInfo | null = (() => {
     const spec = selectedActor === null ? undefined : map.actors?.[selectedActor];
     return spec
-      ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length, links: linksOf(spec) }
+      ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length, links: linksOf(spec), wake: spec.wake }
       : null;
   })();
   const changeActor = (patch: Parameters<typeof updateActor>[2], merge?: string) => {
@@ -1300,6 +1304,7 @@ export default function App() {
   const overlays = (
     <>
       {haulOpen && !editMode && !runEnd && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
+      {!editMode && phase === "run" && !runEnd && <AlertMeter alert={alert} compact={compact} />}
       {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
       {keypad && !editMode && (
         <KeypadPanel title={keypad.title} hack={keypad.hack} hacker={keypad.hacker} onCode={enterCode} onHack={hackKeypad} onClose={closeKeypad} />
@@ -1506,7 +1511,7 @@ export default function App() {
         </div>
 
         <div className="absolute top-2 left-2 w-28 flex flex-col gap-1 pointer-events-none">
-          <Minimap map={map} pos={pos} dir={dir} compact />
+          <Minimap map={map} pos={pos} dir={dir} compact loot={editMode ? undefined : lootMarks} locked={lockedDoors} />
           <div className="h-16">
             <LogPanel log={log} compact />
           </div>
@@ -1554,7 +1559,7 @@ export default function App() {
     <div className="h-screen w-screen flex flex-col p-2 gap-2 font-sans">
       <div className="flex-1 flex gap-2 min-h-0">
         <div className="w-56 flex flex-col gap-2">
-          <Minimap map={map} pos={pos} dir={dir} />
+          <Minimap map={map} pos={pos} dir={dir} loot={editMode ? undefined : lootMarks} locked={lockedDoors} />
           <div className="text-[10px] text-neutral-500 px-1">
             <div>{map.name}</div>
             <div>Deck {map.deck} &middot; Day 17</div>

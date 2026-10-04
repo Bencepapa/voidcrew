@@ -91,6 +91,21 @@ export const LOOT_TABLES: Record<string, LootTable> = {
       { item: "powercell", weight: 10, count: [1, 1] },
     ],
   },
+  // what's kept behind a lock (on top of the container's own): the good
+  // stuff (see shipPlan.ts lockedAway)
+  vault: {
+    rolls: [2, 4],
+    empty: 0,
+    entries: [
+      { item: "credits", weight: 14, count: [1, 2] },
+      { item: "datachip", weight: 12, count: [1, 1] },
+      { item: "powercell", weight: 16, count: [1, 2] },
+      { item: "servo", weight: 14, count: [1, 2] },
+      { item: "circuit", weight: 16, count: [1, 3] },
+      { item: "medkit", weight: 12, count: [1, 2] },
+      { item: "ammo", weight: 8, count: [2, 3] },
+    ],
+  },
   medical: {
     rolls: [1, 2],
     empty: 0.2,
@@ -142,6 +157,11 @@ export function rollLoot(tableId: string, key: string): ItemStack[] {
     out.set(entry.item, (out.get(entry.item) ?? 0) + count);
   }
   return [...out].map(([item, count]) => ({ item, count }));
+}
+
+// what stacks are worth at the base (credits)
+export function stacksValue(stacks: ItemStack[]): number {
+  return stacks.reduce((sum, s) => sum + s.count * (ITEM_TYPES[s.item]?.value ?? 0), 0);
 }
 
 // "3 × Scrap metal, 1 × Power cell"
