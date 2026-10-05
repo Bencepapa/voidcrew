@@ -101,6 +101,58 @@ export interface ActorType {
   // while it keeps seeing it); its rows: watching the crew, raising the
   // alarm
   watcher?: { alert: number; watchRow: number; alarmRow: number };
+  // whose side it's on (see FOES): the ship's robots (the default), the
+  // aliens, the infected, the survivors
+  faction?: Faction;
+  // it fights hand to hand: no gun, no muzzle flash
+  melee?: boolean;
+  // it gets about in leaps: a take-off row, a row in the air, how high it
+  // leaps (wall heights)
+  hop?: { takeoffRow: number; airRow: number; height: number };
+  // how much hurt it takes (`tolerance`: damage, wearing off at `decay` a
+  // second) before it breaks: flees (cornered, it fights on) or plays dead
+  // (and gets up again once it's worn off) - see scared
+  fear?: { tolerance: number; decay: number; mode: "flee" | "playDead" };
+  // a small crawler: it gets about on the ceiling (over everyone's heads,
+  // sharing their cells), drops on the crew only in its cell, and slips into
+  // the deck's vents (decals whose action is "vent") to come out of another
+  crawler?: boolean;
+}
+
+export type Faction = "robot" | "alien" | "infected" | "survivor";
+// Who fights whom besides the crew: each faction's foes, and whether only
+// right next to it ("adjacent": in its cell or the next) or as far as its
+// weapon reaches. The robots shoot aliens on sight (unless powered down) -
+// the infected and the survivors they take for crew; the aliens and the
+// infected hunt the crew and turn on others only when they're right there.
+const FOES: Record<Faction, Partial<Record<Faction, "reach" | "adjacent">>> = {
+  robot: { alien: "reach" },
+  alien: { robot: "adjacent", infected: "adjacent", survivor: "adjacent" },
+  infected: { robot: "adjacent", survivor: "adjacent", alien: "adjacent" },
+  survivor: { alien: "reach", infected: "reach" },
+};
+
+// how scared an actor is now (its fear wearing off since it was last hurt)
+export function fearOf(actor: ActorState, now: number): number {
+  const fear = ACTOR_TYPES[actor.type]?.fear;
+  if (!fear || !actor.fear) return 0;
+  return Math.max(0, actor.fear - (fear.decay * (now - (actor.fearAt ?? now))) / 1000);
+}
+// an actor hurt `damage` (by whoever's at `from`): its fear up - past its
+// tolerance it breaks (flees from there, or plays dead)
+export function scared(actor: ActorState, damage: number, now: number, from?: Vec2): ActorState {
+  const fear = ACTOR_TYPES[actor.type]?.fear;
+  if (!fear || actor.diedAt !== null) return actor;
+  const level = fearOf(actor, now) + damage;
+  const broken = level > fear.tolerance;
+  return {
+    ...actor,
+    fear: level,
+    fearAt: now,
+    fleeFrom: from ? { ...from } : actor.fleeFrom,
+    panicked: actor.panicked || (broken && fear.mode === "flee"),
+    playingDead: actor.playingDead || (broken && fear.mode === "playDead"),
+  };
 }
 
 // How an actor fights around its gun's cooldown. A dumb or heavily armored
@@ -494,6 +546,183 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     },
     crits: [],
   },
+  // A big alien: hunts the crew in long leaps, faster than a robot, claws
+  // only - lands on it, slashes, springs back; hurt past its tolerance it
+  // runs (cornered, it fights on). Robots shoot it on sight.
+  alien1: {
+    name: "A leaping alien",
+    sheet: "alien1",
+    cols: 5,
+    rows: 7,
+    cellAspect: 160 / 128,
+    height: 1.15,
+    body: { headroom: 0.75, step: 0.25 },
+    eyeHeight: 0.55,
+    moveMs: 420,
+    waitMs: 1400,
+    idleRow: 0,
+    walkRows: [0],
+    hop: { takeoffRow: 1, airRow: 2, height: 0.35 },
+    shootRow: 3,
+    hitRow: 4,
+    dieRows: [5],
+    wreckRow: 6,
+    faction: "alien",
+    melee: true,
+    fear: { tolerance: 35, decay: 7, mode: "flee" },
+    hp: 70,
+    damage: [6, 11],
+    attackRange: 1,
+    attackCooldownMs: 1700,
+    accuracy: 0.9,
+    falloff: 0,
+    sight: 6,
+    fieldOfView: 160,
+    huntSight: 9,
+    hearing: 2,
+    alertMs: 10000,
+    tactics: { shotPauseMs: 250, retreat: [1, 2], seeksCover: false, advance: true, closesIn: true, minRange: 1 },
+    parts: {
+      head: { label: "HEAD", zone: [0.38, 0.2, 0.62, 0.45] },
+      torso: { label: "THORAX", zone: [0.3, 0.38, 0.7, 0.68] },
+      armL: { label: "CLAWS", zone: [0.12, 0.4, 0.45, 0.85] },
+      armR: { label: "CLAWS", zone: [0.55, 0.4, 0.88, 0.85] },
+      legs: { label: "LEGS", zone: [0.28, 0.66, 0.72, 1] },
+    },
+    crits: [],
+  },
+  // A small alien: scuttles about on the ceiling in quick leaps, over
+  // everyone's heads, drops on the crew in its own cell to bite; hurt, it
+  // runs for a vent - and comes out of another one later
+  alien2: {
+    name: "A vent crawler",
+    sheet: "alien2",
+    cols: 5,
+    rows: 5,
+    cellAspect: 112 / 96,
+    height: 0.42,
+    body: { headroom: 0.25, step: 0.25 },
+    eyeHeight: 0.85,
+    moveMs: 330,
+    waitMs: 1200,
+    idleRow: 0,
+    walkRows: [0],
+    hop: { takeoffRow: 1, airRow: 1, height: 0.08 },
+    shootRow: 2,
+    hitRow: 3,
+    dieRows: [3],
+    wreckRow: 4,
+    faction: "alien",
+    melee: true,
+    crawler: true,
+    fear: { tolerance: 9, decay: 5, mode: "flee" },
+    hp: 18,
+    damage: [3, 6],
+    attackRange: 0,
+    attackCooldownMs: 1100,
+    accuracy: 0.9,
+    falloff: 0,
+    sight: 6,
+    fieldOfView: 360,
+    huntSight: 8,
+    hearing: 3,
+    alertMs: 8000,
+    tactics: { shotPauseMs: 200, retreat: [0, 0], seeksCover: false, advance: false, closesIn: true, minRange: 0 },
+    parts: {
+      head: { label: "MAW", zone: [0.35, 0.3, 0.65, 0.7] },
+      torso: { label: "BODY", zone: [0.25, 0.25, 0.75, 0.75] },
+      armL: { label: "LEGS", zone: [0.05, 0.3, 0.4, 1] },
+      armR: { label: "LEGS", zone: [0.6, 0.3, 0.95, 1] },
+      legs: { label: "TAIL", zone: [0.3, 0, 0.7, 0.35] },
+    },
+    crits: [],
+  },
+  // A survivor: holed up, never moving, never against the crew - and the
+  // robots take them for crew; they shoot the aliens and the infected
+  survivor1: {
+    name: "A survivor",
+    sheet: "survivor1",
+    cols: 5,
+    rows: 6,
+    cellAspect: 160 / 128,
+    height: 1.1,
+    body: { headroom: 0.75, step: 0.25 },
+    eyeHeight: 0.62,
+    moveMs: 900,
+    waitMs: 1800,
+    idleRow: 0,
+    walkRows: [0],
+    shootRow: 2,
+    hitRow: 3,
+    dieRows: [4],
+    wreckRow: 5,
+    faction: "survivor",
+    stationary: true,
+    hp: 30,
+    damage: [4, 8],
+    attackRange: 6,
+    attackCooldownMs: 1500,
+    accuracy: 0.8,
+    falloff: 0.1,
+    sight: 6,
+    fieldOfView: 360,
+    huntSight: 6,
+    hearing: 2,
+    alertMs: 6000,
+    tactics: { shotPauseMs: 400, retreat: [0, 0], seeksCover: false, advance: false, minRange: 0 },
+    parts: {
+      head: { label: "HEAD", zone: [0.4, 0.22, 0.6, 0.38] },
+      torso: { label: "CHEST", zone: [0.35, 0.36, 0.65, 0.62] },
+      armL: { label: "ARM", zone: [0.22, 0.36, 0.42, 0.66] },
+      armR: { label: "ARM", zone: [0.58, 0.36, 0.78, 0.66] },
+      legs: { label: "LEGS", zone: [0.36, 0.62, 0.64, 1] },
+    },
+    crits: [],
+  },
+  // An infected crew member: shambles after the crew and the survivors,
+  // claws them; hurt past its tolerance it drops and lies still as if dead -
+  // and gets up again once it's worn off. The robots take it for crew.
+  zombie1: {
+    name: "An infected crewman",
+    sheet: "zombie1",
+    cols: 5,
+    rows: 7,
+    cellAspect: 160 / 128,
+    height: 1.1,
+    body: { headroom: 0.75, step: 0.25 },
+    eyeHeight: 0.6,
+    moveMs: 1150,
+    waitMs: 2200,
+    idleRow: 0,
+    walkRows: [1, 0, 2, 0],
+    shootRow: 3,
+    hitRow: 4,
+    dieRows: [5],
+    wreckRow: 6,
+    faction: "infected",
+    melee: true,
+    fear: { tolerance: 20, decay: 4, mode: "playDead" },
+    hp: 45,
+    damage: [4, 8],
+    attackRange: 1,
+    attackCooldownMs: 1600,
+    accuracy: 0.85,
+    falloff: 0,
+    sight: 5,
+    fieldOfView: 140,
+    huntSight: 7,
+    hearing: 2,
+    alertMs: 12000,
+    tactics: { shotPauseMs: 400, retreat: [0, 0], seeksCover: false, advance: false, closesIn: true, minRange: 1 },
+    parts: {
+      head: { label: "HEAD", zone: [0.4, 0.2, 0.6, 0.36] },
+      torso: { label: "CHEST", zone: [0.35, 0.34, 0.65, 0.62] },
+      armL: { label: "CLAW", zone: [0.18, 0.34, 0.42, 0.72] },
+      armR: { label: "ARM", zone: [0.58, 0.34, 0.82, 0.72] },
+      legs: { label: "LEGS", zone: [0.36, 0.62, 0.64, 1] },
+    },
+    crits: [],
+  },
 };
 
 export interface ActorState {
@@ -554,6 +783,16 @@ export interface ActorState {
   // way it faces), and the way it faces when it's done looking
   lookAt?: Vec2 | null;
   homeFacing?: Direction;
+  // its fear (see scared): how much, as of when; broken by it - fleeing, or
+  // lying still playing dead
+  fear?: number;
+  fearAt?: number;
+  // where what hurt it last was (what it flees from)
+  fleeFrom?: Vec2;
+  panicked?: boolean;
+  playingDead?: boolean;
+  // a crawler in the vents: out again then (game time)
+  inVentUntil?: number | null;
 }
 
 // (the map loader can't check actor types: actors.ts imports the map
@@ -584,7 +823,8 @@ export type Stance = "dormant" | "fooled" | "hostile";
 export const STANCE_WAKES_AT = 2;
 export function actorWake(spec: ActorSpec, stance: Stance): ActorWake | undefined {
   if (spec.wake) return spec.wake;
-  if (stance === "hostile" || ACTOR_TYPES[spec.actor]?.passive) return undefined;
+  const type = ACTOR_TYPES[spec.actor];
+  if (stance === "hostile" || type?.passive || (type?.faction ?? "robot") !== "robot") return undefined;
   return { level: STANCE_WAKES_AT, mode: stance };
 }
 
@@ -635,6 +875,9 @@ export function actorAt(actors: readonly ActorState[], cell: Vec2, now: number, 
     (a) =>
       a.diedAt === null &&
       !ACTOR_TYPES[a.type]?.ceiling &&
+      !ACTOR_TYPES[a.type]?.crawler &&
+      !a.playingDead &&
+      !a.inVentUntil &&
       ((a.cell.x === cell.x && a.cell.y === cell.y && level(a.y)) ||
         (actorMoving(a, now) && a.from.x === cell.x && a.from.y === cell.y && level(a.fromY))),
   );
@@ -658,6 +901,9 @@ export interface AllyShot {
 // how much a fooled robot finding the crew in a restricted area puts the
 // alert up
 const RESTRICTED_ALERT = 25;
+// how long a crawler stays in the vents (game ms, at least / at most)
+const VENT_MS: [number, number] = [6000, 14000];
+
 // how long a fixture keeps looking where it last saw the crew before it
 // turns back (unless it's raised the alarm: then its type's alertMs)
 const WATCH_HOLD_MS = 3000;
@@ -711,6 +957,9 @@ export function stepActors(
   const attacks: ActorAttack[] = [];
   const alarms: ActorAlarm[] = [];
   const allyShots: AllyShot[] = [];
+  // the deck's vents (the cells their decals are seen from)
+  const vents = [...new Map((map.decals ?? []).filter((d) => d.action === "vent").map((d) => [`${d.cell.x},${d.cell.y}`, d.cell])).values()];
+  const ventCells = new Set(vents.map((c) => `${c.x},${c.y}`));
   // where the crew mustn't be (see GameMap.restricted)
   const restricted = new Set((map.restricted ?? []).map((c) => `${c.x},${c.y}`));
   const partyRestricted = restricted.has(`${party.x},${party.y}`);
@@ -740,6 +989,20 @@ export function stepActors(
       if (a.watching) update({ watching: false });
       return a;
     }
+    // in the vents: out of another one, once it's time
+    if (a.inVentUntil) {
+      if (now < a.inVentUntil) return a;
+      const others = vents.filter((c) => !same(c, a.cell));
+      const out = (others.length ? others : vents)[Math.floor(Math.random() * Math.max(1, (others.length || vents.length)))] ?? a.cell;
+      update({ inVentUntil: null, cell: out, from: out, y: floorHeight(map, out.x, out.y), fromY: floorHeight(map, out.x, out.y), moveStart: now - 1e6, waitUntil: now + 600 });
+      return a;
+    }
+    // hurt past its tolerance: fleeing or playing dead, until it's worn off
+    if (type.fear && (a.panicked || a.playingDead) && fearOf(a, now) <= 0) {
+      update({ panicked: false, playingDead: false, fear: 0, waitUntil: now + (a.playingDead ? 700 : 0) });
+      return a;
+    }
+    if (a.playingDead) return a;
     // (its changes land on `a` here, through update)
     if (type.stationary) {
       stepFixture(a, type, update);
@@ -754,8 +1017,13 @@ export function stepActors(
       if (door && !isDoorOpen(door)) return null;
       const way = passage(map, a.cell, a.y, to, dir, type.body);
       if (way.kind !== "walk") return null;
-      const partyThere = !type.passive && same(to, party) && Math.abs(way.y - partyY) < 1e-6;
-      if (partyThere || actors.some((o) => o !== actor && actorAt([o], to, now, way.y))) return null;
+      // (a small harmless one slips past anyone, and anyone past it - and
+      // a crawler on the ceiling over everyone's heads: only two that both
+      // stand their ground can't share a cell)
+      const slips = type.passive || type.crawler;
+      const partyThere = !slips && same(to, party) && Math.abs(way.y - partyY) < 1e-6;
+      const blocks = (o: ActorState) => !slips && !ACTOR_TYPES[o.type].passive;
+      if (partyThere || actors.some((o) => o !== actor && blocks(o) && actorAt([o], to, now, way.y))) return null;
       return way.y;
     };
     const canStep = (to: Vec2, dir: Direction) => stepY(to, dir) !== null;
@@ -796,6 +1064,30 @@ export function stepActors(
       update({ facing: tries[0] ?? a.facing, waitUntil: now + 500 });
       return a;
     };
+
+    // Broken (see scared): it flees from the crew - a crawler into a vent
+    // if it's at one - unless it's cornered: then it fights on
+    if (a.panicked) {
+      if (type.crawler && ventCells.has(`${a.cell.x},${a.cell.y}`)) {
+        update({ inVentUntil: now + VENT_MS[0] + Math.random() * (VENT_MS[1] - VENT_MS[0]), hostile: false });
+        return a;
+      }
+      const threat = a.fleeFrom ?? party;
+      let best: { to: Vec2; dir: Direction; score: number } | null = null;
+      for (const { to, dir } of neighbours()) {
+        const away = Math.hypot(threat.x - to.x, threat.y - to.y) - Math.hypot(threat.x - a.cell.x, threat.y - a.cell.y);
+        if (away <= 0) continue;
+        const hidden = !clearLine(to, threat, eyes(stepY(to, dir) ?? a.y));
+        const score = away * 2 + (hidden ? 3 : 0) + (type.crawler && ventCells.has(`${to.x},${to.y}`) ? 4 : 0) + Math.random() * 0.5;
+        if (!best || score > best.score) best = { to, dir, score };
+      }
+      if (best) return stepTo(best.to, best.dir, undefined, 1.3);
+    }
+    // a crawler at a vent, nothing to hunt: now and then it slips in
+    if (type.crawler && !a.hostile && ventCells.has(`${a.cell.x},${a.cell.y}`) && Math.random() < 0.08) {
+      update({ inVentUntil: now + VENT_MS[0] + Math.random() * (VENT_MS[1] - VENT_MS[0]) });
+      return a;
+    }
 
     // A harmless one: hit, it flees - each step to the neighbouring cell
     // farthest from the party, out of its sight if it can; else it goes
@@ -931,6 +1223,16 @@ export function stepActors(
     }
     }
 
+    if (a.patrol.length < 2 && (type.faction === "alien" || type.faction === "infected")) {
+      const open = neighbours();
+      if (!open.length || Math.random() < 0.3) {
+        update({ waitUntil: now + type.waitMs * (0.5 + Math.random()) });
+        return a;
+      }
+      const ahead = open.find((n) => n.dir === a.facing);
+      const next = ahead && Math.random() < 0.6 ? ahead : open[Math.floor(Math.random() * open.length)];
+      return stepTo(next.to, next.dir);
+    }
     let { target, forward } = a;
     if (same(a.cell, a.patrol[target])) {
       // arrived: pause, then head for the next point (turning back at the
@@ -944,12 +1246,42 @@ export function stepActors(
     }
     return walkToward(a.patrol[target]);
   });
-  return { actors: changed ? next : actors, attacks, alarms, allyShots };
+  // The fights between actors (not the crew - see FOES): each ready to
+  // attack, not busy with the crew this very moment, at the nearest foe in
+  // its reach (or right next to it)
+  const fighters = changed ? next : [...actors];
+  for (let i = 0; i < fighters.length; i++) {
+    const a = fighters[i];
+    const type = ACTOR_TYPES[a.type];
+    const faction = type.faction ?? "robot";
+    if (a.diedAt !== null || a.dormant || a.playingDead || a.panicked || a.inVentUntil || a.ally || type.passive || type.watcher) continue;
+    if (!type.damage[1] || a.lastAttack === now || now - a.lastAttack < type.attackCooldownMs || now < a.disarmedUntil) continue;
+    const eyes = a.y + type.eyeHeight;
+    let best: { o: ActorState; d: number } | null = null;
+    for (const o of fighters) {
+      // (one lying still as if dead fools them all)
+      if (o === a || o.diedAt !== null || o.inVentUntil || o.playingDead) continue;
+      const how = FOES[faction][ACTOR_TYPES[o.type].faction ?? "robot"];
+      if (!how || ACTOR_TYPES[o.type].passive) continue;
+      const d = Math.hypot(o.cell.x - a.cell.x, o.cell.y - a.cell.y);
+      const reach = how === "adjacent" ? 1.01 : Math.max(1.01, type.attackRange);
+      if (d > reach || (best && d >= best.d)) continue;
+      if (d > 1.01 && !lineOfSight(map, a.cell, o.cell, doorOpen, { from: eyes, to: o.y + ACTOR_TYPES[o.type].eyeHeight })) continue;
+      best = { o, d };
+    }
+    if (!best) continue;
+    const [lo, hi] = type.damage;
+    allyShots.push({ actor: a.id, target: best.o.id, damage: lo + Math.floor(Math.random() * (hi - lo + 1)) });
+    fighters[i] = { ...a, lastAttack: now, facing: toward(a.cell, best.o.cell), waitUntil: now + type.tactics.shotPauseMs };
+    changed = true;
+  }
+  return { actors: changed ? fighters : actors, attacks, alarms, allyShots };
 
   // A fixture's turn: it turns to the crew if it sees it - a turret fires
   // (or, on the crew's side, fires at the robots it sees), a camera calls
   // it in; fooled, only where the crew mustn't be
   function stepFixture(a: ActorState, type: ActorType, update: (patch: Partial<ActorState>) => void): ActorState {
+    if (type.faction === "survivor") return a;
     const dist = Math.hypot(party.x - a.cell.x, party.y - a.cell.y);
     const ahead = DIR_VECTOR[a.facing];
     // (once it has the crew in its eye it follows it round)

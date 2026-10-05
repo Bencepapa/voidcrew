@@ -9,7 +9,7 @@ import { rollLoot, stacksText, stacksValue } from "./items";
 import type { ItemStack, LootSpill } from "./items";
 import { PROP_TYPES, propHeight, propPlacement } from "./props";
 import type { ShipMood } from "./variation";
-import { ACTOR_TYPES, actorAt, actorFromSpec, actorWake, createActors, partyHitChance, stepActors } from "./actors";
+import { ACTOR_TYPES, actorAt, actorFromSpec, actorWake, createActors, partyHitChance, scared, stepActors } from "./actors";
 import { moodOdds } from "./variation";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
@@ -465,17 +465,24 @@ export function useGameState() {
             : `${type?.name ?? "Something"} challenges you: restricted area. Security is alerted.`,
         );
       }
-      // the crew's turrets firing at the robots
+      // the fights between actors (and the crew's turrets firing at the
+      // robots): the hurt take fright; the deaths the party sees are told
       for (const shot of allyShots) {
         const now = gameClock.now();
+        const from = next.find((a) => a.id === shot.actor)?.cell;
         next = next.map((a) => {
           if (a.id !== shot.target || a.diedAt !== null) return a;
           const hp = Math.max(0, a.hp - shot.damage);
           // (it doesn't take the hit for the crew's)
-          return { ...a, hp, hitAt: now, lastSeenAt: now, diedAt: hp ? null : now };
+          const hit = { ...a, hp, hitAt: now, lastSeenAt: now, diedAt: hp ? null : now };
+          return hp ? scared(hit, shot.damage, now, from) : hit;
         });
         const target = next.find((a) => a.id === shot.target);
-        if (target?.diedAt !== null && target) pushLog(`Your turret destroys ${ACTOR_TYPES[target.type].name.toLowerCase()}.`);
+        const shooter = next.find((a) => a.id === shot.actor);
+        if (target && shooter && target.diedAt !== null) {
+          const whose = shooter.ally ? "Your turret" : ACTOR_TYPES[shooter.type].name;
+          pushLog(`${whose} kills ${ACTOR_TYPES[target.type].name.toLowerCase()}.`);
+        }
       }
       if (next !== actorsRef.current) updateActors(next);
       // their shots may land on a random conscious crewmate: the farther
@@ -522,6 +529,7 @@ export function useGameState() {
     return actorsRef.current.filter(
       (a) =>
         a.diedAt === null &&
+        !a.inVentUntil &&
         sight.has(cellKey(a.cell.x, a.cell.y)) &&
         Math.hypot(a.cell.x - here.x, a.cell.y - here.y) <= range,
     );
@@ -591,7 +599,10 @@ export function useGameState() {
         if (target && target.diedAt === null) {
           const hit = applyHit(target, result.part, weapon, now, !!result.crit);
           const type = ACTOR_TYPES[target.type];
-          updateActors(actorsRef.current.map((a) => (a.id === target.id ? hit.actor : a)));
+          // (a living one takes fright - see scared)
+          const hurt = hit.killed ? hit.actor : scared(hit.actor, hit.damage, now, posRef.current);
+          if (!target.playingDead && hurt.playingDead) pushLog(`The ${type.name.toLowerCase().replace(/^an? /, "")} drops - dead?`);
+          updateActors(actorsRef.current.map((a) => (a.id === target.id ? hurt : a)));
           pushLog(
             `${mate.name} hits the ${(result.crit ?? type.parts[result.part].label).toLowerCase()}` +
               `${result.crit ? " (critical!)" : ""} for ${hit.damage}` +

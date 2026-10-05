@@ -418,6 +418,19 @@ Base → scan → run → base (`phase` in src/App.tsx; opened with `?map=` or
   (its light green, amber when it sees the crew, red raising the alarm)
   and never fires: seeing the crew it puts the alert up (30, then a little
   more while it keeps seeing it). Both follow the ship's robot stance.
+- **Creatures and survivors** (actor types `alien1`, `alien2`, `zombie1`,
+  `survivor1`, placed with the Robot tool; actors.ts `faction`, `FOES`):
+  the robots shoot aliens on sight (unless powered down) but take the
+  infected and survivors for crew; aliens and the infected hunt the crew
+  and claw others only when next to them; survivors never move and shoot
+  aliens and the infected. `alien1` leaps (faster than a robot, claws
+  only); `alien2` crawls on the ceiling, bites only in the crew's cell, and
+  goes through vents - decals whose action is `vent` (placeholder
+  `vent_grille`): it slips in and comes out of another vent on the deck
+  6-14 s later. Fear (`fear`): damage adds up and wears off per second;
+  past the tolerance an alien flees from whoever hurt it (cornered, it
+  fights on; a crawler takes a vent), a zombie drops and plays dead until
+  it wears off - nobody shoots one lying still.
 - **Restricted cells** (`restricted` in the map, the editor's Restricted
   tool): on a fooled ship, a camera or a robot that sees the crew there
   still calls it in (and turns hostile).

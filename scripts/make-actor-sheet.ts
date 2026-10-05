@@ -109,6 +109,9 @@ function gridFigures(img: Raw, count: number, cols: number, isBg: Background): F
     const comp = new Int32Array(cwInt * (cy1 - cy0)).fill(-1);
     const sizes: number[] = [];
     const touchesBottom: boolean[] = [];
+    // each bit's top and bottom row (in the cell)
+    const tops: number[] = [];
+    const bottoms: number[] = [];
     for (let start = 0; start < own.length; start++) {
       const sx = cx0 + (start % cwInt);
       const sy = cy0 + Math.floor(start / cwInt);
@@ -116,6 +119,8 @@ function gridFigures(img: Raw, count: number, cols: number, isBg: Background): F
       const id = sizes.length;
       sizes.push(0);
       touchesBottom.push(false);
+      tops.push(Infinity);
+      bottoms.push(-Infinity);
       const stack = [start];
       comp[start] = id;
       while (stack.length) {
@@ -123,6 +128,8 @@ function gridFigures(img: Raw, count: number, cols: number, isBg: Background): F
         sizes[id]++;
         const kx = k % cwInt;
         const ky = Math.floor(k / cwInt);
+        tops[id] = Math.min(tops[id], ky);
+        bottoms[id] = Math.max(bottoms[id], ky);
         if (cy0 + ky === cy1 - 1) touchesBottom[id] = true;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const nx = kx + dx;
@@ -136,7 +143,12 @@ function gridFigures(img: Raw, count: number, cols: number, isBg: Background): F
       }
     }
     const biggest = sizes.indexOf(Math.max(...sizes));
-    for (let k = 0; k < own.length; k++) if (comp[k] >= 0 && (!touchesBottom[comp[k]] || comp[k] === biggest)) own[k] = 1;
+    // (and the little bits wholly below the figure: the next row's hair or
+    // a gun's tip reaching up into the cell)
+    const below = (id: number) => id !== biggest && tops[id] > bottoms[biggest] && sizes[id] < sizes[biggest] * 0.05;
+    for (let k = 0; k < own.length; k++) {
+      if (comp[k] >= 0 && (!touchesBottom[comp[k]] || comp[k] === biggest) && !below(comp[k])) own[k] = 1;
+    }
     const mine = (x: number, y: number) => own[(y - cy0) * cwInt + (x - cx0)] === 1;
     let x0 = cx1;
     let y0 = cy1;
@@ -358,9 +370,28 @@ function despillEdges(img: Raw) {
 }
 
 async function main() {
-  if (!args.diffuse || !args.depth || !args.name) {
-    console.error("Usage: npm run actors:sheet -- --diffuse <file> --depth <file> --name <actor> [--cols 5 --rows 3]");
+  if (!args.diffuse || !args.name) {
+    console.error("Usage: npm run actors:sheet -- --diffuse <file> [--depth <file>] --name <actor> [--cols 5 --rows 3]");
     process.exit(1);
+  }
+  // (no depth sheet yet: a flat one from the color sheet's figures - its
+  // normals flat; run again with the painted one when it's there)
+  if (!args.depth) {
+    const flat: string[] = [];
+    for (const [i, file] of args.diffuse.split(",").entries()) {
+      const img = await load(file);
+      const out = Buffer.alloc(img.width * img.height * 3);
+      for (let y = 0; y < img.height; y++) {
+        for (let x = 0; x < img.width; x++) if (!isKey(img, x, y)) out.fill(160, (y * img.width + x) * 3, (y * img.width + x) * 3 + 3);
+      }
+      const work = path.join(ROOT, "concept/gen/actors", args.name);
+      fs.mkdirSync(work, { recursive: true });
+      const target = path.join(work, `flat_depth_${i}.png`);
+      await sharp(out, { raw: { width: img.width, height: img.height, channels: 3 } }).png().toFile(target);
+      flat.push(target);
+    }
+    args.depth = flat.join(",");
+    console.log("no --depth: a flat one for now");
   }
   const cols = Number(args.cols);
   const diffuseFiles = args.diffuse.split(",");

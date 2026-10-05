@@ -3622,7 +3622,13 @@ export function GameViewport({
         if (dead < 1) smokeBodies.push({ x, z, bottom: y, top: y + h });
         mesh.visible =
           dead < 1 &&
+          !actor.inVentUntil &&
           (sight.cells.has(cellKey(actor.cell.x, actor.cell.y)) || sight.cells.has(cellKey(actor.from.x, actor.from.y)));
+        // a crawler keeps to the ceiling (upside down) - but on the crew in
+        // its cell it drops to the floor; dead, it falls
+        const partyCell = { x: Math.round(liveRef.current.x), y: Math.round(liveRef.current.z) };
+        const onCeiling =
+          !!type.crawler && actor.diedAt === null && !(actor.hostile && actor.cell.x === partyCell.x && actor.cell.y === partyCell.y);
         // hit: a red flash; dead: it fades out
         const flash = Math.max(0, 1 - (now - actor.hitAt) / ACTOR_FLASH_MS);
         entry.material.emissive.setRGB(flash * 0.9, flash * 0.12, flash * 0.05);
@@ -3641,10 +3647,15 @@ export function GameViewport({
         const angle = Math.atan2(cx * f.y - cz * f.x, cx * f.x + cz * f.y);
         const col = Math.min(type.cols - 1, Math.round(Math.abs(angle) / (Math.PI / 4)));
         const mirror = angle < 0 && col > 0 && col < type.cols - 1;
-        let row = t < 1 ? type.walkRows[Math.floor(t * type.walkRows.length) % type.walkRows.length] : type.idleRow;
+        // (one that leaps: pushing off, in the air, landing)
+        const hopRow = (k: number) => (k < 0.2 ? type.hop!.takeoffRow : k < 0.85 ? type.hop!.airRow : type.idleRow);
+        let row = t < 1 ? (type.hop ? hopRow(t) : type.walkRows[Math.floor(t * type.walkRows.length) % type.walkRows.length]) : type.idleRow;
         if (sinceDeath >= 0 && falls) {
           const frame = Math.floor(sinceDeath / ACTOR_DIE_FRAME_MS);
           row = frame < type.dieRows!.length ? type.dieRows![frame] : type.wreckRow!;
+        } else if (actor.playingDead && type.wreckRow !== undefined) {
+          // lying still as if dead
+          row = type.wreckRow;
         } else if (type.hitRow !== undefined && now - actor.hitAt < ACTOR_HIT_POSE_MS) {
           row = type.hitRow;
         } else if (type.shootRows && now - actor.lastAttack < ACTOR_SHOOT_POSE_MS) {
@@ -3659,7 +3670,7 @@ export function GameViewport({
         // a new shot: its muzzle flash, at its chest - or a hung turret's
         // barrels (a camera only calls it in: no flash)
         if (actor.lastAttack !== entry.lastAttack) {
-          if (actor.lastAttack > entry.lastAttack && !type.watcher) {
+          if (actor.lastAttack > entry.lastAttack && !type.watcher && !type.melee) {
             flashAt.set(x, type.ceiling ? ceilingY(actor.cell.x, actor.cell.y) - h * 0.75 : y + h * 0.55, z);
             addFlash(flashAt, ACTOR_FLASH.color, ACTOR_FLASH.intensity, ACTOR_FLASH.range, ACTOR_FLASH.duration);
           }
@@ -3714,18 +3725,23 @@ export function GameViewport({
         const [dx, dy] = fix?.offsets[row * type.cols + col] ?? [0, 0];
         const px = fix ? h / fix.cell[1] : 0;
         const shift = (mirror ? -dx : dx) * px;
-        // (hung from the ceiling: its top against it)
-        const centerY = type.ceiling ? ceilingY(actor.cell.x, actor.cell.y) - h / 2 : y + h / 2;
+        // (hung from the ceiling: its top against it - a crawler there too;
+        // one that leaps arcs up (on the ceiling: down) on its way)
+        const arc = type.hop && t < 1 && actor.diedAt === null ? Math.sin(Math.PI * t) * type.hop.height * wallHeight : 0;
+        const centerY =
+          type.ceiling || onCeiling ? ceilingY(actor.cell.x, actor.cell.y) - h / 2 - arc : y + h / 2 + arc;
         mesh.position.set(x + Math.cos(yaw) * shift, centerY - dy * px, z - Math.sin(yaw) * shift);
 
-        const uvKey = `${col},${row},${mirror}`;
+        const uvKey = `${col},${row},${mirror},${onCeiling}`;
         if (uvKey === entry.uvKey) continue;
         entry.uvKey = uvKey;
         let u0 = col / type.cols;
         let u1 = (col + 1) / type.cols;
         if (mirror) [u0, u1] = [u1, u0];
-        const v0 = 1 - (row + 1) / type.rows;
-        const v1 = 1 - row / type.rows;
+        let v0 = 1 - (row + 1) / type.rows;
+        let v1 = 1 - row / type.rows;
+        // (upside down on the ceiling)
+        if (onCeiling) [v0, v1] = [v1, v0];
         const uv = mesh.geometry.getAttribute("uv") as THREE.BufferAttribute;
         uv.setXY(0, u0, v1);
         uv.setXY(1, u1, v1);
