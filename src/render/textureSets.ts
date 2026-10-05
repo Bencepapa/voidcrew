@@ -16,6 +16,9 @@ export interface TextureSetFiles {
   // a glow map: what isn't black in it always shines in its own color,
   // whatever the light (a status strip, indicator lamps, a screen)
   glow?: string;
+  // how shiny and how metal each texel is: green the roughness, blue the
+  // metalness (texture:process --gloss/--metal) - else the viewer's own
+  surface?: string;
   // a grate floor: its lowest this many height levels are the slots, cut
   // open where it's a bridge deck (see through it)
   grateLevels?: number;
@@ -156,6 +159,7 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/bridgewall1/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/bridgewall1/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/bridgewall1/depth.png`,
+    surface: `${import.meta.env.BASE_URL}textures/bridgewall1/surface.png`,
     pixelArt: true,
   },
   bridgewall2: {
@@ -163,6 +167,7 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/bridgewall2/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/bridgewall2/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/bridgewall2/depth.png`,
+    surface: `${import.meta.env.BASE_URL}textures/bridgewall2/surface.png`,
     pixelArt: true,
   },
   bridgewall3: {
@@ -170,6 +175,8 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/bridgewall3/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/bridgewall3/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/bridgewall3/depth.png`,
+    surface: `${import.meta.env.BASE_URL}textures/bridgewall3/surface.png`,
+    glow: `${import.meta.env.BASE_URL}textures/bridgewall3/glow.png`,
     pixelArt: true,
   },
   bridgewall4: {
@@ -177,6 +184,7 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/bridgewall4/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/bridgewall4/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/bridgewall4/depth.png`,
+    surface: `${import.meta.env.BASE_URL}textures/bridgewall4/surface.png`,
     pixelArt: true,
   },
   medfloor1: {

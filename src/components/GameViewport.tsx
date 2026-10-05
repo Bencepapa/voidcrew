@@ -1509,6 +1509,14 @@ export function GameViewport({
         textures.push(glowMap);
       }
 
+      // the set's surface map, if it has one: its own shine per texel (the
+      // viewer's roughness and metalness don't touch it)
+      const surfaceMap = paths.surface ? kitTexture(paths.surface + bust) : null;
+      if (surfaceMap) {
+        if (paths.pixelArt) surfaceMap.magFilter = THREE.NearestFilter;
+        textures.push(surfaceMap);
+      }
+
       let litMat: THREE.MeshStandardMaterial | undefined;
       if (paths.emissive) {
         const emissiveMap = kitTexture(paths.emissive + bust);
@@ -1526,7 +1534,15 @@ export function GameViewport({
         addDirectLightOcclusion(litMat, cavity);
       }
 
-      for (const mat of [wallMat, sideMat, litMat]) if (mat) mat.userData.accent = accent;
+      for (const mat of [wallMat, sideMat, litMat]) {
+        if (!mat) continue;
+        mat.userData.accent = accent;
+        if (surfaceMap) {
+          mat.roughnessMap = mat.metalnessMap = surfaceMap;
+          mat.roughness = mat.metalness = 1;
+          mat.userData.surface = true;
+        }
+      }
       // (a lamp's panel shines in its lamp's own colour: its trim takes the
       // livery, its light doesn't)
       if (litMat) litMat.userData.accentGlow = false;
@@ -2833,7 +2849,10 @@ export function GameViewport({
         aoMapIntensity: kit.wallMat.aoMapIntensity,
         roughness: kit.wallMat.roughness,
         metalness: kit.wallMat.metalness,
+        roughnessMap: kit.wallMat.roughnessMap,
+        metalnessMap: kit.wallMat.metalnessMap,
       });
+      material.userData.surface = kit.wallMat.userData.surface;
       addDirectLightOcclusion(material, cavity);
       useLightGrid(material, lightGrid);
       ownMaterials.push(material);
@@ -4728,8 +4747,11 @@ export function GameViewport({
       }
       for (const kit of allKits) {
         for (const mat of kitMaterials(kit)) {
-          mat.roughness = s.roughness;
-          mat.metalness = s.metalness;
+          // (one with its own surface map keeps it)
+          if (!mat.userData.surface) {
+            mat.roughness = s.roughness;
+            mat.metalness = s.metalness;
+          }
           mat.aoMapIntensity = s.aoIntensity;
         }
         kit.wallMat.normalScale.set(s.normalStrength, s.normalStrength);

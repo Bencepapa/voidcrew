@@ -47,6 +47,9 @@ const USAGE = `Usage: npm run texture:process -- --diffuse <file> [--depth <file
   [--emissive-luma 150]   how bright a pixel must be to belong to the light panel
   [--glow <file>]         also write glow.png from this image (same framing as the diffuse, black
                           where nothing glows): the set's always-shining parts, in their colors
+  [--gloss <file>]        also write surface.png from a gloss map (white polished, black matte) and/or
+  [--metal <file>]        a metal mask (white bare metal, black none), both framed like the diffuse:
+                          its green is the roughness, its blue the metalness (three.js' channels)
 
 A transparent diffuse (e.g. a door frame's opening) is kept: diffuse.png and depth.png get the
 same alpha holes, which the relief builder leaves out.`;
@@ -73,9 +76,16 @@ const { values: args } = parseArgs({
     "key-tolerance": { type: "string", default: "90" },
     "emissive-panel": { type: "boolean", default: false },
     glow: { type: "string" },
+    gloss: { type: "string" },
+    metal: { type: "string" },
     "emissive-luma": { type: "string", default: "150" },
   },
 });
+
+// how far the surface map goes: the glossiest roughness 1 - this, the most
+// metal metalness this (the ship has no reflections - a full metal is dark)
+const SURFACE_GLOSS_MAX = 0.8;
+const SURFACE_METAL_MAX = 0.75;
 
 // source pixel range [start, end) covered by output pixel t
 function blockRange(t: number, outSize: number, srcSize: number): [number, number] {
@@ -734,6 +744,25 @@ async function main() {
     }
     await sharp(glow, { raw: { width: outW, height: outH, channels: 3 } }).png({ compressionLevel: 9 }).toFile(path.join(outDir, "glow.png"));
     console.log("  glow.png");
+  }
+  // --gloss / --metal: the surface map (each block's average - they're
+  // smooth enough; without a gloss map half rough, without a metal mask none)
+  if (args.gloss || args.metal) {
+    const gray = async (file: string | undefined, fallback: number) =>
+      file
+        ? (await sharp(file).removeAlpha().greyscale().resize(outW, outH, { fit: "fill", kernel: "mitchell" }).raw().toBuffer())
+        : Buffer.alloc(outW * outH, fallback);
+    const gloss = await gray(args.gloss, 64);
+    const metal = await gray(args.metal, 0);
+    const surface = Buffer.alloc(outW * outH * 3);
+    for (let i = 0; i < outW * outH; i++) {
+      surface[i * 3] = 255;
+      // (never a perfect mirror, never fully metal: no reflections to show)
+      surface[i * 3 + 1] = Math.round(255 * (1 - (gloss[i] / 255) * SURFACE_GLOSS_MAX));
+      surface[i * 3 + 2] = Math.round(metal[i] * SURFACE_METAL_MAX);
+    }
+    await sharp(surface, { raw: { width: outW, height: outH, channels: 3 } }).png({ compressionLevel: 9 }).toFile(path.join(outDir, "surface.png"));
+    console.log("  surface.png");
   }
 
   if (!depthInput) {
