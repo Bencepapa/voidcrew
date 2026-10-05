@@ -3420,6 +3420,8 @@ export function GameViewport({
       type: string;
       mesh: THREE.Mesh;
       material: THREE.MeshStandardMaterial;
+      // its soft shadow under it (on the ceiling for one hung up there)
+      shadow: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
       // the part highlight's uniforms (see highlightMaterial)
       highlight: PartHighlight;
       uvKey: string;
@@ -3521,13 +3523,31 @@ export function GameViewport({
       return mat;
     };
     for (const name of new Set((map.actors ?? []).map((a) => a.actor))) actorMaterial(name);
+    // the actors' soft shadows: a dark blot fading out to its rim
+    const shadowTexture = (() => {
+      const size = 64;
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext("2d")!;
+      const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+      g.addColorStop(0, "rgba(0,0,0,1)");
+      g.addColorStop(0.55, "rgba(0,0,0,0.85)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, size, size);
+      return new THREE.CanvasTexture(canvas);
+    })();
+    const shadowGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    const ACTOR_SHADOW = 0.9;
 
     function removeActorMesh(id: number) {
       const entry = actorMeshes.get(id);
       if (!entry) return;
       group.remove(entry.mesh);
+      group.remove(entry.shadow);
       entry.mesh.geometry.dispose();
       entry.material.dispose();
+      entry.shadow.material.dispose();
       actorMeshes.delete(id);
     }
 
@@ -3605,9 +3625,22 @@ export function GameViewport({
           const mesh = new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), material);
           mesh.userData.actor = true;
           mesh.userData.actorId = actor.id;
-          entry = { type: actor.type, mesh, material, highlight, uvKey: "", col: 0, row: 0, mirror: false, lastAttack: actor.lastAttack };
+          const shadow = new THREE.Mesh(
+            shadowGeo,
+            new THREE.MeshBasicMaterial({
+              map: shadowTexture,
+              transparent: true,
+              depthWrite: false,
+              polygonOffset: true,
+              polygonOffsetFactor: -4,
+              polygonOffsetUnits: -4,
+            }),
+          );
+          // (nothing to aim at or hide behind)
+          shadow.raycast = () => {};
+          entry = { type: actor.type, mesh, material, shadow, highlight, uvKey: "", col: 0, row: 0, mirror: false, lastAttack: actor.lastAttack };
           actorMeshes.set(actor.id, entry);
-          group.add(mesh);
+          group.add(mesh, shadow);
         }
         const t = Math.min(1, Math.max(0, (now - actor.moveStart) / actor.moveMs));
         const x = lerp(actor.from.x, actor.cell.x, t);
@@ -3731,6 +3764,19 @@ export function GameViewport({
         const centerY =
           type.ceiling || onCeiling ? ceilingY(actor.cell.x, actor.cell.y) - h / 2 - arc : y + h / 2 + arc;
         mesh.position.set(x + Math.cos(yaw) * shift, centerY - dy * px, z - Math.sin(yaw) * shift);
+        // its shadow: on the floor under it - or on the ceiling over one up
+        // there; smaller and fainter the further it leaps off; a wreck's
+        // wider, flatter
+        const up = type.ceiling || onCeiling;
+        const shadow = entry.shadow;
+        shadow.visible = mesh.visible;
+        const lift = 1 - Math.min(0.7, arc / wallHeight / 0.5);
+        const spread = Math.min(0.9, h * type.cellAspect * (up ? 0.6 : 0.55)) * (actor.diedAt !== null || actor.playingDead ? 1.25 : 1);
+        shadow.scale.set(spread * lift, 1, spread * lift);
+        shadow.rotation.x = up ? Math.PI : 0;
+        // (over the floor's relief, like the exit marker)
+        shadow.position.set(x, up ? ceilingY(actor.cell.x, actor.cell.y) - reliefDepth - 0.006 : y + reliefDepth + 0.006, z);
+        shadow.material.opacity = ACTOR_SHADOW * lift * (1 - Math.min(1, dead));
 
         const uvKey = `${col},${row},${mirror},${onCeiling}`;
         if (uvKey === entry.uvKey) continue;

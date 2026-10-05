@@ -68,8 +68,17 @@
   "text_medical": {
     "normal": false
   },
+  "vent_grate": {
+    "normal": true
+  },
+  "vent_grate_open": {
+    "normal": true
+  },
   "vent_grille": {
-    "normal": false
+    "normal": true
+  },
+  "vent_grille_broken": {
+    "normal": true
   },
   "warning": {
     "normal": false

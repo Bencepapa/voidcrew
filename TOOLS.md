@@ -425,8 +425,9 @@ Base → scan → run → base (`phase` in src/App.tsx; opened with `?map=` or
   and claw others only when next to them; survivors never move and shoot
   aliens and the infected. `alien1` leaps (faster than a robot, claws
   only); `alien2` crawls on the ceiling, bites only in the crew's cell, and
-  goes through vents - decals whose action is `vent` (placeholder
-  `vent_grille`): it slips in and comes out of another vent on the deck
+  goes through vents - the `vent_` decals (`vent_grille`, `vent_grille_broken`,
+  `vent_grate`, `vent_grate_open`) or any decal whose action is `vent`:
+  it slips in and comes out of another vent on the deck
   6-14 s later. Fear (`fear`): damage adds up and wears off per second;
   past the tolerance an alien flees from whoever hurt it (cornered, it
   fights on; a crawler takes a vent), a zombie drops and plays dead until

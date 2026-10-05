@@ -957,8 +957,9 @@ export function stepActors(
   const attacks: ActorAttack[] = [];
   const alarms: ActorAlarm[] = [];
   const allyShots: AllyShot[] = [];
-  // the deck's vents (the cells their decals are seen from)
-  const vents = [...new Map((map.decals ?? []).filter((d) => d.action === "vent").map((d) => [`${d.cell.x},${d.cell.y}`, d.cell])).values()];
+  // the deck's vents (the cells their decals are seen from): the vent_
+  // decals, or any whose action is "vent"
+  const vents = [...new Map((map.decals ?? []).filter((d) => d.action === "vent" || d.decal.startsWith("vent_")).map((d) => [`${d.cell.x},${d.cell.y}`, d.cell])).values()];
   const ventCells = new Set(vents.map((c) => `${c.x},${c.y}`));
   // where the crew mustn't be (see GameMap.restricted)
   const restricted = new Set((map.restricted ?? []).map((c) => `${c.x},${c.y}`));

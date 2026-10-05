@@ -149,6 +149,36 @@ export const TEXTURE_SETS = {
     depth: `${import.meta.env.BASE_URL}textures/medwall1/depth.png`,
     pixelArt: true,
   },
+  // the officers' bridge: walnut, marble and brass gone to ruin, royal-blue
+  // trim (the livery's)
+  bridgewall1: {
+    kind: "wall", label: "Bridge wood",
+    diffuse: `${import.meta.env.BASE_URL}textures/bridgewall1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/bridgewall1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/bridgewall1/depth.png`,
+    pixelArt: true,
+  },
+  bridgewall2: {
+    kind: "wall", label: "Bridge marble",
+    diffuse: `${import.meta.env.BASE_URL}textures/bridgewall2/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/bridgewall2/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/bridgewall2/depth.png`,
+    pixelArt: true,
+  },
+  bridgewall3: {
+    kind: "wall", label: "Bridge consoles",
+    diffuse: `${import.meta.env.BASE_URL}textures/bridgewall3/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/bridgewall3/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/bridgewall3/depth.png`,
+    pixelArt: true,
+  },
+  bridgewall4: {
+    kind: "wall", label: "Bridge wrecked",
+    diffuse: `${import.meta.env.BASE_URL}textures/bridgewall4/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/bridgewall4/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/bridgewall4/depth.png`,
+    pixelArt: true,
+  },
   medfloor1: {
     kind: "floor", label: "Med floor",
     diffuse: `${import.meta.env.BASE_URL}textures/medfloor1/diffuse.png`,
