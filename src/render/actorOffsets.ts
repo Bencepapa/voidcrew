@@ -8,6 +8,8 @@ export interface ActorOffsets {
   cell: [number, number];
   // [dx, dy] per cell, row by row
   offsets: [number, number][];
+  // its normal map's strength (unset: 1)
+  normal?: number;
 }
 
 const files = import.meta.glob<ActorOffsets>("../actors/*.json", { eager: true, import: "default" });

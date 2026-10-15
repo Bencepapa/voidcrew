@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseArgs } from "node:util";
 import { removeSmallIslands } from "../src/render/heightLevels";
+import { boxBlur, normalMapFromHeight } from "./normalMap";
 
 // Turns a large AI-generated wall texture + depth map (typically 1024px JPEGs
 // full of compression noise) into a clean, pixel-aligned texture set for the
@@ -398,57 +399,6 @@ function nearest(centers: number[], v: number): number {
 }
 
 // separable box blur with clamped edges
-function boxBlur(src: Float32Array, w: number, h: number, radius: number): Float32Array {
-  if (radius <= 0) return src;
-  const tmp = new Float32Array(src.length);
-  const out = new Float32Array(src.length);
-  const n = radius * 2 + 1;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let sum = 0;
-      for (let d = -radius; d <= radius; d++) sum += src[y * w + Math.min(w - 1, Math.max(0, x + d))];
-      tmp[y * w + x] = sum / n;
-    }
-  }
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let sum = 0;
-      for (let d = -radius; d <= radius; d++) sum += tmp[Math.min(h - 1, Math.max(0, y + d)) * w + x];
-      out[y * w + x] = sum / n;
-    }
-  }
-  return out;
-}
-
-function normalMapFromHeight(height: Float32Array, w: number, h: number, strength: number): Buffer {
-  const at = (x: number, y: number) =>
-    height[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))] / 255;
-
-  const out = Buffer.alloc(w * h * 3);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      // Sobel; image rows grow downward, so +dy in the image is -y in the
-      // OpenGL-style (Y up) tangent space three.js expects
-      const dx =
-        at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1);
-      const dy =
-        at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1);
-      let nx = -dx * strength;
-      let ny = dy * strength;
-      let nz = 1;
-      const len = Math.hypot(nx, ny, nz);
-      nx /= len;
-      ny /= len;
-      nz /= len;
-      const o = (y * w + x) * 3;
-      out[o] = Math.round((nx * 0.5 + 0.5) * 255);
-      out[o + 1] = Math.round((ny * 0.5 + 0.5) * 255);
-      out[o + 2] = Math.round((nz * 0.5 + 0.5) * 255);
-    }
-  }
-  return out;
-}
-
 // AI depth maps often give painted stripes and decals height, as if the paint
 // were a raised plate. With --flatten-paint, every connected patch of
 // saturated diffuse color (paint, hazard stripes, rust) takes the level most

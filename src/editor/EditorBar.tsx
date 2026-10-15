@@ -16,7 +16,8 @@ import { fetchDecalManifest } from "../render/decals";
 import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
 import type { Direction, LightEffect, Linked, MapLight } from "../game/types";
-import { PROP_TYPES } from "../game/props";
+import { PROP_TYPES, propEditable } from "../game/props";
+import { propEdit } from "./propEditState";
 import { DOOR_EDGE_OFFSET } from "../game/map";
 import { ACTOR_TYPES } from "../game/actors";
 import { ITEM_TYPES } from "../game/items";
@@ -106,6 +107,7 @@ interface Props {
       chance?: number;
       pos?: [number, number, number];
       blow?: { speed: number; yaw: number; pitch?: number };
+      fire?: boolean;
     } & Linked,
   ) => void;
   onSmokeDelete: () => void;
@@ -210,6 +212,8 @@ export interface SmokeInfo {
   // blown out: how fast (0: it just rises), which way (degrees from north)
   // and how far up from level (degrees)
   blow: { speed: number; yaw: number; pitch: number };
+  // a fire (see fire.ts)
+  fire: boolean;
   chance: number;
   links: Linked;
 }
@@ -847,6 +851,16 @@ export function EditorBar(p: Props) {
                     </select>
                   </label>
                 )}
+                {propEditable(PROP_TYPES[p.prop.name]) && (
+                  <button
+                    type="button"
+                    className={`${BUTTON} ${idle}`}
+                    onClick={() => propEdit.set({ name: p.prop!.name, part: 0 })}
+                    title="Edit its type: size, relief, normal strength - and a views prop's boxes over its views"
+                  >
+                    Edit type…
+                  </button>
+                )}
                 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropStack} title="The palette's prop, on top of this one">
                   Stack {p.propChoice} on top
                 </button>
@@ -866,7 +880,11 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
-            <span className="text-amber-200">smoke</span>
+            <span className="text-amber-200">{p.smoke.fire ? "fire" : "smoke"}</span>
+            <label className="flex items-center gap-1" title="A fire: flames, dark smoke off them, a flickering light - its cell burns (Color tints the flames)">
+              <input type="checkbox" checked={p.smoke.fire} onChange={(e) => p.onSmokeChange({ fire: e.target.checked || undefined })} />
+              Fire
+            </label>
             {slider("Amount", p.smoke.density, 0.25, 3, 0.25, (v) => p.onSmokeChange({ density: v === 1 ? undefined : v }))}
             {slider("Puff size", p.smoke.size, 0.4, 2.5, 0.1, (v) => p.onSmokeChange({ size: v === 1 ? undefined : v }))}
             {slider("Height", p.smoke.height, 0, Math.max(0, p.smoke.roomHeight - 0.05), 0.05, (v) => p.onSmokeChange({ pos: [NaN, v, NaN] }))}

@@ -10,16 +10,19 @@ import type { CellType, GameMap, Linked } from "./types";
 //
 // The seed also sets the ship's mood (the same for all its decks), a few
 // secret rolls: how lit, how dangerous, how cluttered, how smoky it is, how
-// many of its doors are there and how many of its locks are on. Each shifts
-// its items' chances - lights; actors; props, decals and items; smoke;
-// doors; locks (see shipPlan.ts) - up or down (see scaleChance). Items with
-// no chance (always there) stay whatever the mood.
+// much of it burns, how many of its doors are there and how many of its
+// locks are on. Each shifts its items' chances - lights; actors; props,
+// decals and items; smoke; fires; doors; locks (see shipPlan.ts) - up or
+// down (see scaleChance). Items with no chance (always there) stay whatever
+// the mood.
 
 export interface ShipMood {
   light: "bright" | "dim" | "dark";
   threat: "low" | "medium" | "high";
   clutter: "sparse" | "normal" | "cluttered";
   smoke: "clear" | "hazy" | "smoky";
+  // its fires (see fire.ts) - never shown on the scan
+  fire: "cold" | "smouldering" | "burning";
   doors: "few" | "some" | "many";
   locks: "few" | "some" | "many";
   // how the ship's robots take the crew until its alert is up (see
@@ -32,6 +35,7 @@ export const MOOD_LEVELS: { [K in keyof ShipMood]: ShipMood[K][] } = {
   threat: ["low", "medium", "high"],
   clutter: ["sparse", "normal", "cluttered"],
   smoke: ["clear", "hazy", "smoky"],
+  fire: ["cold", "smouldering", "burning"],
   doors: ["few", "some", "many"],
   locks: ["few", "some", "many"],
   robots: ["dormant", "fooled", "hostile"],
@@ -85,7 +89,7 @@ export function accentOf(seed: number): number | null {
 }
 
 export const moodText = (mood: ShipMood) =>
-  `${mood.light}, ${mood.threat} threat, ${mood.clutter}, ${mood.smoke}, ${mood.doors} doors, ${mood.locks} locks, ${mood.robots} robots`;
+  `${mood.light}, ${mood.threat} threat, ${mood.clutter}, ${mood.smoke}, ${mood.fire}, ${mood.doors} doors, ${mood.locks} locks, ${mood.robots} robots`;
 
 // One item's roll: kept if its chance (its odds shifted by the mood) comes
 // up - and the items it's linked to agree (see Linked): the one it's only
@@ -176,7 +180,8 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
     if (under >= 0) items[i].on = props[under];
   });
   const actors = (map.actors ?? []).map((a, i) => entry("actor", i, a, odds("threat")));
-  const smokes = (map.smokes ?? []).map((s, i) => entry("smoke", i, s, odds("smoke")));
+  // (a fire by the ship's fire roll, smoke by its smoke)
+  const smokes = (map.smokes ?? []).map((s, i) => entry("smoke", i, s, odds(s.fire ? "fire" : "smoke")));
   const lights = (map.lights ?? []).map((l, i) => entry("light", i, l, odds("light")));
   const doors = (map.doors ?? []).map((d, i) => entry("door", i, d, odds("doors")));
   const walls = (map.chanceWalls ?? []).map((w, i) => ({ ...entry("wall", i, w, 1), opening: true }));

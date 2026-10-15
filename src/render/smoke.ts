@@ -117,6 +117,35 @@ const BLOWN_FADE_IN = 0.03;
 const SHADE: [number, number] = [0.7, 1.3];
 const MAX_PUFFS = 600;
 
+// Flames (createSmoke's `fire`): the same puffs (in the same style), but
+// glowing on their own - added onto what's behind, unlit - many, quick and
+// small, rising fast and shrinking as they go, white-yellow to orange to a
+// dull red. Puffs per emitter of density 1, how long one lasts (s), how
+// fast it rises, how wide it starts and ends, how wide a patch they rise
+// from (world units, at size 1) and how bright they get.
+const FIRE_PUFFS = 26;
+const FIRE_LIFE: [number, number] = [0.45, 0.9];
+const FIRE_RISE: [number, number] = [0.55, 1];
+const FIRE_WIDTH: [number, number] = [0.26, 0.05];
+const FIRE_SPREAD = 0.16;
+const FIRE_OPACITY = 0.4;
+// its colors as it rises (at 0, FIRE_RAMP[1][0] and 1 of its life)
+const FIRE_RAMP: [number, [number, number, number]][] = [
+  [0, [1, 0.62, 0.22]],
+  [0.3, [0.95, 0.32, 0.05]],
+  [1, [0.4, 0.05, 0.01]],
+];
+function fireColor(t: number, out: THREE.Color): THREE.Color {
+  for (let i = 1; i < FIRE_RAMP.length; i++) {
+    const [t1, c1] = FIRE_RAMP[i];
+    if (t > t1 && i < FIRE_RAMP.length - 1) continue;
+    const [t0, c0] = FIRE_RAMP[i - 1];
+    const k = Math.min(1, Math.max(0, (t - t0) / (t1 - t0 || 1)));
+    return out.setRGB(c0[0] + (c1[0] - c0[0]) * k, c0[1] + (c1[1] - c0[1]) * k, c0[2] + (c1[2] - c0[2]) * k);
+  }
+  return out.setRGB(...FIRE_RAMP[FIRE_RAMP.length - 1][1]);
+}
+
 // The puffs' shapes: PUFF_SHAPES x PUFF_SHAPES shapeless little clouds in
 // one texture (its alpha), each from layered smooth noise fading out toward
 // its tile's edge - so no two puffs side by side look stamped from one mold.
@@ -234,9 +263,11 @@ const CORNERS: [number, number][] = [
   [1, 1],
 ];
 
-export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, world?: SmokeWorld): Smoke {
+// (`fire`: flames instead - see FIRE_PUFFS)
+export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, world?: SmokeWorld, { fire = false } = {}): Smoke {
   const puffs: Puff[] = [];
-  const count = Math.min(MAX_PUFFS, emitters.reduce((n, e) => n + Math.max(1, Math.round(PUFFS * e.density)), 0));
+  const perEmitter = fire ? FIRE_PUFFS : PUFFS;
+  const count = Math.min(MAX_PUFFS, emitters.reduce((n, e) => n + Math.max(1, Math.round(perEmitter * e.density)), 0));
   const between = (r: [number, number]) => r[0] + Math.random() * (r[1] - r[0]);
   const spawn = (emitter: number, age: number): Puff => {
     const e = emitters[emitter];
@@ -244,18 +275,20 @@ export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, w
     const speed = Math.hypot(bx, by, bz);
     const push = 0.8 + Math.random() * 0.4;
     const stray = () => (Math.random() - 0.5) * 2 * speed * BLOW_SPREAD;
+    // (flames: from all over their patch)
+    const spread = fire ? FIRE_SPREAD * e.size : 0.05;
     return {
       jx: bx * push + stray(),
       jy: by * push + stray(),
       jz: bz * push + stray(),
-      x: e.x + (Math.random() - 0.5) * 0.05,
+      x: e.x + (Math.random() - 0.5) * spread,
       y: e.y,
-      z: e.z + (Math.random() - 0.5) * 0.05,
-      vx: (Math.random() - 0.5) * 0.05,
-      vy: between(RISE),
-      vz: (Math.random() - 0.5) * 0.05,
+      z: e.z + (Math.random() - 0.5) * spread,
+      vx: (Math.random() - 0.5) * (fire ? 0.12 : 0.05),
+      vy: between(fire ? FIRE_RISE : RISE),
+      vz: (Math.random() - 0.5) * (fire ? 0.12 : 0.05),
       age,
-      life: between(LIFE),
+      life: between(fire ? FIRE_LIFE : LIFE),
       turn: Math.random() * Math.PI * 2,
       spin: (Math.random() - 0.5) * 0.5,
       shape: Math.random(),
@@ -266,7 +299,7 @@ export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, w
   // (each emitter's puffs spread over their lives, as if it had been
   // smoking all along)
   emitters.forEach((e, i) => {
-    const n = Math.max(1, Math.round(PUFFS * e.density));
+    const n = Math.max(1, Math.round(perEmitter * e.density));
     for (let k = 0; k < n && puffs.length < count; k++) {
       const p = spawn(i, 0);
       p.age = (k / n) * p.life;
@@ -302,8 +335,11 @@ export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, w
     transparent: true,
     depthWrite: false,
     fog: true,
+    // (flames add their glow onto what's behind them)
+    blending: fire ? THREE.AdditiveBlending : THREE.NormalBlending,
     uniforms: {
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+      uFire: { value: fire ? 1 : 0 },
       uPuff: { value: texture },
       uAmbient: { value: 0.3 },
       uRound: { value: ROUNDNESS },
@@ -377,6 +413,7 @@ void main() {
 }`,
     fragmentShader: `
 uniform sampler2D uPuff;
+uniform float uFire;
 uniform float uAmbient;
 uniform float uRound;
 uniform float uBump;
@@ -427,6 +464,13 @@ void main() {
     return;
   }
   if (alpha < 0.003) discard;
+  // a flame: its own glow, no light to catch
+  if (uFire > 0.5) {
+    gl_FragColor = vec4(vColor, alpha);
+    #include <colorspace_fragment>
+    #include <fog_fragment>
+    return;
+  }
   // which way this point of the puff faces: out from its middle like a
   // ball's, bent by its lumps (its thickness rising and falling)
   vec2 slope = vec2(
@@ -481,6 +525,7 @@ void main() {
   const order: { puff: Puff; depth: number }[] = [];
   const smooth = (t: number) => t * t * (3 - 2 * t);
   const view = new THREE.Vector3();
+  const flame = new THREE.Color();
 
   return {
     mesh,
@@ -609,7 +654,7 @@ void main() {
         // its tile: one of the noise clouds, a painted puff, or a painted
         // one played through its rows as it lives
         let tile: number;
-        let width = (WIDTH[0] + (WIDTH[1] - WIDTH[0]) * Math.sqrt(t)) * e.size;
+        let width = fire ? (FIRE_WIDTH[0] + (FIRE_WIDTH[1] - FIRE_WIDTH[0]) * t) * e.size : (WIDTH[0] + (WIDTH[1] - WIDTH[0]) * Math.sqrt(t)) * e.size;
         let turn = p.turn;
         if (squares) {
           tile = 0;
@@ -628,7 +673,7 @@ void main() {
             tile = (frame % PAINTED_GRID) + 16 * Math.floor(frame / PAINTED_GRID);
             turn = 0;
             // (it thins away in the art: drawn a steadier size)
-            width = (0.3 + 0.45 * Math.sqrt(t)) * e.size;
+            if (!fire) width = (0.3 + 0.45 * Math.sqrt(t)) * e.size;
           } else if (style === "painted" || few) {
             tile = col + 16 * Math.floor(k / PAINTED_GRID);
             if (few) turn = 0;
@@ -637,13 +682,15 @@ void main() {
             const frame = Math.min(t, 0.9999) * (ANIMATED_ROWS - 1);
             const row = Math.floor(frame);
             tile = col + 16 * row + Math.min(0.999, frame - row);
-            width = (0.3 + 0.45 * Math.sqrt(t)) * e.size;
+            if (!fire) width = (0.3 + 0.45 * Math.sqrt(t)) * e.size;
           }
           width *= PAINTED_SCALE;
         }
         centers.setXYZ(n, p.x, p.y, p.z);
-        params.setXYZW(n, width, Math.min(1, OPACITY * (few ? FEW_OPACITY : 1)) * fade, turn, tile);
-        colors.setXYZ(n, e.color.r * p.shade, e.color.g * p.shade, e.color.b * p.shade);
+        params.setXYZW(n, width, Math.min(1, (fire ? FIRE_OPACITY : OPACITY) * (few ? FEW_OPACITY : 1)) * fade, turn, tile);
+        // (a flame's color by its age, tinted by its fire's)
+        const c = fire ? fireColor(t, flame).multiply(e.color) : e.color;
+        colors.setXYZ(n, c.r * p.shade, c.g * p.shade, c.b * p.shade);
       });
       geometry.instanceCount = order.length;
       // dev: __voidcrewSmokeTest = { tile, size } in the console draws just

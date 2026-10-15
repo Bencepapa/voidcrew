@@ -180,6 +180,30 @@ against a side of its cell (`at`), it turns to face away from that wall.
 `elevation` – mounted this high above the floor (a shelf, a fold-out table).
 A part's top hidden under another part gets no face.
 
+**Prop editor** (map editor, Prop tool: pick a prop, **Edit type…**): any
+prop's `size`, `relief` (relief depth) and `normal` (normal map strength,
+both relative to the usual); a views prop also shows the three views with
+the boxes over them. Drag a box to move it, its edge
+to resize it (snaps to the view's pixels), or type the numbers; the game
+rebuilds the props as you go and draws the boxes over them (yellow: the
+picked one, grey: `size`). **Save** writes `src/props/<name>.json` (size,
+relief, normal, px, elevation, parts), which wins over `PROP_TYPES`. How a box is drawn:
+each of its faces is cut out of the view that looks at it, wherever the box
+stands in that view - front and back from the front view, the ends from the
+side view, the top from the top view. So a box only looks right where the
+view shows a flat face straight on; a round thing (a mug, a round foot) is
+a box with its picture painted on, square from 45° - make it a
+**cylinder** (`shape: "cylinder"`: round, filling its box, its side wrapped
+in the front view front and back and the side view at its ends, its top
+from the top view). Per box: untick **views follow the box** to drag its
+place in each view separately (`src`: its faces cut from there, wherever it
+stands - dashed; where it stands: faint), and untick **faces** to leave some
+out (`off`: front, back, left, right, top). Paint over the views
+in `public/textures/<views>_front|_side|_top/` (`diffuse.png`, `depth.png`)
+in GIMP and save: the editor and the game reload them, and the dev server
+redoes `normal.png` from the depth and copies the diffuse's transparent
+holes into the depth (`scripts/normalMap.ts`).
+
 **Cabin** (`kind: "cabin"`) – a walk-in box seen into through its front (a
 shower): a cutout `door` whose glass areas are magenta (a pane of tinted glass
 goes behind it), the `inside` of its back wall as seen through the door, and
@@ -233,6 +257,7 @@ Its texture sets also go into `TEXTURE_SETS`. In a map:
    - left: the sheet (click, or W/A/S/D between frames),
    - middle: the frame, zoomed, with baseline and center line over a faint "ghost" (the standing pose, or the previous / next walk frame); arrow keys: 1 px, Shift + arrow: 5 px,
    - right: a preview – walking, turning round, both, or a fight (firing, falling, the wreck),
+   - **normal** – the sheet's normal map strength in the game (1: as made), saved with the shifts,
    - **Save** → `src/actors/<name>.json` (the running game picks it up), **Download JSON** → a download, **Reload sheet** → reload after reprocessing.
 4. **The type**, in `ACTOR_TYPES` in `src/game/actors.ts`:
    ```ts
@@ -308,7 +333,7 @@ main fields:
 | `layout` | `W` wall, `.` floor, `D` door |
 | `layers.floor` / `ceiling` | per-cell heights (steps of 0.25) |
 | `textures`, `labelColor` | the deck's texture sets, label paint |
-| `accent` | `{ "hue": 37, "range"?: 30 }`: the hue of the deck's trim (degrees), which a ship's livery turns - each ship rolls one (`accentOf` in variation.ts: about 1 in 3 keep their painted colours), never shown on the scan |
+| `accent` | `{ "hue": 37, "range"?: 30 }`: the hue of the deck's trim (degrees), which a ship's livery turns - each ship rolls one (`accentOf` in variation.ts: about 1 in 3 keep their painted colours), never shown on the scan; a texture set with its own `accent` in `TEXTURE_SETS` (e.g. the bridge walls' blue, hue 218) is turned from that instead, so its other colours stay whatever the deck's hue |
 | `lightColor`, `autoLights` | lamp color (`"#ffcf87"`); `false`: no generated mood lights |
 | `lightGridDensity`, `lightGridAmbient`, `reliefDepth` | baked light samples per cell (and for its ambient part, from a coarser grid), wall relief depth (unset: the viewer's defaults) |
 | `restricted` | `[[x, y], ...]`: cells where the crew mustn't be (see the game loop's restricted cells) |
@@ -317,7 +342,7 @@ main fields:
 | `effect` (lights) | `flicker`, `spark` or `pulse`: not baked, a real light serves it |
 | `texture` (props) | another texture set for a box, pillar, chamfer, panel or plant |
 | `items` | loot lying about: `{ "item": "medkit", "x", "y", "count"?, "offset"?: [across, along] }` (plus `chance`, `id`, `with`, `without`) - picked up by stepping in (or Use from the cell before) |
-| `smokes` | smoke emitters: `{ "x", "y", "pos": [across, up, along], "density"?, "size"?, "color"?, "blow"?: { "speed", "yaw", "pitch"? } }` (plus `chance`, `id`, `with`, `without`) |
+| `smokes` | smoke emitters: `{ "x", "y", "pos": [across, up, along], "density"?, "size"?, "color"?, "blow"?: { "speed", "yaw", "pitch"? }, "fire"? }` (plus `chance`, `id`, `with`, `without`) |
 | `exits` | ways off the ship: `{ "x", "y", "name"?: "Hangar bay" }` - standing there, Use ends the run |
 | `loot` (containers) | a crate's (or shelf's) contents by hand: `[{ "item": "powercell", "count": 2 }]` (`[]`: empty); unset: rolled from its loot table (src/game/items.ts) |
 | `lights` | ceiling light cells |
@@ -329,10 +354,18 @@ main fields:
 ### The story: terminals, locks, triggers (src/game/story.ts)
 
 Each ship's seed rolls its secret **mood** (src/game/variation.ts): light,
-threat, clutter, smoke, doors and locks - each low, middle or high, leaning
-by the ship's class (src/game/ships.ts). It shifts the chances of the deck's
-lights; actors; props, decals and items; smoke; doors; and locks. The scan
-shows some of it (power, threat, cargo, security, fires), never the doors.
+threat, clutter, smoke, fire, doors and locks - each low, middle or high,
+leaning by the ship's class (src/game/ships.ts). It shifts the chances of
+the deck's lights; actors; props, decals and items; smoke; fires; doors;
+and locks. The scan shows some of it (power, threat, cargo, security,
+smoke), never the fires or the doors.
+
+**Fire** (src/game/fire.ts): a smoke emitter with `"fire": true` (the
+editor's Smoke tool, **Fire**). Flames (the smoke's puffs in the smoke
+style, glowing, white-yellow to red; its `color` tints them), dark smoke
+rising off them, a flickering orange light. Its cell burns a crewmate
+standing in it every second (3-6) and any actor in it; actors won't walk
+into it (crawlers go over). Its chance goes by the ship's fire roll.
 
 What the crew finds out on a ship are **flags** - plain names, up or down.
 They last for the run; those named `story.*` last for good (saved with the
@@ -418,7 +451,10 @@ Base → scan → run → base (`phase` in src/App.tsx; opened with `?map=` or
   them. A turret turns all round and fires bursts; a camera watches one way
   (its light green, amber when it sees the crew, red raising the alarm)
   and never fires: seeing the crew it puts the alert up (30, then a little
-  more while it keeps seeing it). Both follow the ship's robot stance.
+  more while it keeps seeing it) and marks the crew: every robot on the
+deck that's up and on guard hunts it where the camera saw it, until 5 s
+after the camera's last sighting (`SPOTTED_MS`), then forgets it unless
+it has seen the crew itself. Both follow the ship's robot stance.
 - **Creatures and survivors** (actor types `alien1`, `alien2`, `zombie1`,
   `survivor1`, placed with the Robot tool; actors.ts `faction`, `FOES`):
   the robots shoot aliens on sight (unless powered down) but take the

@@ -3,6 +3,7 @@ import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { EditorBar } from "./editor/EditorBar";
+import { PropEditor } from "./editor/PropEditor";
 import {
   applyEdit,
   canRedo,
@@ -784,6 +785,7 @@ export default function App() {
         roomHeight:
           ceilingHeight(map, selectedSmokeSpec.cell.x, selectedSmokeSpec.cell.y) - floorHeight(map, selectedSmokeSpec.cell.x, selectedSmokeSpec.cell.y),
         blow: { speed: selectedSmokeSpec.blow?.speed ?? 0, yaw: selectedSmokeSpec.blow?.yaw ?? 0, pitch: selectedSmokeSpec.blow?.pitch ?? 0 },
+        fire: !!selectedSmokeSpec.fire,
         chance: selectedSmokeSpec.chance ?? 1,
         links: linksOf(selectedSmokeSpec),
       }
@@ -1371,6 +1373,7 @@ export default function App() {
         />
       )}
       {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
+      {editMode && <PropEditor />}
       {editMode && (
         <EditorBar
           tool={editTool}

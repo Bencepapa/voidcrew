@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FIRE_ACTOR_DAMAGE, FIRE_BURN_MS, FIRE_DAMAGE, fireCells } from "./fire";
 import { MAPS, START_MAP, cellAt, doorAt, doorCrossed, floorHeight, liftAt, liftDoorOf } from "./map";
 import { DIR_VECTOR, behindOf, leftOf, rightOf, stepForward } from "./movement";
 import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
@@ -9,7 +10,7 @@ import { rollLoot, stacksText, stacksValue } from "./items";
 import type { ItemStack, LootSpill } from "./items";
 import { PROP_TYPES, propHeight, propPlacement } from "./props";
 import type { ShipMood } from "./variation";
-import { ACTOR_TYPES, actorAt, actorFromSpec, actorWake, createActors, partyHitChance, scared, stepActors } from "./actors";
+import { ACTOR_TYPES, SPOTTED_MS, actorAt, actorFromSpec, actorWake, createActors, partyHitChance, scared, stepActors, type Spotted } from "./actors";
 import { moodOdds } from "./variation";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
@@ -137,6 +138,11 @@ export function useGameState() {
   aimRef.current = aim;
   // when the party was last hit (real time), for a red flash
   const [hurtAt, setHurtAt] = useState(0);
+  // how long since a fire last burnt (see fire.ts)
+  const burnClockRef = useRef(0);
+  // where a camera last saw the crew, and till when the robots know it
+  // (see SPOTTED_MS)
+  const spottedRef = useRef<Spotted | null>(null);
   // how much of the party each actor sees past cover (0..1, by actor id),
   // measured in the scene by the viewport; unmeasured: fully exposed
   const partyCoverRef = useRef(new Map<number, number>());
@@ -444,14 +450,21 @@ export function useGameState() {
       if (readyMapRef.current !== m.id || frozenRef.current) return;
       if (variationRef.current && wipedRef.current === null) alertTick(m);
       // (a downed crew is nowhere to them: they lose it and go back)
-      const { actors: stepped, attacks, alarms, allyShots } = stepActors(
+      const spotted = spottedRef.current && gameClock.now() < spottedRef.current.until ? spottedRef.current : null;
+      const { actors: stepped, attacks, alarms, allyShots, spotted: seenBy } = stepActors(
         m,
         actorsRef.current,
         gameClock.now(),
         wipedRef.current !== null ? { x: -1000, y: -1000 } : posRef.current,
         (cell) => openDoorsRef.current.has(doorCellKey(cell)),
         elevationRef.current,
+        spotted,
       );
+      // a camera sees the crew: every robot on guard knows where, a while
+      if (seenBy) {
+        if (!spotted) pushLog("A camera marks your position - the robots are coming.");
+        spottedRef.current = { cell: seenBy, until: gameClock.now() + SPOTTED_MS };
+      }
       let next = stepped;
       // the crew called in: by a camera, or a robot finding it where it
       // mustn't be
@@ -484,7 +497,38 @@ export function useGameState() {
           pushLog(`${whose} kills ${ACTOR_TYPES[target.type].name.toLowerCase()}.`);
         }
       }
+      // fire (see fire.ts): every so often it burns a crewmate standing in
+      // it, and anything else in it
+      const burning = fireCells(m);
+      burnClockRef.current = burning.size ? burnClockRef.current + ACTOR_TICK_MS : 0;
+      const burnNow = burnClockRef.current >= FIRE_BURN_MS;
+      if (burnNow) {
+        burnClockRef.current = 0;
+        const now = gameClock.now();
+        next = next.map((a) => {
+          const type = ACTOR_TYPES[a.type];
+          if (a.diedAt !== null || a.inVentUntil || type.crawler || type.ceiling || !burning.has(`${a.cell.x},${a.cell.y}`)) return a;
+          const hp = Math.max(0, a.hp - FIRE_ACTOR_DAMAGE);
+          const hit = { ...a, hp, hitAt: now, diedAt: hp ? null : now };
+          if (!hp) pushLog(`${type.name} burns.`);
+          return hp ? scared(hit, FIRE_ACTOR_DAMAGE, now, a.cell) : hit;
+        });
+      }
       if (next !== actorsRef.current) updateActors(next);
+      const here = posRef.current;
+      if (burnNow && wipedRef.current === null && burning.has(`${here.x},${here.y}`)) {
+        const standing = crewRef.current.filter((c) => c.hp > 0);
+        if (standing.length) {
+          const victim = standing[Math.floor(Math.random() * standing.length)];
+          const damage = FIRE_DAMAGE[0] + Math.floor(Math.random() * (FIRE_DAMAGE[1] - FIRE_DAMAGE[0] + 1));
+          const hp = Math.max(immortalRef.current ? Math.min(1, victim.hp) : 0, victim.hp - damage);
+          crewRef.current = crewRef.current.map((c) => (c.id === victim.id ? { ...c, hp } : c));
+          setCrew(crewRef.current);
+          setHurtAt(performance.now());
+          pushLog(`The fire burns ${victim.name} for ${damage}.` + (hp === 0 ? ` ${victim.name} goes down!` : ""));
+          wipeIfDownRef.current();
+        }
+      }
       // their shots may land on a random conscious crewmate: the farther
       // and the better covered the party, the likelier they miss
       for (const attack of attacks) {

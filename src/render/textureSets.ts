@@ -19,6 +19,10 @@ export interface TextureSetFiles {
   // how shiny and how metal each texel is: green the roughness, blue the
   // metalness (texture:process --gloss/--metal) - else the viewer's own
   surface?: string;
+  // the hue of its own trim (degrees; `range`: how far round it still
+  // counts), which the ship's livery turns - instead of the deck's accent
+  // (its wood and brass then stay put on a deck whose accent is yellow)
+  accent?: { hue: number; range?: number };
   // a grate floor: its lowest this many height levels are the slots, cut
   // open where it's a bridge deck (see through it)
   grateLevels?: number;
@@ -159,6 +163,7 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/bridgewall1/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/bridgewall1/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/bridgewall1/depth.png`,
+    accent: { hue: 218 },
     surface: `${import.meta.env.BASE_URL}textures/bridgewall1/surface.png`,
     pixelArt: true,
   },
@@ -167,6 +172,7 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/bridgewall2/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/bridgewall2/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/bridgewall2/depth.png`,
+    accent: { hue: 218 },
     surface: `${import.meta.env.BASE_URL}textures/bridgewall2/surface.png`,
     pixelArt: true,
   },
@@ -175,6 +181,7 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/bridgewall3/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/bridgewall3/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/bridgewall3/depth.png`,
+    accent: { hue: 218 },
     surface: `${import.meta.env.BASE_URL}textures/bridgewall3/surface.png`,
     glow: `${import.meta.env.BASE_URL}textures/bridgewall3/glow.png`,
     pixelArt: true,
@@ -184,6 +191,7 @@ export const TEXTURE_SETS = {
     diffuse: `${import.meta.env.BASE_URL}textures/bridgewall4/diffuse.png`,
     normal: `${import.meta.env.BASE_URL}textures/bridgewall4/normal.png`,
     depth: `${import.meta.env.BASE_URL}textures/bridgewall4/depth.png`,
+    accent: { hue: 218 },
     surface: `${import.meta.env.BASE_URL}textures/bridgewall4/surface.png`,
     pixelArt: true,
   },

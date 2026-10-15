@@ -11,7 +11,21 @@ import type { GameMap, PropAnchor, PropSpec, Vec2 } from "./types";
 export interface PropPart {
   min: [number, number, number];
   max: [number, number, number];
+  // "cylinder": an upright round part filling the box (its side wrapped in
+  // the front and side views - front and back from the front view, the
+  // ends from the side view - its top from the top view)
+  shape?: "box" | "cylinder";
+  // where each view shows it, when that's not where it stands: its faces
+  // there cut from this box's place in that view instead (only the view's
+  // own two axes count)
+  src?: Partial<Record<PropView, { min: [number, number, number]; max: [number, number, number] }>>;
+  // the faces left out
+  off?: PropFace[];
 }
+export type PropView = "front" | "side" | "top";
+// front: +z (the front view), back: -z (it mirrored), right: +x (the side
+// view), left: -x (it mirrored), top (the top view)
+export type PropFace = "front" | "back" | "right" | "left" | "top";
 
 export type PropType = {
   // extent (cells; height in wall heights): x length, y height, z depth
@@ -22,6 +36,8 @@ export type PropType = {
   wall?: boolean;
   // its relief's depth, relative to props' usual (softer for fabric)
   relief?: number;
+  // its normal maps' strength, relative to the viewer's (Normal strength)
+  normal?: number;
   // something to loot (see items.ts): the loot table its contents are
   // rolled from, unless the map puts some in by hand (PropSpec.loot)
   container?: string;
@@ -210,6 +226,31 @@ export const PROP_TYPES: Record<string, PropType> = {
   chamfer1: { kind: "chamfer", size: [0.5 * Math.SQRT2, 1, 0.02], cut: 0.5, wall: true },
   chamfer2: { kind: "chamfer", size: [0.7 * Math.SQRT2, 1, 0.02], cut: 0.7, wall: true },
 };
+
+// The prop editor's saves (see src/editor/PropEditor.tsx): src/props/<name>.json
+// holds a prop's size, relief and normal strength - and a views prop's view
+// sizes, elevation and boxes - over the ones above, which are only its
+// first draft.
+export interface PropEdit {
+  size: [number, number, number];
+  relief?: number;
+  normal?: number;
+  parts?: PropPart[];
+  px?: { front: [number, number]; side: [number, number]; top: [number, number] };
+  elevation?: number;
+}
+// (a pillar's and a chamfer's sizes are their shape's: not edited)
+export function propEditable(type: PropType | undefined): boolean {
+  return !!type && type.kind !== "pillar" && type.kind !== "chamfer";
+}
+const EDITS = import.meta.glob<PropEdit>("../props/*.json", { eager: true, import: "default" });
+for (const [file, edit] of Object.entries(EDITS)) {
+  const type = PROP_TYPES[file.slice("../props/".length, -".json".length)];
+  if (!propEditable(type)) continue;
+  const { parts, px, ...common } = edit;
+  Object.assign(type, common);
+  if (type.kind === "views") Object.assign(type, parts ? { parts } : {}, px ? { px } : {});
+}
 
 // the corner a chamfer cuts (any other anchor: the nearest corner)
 const CHAMFER_CORNER: Record<PropAnchor, "NE" | "NW" | "SE" | "SW"> = {

@@ -46,6 +46,8 @@ export function ActorEditor() {
   const [mode, setMode] = useState<PreviewMode>("walk");
   const [fps, setFps] = useState(6);
   const [status, setStatus] = useState("");
+  // the sheet's normal map strength in the game (1: as made)
+  const [normal, setNormal] = useState(1);
 
   // (re)load the sheet and its saved fixes; `bust` re-reads a regenerated one
   const load = useCallback(
@@ -54,6 +56,7 @@ export function ActorEditor() {
       setImage(img);
       const saved = actorOffsets(type.sheet);
       setOffsets(Array.from({ length: type.cols * type.rows }, (_, i) => saved?.offsets[i] ?? [0, 0]));
+      setNormal(saved?.normal ?? 1);
       setStatus(bust ? "sheet reloaded" : "");
     },
     [type],
@@ -219,7 +222,7 @@ export function ActorEditor() {
     return () => window.removeEventListener("keydown", onKey);
   }, [nudge, type]);
 
-  const data = (): ActorOffsets => ({ cell: [cellW, cellH], offsets });
+  const data = (): ActorOffsets => ({ cell: [cellW, cellH], offsets, ...(normal !== 1 ? { normal } : {}) });
   const save = async () => {
     const res = await fetch(`${import.meta.env.BASE_URL}__voidcrew/actor-offsets?name=${type.sheet}`, {
       method: "POST",
@@ -249,6 +252,21 @@ export function ActorEditor() {
         <button className={button} onClick={() => load(true)}>
           Reload sheet
         </button>
+        <label className="flex items-center gap-1" title="Its normal map's strength in the game (1: as made); saved with the shifts">
+          normal
+          <input
+            type="number"
+            step={0.1}
+            min={0}
+            value={normal}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              if (Number.isFinite(v) && v >= 0) setNormal(v);
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="w-14 bg-neutral-800 border border-neutral-600 px-1 text-right"
+          />
+        </label>
         <button className={button} onClick={save}>
           Save
         </button>

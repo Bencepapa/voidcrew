@@ -1,4 +1,5 @@
 import { cellAt, doorCrossed, floorHeight } from "./map";
+import { fireCells } from "./fire";
 import { DIR_VECTOR, rightOf } from "./movement";
 import { PROP_TYPES } from "./props";
 import { passage } from "./heights";
@@ -754,6 +755,10 @@ export interface ActorState {
   // was then (where it searches)
   lastSeenAt: number;
   lastSeenCell: Vec2 | null;
+  // a camera's sighting passed on to it (see SPOTTED_MS): it hunts the crew
+  // where the camera saw it until then, and forgets it after unless it's
+  // seen it itself meanwhile
+  markedUntil?: number;
   // after a shot: cells still to fall back; and whether it has stepped
   // forward for the next shot yet
   retreatSteps: number;
@@ -901,6 +906,15 @@ export interface AllyShot {
 // how much a fooled robot finding the crew in a restricted area puts the
 // alert up
 const RESTRICTED_ALERT = 25;
+// A camera seeing the crew passes it on to every robot on the deck that's
+// up and on guard: for this long (game ms) after its last sighting they know
+// where the crew was seen and hunt it there - then forget it, unless they've
+// seen it themselves.
+export const SPOTTED_MS = 5000;
+export interface Spotted {
+  cell: Vec2;
+  until: number;
+}
 // how long a crawler stays in the vents (game ms, at least / at most)
 const VENT_MS: [number, number] = [6000, 14000];
 
@@ -952,8 +966,12 @@ export function stepActors(
   isDoorOpen: (cell: Vec2) => boolean,
   // the height the party stands at
   partyY: number = floorHeight(map, party.x, party.y),
-): { actors: ActorState[]; attacks: ActorAttack[]; alarms: ActorAlarm[]; allyShots: AllyShot[] } {
+  // where a camera last saw the crew (see SPOTTED_MS), while that lasts
+  spotted: Spotted | null = null,
+): { actors: ActorState[]; attacks: ActorAttack[]; alarms: ActorAlarm[]; allyShots: AllyShot[]; spotted: Vec2 | null } {
   let changed = false;
+  // a camera seeing the crew this tick: where
+  let spottedNow: Vec2 | null = null;
   const attacks: ActorAttack[] = [];
   const alarms: ActorAlarm[] = [];
   const allyShots: AllyShot[] = [];
@@ -963,6 +981,8 @@ export function stepActors(
   const ventCells = new Set(vents.map((c) => `${c.x},${c.y}`));
   // where the crew mustn't be (see GameMap.restricted)
   const restricted = new Set((map.restricted ?? []).map((c) => `${c.x},${c.y}`));
+  // the cells on fire (see fire.ts)
+  const burning = fireCells(map);
   const partyRestricted = restricted.has(`${party.x},${party.y}`);
   const doorOpen = (key: string) => {
     const [x, y] = key.split(",").map(Number);
@@ -1014,6 +1034,8 @@ export function stepActors(
     // no ladders - where it fits and nobody stands), or null
     const stepY = (to: Vec2, dir: Direction): number | null => {
       if (cellAt(map, to.x, to.y) === "wall") return null;
+      // (nothing walks into a fire - a crawler goes over it)
+      if (!type.crawler && burning.has(`${to.x},${to.y}`)) return null;
       const door = doorCrossed(map, a.cell, to);
       if (door && !isDoorOpen(door)) return null;
       const way = passage(map, a.cell, a.y, to, dir, type.body);
@@ -1142,10 +1164,19 @@ export function stepActors(
       update({ hostile: true, lastSeenAt: now, lastSeenCell: party, facing: toward(a.cell, party), waitUntil: now + 400 });
       return a;
     }
-    if (sees) update({ lastSeenAt: now, lastSeenCell: party });
-    if (a.hostile && !sees && now - a.lastSeenAt > type.alertMs) {
+    // (its own sighting: a camera's no longer counts)
+    if (sees) update({ lastSeenAt: now, lastSeenCell: party, markedUntil: undefined });
+    // a camera's sighting passed on: it hunts the crew there (not a
+    // harmless one, nor one powered down or fooled - nor a fixture)
+    const robot = !type.faction || type.faction === "robot";
+    if (spotted && now < spotted.until && !sees && robot && !type.passive && !a.dormant && !a.fooled && !a.ally) {
+      update({ hostile: true, lastSeenCell: spotted.cell, markedUntil: spotted.until });
+    }
+    // (going by a camera, it forgets once that runs out)
+    const forgetAt = a.markedUntil ?? a.lastSeenAt + type.alertMs;
+    if (a.hostile && !sees && now > forgetAt) {
       // lost it: back to its route, unaware
-      update({ hostile: false, lastSeenCell: null, retreatSteps: 0, advanced: false, volleyLeft: 0 });
+      update({ hostile: false, lastSeenCell: null, retreatSteps: 0, advanced: false, volleyLeft: 0, markedUntil: undefined });
     }
 
     if (a.hostile) {
@@ -1276,7 +1307,7 @@ export function stepActors(
     fighters[i] = { ...a, lastAttack: now, facing: toward(a.cell, best.o.cell), waitUntil: now + type.tactics.shotPauseMs };
     changed = true;
   }
-  return { actors: changed ? fighters : actors, attacks, alarms, allyShots };
+  return { actors: changed ? fighters : actors, attacks, alarms, allyShots, spotted: spottedNow };
 
   // A fixture's turn: it turns to the crew if it sees it - a turret fires
   // (or, on the crew's side, fires at the robots it sees), a camera calls
@@ -1325,6 +1356,8 @@ export function stepActors(
       const first = !hostile;
       update({ hostile: true, lastSeenCell: party });
       if (type.watcher) {
+        // (and every robot on guard learns where)
+        spottedNow = { ...party };
         // (the first sighting the most, then a little more while it lasts)
         if (first || now - a.lastAttack >= type.attackCooldownMs) {
           alarms.push({ actor: a.id, alert: first ? type.watcher.alert : type.watcher.alert / 4 });

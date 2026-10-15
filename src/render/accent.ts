@@ -12,6 +12,19 @@ export const ACCENT_UNIFORMS = {
   uAccentShift: { value: 0 },
   uAccentMinSat: { value: 0.35 },
 };
+export type AccentUniforms = typeof ACCENT_UNIFORMS;
+
+// a texture set's own accent (TextureSetFiles.accent): its own uniforms,
+// turned to the same livery from its own hue (a material carries them in
+// userData.accentUniforms; the rest share ACCENT_UNIFORMS, the deck's)
+export function ownAccentUniforms(): AccentUniforms {
+  return {
+    uAccentFrom: { value: 0 },
+    uAccentWidth: { value: 0.08 },
+    uAccentShift: { value: 0 },
+    uAccentMinSat: { value: 0.35 },
+  };
+}
 
 // (GLSL: declared once in each patched fragment shader)
 export const ACCENT_GLSL = `

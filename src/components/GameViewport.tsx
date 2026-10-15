@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
-import { createSmoke, type SmokeBody, type SmokeStyle, type SmokeWorld } from "../render/smoke";
-import { ACCENT_UNIFORMS } from "../render/accent";
+import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
+import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
+import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, itemSpot } from "../game/items";
 import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
@@ -25,7 +26,7 @@ import { gameClock } from "../game/clock";
 import { weaponAccuracy } from "../game/combat";
 import type { ShotResult, Weapon } from "../game/combat";
 import { cellKey, visibleCells } from "../game/visibility";
-import type { PropType } from "../game/props";
+import type { PropFace, PropPart, PropType, PropView } from "../game/props";
 import { doorCellKey } from "../game/useGameState";
 import { forwardOf } from "../game/freeMovement";
 import type { FreePose } from "../game/freeMovement";
@@ -459,6 +460,8 @@ interface WallKit {
   // disposed with the scene (incl. the relief AO map once built)
   textures: THREE.Texture[];
   slots: WallSlot[];
+  // a prop's own normal strength, relative to the viewer's (PropType.normal)
+  normal?: number;
 }
 
 // Stable pseudo-random 0..1 per wall face, from its position (face centers
@@ -650,6 +653,21 @@ const TOUCH_REACH = 1.4;
 // a camera's light on the crew: watching, raising the alarm
 const CAMERA_WATCH_LIGHT = 0xffc23a;
 const CAMERA_ALARM_LIGHT = 0xff2418;
+// a fire (see fire.ts): its light (color, intensity and reach at size 1,
+// how high over its flames), and the dark smoke rising off it (color, how
+// high over the flames it comes from, how much and how big beside them)
+const FIRE_LIGHT = 0xff7a2a;
+const FIRE_LIGHT_INTENSITY = 1.8;
+const FIRE_LIGHT_RANGE = 2.4;
+const FIRE_LIGHT_LIFT = 0.15;
+const FIRE_SMOKE_COLOR = 0x2e2a27;
+const FIRE_SMOKE_LIFT = 0.3;
+const FIRE_SMOKE_DENSITY = 0.8;
+const FIRE_SMOKE_SIZE = 1.3;
+// a fire light's flicker at `now` (ms): about 1, quickly unsteady
+function fireFlicker(now: number, seed: number): number {
+  return 1 + 0.22 * Math.sin(now / 47 + seed * 1.7) + 0.15 * Math.sin(now / 23 + seed * 4.1) + 0.12 * (Math.random() - 0.5);
+}
 // the crew down: how long the view takes to fall, the eye's height above
 // the floor then, how far up it looks and how far over the head rolls
 const DOWN_FALL_MS = 900;
@@ -1218,6 +1236,24 @@ export function GameViewport({
     hot.on(TEXTURE_CHANGED_EVENT, onChange);
     return () => hot.off(TEXTURE_CHANGED_EVENT, onChange);
   }, []);
+  // the prop editor (see propEditState): its boxes drawn over the edited
+  // type's props at once; the props rebuilt once its edits settle
+  const propWiresRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    let version = propEdit.get().version;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = propEdit.subscribe(() => {
+      propWiresRef.current?.();
+      if (propEdit.get().version === version) return;
+      version = propEdit.get().version;
+      clearTimeout(timer);
+      timer = setTimeout(() => setTextureVersion((v) => v + 1), 600);
+    });
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, []);
   // continuously-updated "where the camera actually is right now", read and
   // written every animation frame, whether mid-transition or settled
   const liveRef = useRef<CamTarget>(computeTarget(pos, dir, elevation));
@@ -1469,6 +1505,8 @@ export function GameViewport({
     // public/textures/ with the usual diffuse, normal and depth maps
     // (`accent`: its materials take the ship's livery - the deck's own
     // surfaces do, props don't)
+    // the texture sets with an accent of their own (see TextureSetFiles.accent)
+    const ownAccents: { hue: number; range: number; uniforms: AccentUniforms }[] = [];
     function createWallKit(setId: string, displace = true, accent = true): WallKit {
       const paths: TextureSetFiles = isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
       const diffuse = kitTexture(paths.diffuse + bust);
@@ -1534,9 +1572,12 @@ export function GameViewport({
         addDirectLightOcclusion(litMat, cavity);
       }
 
+      const accentUniforms = accent && paths.accent ? ownAccentUniforms() : undefined;
+      if (accentUniforms) ownAccents.push({ hue: paths.accent!.hue, range: paths.accent!.range ?? 30, uniforms: accentUniforms });
       for (const mat of [wallMat, sideMat, litMat]) {
         if (!mat) continue;
         mat.userData.accent = accent;
+        if (accentUniforms) mat.userData.accentUniforms = accentUniforms;
         if (surfaceMap) {
           mat.roughnessMap = mat.metalnessMap = surfaceMap;
           mat.roughness = mat.metalness = 1;
@@ -1669,7 +1710,7 @@ export function GameViewport({
     };
     // prop side/top kits by texture set, created on demand
     const propKits = new Map<string, WallKit>();
-    const propKitFor = (setId: string) => {
+    const sharedPropKitFor = (setId: string) => {
       let kit = propKits.get(setId);
       if (!kit) {
         kit = createWallKit(setId, false, false);
@@ -1678,7 +1719,7 @@ export function GameViewport({
       return kit;
     };
     // the loot items' sprites (all of them: a crate may spill any)
-    for (const id of Object.keys(ITEM_TYPES)) propKitFor(`item_${id}`);
+    for (const id of Object.keys(ITEM_TYPES)) sharedPropKitFor(`item_${id}`);
     // a prop type's texture sets: a box's side and top, its views, or a
     // cutout's one
     const propSets = (type: PropType): string[] =>
@@ -2114,16 +2155,17 @@ export function GameViewport({
       }
     }
 
-    // every kit, for per-frame material updates and disposal
-    const allKits = [
+    // every kit, for per-frame material updates and disposal (the props'
+    // made as they're built, after this)
+    const deckKits = [
       ...kits,
       ...floorKits.values(),
       frameKit,
       ...panelKits.values(),
       ...ceilingKits.values(),
       ...windowKits.values(),
-      ...propKits.values(),
     ];
+    const allKits = () => [...deckKits, ...propKits.values()];
 
     // Windows are always relief too: the frame panel with its opening cut
     // out, the opening's jambs reaching WINDOW_DEPTH back into the wall, and
@@ -2321,7 +2363,10 @@ export function GameViewport({
     // blocks cut from its texture (as a wall of the same height would show
     // it), the 45 degree slopes between them flat.
     async function buildPillar(type: Extract<PropType, { kind: "pillar" }>, h: number): Promise<THREE.Group | null> {
-      const kit = propKitFor(type.texture ?? primarySet);
+      // (in a deck texture - its own, or the wall's - it's the deck's: it
+      // takes the ship's livery like the walls)
+      const setId = type.texture ?? primarySet;
+      const kit = isTextureSetId(setId) ? wallKitFor(setId) : sharedPropKitFor(setId);
       const relief = reliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
       const foot = type.size[0];
       const shaft = type.shaft;
@@ -2422,6 +2467,14 @@ export function GameViewport({
 
     async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
       const [length, height, depth] = type.size;
+      // (its texture sets take its own normal strength)
+      const propKitFor = (setId: string) => {
+        const kit = sharedPropKitFor(setId);
+        kit.normal = type.normal;
+        const normal = settingsRef.current.normalStrength * (kit.normal ?? 1);
+        kit.wallMat.normalScale.set(normal, normal);
+        return kit;
+      };
       const relief = reliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
       const template = new THREE.Group();
       const face = (
@@ -2537,29 +2590,59 @@ export function GameViewport({
       const lift = (type.kind === "views" ? (type.elevation ?? 0) : 0) * wallHeight;
       const sideZ0 = zFrom(sideZ);
       const topZ0 = zFrom(topZ);
-      for (const { min, max } of type.parts) {
+      // where a point shows in each view (image 0..1, rows down) - for a
+      // part whose views show it elsewhere (PropPart.src), the part's box
+      // stretched onto that place
+      const views = {
+        front: (x: number, y: number): [number, number] => [(x + length / 2) / length, (frontY - y) / frontY],
+        // (the side view runs from the front (+z) on its left to the back)
+        side: (z: number, y: number): [number, number] => [(sideZ0 + sideZ - z) / sideZ, (sideY - y) / sideY],
+        top: (x: number, z: number): [number, number] => [(x + topX / 2) / topX, (z - topZ0) / topZ],
+      };
+      for (const part of type.parts) {
+        const { min, max } = part;
         const [x0, y0, z0] = min;
         const [x1, y1, z1] = max;
+        const off = new Set(part.off ?? []);
+        // a coordinate of the part on `axis`, moved onto its place in a view
+        const inView = (view: PropView, axis: 0 | 1 | 2, v: number) => {
+          const src = part.src?.[view];
+          if (!src || max[axis] === min[axis]) return v;
+          return src.min[axis] + ((v - min[axis]) / (max[axis] - min[axis])) * (src.max[axis] - src.min[axis]);
+        };
+        if (part.shape === "cylinder") {
+          addCylinder(part, off, inView);
+          continue;
+        }
         const cx = (x0 + x1) / 2;
         const cy = ((y0 + y1) / 2) * wallHeight + lift;
         const cz = (z0 + z1) / 2;
         const h = (y1 - y0) * wallHeight;
-        const frontRows: [number, number] = [(frontY - y1) / frontY, (frontY - y0) / frontY];
-        const sideRows: [number, number] = [(sideY - y1) / sideY, (sideY - y0) / sideY];
-        const alongX: [number, number] = [(x0 + length / 2) / length, (x1 + length / 2) / length];
-        // the side view runs from the front (+z) on its left to the back
-        const alongZ: [number, number] = [(sideZ0 + sideZ - z1) / sideZ, (sideZ0 + sideZ - z0) / sideZ];
-        const topCols: [number, number] = [(x0 + topX / 2) / topX, (x1 + topX / 2) / topX];
-        const topRows: [number, number] = [(z0 - topZ0) / topZ, (z1 - topZ0) / topZ];
-        const f = await cut(front, x1 - x0, h, alongX, frontRows);
-        const s = await cut(side, z1 - z0, h, alongZ, sideRows);
-        const t = await cut(top, x1 - x0, z1 - z0, topCols, topRows);
-        if (!f || !s || !t) return null;
+        const span = (a: [number, number], b: [number, number]): [[number, number], [number, number]] => [
+          [Math.min(a[0], b[0]), Math.max(a[0], b[0])],
+          [Math.min(a[1], b[1]), Math.max(a[1], b[1])],
+        ];
+        const [alongX, frontRows] = span(
+          views.front(inView("front", 0, x0), inView("front", 1, y0)),
+          views.front(inView("front", 0, x1), inView("front", 1, y1)),
+        );
+        const [alongZ, sideRows] = span(
+          views.side(inView("side", 2, z0), inView("side", 1, y0)),
+          views.side(inView("side", 2, z1), inView("side", 1, y1)),
+        );
+        const [topCols, topRows] = span(
+          views.top(inView("top", 0, x0), inView("top", 2, z0)),
+          views.top(inView("top", 0, x1), inView("top", 2, z1)),
+        );
+        const f = off.has("front") && off.has("back") ? null : await cut(front, x1 - x0, h, alongX, frontRows);
+        const s = off.has("right") && off.has("left") ? null : await cut(side, z1 - z0, h, alongZ, sideRows);
+        const t = off.has("top") ? null : await cut(top, x1 - x0, z1 - z0, topCols, topRows);
         // the back and the -x end show their views mirrored
-        face(f.geometry, front, [cx, cy, z1], [0, 0]);
-        face(f.geometry, front, [cx, cy, z0], [0, Math.PI], true);
-        face(s.geometry, side, [x1, cy, cz], [0, Math.PI / 2]);
-        face(s.geometry, side, [x0, cy, cz], [0, -Math.PI / 2], true);
+        if (f && !off.has("front")) face(f.geometry, front, [cx, cy, z1], [0, 0]);
+        if (f && !off.has("back")) face(f.geometry, front, [cx, cy, z0], [0, Math.PI], true);
+        if (s && !off.has("right")) face(s.geometry, side, [x1, cy, cz], [0, Math.PI / 2]);
+        if (s && !off.has("left")) face(s.geometry, side, [x0, cy, cz], [0, -Math.PI / 2], true);
+        if (!t) continue;
         // a top hidden under a part above it would show that part's top
         // view (a table's foot wearing its top's wood): left out
         const covered = type.parts.some(
@@ -2568,6 +2651,109 @@ export function GameViewport({
         if (!covered) face(t.geometry, top, [cx, y1 * wallHeight + lift, cz], [-Math.PI / 2, 0]);
       }
       return template;
+
+      // A round part: an upright cylinder (elliptic, filling its box) with
+      // no relief, its side's every strip textured from the view that looks
+      // at it - the front view on its front and back quarters, the side view
+      // on its ends - and its top from the top view, all projected straight
+      // through as the views were drawn
+      function addCylinder(part: PropPart, off: Set<PropFace>, inView: (view: PropView, axis: 0 | 1 | 2, v: number) => number) {
+        const [x0, y0, z0] = part.min;
+        const [x1, y1, z1] = part.max;
+        const cx = (x0 + x1) / 2;
+        const cz = (z0 + z1) / 2;
+        const rx = (x1 - x0) / 2;
+        const rz = (z1 - z0) / 2;
+        const ya = y0 * wallHeight + lift;
+        const yb = y1 * wallHeight + lift;
+        const uv = ([u, v]: [number, number]): [number, number] => [Math.min(1, Math.max(0, u)), 1 - Math.min(1, Math.max(0, v))];
+        const frontUV = (x: number, y: number) => uv(views.front(inView("front", 0, x), inView("front", 1, y)));
+        const sideUV = (z: number, y: number) => uv(views.side(inView("side", 2, z), inView("side", 1, y)));
+        const topUV = (x: number, z: number) => uv(views.top(inView("top", 0, x), inView("top", 2, z)));
+        const strips = { front: { pos: [] as number[], uv: [] as number[] }, side: { pos: [] as number[], uv: [] as number[] } };
+        const at = (a: number): [number, number] => [cx + rx * Math.sin(a), cz + rz * Math.cos(a)];
+        for (let k = 0; k < CYLINDER_SEGMENTS; k++) {
+          const a0 = (k / CYLINDER_SEGMENTS) * Math.PI * 2;
+          const a1 = ((k + 1) / CYLINDER_SEGMENTS) * Math.PI * 2;
+          const mid = (a0 + a1) / 2;
+          // (which quarter it faces: +z front, -z back, +x right, -x left)
+          const facing: PropFace = Math.abs(Math.cos(mid)) >= Math.abs(Math.sin(mid)) ? (Math.cos(mid) > 0 ? "front" : "back") : Math.sin(mid) > 0 ? "right" : "left";
+          if (off.has(facing)) continue;
+          const ends = facing === "right" || facing === "left";
+          const strip = ends ? strips.side : strips.front;
+          const [p0x, p0z] = at(a0);
+          const [p1x, p1z] = at(a1);
+          const tex = (x: number, z: number, y: number) => (ends ? sideUV(z, y / wallHeight) : frontUV(x, y / wallHeight));
+          const corners: [number, number, number][] = [
+            [p0x, ya - lift, p0z],
+            [p1x, ya - lift, p1z],
+            [p1x, yb - lift, p1z],
+            [p0x, yb - lift, p0z],
+          ];
+          // (two triangles, counter-clockwise seen from outside)
+          for (const i of [0, 1, 2, 0, 2, 3]) {
+            const [x, y, z] = corners[i];
+            strip.pos.push(x, y + lift, z);
+            strip.uv.push(...tex(x, z, y));
+          }
+        }
+        const mesh = (pos: number[], uvs: number[], kit: WallKit) => {
+          if (!pos.length) return;
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+          geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+          geo.computeVertexNormals();
+          geometries.push(geo);
+          template.add(new THREE.Mesh(geo, roundMaterial(kit)));
+        };
+        mesh(strips.front.pos, strips.front.uv, front);
+        mesh(strips.side.pos, strips.side.uv, side);
+        // the top: a fan round its middle (unless a part above covers it)
+        const covered = type.kind === "views" && type.parts.some(
+          (o) => o !== part && o.min[1] >= y1 && o.min[0] <= x0 && o.max[0] >= x1 && o.min[2] <= z0 && o.max[2] >= z1,
+        );
+        if (off.has("top") || covered) return;
+        const pos: number[] = [];
+        const uvs: number[] = [];
+        for (let k = 0; k < CYLINDER_SEGMENTS; k++) {
+          const [p0x, p0z] = at((k / CYLINDER_SEGMENTS) * Math.PI * 2);
+          const [p1x, p1z] = at(((k + 1) / CYLINDER_SEGMENTS) * Math.PI * 2);
+          for (const [x, z] of [
+            [cx, cz],
+            [p0x, p0z],
+            [p1x, p1z],
+          ] as const) {
+            pos.push(x, yb, z);
+            uvs.push(...topUV(x, z));
+          }
+        }
+        mesh(pos, uvs, top);
+      }
+    }
+    // a round part's sides: no relief, so the view's see-through pixels cut
+    // it out here, and it's seen from inside too (through those)
+    const CYLINDER_SEGMENTS = 24;
+    const roundMaterials = new Map<WallKit, THREE.MeshStandardMaterial>();
+    function roundMaterial(kit: WallKit): THREE.MeshStandardMaterial {
+      let mat = roundMaterials.get(kit);
+      if (!mat) {
+        mat = new THREE.MeshStandardMaterial({
+          map: kit.wallMat.map,
+          normalMap: kit.wallMat.normalMap,
+          alphaTest: 0.5,
+          side: THREE.DoubleSide,
+          roughness: settingsRef.current.roughness,
+          metalness: settingsRef.current.metalness,
+        });
+        mat.userData.normal = kit.normal;
+        const normal = settingsRef.current.normalStrength * (kit.normal ?? 1);
+        mat.normalScale.set(normal, normal);
+        addDirectLightOcclusion(mat, cavity);
+        useLightGrid(mat, lightGrid);
+        ownMaterials.push(mat);
+        roundMaterials.set(kit, mat);
+      }
+      return mat;
     }
 
     // the doors, by door cell key (the editor's selection)
@@ -2614,11 +2800,51 @@ export function GameViewport({
           prop.userData.prop = true;
           // the editor picks it by this (its index in the map's props)
           prop.userData.propIndex = index;
+          prop.userData.propType = name;
           propObjects.set(index, prop);
           group.add(prop);
         }
+        refreshPropWires();
       }).catch((err) => console.error("Prop build failed:", err));
     }
+
+    // the prop editor's boxes (see propEditState) over each prop of the
+    // type it edits, in the prop's own space: its boxes (the picked one
+    // yellow) and its whole extent, seen through everything
+    const wireMats = {
+      part: new THREE.LineBasicMaterial({ color: 0x3fd0ff, depthTest: false, transparent: true, opacity: 0.85 }),
+      picked: new THREE.LineBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true }),
+      extent: new THREE.LineBasicMaterial({ color: 0x8a8f99, depthTest: false, transparent: true, opacity: 0.5 }),
+    };
+    function refreshPropWires() {
+      for (const prop of propObjects.values()) {
+        const old = prop.getObjectByName("propEditWires");
+        if (!old) continue;
+        prop.remove(old);
+        old.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
+      }
+      const { name, part } = propEdit.get();
+      const type = name ? PROP_TYPES[name] : undefined;
+      if (!editModeRef.current || !type) return;
+      const lift = (type.kind === "views" || type.kind === "panel" ? (type.elevation ?? 0) : 0) * wallHeight;
+      const box = (min: number[], max: number[], mat: THREE.LineBasicMaterial) => {
+        const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(max[0] - min[0], (max[1] - min[1]) * wallHeight, max[2] - min[2]));
+        const lines = new THREE.LineSegments(geo, mat);
+        lines.position.set((min[0] + max[0]) / 2, ((min[1] + max[1]) / 2) * wallHeight + lift, (min[2] + max[2]) / 2);
+        lines.renderOrder = 10;
+        return lines;
+      };
+      const [length, height, depth] = type.size;
+      for (const prop of propObjects.values()) {
+        if (prop.userData.propType !== name) continue;
+        const wires = new THREE.Group();
+        wires.name = "propEditWires";
+        wires.add(box([-length / 2, 0, -depth / 2], [length / 2, height, depth / 2], wireMats.extent));
+        if (type.kind === "views") type.parts.forEach((p, i) => wires.add(box(p.min, p.max, i === part ? wireMats.picked : wireMats.part)));
+        prop.add(wires);
+      }
+    }
+    propWiresRef.current = refreshPropWires;
 
     // ---- smoke (see smoke.ts): the map's emitters, and a marker at each for
     // the editor to pick it by (shown only while editing) ----
@@ -2630,7 +2856,12 @@ export function GameViewport({
     const smokeBlowGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]);
     geometries.push(smokeBlowGeo);
     const smokeBlowMat = new THREE.LineBasicMaterial({ color: 0xffd060 });
-    const buildSmoke = (m: GameMap) => createSmoke(
+    // the fires' flames (see fire.ts), made with the smoke: each a fire
+    // emitter here and dark smoke rising off it among the smoke's
+    let fireEmitters: SmokeEmitter[] = [];
+    const buildSmoke = (m: GameMap) => {
+      fireEmitters = [];
+      return createSmoke(
       (m.smokes ?? []).map((spec, index) => {
         const at = new THREE.Vector3(
           spec.cell.x + spec.pos[0],
@@ -2655,7 +2886,7 @@ export function GameViewport({
           line.scale.setScalar(0.1 + 0.1 * spec.blow.speed);
           marker.add(line);
         }
-        return {
+        const emitter: SmokeEmitter = {
           x: at.x,
           y: at.y,
           z: at.z,
@@ -2667,10 +2898,23 @@ export function GameViewport({
           color: new THREE.Color(parseColor(spec.color) ?? SMOKE_COLOR),
           cell: cellKey(spec.cell.x, spec.cell.y),
         };
+        if (!spec.fire) return emitter;
+        // (its color tints the flames: none, as they burn)
+        fireEmitters.push({ ...emitter, color: new THREE.Color(parseColor(spec.color) ?? 0xffffff) });
+        return {
+          ...emitter,
+          y: Math.min(emitter.ceiling - 0.1, emitter.y + FIRE_SMOKE_LIFT * wallHeight),
+          blow: undefined,
+          density: emitter.density * FIRE_SMOKE_DENSITY,
+          size: emitter.size * FIRE_SMOKE_SIZE,
+          color: new THREE.Color(FIRE_SMOKE_COLOR),
+        };
       }),
       lightGrid,
       smokeWorld(m),
     );
+    };
+    const buildFire = (m: GameMap) => createSmoke(fireEmitters, lightGrid, smokeWorld(m), { fire: true });
     // what the smoke bumps into: the deck's walls, floors and ceilings, and
     // its props as boxes (not the 45-degree cuts: a box would close their
     // whole corner)
@@ -2699,14 +2943,19 @@ export function GameViewport({
     const smokeBodies: SmokeBody[] = [];
     let smoke = buildSmoke(map);
     scene.add(smoke.mesh);
+    let fire = buildFire(map);
+    scene.add(fire.mesh);
     // the editor changed only the smoke: made anew, the rest stays built
     function applySmoke(next: GameMap) {
       for (const marker of smokeMarkers.values()) group.remove(marker);
       smokeMarkers.clear();
-      scene.remove(smoke.mesh);
+      scene.remove(smoke.mesh, fire.mesh);
       smoke.dispose();
+      fire.dispose();
       smoke = buildSmoke(next);
       scene.add(smoke.mesh);
+      fire = buildFire(next);
+      scene.add(fire.mesh);
     }
 
     // ---- exits: a glowing plate on the floor of each way off the ship ----
@@ -2729,7 +2978,7 @@ export function GameViewport({
       let made = itemTemplates.get(id);
       if (!made) {
         made = (async () => {
-          const kit = propKitFor(`item_${id}`);
+          const kit = sharedPropKitFor(`item_${id}`);
           let gridPromise = cache.grids.get(kit.depthUrl);
           if (!gridPromise) {
             gridPromise = loadWithRetry(kit.depthUrl, 4);
@@ -2853,6 +3102,7 @@ export function GameViewport({
         metalnessMap: kit.wallMat.metalnessMap,
       });
       material.userData.surface = kit.wallMat.userData.surface;
+      material.userData.accentUniforms = kit.wallMat.userData.accentUniforms;
       addDirectLightOcclusion(material, cavity);
       useLightGrid(material, lightGrid);
       ownMaterials.push(material);
@@ -3342,6 +3592,19 @@ export function GameViewport({
           cell: cellKey(actor.cell.x, actor.cell.y),
         });
       }
+      // the fires' flickering glow
+      fireEmitters.forEach((e, i) => {
+        list.push({
+          key: `fire ${i}`,
+          x: e.x,
+          y: e.y + FIRE_LIGHT_LIFT * wallHeight,
+          z: e.z,
+          color: FIRE_LIGHT,
+          intensity: FIRE_LIGHT_INTENSITY * Math.sqrt(e.size * e.density) * fireFlicker(now, i),
+          range: FIRE_LIGHT_RANGE * Math.sqrt(e.size),
+          cell: e.cell,
+        });
+      });
       // the map's lights (baked: only the unsteady ones), at their level now
       effectLevels.clear();
       mapLights.forEach((l, i) => {
@@ -3537,6 +3800,9 @@ export function GameViewport({
         diffuse.colorSpace = THREE.SRGBColorSpace;
         for (const tex of [diffuse, normalMap]) tex.magFilter = THREE.NearestFilter;
         mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap, alphaTest: 0.5, roughness: 0.6, metalness: 0.35 });
+        // (its sheet's own normal strength - set in the actor editor)
+        const normal = actorOffsets(type.sheet)?.normal ?? 1;
+        mat.normalScale.set(normal, normal);
         actorMaterials.set(typeName, mat);
       }
       return mat;
@@ -4745,7 +5011,7 @@ export function GameViewport({
         camera.far = s.viewDistance + 0.5;
         camera.updateProjectionMatrix();
       }
-      for (const kit of allKits) {
+      for (const kit of allKits()) {
         for (const mat of kitMaterials(kit)) {
           // (one with its own surface map keeps it)
           if (!mat.userData.surface) {
@@ -4754,14 +5020,16 @@ export function GameViewport({
           }
           mat.aoMapIntensity = s.aoIntensity;
         }
-        kit.wallMat.normalScale.set(s.normalStrength, s.normalStrength);
-        kit.litMat?.normalScale.set(s.normalStrength, s.normalStrength);
+        const normal = s.normalStrength * (kit.normal ?? 1);
+        kit.wallMat.normalScale.set(normal, normal);
+        kit.litMat?.normalScale.set(normal, normal);
       }
       for (const mat of ownMaterials) {
         mat.roughness = s.roughness;
         mat.metalness = s.metalness;
         mat.aoMapIntensity = s.aoIntensity;
-        mat.normalScale.set(s.normalStrength, s.normalStrength);
+        const normal = s.normalStrength * (mat.userData.normal ?? 1);
+        mat.normalScale.set(normal, normal);
       }
       cavity.value = s.aoDirect;
       // the deck's accent turned to the ship's livery (none: as painted)
@@ -4772,6 +5040,13 @@ export function GameViewport({
       ACCENT_UNIFORMS.uAccentFrom.value = (deckAccent?.hue ?? 0) / 360;
       ACCENT_UNIFORMS.uAccentWidth.value = (deckAccent?.range ?? 30) / 360;
       ACCENT_UNIFORMS.uAccentMinSat.value = s.accentMinSat;
+      // (a set with its own accent: from its own hue to the same livery)
+      for (const own of ownAccents) {
+        own.uniforms.uAccentShift.value = livery !== null ? (((livery - own.hue) % 360) + 360) % 360 / 360 : 0;
+        own.uniforms.uAccentFrom.value = own.hue / 360;
+        own.uniforms.uAccentWidth.value = own.range / 360;
+        own.uniforms.uAccentMinSat.value = s.accentMinSat;
+      }
       // a headlamp-like light orbiting the camera; the small radius keeps it
       // well inside the side walls of the current cell - a light that slips
       // behind a wall plane lights the back of its front faces and only the
@@ -4786,11 +5061,9 @@ export function GameViewport({
       );
       updateActors(camX, camZ);
       updateLoot(camX, camZ, cam.y * wallHeight);
-      smoke.update(gameDt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, {
-        walls: s.smokeWalls,
-        props: s.smokeProps,
-        actors: s.smokeActors ? smokeBodies : null,
-      });
+      const smokePhysics = { walls: s.smokeWalls, props: s.smokeProps, actors: s.smokeActors ? smokeBodies : null };
+      smoke.update(gameDt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
+      fire.update(gameDt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
       for (const marker of smokeMarkers.values()) marker.visible = editModeRef.current;
       // the exits' plates throb
       exitMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
@@ -4931,12 +5204,15 @@ export function GameViewport({
       container.removeChild(renderer.domElement);
       for (const geo of geometries) geo.dispose();
       // (their textures and relief stay cached for the next build)
-      for (const kit of allKits) {
+      for (const kit of allKits()) {
         kit.wallMat.dispose();
         kit.sideMat.dispose();
         kit.litMat?.dispose();
       }
       for (const mat of ownMaterials) mat.dispose();
+      if (propWiresRef.current === refreshPropWires) propWiresRef.current = null;
+      for (const prop of propObjects.values()) prop.getObjectByName("propEditWires")?.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
+      for (const mat of Object.values(wireMats)) mat.dispose();
       for (const id of [...actorMeshes.keys()]) removeActorMesh(id);
       for (const { line } of tracers) {
         line.geometry.dispose();
@@ -4958,8 +5234,9 @@ export function GameViewport({
       disposeLightGrid(lightGrid);
       exitMat.map?.dispose();
       exitMat.dispose();
-      scene.remove(smoke.mesh);
+      scene.remove(smoke.mesh, fire.mesh);
       smoke.dispose();
+      fire.dispose();
       smokeMarkerMat.dispose();
       smokeBlowMat.dispose();
       // the renderer stays for the next build (see SceneCache)

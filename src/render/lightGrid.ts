@@ -453,7 +453,8 @@ export function useLightGrid(material: THREE.Material, uniforms: LightGridUnifor
     shader.uniforms.uLgMin2 = uniforms.min2;
     shader.uniforms.uLgSize2 = uniforms.size2;
     // the ship's accent color (see accent.ts)
-    Object.assign(shader.uniforms, ACCENT_UNIFORMS);
+    // (the set's own, if it has one - see ownAccentUniforms)
+    Object.assign(shader.uniforms, material.userData.accentUniforms ?? ACCENT_UNIFORMS);
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vLgWorld;")
       .replace("#include <project_vertex>", "#include <project_vertex>\nvLgWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");

@@ -9,7 +9,7 @@ const MOOD_LABEL: Partial<Record<keyof ShipMood, string>> = {
   threat: "Threat",
   clutter: "Cargo",
   locks: "Security",
-  smoke: "Fires",
+  smoke: "Smoke",
 };
 const MOOD_TEXT: Record<string, string> = {
   dark: "dark",
@@ -25,8 +25,8 @@ const MOOD_TEXT: Record<string, string> = {
   some: "some",
   many: "tight",
   clear: "none",
-  hazy: "smouldering",
-  smoky: "burning",
+  hazy: "hazy",
+  smoky: "thick",
 };
 const tone = (key: keyof ShipMood, level: string) =>
   key === "threat" || key === "locks"

@@ -93,6 +93,7 @@ export interface MapFile {
     size?: number;
     color?: string;
     blow?: { speed: number; yaw: number; pitch?: number };
+    fire?: boolean;
     chance?: number;
     id?: string;
     with?: string;
@@ -347,6 +348,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         size: s.size,
         color: s.color,
         blow: s.blow,
+        fire: s.fire,
         chance: s.chance,
         id: s.id,
         with: s.with,

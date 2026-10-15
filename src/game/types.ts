@@ -205,6 +205,9 @@ export interface SmokeSpec extends Linked {
   // which way (degrees: 0 north, 90 east) and how far up from level
   // (degrees: 90 straight up, -90 straight down)
   blow?: { speed: number; yaw: number; pitch?: number };
+  // a fire (see fire.ts): flames, dark smoke off them, a flickering light,
+  // and its cell burns (its color tints the flames)
+  fire?: boolean;
   // the chance (0..1) it's there in a variation (see variation.ts)
   chance?: number;
 }

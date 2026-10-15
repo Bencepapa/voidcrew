@@ -3,11 +3,15 @@ import path from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { renormal } from "./scripts/normalMap";
 
 // Files in public/ aren't part of Vite's module graph, so saving a texture
 // normally does nothing until a manual reload. This notifies the running game
 // instead (see TEXTURE_CHANGED_EVENT in GameViewport.tsx), which rebuilds the
-// walls in place without losing the player's position.
+// walls in place without losing the player's position. A depth.png or
+// diffuse.png painted over by hand (its normal.png left older) gets its
+// normal map made anew first, and the diffuse's holes copied into the depth
+// (see scripts/normalMap.ts renormal).
 function textureHotReload(): Plugin {
   return {
     name: "voidcrew-texture-hot-reload",
@@ -24,11 +28,27 @@ function textureHotReload(): Plugin {
         clearTimeout(timers.get(resolved));
         timers.set(
           resolved,
-          setTimeout(() => {
+          setTimeout(async () => {
             timers.delete(resolved);
             const rel = path.relative(server.config.publicDir, resolved).split(path.sep).join("/");
+            const base = path.basename(resolved);
+            const normal = path.join(path.dirname(resolved), "normal.png");
+            // (a script writing the whole set writes the normal map right
+            // after: only a normal map well older than the change is stale)
+            if ((base === "depth.png" || base === "diffuse.png") && fs.existsSync(normal)) {
+              try {
+                if (fs.statSync(normal).mtimeMs < fs.statSync(resolved).mtimeMs - 1000) {
+                  const wrote = await renormal(path.dirname(resolved));
+                  server.config.logger.info(`${path.dirname(rel)}: ${wrote.join(", ")} made anew`);
+                  // (the new normal map's own change reloads it)
+                  return;
+                }
+              } catch (err) {
+                server.config.logger.warn(`renormal ${rel}: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }
             server.ws.send({ type: "custom", event: "voidcrew:texture-changed", data: { file: rel } });
-          }, 150),
+          }, 300),
         );
       };
 
@@ -162,9 +182,56 @@ function mapFiles(): Plugin {
   };
 }
 
+// The prop editor's save (see src/editor/PropEditor.tsx): POST
+// __voidcrew/prop?name=<prop type> with JSON writes src/props/<name>.json
+// (its size, view sizes and boxes, over PROP_TYPES' own). The editor
+// already shows it: that write doesn't hot-reload the game.
+function propFiles(): Plugin {
+  const justSaved = new Map<string, number>();
+  return {
+    name: "voidcrew-prop-files",
+    apply: "serve",
+    configureServer(server) {
+      const dir = path.resolve(server.config.root, "src/props");
+      server.middlewares.use(`${server.config.base}__voidcrew/prop`, (req, res) => {
+        const name = new URL(req.url ?? "", "http://x").searchParams.get("name") ?? "";
+        if (req.method !== "POST" || !/^\w+$/.test(name)) {
+          res.statusCode = 400;
+          res.end("POST with ?name=<prop type>");
+          return;
+        }
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk: Buffer) => chunks.push(chunk));
+        req.on("end", () => {
+          const text = Buffer.concat(chunks).toString();
+          try {
+            JSON.parse(text);
+          } catch {
+            res.statusCode = 400;
+            res.end("expected JSON");
+            return;
+          }
+          fs.mkdirSync(dir, { recursive: true });
+          const file = path.join(dir, `${name}.json`);
+          justSaved.set(path.normalize(file), Date.now());
+          fs.writeFileSync(file, text);
+          res.end(path.relative(server.config.root, file));
+        });
+      });
+    },
+    handleHotUpdate(ctx) {
+      const at = justSaved.get(path.normalize(ctx.file));
+      if (at !== undefined && Date.now() - at < 2000) {
+        justSaved.delete(path.normalize(ctx.file));
+        return [];
+      }
+    },
+  };
+}
+
 export default defineConfig({
   base: "/voidcrew/",
-  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles()],
+  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles(), propFiles()],
   server: {
     port: 3000,
     watch: {
