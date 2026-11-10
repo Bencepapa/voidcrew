@@ -225,6 +225,8 @@ export const PROP_TYPES: Record<string, PropType> = {
   // the same two in the fantasy set's mossy stone
   fantasypillar1: { kind: "pillar", size: [0.26, 1, 0.26], shaft: 0.16, flare: 0.1, texture: "fantasywall1" },
   fantasypillar2: { kind: "pillar", size: [0.42, 1, 0.42], shaft: 0.28, flare: 0.14, texture: "fantasywall1" },
+  // an iron wall torch (unlit: the fire is a separate flame/light)
+  fantasytorch1: { kind: "panel", texture: "fantasytorch1", size: [0.1, 0.3, 0.08], wall: true, elevation: 0.5, relief: 1 },
   // corner cuts: half the cell's sides, and more of them
   chamfer1: { kind: "chamfer", size: [0.5 * Math.SQRT2, 1, 0.02], cut: 0.5, wall: true },
   chamfer2: { kind: "chamfer", size: [0.7 * Math.SQRT2, 1, 0.02], cut: 0.7, wall: true },

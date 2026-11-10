@@ -90,6 +90,37 @@ export const TEXTURE_SETS = {
     depth: `${import.meta.env.BASE_URL}textures/fantasywall1/depth.png`,
     pixelArt: true,
   },
+  fantasyfloor1: {
+    kind: "floor", label: "Mossy flagstone",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasyfloor1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasyfloor1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasyfloor1/depth.png`,
+    pixelArt: true,
+  },
+  // iron portcullis gate: the gaps between the bars are transparent
+  fantasygate1: {
+    kind: "door", label: "Portcullis",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasygate1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasygate1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasygate1/depth.png`,
+    pixelArt: true,
+  },
+  // stone archway; its opening is transparent
+  fantasydoorframe1: {
+    kind: "door", label: "Stone arch",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasydoorframe1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasydoorframe1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasydoorframe1/depth.png`,
+    pixelArt: true,
+  },
+  // the torch prop's texture
+  fantasytorch1: {
+    kind: "propFace", label: "Torch",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasytorch1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasytorch1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasytorch1/depth.png`,
+    pixelArt: true,
+  },
   // one floor tile per cell: a grate with recessed slots
   floor1: {
     kind: "floor", label: "Grate floor",
