@@ -25,7 +25,11 @@ interface Entry {
   // the merge key of the last edit (see applyEdit)
   lastMerge?: string;
 }
-const entries = new Map<string, Entry>();
+// (kept across hot reloads: editing a source file while the editor's open
+// would otherwise forget the maps made or edited this session, while MAPS
+// still lists them - "no map ..." on every edit and save)
+const entries: Map<string, Entry> = import.meta.hot?.data.entries ?? new Map<string, Entry>();
+if (import.meta.hot) import.meta.hot.data.entries = entries;
 const CRLF = "\r\n";
 const UNDO_LIMIT = 200;
 

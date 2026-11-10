@@ -1,53 +1,64 @@
 {
   "name": "dungeon",
-  "deck": 0,
-  "textures": {
-    "wall": "crewwall1",
-    "floor": "medfloor1",
-    "ceiling": "medceil1",
-    "door": "crewdoor1",
-    "liftDoor": "crewliftdoor1",
-    "doorFrame": "crewdoorframe1",
-    "window": "crewwindow1"
-  },
-  "labelColor": "#c8901e",
-  "lightColor": "#ffcf87",
+  "deck": 2,
   "start": { "x": 3, "y": 3, "facing": "E" },
   "layout": [
     "WWW.WWWWWWWWWWWW",
     "WWW.WWWWWWWWWWWW",
     "WW...WWWWWWWWWWW",
-    "WW....WWWWWWWWWW",
-    "WW...WWWWWWWWWWW",
-    "W..........WWWWW",
-    "W......W...WWWWW",
+    "WW..WWWWWWWWWWWW",
+    "WW..WWWWWWWWWWWW",
+    "WWW.WWWWWWWWWWWW",
+    "WW..WWWWWWWWWWWW",
+    "WW..WWWWWWWWWWWW",
+    "WW..WWWWWWWWWWWW",
+    "WW..WWWWWWWWWWWW",
+    "WW..WWWWWWWWWWWW",
+    "WW..WWWWWWWWWWWW",
+    "WWWWWWWWWWWWWWWW",
     "WWWWWWWWWWWWWWWW",
     "WWWWWWWWWWWWWWWW",
     "WWWWWWWWWWWWWWWW"
   ],
-  "lights": [
-    { "x": 3, "y": 3 },
-    { "x": 4, "y": 5, "color": "#0055ff", "intensity": 0.5 },
-    { "x": 5, "y": 6, "color": "#291af4", "intensity": 0.35 },
-    { "x": 6, "y": 5, "color": "#1e00ff", "intensity": 0.35 },
-    { "x": 5, "y": 5, "pos": [0.04, 0.65, -0.28], "color": "#d28328", "range": 1.1 },
-    { "x": 5, "y": 5, "color": "#004cff", "intensity": 2.3 },
-    { "x": 6, "y": 6, "pos": [-0.11, 0.73, 0.22], "color": "#a86b00", "range": 1.6 },
-    { "x": 6, "y": 6, "pos": [0.11, 1.13, 0.23], "color": "#0033ff", "intensity": 0.8 },
-    { "x": 9, "y": 5, "color": "#0092db" },
-    { "x": 10, "y": 5, "color": "#0096e0", "range": 1.3 }
-  ],
+  "lights": [{ "x": 3, "y": 3, "color": "#3700ff", "intensity": 1.15 }, { "x": 2, "y": 3, "color": "#0011ff" }, { "x": 2, "y": 4, "color": "#1e00ff" }, { "x": 3, "y": 4, "color": "#2b00ff" }, { "x": 3, "y": 7, "color": "#00c0f0" }, { "x": 2, "y": 7, "color": "#0091ff" }, { "x": 3, "y": 8, "color": "#01a7ef" }, { "x": 2, "y": 8, "color": "#0081c2", "intensity": 1.85 }, { "x": 3, "y": 3, "pos": [0.44, 0.76, 0], "color": "#cf6620", "effect": "pulse", "range": 2.6, "intensity": 3.05 }, { "x": 2, "y": 4, "pos": [-0.4, 0.76, 0], "color": "#e18e19", "effect": "pulse", "range": 2, "intensity": 3.05 }],
   "layers": {
     "wallTexture": {
-      "legend": { "a": "fantasywall1", "b": "fantasypillar1" },
+      "legend": { "a": "fantasywall1" },
       "rows": [
         "...a............",
         "...a............",
         "..aaa...........",
-        "..a.aa..........",
+        "aaaaa...........",
         "..aaa...........",
-        ".aaaaaaaaaa.....",
-        ".aaaaaa.aaa.....",
+        "...a............",
+        "..aa............",
+        "..aa............",
+        "..aa............",
+        "..aa............",
+        "..aa............",
+        "..aa............",
+        "................",
+        "................",
+        "................",
+        "................"
+      ]
+    },
+    "floorTexture": {
+      "legend": { "a": "fantasyfloor1" },
+      "rows": [
+        "...a............",
+        "...a............",
+        "..aaa...........",
+        "aaaaa...........",
+        "..aaa...........",
+        "...a............",
+        "..aa............",
+        "..aa............",
+        "..aa............",
+        "..aa............",
+        "..aa............",
+        "..aa............",
+        "................",
         "................",
         "................",
         "................"
@@ -57,21 +68,35 @@
       "legend": { "a": 1.25, "b": 1.5, "c": 1.75 },
       "rows": [
         "................",
+        "...b............",
+        "..bcc...........",
+        "..bc............",
+        "..cc............",
+        "................",
+        "..bb............",
+        "..bb............",
+        "..bb............",
         "................",
         "................",
         "................",
         "................",
-        ".....babbb......",
-        ".....ba.bc......",
         "................",
         "................",
         "................"
       ]
     }
   },
-  "smokes": [
-    { "x": 6, "y": 6, "pos": [-0.1, 0.7, 0.23], "size": 0.4, "density": 0.75 },
-    { "x": 6, "y": 5, "pos": [-0.37, 0.78, -0.43], "size": 0.8, "density": 0.75 }
+  "props": [
+    { "prop": "fantasytorch1", "x": 3, "y": 3, "at": "E", "offset": [0.05, 0] },
+    { "prop": "fantasytorch1", "x": 2, "y": 4, "at": "W" },
+    { "prop": "curtain_closed", "x": 3, "y": 4, "at": "E", "elevation": 0.45, "offset": [0.05, 0] },
+    { "prop": "fantasypillar1", "x": 2, "y": 3, "at": "SW" },
+    { "prop": "fantasypillar2", "x": 3, "y": 2, "at": "SE", "offset": [0.35, 0.35] },
+    { "prop": "fantasypillar2", "x": 3, "y": 4, "at": "E", "offset": [0.35, -0.45] }
   ],
-  "props": [{ "prop": "curtain_closed", "x": 6, "y": 5, "at": "N", "offset": [0.45, 0], "elevation": 0.35 }]
+  "smokes": [
+    { "x": 3, "y": 3, "pos": [0.48, 0.82, -0.01] },
+    { "x": 2, "y": 4, "pos": [-0.38, 0.83, 0] }
+  ],
+  "actors": [{ "actor": "ogre1", "x": 3, "y": 4, "facing": "N" }]
 }

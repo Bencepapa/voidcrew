@@ -11,6 +11,24 @@
   "claw_marks": {
     "normal": true
   },
+  "grass_blades": {
+    "normal": false
+  },
+  "grass_large": {
+    "normal": false
+  },
+  "grass_medium": {
+    "normal": false
+  },
+  "grass_small": {
+    "normal": false
+  },
+  "grass_white": {
+    "normal": false
+  },
+  "grass_yellow": {
+    "normal": false
+  },
   "hazard_stripes": {
     "normal": false
   },

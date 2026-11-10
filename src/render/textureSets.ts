@@ -97,6 +97,14 @@ export const TEXTURE_SETS = {
     depth: `${import.meta.env.BASE_URL}textures/fantasyfloor1/depth.png`,
     pixelArt: true,
   },
+  // packed earth with pebbles (outdoor ground)
+  fantasyearth1: {
+    kind: "floor", label: "Earth",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasyearth1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasyearth1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasyearth1/depth.png`,
+    pixelArt: true,
+  },
   // iron portcullis gate: the gaps between the bars are transparent
   fantasygate1: {
     kind: "door", label: "Portcullis",
