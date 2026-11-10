@@ -222,6 +222,9 @@ export const PROP_TYPES: Record<string, PropType> = {
   // pillars: a slim one and a heavy one (their height: the cell's)
   pillar1: { kind: "pillar", size: [0.26, 1, 0.26], shaft: 0.16, flare: 0.1 },
   pillar2: { kind: "pillar", size: [0.42, 1, 0.42], shaft: 0.28, flare: 0.14 },
+  // the same two in the fantasy set's mossy stone
+  fantasypillar1: { kind: "pillar", size: [0.26, 1, 0.26], shaft: 0.16, flare: 0.1, texture: "fantasywall1" },
+  fantasypillar2: { kind: "pillar", size: [0.42, 1, 0.42], shaft: 0.28, flare: 0.14, texture: "fantasywall1" },
   // corner cuts: half the cell's sides, and more of them
   chamfer1: { kind: "chamfer", size: [0.5 * Math.SQRT2, 1, 0.02], cut: 0.5, wall: true },
   chamfer2: { kind: "chamfer", size: [0.7 * Math.SQRT2, 1, 0.02], cut: 0.7, wall: true },
