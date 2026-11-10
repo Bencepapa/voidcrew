@@ -81,6 +81,22 @@ export const TEXTURE_SETS = {
     glow: `${import.meta.env.BASE_URL}textures/wall5/glow.png`,
     pixelArt: true,
   },
+  // fantasy set (concept/fantasy): mossy stone wall, and the same stone at
+  // a coarser scale for pillars
+  fantasywall1: {
+    kind: "wall", label: "Mossy stone",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasywall1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasywall1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasywall1/depth.png`,
+    pixelArt: true,
+  },
+  fantasypillar1: {
+    kind: "wall", label: "Stone pillar",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasypillar1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasypillar1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasypillar1/depth.png`,
+    pixelArt: true,
+  },
   // one floor tile per cell: a grate with recessed slots
   floor1: {
     kind: "floor", label: "Grate floor",
