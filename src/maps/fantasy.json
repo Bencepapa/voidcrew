@@ -156,7 +156,22 @@
     { "prop": "fantasytree1", "x": 4, "y": 14, "at": "center", "scale": 1.95, "elevation": -0.1 },
     { "prop": "fantasytree1", "x": 7, "y": 13, "at": "SE", "elevation": -0.1 },
     { "prop": "fantasytorch1", "x": 2, "y": 15, "at": "S" },
-    { "prop": "fantasytorch1", "x": 2, "y": 13, "at": "N" }
+    { "prop": "fantasytorch1", "x": 2, "y": 13, "at": "N" },
+    { "prop": "fantasybarrel1", "x": 10, "y": 1, "at": "W" },
+    { "prop": "fantasybarrel1", "x": 10, "y": 2, "at": "W" },
+    { "prop": "fantasybarrel1", "x": 10, "y": 2, "at": "N", "offset": [0, -0.25] },
+    { "prop": "fantasydeadtree1", "x": 15, "y": 13, "at": "center", "elevation": -0.1 },
+    { "prop": "fantasyfern1", "x": 12, "y": 15, "at": "SE" },
+    { "prop": "fantasybush2", "x": 8, "y": 12, "at": "NW" },
+    { "prop": "fantasybush1", "x": 0, "y": 13, "at": "NW" },
+    { "prop": "fantasypine1", "x": 10, "y": 13, "at": "center" },
+    { "prop": "fantasypine1", "x": 9, "y": 13, "at": "S", "offset": [0.2, -0.1] },
+    { "prop": "fantasypine1", "x": 10, "y": 13, "at": "SW", "offset": [-0.2, 0], "scale": 0.65 },
+    { "prop": "fantasypine1", "x": 9, "y": 13, "at": "N", "scale": 0.65, "elevation": -0.25 },
+    { "prop": "fantasybush1", "x": 13, "y": 14, "at": "E", "offset": [0.2, -0.1] },
+    { "prop": "fantasybush1", "x": 8, "y": 3, "at": "NW" },
+    { "prop": "fantasybush2", "x": 8, "y": 3, "at": "SW" },
+    { "prop": "fantasybush1", "x": 8, "y": 3, "at": "NE", "offset": [0.35, 0] }
   ],
   "smokes": [
     { "x": 3, "y": 3, "pos": [0.43, 0.82, -0.01], "fire": true, "decorative": true },
@@ -196,15 +211,27 @@
     { "x": 12, "y": 12, "pos": [-0.08, 0.07, 0.27], "color": "#32b388", "density": 0.5, "size": 2.3 },
     { "x": 12, "y": 8, "pos": [-0.21, 0.01, 0.03] },
     { "x": 2, "y": 15, "pos": [0, 0.82, 0.42], "fire": true, "decorative": true },
-    { "x": 2, "y": 13, "pos": [0, 0.82, -0.42], "fire": true, "decorative": true }
+    { "x": 2, "y": 13, "pos": [0, 0.82, -0.42], "fire": true, "decorative": true },
+    { "x": 4, "y": 14, "pos": [-0.02, 1.12, 0.05], "petals": true, "size": 0.4, "density": 2.25 },
+    {
+      "x": 14,
+      "y": 5,
+      "pos": [0.5, 0.22, 0.42],
+      "petals": true,
+      "size": 0.4,
+      "density": 0.25,
+      "color": "#ff7300",
+      "blow": { "speed": 4, "yaw": 120, "pitch": -30 }
+    },
+    { "x": 5, "y": 14, "pos": [-0.5, 1.81, 0], "petals": true, "color": "#f98806" }
   ],
-  "actors": [{ "actor": "alien1", "x": 6, "y": 6, "facing": "S", "chance": 0.1 }, { "actor": "alien2", "x": 9, "y": 9, "facing": "N", "chance": 0.2 }, { "actor": "alien2", "x": 8, "y": 9, "facing": "N", "chance": 0.3 }, { "actor": "alien2", "x": 8, "y": 7, "facing": "S", "chance": 0.3 }, { "actor": "alien2", "x": 9, "y": 7, "facing": "S", "chance": 0.2 }, { "actor": "ogre1", "x": 3, "y": 11, "facing": "N", "chance": 0.45 }, { "actor": "zombie1", "x": 5, "y": 5, "facing": "N", "chance": 0.35 }, { "actor": "goblin1", "x": 8, "y": 3, "facing": "E", "chance": 0.5 }, { "actor": "mage1", "x": 14, "y": 14, "facing": "N", "chance": 0.5 }, { "actor": "thief1", "x": 0, "y": 13, "facing": "E", "chance": 0.45 }],
+  "actors": [{ "actor": "alien1", "x": 6, "y": 6, "facing": "S", "chance": 0.1 }, { "actor": "alien2", "x": 9, "y": 9, "facing": "N", "chance": 0.2 }, { "actor": "alien2", "x": 8, "y": 9, "facing": "N", "chance": 0.3 }, { "actor": "alien2", "x": 8, "y": 7, "facing": "S", "chance": 0.3 }, { "actor": "alien2", "x": 9, "y": 7, "facing": "S", "chance": 0.2 }, { "actor": "ogre1", "x": 3, "y": 11, "facing": "N", "chance": 0.45 }, { "actor": "zombie1", "x": 5, "y": 5, "facing": "N", "chance": 0.35 }, { "actor": "goblin1", "x": 8, "y": 3, "facing": "E", "chance": 0.5 }, { "actor": "mage1", "x": 14, "y": 14, "facing": "N", "chance": 0.5 }, { "actor": "thief1", "x": 0, "y": 13, "facing": "E", "chance": 0.45 }, { "actor": "skeleton1", "x": 12, "y": 11, "facing": "N", "chance": 0.3 }],
   "bridges": [
     { "x": 3, "y": 11, "height": 1, "axis": "EW" },
     { "x": 2, "y": 11, "height": 1, "axis": "EW" }
   ],
   "textures": { "door": "fantasygate1", "doorFrame": "fantasydoorframe1" },
-  "render": { "roughness": 1, "metalness": 0, "normalStrength": 0.2, "reliefMode": "smooth", "headlamp": true },
+  "render": { "roughness": 1, "metalness": 0, "normalStrength": 0.2, "reliefMode": "smooth", "headlamp": true, "bobEnabled": false },
   "doors": [{ "x": 3, "y": 5, "kind": "standard", "facing": "S", "offset": -0.42 }, { "x": 5, "y": 11, "kind": "standard", "facing": "E", "offset": -0.42 }, { "x": 0, "y": 15, "kind": "standard", "facing": "E", "offset": 0.42, "lock": { "key": "5542" } }],
   "items": [
     { "item": "medkit", "x": 2, "y": 11, "offset": [0, 0.05] },
@@ -354,6 +381,17 @@
     { "decal": "bush_leafy", "x": 7, "y": 15, "surface": "S", "px": 39, "py": -361 },
     { "decal": "bush_leafy", "x": 6, "y": 13, "surface": "N", "px": -27, "py": -312, "scale": 2.4 },
     { "decal": "bush_leafy", "x": 6, "y": 13, "surface": "N", "px": 182, "py": -352, "scale": 1.65 },
-    { "decal": "bush_leafy", "x": 5, "y": 13, "surface": "N", "px": 60, "py": -357, "scale": 1.45, "rotation": 90 }
+    { "decal": "bush_leafy", "x": 5, "y": 13, "surface": "N", "px": 60, "py": -357, "scale": 1.45, "rotation": 90 },
+    { "decal": "footpath", "x": 13, "y": 14, "surface": "floor", "px": 4, "py": 108 },
+    { "decal": "footpath", "x": 12, "y": 14, "surface": "floor", "px": 72, "py": 106 },
+    { "decal": "footpath", "x": 12, "y": 14, "surface": "floor", "px": -108, "py": 112 },
+    { "decal": "footpath_bend", "x": 11, "y": 14, "surface": "floor", "px": -9, "py": 113, "rotation": 270 },
+    { "decal": "footpath", "x": 10, "y": 15, "surface": "floor", "px": 78, "py": 94 },
+    { "decal": "footpath", "x": 10, "y": 15, "surface": "floor", "px": -142, "py": 90 },
+    { "decal": "footpath", "x": 9, "y": 15, "surface": "floor", "px": 99, "py": 113 },
+    { "decal": "footpath", "x": 9, "y": 15, "surface": "floor", "px": -113, "py": 112 },
+    { "decal": "footpath", "x": 8, "y": 15, "surface": "floor", "px": 89, "py": 111 },
+    { "decal": "footpath", "x": 7, "y": 15, "surface": "floor", "px": 126, "py": 109 },
+    { "decal": "footpath", "x": 7, "y": 15, "surface": "floor", "px": -87, "py": 106 }
   ]
 }

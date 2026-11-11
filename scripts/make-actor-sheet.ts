@@ -36,6 +36,11 @@ const { values: args } = parseArgs({
     // of a cell its figure's (for sheets drawn neatly in a grid whose smoke
     // and flashes would throw the blob finding off)
     grid: { type: "boolean", default: false },
+    // cut the sheet along its own gaps: the rows where the sheet is empty
+    // between figure rows, and within a row the gaps between figures - for
+    // sheets whose rows aren't equal strips (an AI's rows drift), where --grid
+    // would cut a figure's feet off into the next cell
+    bands: { type: "boolean", default: false },
     // "top": figures hanging from the ceiling (a turret, a camera) - each
     // hung from its cell's top edge, centered on its mount (default
     // "bottom": standing on the cell's bottom edge, centered on its feet)
@@ -92,16 +97,79 @@ interface Figure {
 // are one blob; the `count` biggest are the figures, and every smaller one
 // (a spark, a puff of smoke) goes with the figure nearest to it.
 const REACH = 3;
+// the cells of a sheet along its own gaps (see --bands): a rectangle per
+// figure, or null if the sheet doesn't split into the rows and columns asked
+function bandRects(img: Raw, rows: number, cols: number, isBg: Background): [number, number, number, number][] | null {
+  // runs of filled lines along one axis, merged over small gaps until there
+  // are `want` of them (the biggest gaps stay); fewer runs than that: split the longest
+  const runsOf = (fill: number[], want: number, minGap: number): [number, number][] | null => {
+    let runs: [number, number][] = [];
+    let start = -1;
+    for (let i = 0; i <= fill.length; i++) {
+      const on = i < fill.length && fill[i] > 1;
+      if (on && start < 0) start = i;
+      if (!on && start >= 0) {
+        runs.push([start, i]);
+        start = -1;
+      }
+    }
+    // (gaps narrower than minGap don't separate)
+    const merged: [number, number][] = [];
+    for (const r of runs) {
+      const last = merged[merged.length - 1];
+      if (last && r[0] - last[1] < minGap) last[1] = r[1];
+      else merged.push([r[0], r[1]]);
+    }
+    runs = merged;
+    while (runs.length > want) {
+      let best = 0;
+      for (let i = 1; i < runs.length - 1 + 1 && i < runs.length; i++) {
+        if (runs[i][0] - runs[i - 1][1] < runs[best + 1][0] - runs[best][1]) best = i - 1;
+      }
+      runs.splice(best, 2, [runs[best][0], runs[best + 1][1]]);
+    }
+    if (!runs.length) return null;
+    while (runs.length < want) {
+      let widest = 0;
+      for (let i = 1; i < runs.length; i++) if (runs[i][1] - runs[i][0] > runs[widest][1] - runs[widest][0]) widest = i;
+      const [a, b] = runs[widest];
+      runs.splice(widest, 1, [a, Math.round((a + b) / 2)], [Math.round((a + b) / 2), b]);
+    }
+    return runs;
+  };
+  const rowFill = new Array<number>(img.height).fill(0);
+  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) if (!isBg(img, x, y)) rowFill[y]++;
+  const rowRuns = runsOf(rowFill, rows, 4);
+  if (!rowRuns || rowRuns.length !== rows) return null;
+  const rects: [number, number, number, number][] = [];
+  for (const [y0, y1] of rowRuns) {
+    const colFill = new Array<number>(img.width).fill(0);
+    for (let y = y0; y < y1; y++) for (let x = 0; x < img.width; x++) if (!isBg(img, x, y)) colFill[x]++;
+    const colRuns = runsOf(colFill, cols, 3);
+    if (!colRuns || colRuns.length !== cols) return null;
+    colRuns.forEach(([x0, x1], c) => {
+      // each cell reaches to the middle of the gap beside it
+      const left = c === 0 ? x0 : Math.round((colRuns[c - 1][1] + x0) / 2);
+      const right = c === cols - 1 ? x1 : Math.round((x1 + colRuns[c + 1][0]) / 2);
+      rects.push([left, y0, right, y1]);
+    });
+  }
+  return rects;
+}
+
 // the figures of a sheet drawn as an exact grid: each cell's own pixels
+// (or, with --bands, of the cells along the sheet's own gaps)
 function gridFigures(img: Raw, count: number, cols: number, isBg: Background): Figure[] {
   const rows = count / cols;
   const cw = img.width / cols;
   const ch = img.height / rows;
+  const banded = args.bands ? bandRects(img, rows, cols, isBg) : null;
+  if (args.bands && !banded) console.warn("  --bands: the sheet's gaps don't split into the rows and columns asked for - cutting an exact grid");
   return Array.from({ length: count }, (_, i) => {
-    const cx0 = Math.round((i % cols) * cw);
-    const cy0 = Math.round(Math.floor(i / cols) * ch);
-    const cx1 = Math.round(((i % cols) + 1) * cw);
-    const cy1 = Math.round((Math.floor(i / cols) + 1) * ch);
+    const cx0 = banded ? banded[i][0] : Math.round((i % cols) * cw);
+    const cy0 = banded ? banded[i][1] : Math.round(Math.floor(i / cols) * ch);
+    const cx1 = banded ? banded[i][2] : Math.round(((i % cols) + 1) * cw);
+    const cy1 = banded ? banded[i][3] : Math.round((Math.floor(i / cols) + 1) * ch);
     // (the next row's figure reaching up into the cell: the bits touching
     // its bottom edge, unless they're the cell's biggest)
     const cwInt = cx1 - cx0;
@@ -415,7 +483,7 @@ async function main() {
     const unit = 1 / sourceScales[i];
     const color = await load(file);
     const depth = await load(depthFiles[i]);
-    const figures = args.grid ? gridFigures : findFigures;
+    const figures = args.grid || args.bands ? gridFigures : findFigures;
     colorFigures.push(...figures(color, rowCounts[i] * cols, cols, isKey).map((f) => ({ ...f, image: color, depthImage: depth, unit })));
     depthFigures.push(...figures(depth, rowCounts[i] * cols, cols, darkBackground));
   }

@@ -39,6 +39,8 @@ const USAGE = `Usage: npm run texture:process -- --diffuse <file> [--depth <file
   [--normal-source levels] "levels" (follows the relief steps) or "smooth" (original depth shape)
   [--normal-bevel 2]      rounds edges over about this many pixels before deriving normals (0 = sharp),
                           which gives pipes and ledges round, light-catching top and bottom halves
+  [--seamless 2]          flatten the depth's outer N pixels to its base level, so tiles and stacked panels meet
+                          flush (no slivers to see through at the joins; 0 = off)
   [--smooth]              keep the depth continuous (no height levels): the game builds it as a smooth
                           height field with slopes (stone, earth, hedges) - set the map's relief shape to Smooth
   [--trim]                crop both images to the diffuse's opaque area first (for cut-outs like door frames)
@@ -73,6 +75,7 @@ const { values: args } = parseArgs({
     "normal-bevel": { type: "string", default: "2" },
     trim: { type: "boolean", default: false },
     smooth: { type: "boolean", default: false },
+    seamless: { type: "string", default: "0" },
     "flatten-paint": { type: "boolean", default: false },
     "paint-saturation": { type: "string", default: "0.45" },
     "paint-grow": { type: "string", default: "2" },
@@ -733,6 +736,16 @@ async function main() {
   // wall's flat base surface
   const baseGray = mostCommonValue(solidOnly(rawDepth));
   const smooth = fillGapsBetweenRaised(rawDepth, outW, outH, fillGaps, baseGray);
+  // --seamless: the outer pixels all at the base level, so the edges of one tile
+  // always match the next (and the panels stacked above and below it)
+  const edge = parseInt(args.seamless!, 10);
+  if (edge > 0) {
+    for (let y = 0; y < outH; y++) {
+      for (let x = 0; x < outW; x++) {
+        if (x < edge || y < edge || x >= outW - edge || y >= outH - edge) smooth[y * outW + x] = baseGray;
+      }
+    }
+  }
   const solidSmooth = solidOnly(smooth);
   if (args.smooth) {
     // continuous depth: the median-filtered values stretched to the full range and lightly

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { LIVERY_HUES, MOOD_LEVELS, moodOf } from "../game/variation";
 import type { ShipMood } from "../game/variation";
@@ -107,6 +108,16 @@ const MATERIAL_SLIDERS: SliderConfig[] = [
   { key: "normalStrength", label: "Normal map strength", min: 0, max: 3, step: 0.1 },
 ];
 
+// times of day for the sky's light: strength, colour, where from, how high
+const SKY_PRESETS: Record<string, Partial<ViewportSettings>> = {
+  "Night (moon)": { skyLightIntensity: 0.6, skyLightColor: "#8fa8ff", skyLightAzimuth: 200, skyLightElevation: 45 },
+  "Dawn": { skyLightIntensity: 1.0, skyLightColor: "#ffc08a", skyLightAzimuth: 95, skyLightElevation: 12 },
+  "Noon": { skyLightIntensity: 1.6, skyLightColor: "#fff4d6", skyLightAzimuth: 180, skyLightElevation: 75 },
+  "Afternoon": { skyLightIntensity: 1.3, skyLightColor: "#ffe6b0", skyLightAzimuth: 235, skyLightElevation: 40 },
+  "Dusk": { skyLightIntensity: 1.0, skyLightColor: "#ff8f5a", skyLightAzimuth: 265, skyLightElevation: 10 },
+  "Off": { skyLightIntensity: 0 },
+};
+
 const SELECT = "bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm";
 
 export function DebugPanel({
@@ -174,6 +185,14 @@ export function DebugPanel({
     </label>
   );
 
+  // the sky images there are (public/skies/index.json)
+  const [skies, setSkies] = useState<string[]>([]);
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}skies/index.json`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => setSkies(Array.isArray(list) ? list : []))
+      .catch(() => {});
+  }, []);
   // a map default texture: a drop-down of the sets of one kind
   const textureSelect = (slot: string, label: string, kind: TextureSetKind, accent = false) =>
     select(
@@ -256,6 +275,37 @@ export function DebugPanel({
           {MATERIAL_SLIDERS.map(slider)}
           {heading("Light")}
           {LIGHT_SLIDERS.map(slider)}
+          {heading("Sky light (under open ceilings)")}
+          {select(
+            "Time of day",
+            <select
+              value=""
+              onChange={(e) => {
+                const p = SKY_PRESETS[e.target.value];
+                if (p) onChange({ ...settings, ...p });
+              }}
+              className={SELECT}
+            >
+              <option value="">set from a preset...</option>
+              {Object.keys(SKY_PRESETS).map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>,
+          )}
+          {slider({ key: "skyLightIntensity", label: "Sky light strength (0 = none)", min: 0, max: 3, step: 0.05 })}
+          {slider({ key: "skyLightAzimuth", label: "Sky light from (compass, 0 = north)", min: 0, max: 359, step: 1 })}
+          {slider({ key: "skyLightElevation", label: "Sky light height (degrees)", min: 5, max: 90, step: 1 })}
+          <label className="flex items-center justify-between gap-2 text-[11px]">
+            Sky light colour
+            <input
+              type="color"
+              value={settings.skyLightColor}
+              onChange={(e) => set("skyLightColor", e.target.value)}
+              className="w-8 h-6 bg-transparent border border-neutral-600"
+            />
+          </label>
           {check("headlamp", "Headlamp on (L) - saved with the map")}
           {check("bobEnabled", "Idle head-bob - saved with the map")}
           {onSaveRender && (
@@ -344,6 +394,17 @@ export function DebugPanel({
               {textureSelect("doorFrame", "Door frame", "door")}
               {textureSelect("liftDoor", "Lift door", "door")}
               {textureSelect("window", "Window", "window")}
+              {select(
+                "Sky image (open-air maps)",
+                <select value={mapTextures?.sky ?? ""} onChange={(e) => onMapTexture("sky", e.target.value || undefined)} className={SELECT}>
+                  <option value="">starry sky (generated)</option>
+                  {skies.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>,
+              )}
             </>
           )}
         </>,

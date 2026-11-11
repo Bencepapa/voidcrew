@@ -43,6 +43,9 @@ export interface GameMap {
     wall?: string;
     // a second wall set, mixed in on a share of the walls (render.accentRatio)
     accent?: string;
+    // the sky image of an open-air deck: a file name in public/skies/ (without
+    // .png) - none: the generated starry sky
+    sky?: string;
     floor?: string;
     ceiling?: string;
     door?: string;
@@ -215,6 +218,9 @@ export interface SmokeSpec extends Linked {
   // a fire (see fire.ts): flames, dark smoke off them, a flickering light,
   // and its cell burns (its color tints the flames)
   fire?: boolean;
+  // falling petals (leaves, blossom) instead of smoke: `color` is theirs, `size`
+  // and `density` how big and how many, `blow` the wind that carries them
+  petals?: boolean;
   // a fire that is only decoration (a torch): flames and light, but it
   // doesn't burn and the actors walk into its cell
   decorative?: boolean;

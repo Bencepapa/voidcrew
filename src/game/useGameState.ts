@@ -1124,6 +1124,9 @@ export function useGameState() {
 
   const moveForward = useCallback(() => step(dir), [step, dir]);
   const moveBackward = useCallback(() => step(behindOf(dir)), [step, dir]);
+  // sideways, without turning
+  const strafeLeft = useCallback(() => step(leftOf(dir)), [step, dir]);
+  const strafeRight = useCallback(() => step(rightOf(dir)), [step, dir]);
 
   // The run's haul: how many of each item the party has taken (see
   // items.ts); the containers emptied and the loose items picked up (by
@@ -1568,6 +1571,8 @@ export function useGameState() {
     log,
     moveForward,
     moveBackward,
+    strafeLeft,
+    strafeRight,
     turnL,
     turnR,
     pushLog,

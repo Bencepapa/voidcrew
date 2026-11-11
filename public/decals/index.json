@@ -11,10 +11,22 @@
   "bush_leafy": {
     "normal": false
   },
+  "cart_ruts": {
+    "normal": false
+  },
+  "cartwheel": {
+    "normal": false
+  },
   "claw_marks": {
     "normal": true
   },
   "fern_big": {
+    "normal": false
+  },
+  "footpath": {
+    "normal": false
+  },
+  "footpath_bend": {
     "normal": false
   },
   "grass_blades": {

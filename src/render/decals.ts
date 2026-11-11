@@ -319,7 +319,7 @@ export class DecalLibrary {
           // one, else a faint warm sheen of the room
           float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
           vec3 R = reflect(-V, N);
-          vec2 skyUv = vec2(atan(R.z, R.x) / 6.2831853 + 0.5, asin(clamp(R.y, -1.0, 1.0)) / 3.1415927 + 0.5);
+          vec2 skyUv = vec2(atan(R.z, R.x) / 6.2831853 + 0.5, clamp(asin(clamp(R.y, -1.0, 1.0)) / 1.5707963, 0.0, 1.0));
           vec3 sky = texture2D(uSky, skyUv).rgb * 1.6;
           vec3 mirror = mix(vec3(0.1, 0.085, 0.075), sky, uSkyAmount);
           vec3 lit = base.rgb * (0.32 + diffuse * 1.1);

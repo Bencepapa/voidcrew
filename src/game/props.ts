@@ -236,6 +236,12 @@ export const PROP_TYPES: Record<string, PropType> = {
   fantasytree1: { kind: "cross", texture: "fantasytree1", size: [1, 1.33, 1], blocks: true },
   // a tall pine: one picture that always faces the viewer (a billboard)
   fantasypine1: { kind: "billboard", texture: "fantasypine1", size: [0.9, 1.97, 0.3], blocks: true },
+  // billboard bushes, a barrel and a dead tree (one picture facing the viewer)
+  fantasybush1: { kind: "billboard", texture: "fantasy_bokor_kerek", size: [0.7, 0.56, 0.3] },
+  fantasybush2: { kind: "billboard", texture: "fantasy_bokor_bogyos", size: [0.7, 0.54, 0.3] },
+  fantasyfern1: { kind: "billboard", texture: "fantasy_bokor_pazsit", size: [0.8, 0.43, 0.3] },
+  fantasybarrel1: { kind: "billboard", texture: "fantasybarrel1", size: [0.4, 0.49, 0.4], blocks: true },
+  fantasydeadtree1: { kind: "billboard", texture: "fantasydeadtree1", size: [0.9, 1.4, 0.3], blocks: true },
   // a broad, gnarled one with the roots showing
   fantasytree2: { kind: "cross", texture: "fantasytree2", size: [1.1, 1.15, 1.1], blocks: true },
   // a strip curtain over a duct's mouth (the low corridors the cleaning

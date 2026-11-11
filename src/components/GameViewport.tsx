@@ -3,6 +3,7 @@ import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
 import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
+import { createPetals, type PetalEmitter } from "../render/petals";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, itemSpot } from "../game/items";
@@ -16,7 +17,7 @@ import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
-import { generateLights, lampColor, parseColor } from "../game/lights";
+import { generateLights, isSkyCeiling, lampColor, parseColor } from "../game/lights";
 import type { LightSpec } from "../game/lights";
 import { PROP_TYPES, propPlacement, propHeight } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
@@ -114,6 +115,11 @@ export interface ViewportSettings {
   floorReliefDepth: number;
   floorNormalStrength: number;
   mapLightIntensity: number;
+  // the sky's light on the cells under an open ceiling (see lights.ts SkyLight)
+  skyLightIntensity: number;
+  skyLightAzimuth: number;
+  skyLightElevation: number;
+  skyLightColor: string;
   roughness: number;
   metalness: number;
   normalStrength: number;
@@ -247,6 +253,10 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   floorReliefDepth: 0,
   floorNormalStrength: 0,
   mapLightIntensity: 1.6,
+  skyLightIntensity: 0,
+  skyLightAzimuth: 200,
+  skyLightElevation: 40,
+  skyLightColor: "#a8bcff",
   roughness: 0.55,
   metalness: 0.45,
   normalStrength: 1,
@@ -634,7 +644,8 @@ function makeSkyMaterial(): THREE.ShaderMaterial {
       varying vec3 vWorld;
       void main() {
         vec3 dir = normalize(vWorld - cameraPosition);
-        vec2 uv = vec2(atan(dir.z, dir.x) / 6.2831853 + 0.5, asin(clamp(dir.y, -1.0, 1.0)) / 3.1415927 + 0.5);
+        // the sky image covers the upper hemisphere: the horizon along its bottom edge, the zenith at the top
+        vec2 uv = vec2(atan(dir.z, dir.x) / 6.2831853 + 0.5, clamp(asin(clamp(dir.y, -1.0, 1.0)) / 1.5707963, 0.0, 1.0));
         gl_FragColor = vec4(texture2D(map, uv).rgb, 1.0);
       }`,
   });
@@ -1720,7 +1731,14 @@ export function GameViewport({
       return kit;
     }
     // cells with a ceiling light: their ceiling tile's light panel glows
-    let mapLights = generateLights(map);
+    // (the sky's light, when there is one, under the open ceilings)
+    const skyLightOf = (s: ViewportSettings) => ({
+      color: parseColor(s.skyLightColor) ?? 0xa8bcff,
+      intensity: s.skyLightIntensity,
+      azimuth: s.skyLightAzimuth,
+      elevation: s.skyLightElevation,
+    });
+    let mapLights = generateLights(map, skyLightOf(settings));
     // the walls' relief depth: the map's own, else the settings'
     const reliefDepth = map.reliefDepth ?? settings.reliefDepth;
     // the floors have a relief depth of their own (0: as the walls')
@@ -1848,7 +1866,33 @@ export function GameViewport({
     const backingPositions: number[] = [];
     const backingMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
     let skyMat: THREE.ShaderMaterial | null = null;
-    const skySurface = () => (skyMat ??= makeSkyMaterial());
+    const skySurface = () => {
+      if (!skyMat) {
+        const material = makeSkyMaterial();
+        skyMat = material;
+        // the map's own sky image, when it names one (the starry sky shows till it's in)
+        const name = map.textures?.sky;
+        if (name) {
+          loader.load(
+            `${import.meta.env.BASE_URL}skies/${name}.png${bust}`,
+            (tex) => {
+              if (disposed) {
+                tex.dispose();
+                return;
+              }
+              tex.colorSpace = THREE.NoColorSpace;
+              tex.wrapS = THREE.RepeatWrapping;
+              (material.uniforms.map.value as THREE.Texture).dispose();
+              material.uniforms.map.value = tex;
+              decals.setWaterSky(tex);
+            },
+            undefined,
+            () => console.warn(`Sky "${name}" not found in public/skies/`),
+          );
+        }
+      }
+      return skyMat;
+    };
 
     const WALL_SUBDIVISIONS = 10;
     // relief geometry needs the height map's pixels, so it's built once the
@@ -3063,8 +3107,10 @@ export function GameViewport({
     // the fires' flames (see fire.ts), made with the smoke: each a fire
     // emitter here and dark smoke rising off it among the smoke's
     let fireEmitters: SmokeEmitter[] = [];
+    let petalEmitters: PetalEmitter[] = [];
     const buildSmoke = (m: GameMap) => {
       fireEmitters = [];
+      petalEmitters = [];
       return createSmoke(
       (m.smokes ?? []).map((spec, index) => {
         const at = new THREE.Vector3(
@@ -3102,6 +3148,21 @@ export function GameViewport({
           color: new THREE.Color(parseColor(spec.color) ?? SMOKE_COLOR),
           cell: cellKey(spec.cell.x, spec.cell.y),
         };
+        if (spec.petals) {
+          // falling petals: their own little system, no smoke from here
+          petalEmitters.push({
+            x: emitter.x,
+            y: emitter.y,
+            z: emitter.z,
+            floor: emitter.floor,
+            spread: 0.9,
+            density: emitter.density,
+            size: emitter.size,
+            color: new THREE.Color(parseColor(spec.color) ?? 0xf4a6c0),
+            wind: blow ? [blow[0] * 0.1, blow[2] * 0.1] : [0, 0],
+          });
+          return { ...emitter, density: 0 };
+        }
         if (!spec.fire) return emitter;
         // (its color tints the flames: none, as they burn)
         fireEmitters.push({ ...emitter, color: new THREE.Color(parseColor(spec.color) ?? 0xffffff) });
@@ -3149,17 +3210,22 @@ export function GameViewport({
     scene.add(smoke.mesh);
     let fire = buildFire(map);
     scene.add(fire.mesh);
+    let petals = createPetals(petalEmitters);
+    scene.add(petals.mesh);
     // the editor changed only the smoke: made anew, the rest stays built
     function applySmoke(next: GameMap) {
       for (const marker of smokeMarkers.values()) group.remove(marker);
       smokeMarkers.clear();
-      scene.remove(smoke.mesh, fire.mesh);
+      scene.remove(smoke.mesh, fire.mesh, petals.mesh);
       smoke.dispose();
       fire.dispose();
+      petals.dispose();
       smoke = buildSmoke(next);
       scene.add(smoke.mesh);
       fire = buildFire(next);
       scene.add(fire.mesh);
+      petals = createPetals(petalEmitters);
+      scene.add(petals.mesh);
     }
 
     // ---- exits: a glowing plate on the floor of each way off the ship ----
@@ -3606,6 +3672,8 @@ export function GameViewport({
         if (light.kind === "ceiling") {
           // a textured ceiling brings its own glowing light panel
           if (ceilingKitAt(Math.round(light.x), Math.round(light.z))?.litMat) continue;
+          // (no lamp panel on an open ceiling: it's the sky there)
+          if (isSkyCeiling(map, Math.round(light.x), Math.round(light.z))) continue;
           const panel = new THREE.Mesh(ceilingFixtureGeo, fixtureMat(light.color));
           panel.rotation.x = Math.PI / 2;
           panel.position.set(light.x, ceilingY(Math.round(light.x), Math.round(light.z)) - 0.002, light.z);
@@ -3711,7 +3779,7 @@ export function GameViewport({
     // A pool slot keeps its light if the new set still has it.
     function applyLights(next: GameMap) {
       sceneVersion++;
-      mapLights = generateLights(next);
+      mapLights = generateLights(next, skyLightOf(settingsRef.current));
       litCells = ceilingLightCells(mapLights);
       litColors = ceilingLightColors(mapLights);
       effectCells = effectLampCells(mapLights);
@@ -5292,6 +5360,7 @@ export function GameViewport({
       const smokePhysics = { walls: s.smokeWalls, props: s.smokeProps, actors: s.smokeActors ? smokeBodies : null };
       smoke.update(gameDt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
       fire.update(gameDt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
+      petals.update(gameDt, t);
       for (const marker of smokeMarkers.values()) marker.visible = editModeRef.current;
       // the exits' plates throb
       exitMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
@@ -5462,7 +5531,8 @@ export function GameViewport({
       disposeLightGrid(lightGrid);
       exitMat.map?.dispose();
       exitMat.dispose();
-      scene.remove(smoke.mesh, fire.mesh);
+      scene.remove(smoke.mesh, fire.mesh, petals.mesh);
+      petals.dispose();
       smoke.dispose();
       fire.dispose();
       smokeMarkerMat.dispose();
@@ -5492,6 +5562,10 @@ export function GameViewport({
     settings.reliefMinIsland,
     settings.reliefMode,
     settings.floorReliefDepth,
+    settings.skyLightIntensity,
+    settings.skyLightAzimuth,
+    settings.skyLightElevation,
+    settings.skyLightColor,
     settings.aoRadius,
     textureVersion,
   ]);

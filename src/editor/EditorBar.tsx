@@ -124,6 +124,7 @@ interface Props {
       pos?: [number, number, number];
       blow?: { speed: number; yaw: number; pitch?: number };
       fire?: boolean;
+      petals?: boolean;
       decorative?: boolean;
     } & Linked,
   ) => void;
@@ -232,6 +233,7 @@ export interface SmokeInfo {
   blow: { speed: number; yaw: number; pitch: number };
   // a fire (see fire.ts)
   fire: boolean;
+  petals: boolean;
   // a fire that is only decoration: it doesn't burn
   decorative: boolean;
   chance: number;
@@ -389,8 +391,9 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
   { tool: "robot", label: "Robot", title: "Put in robots, their facing, route and chance" },
   { tool: "item", label: "Item", title: "Put loot on floors, tables, beds and crates" },
-  { tool: "smoke", label: "Smoke", title: "Smoke emitters: puffs rising from a point, lit by the light around" },
+  { tool: "smoke", label: "Smoke/Fire", title: "Smoke emitters: puffs rising from a point, lit by the light around" },
   { tool: "exit", label: "Exit", title: "Ways off the ship: standing there, Use ends the run" },
+  { tool: "start", label: "Start", title: "Where the party starts the deck, and which way it looks" },
   { tool: "restricted", label: "Restricted", title: "Where the crew mustn't be: cameras and robots that take it for crew still call it in here" },
   { tool: "wall", label: "Chance wall", title: "Walls left to chance: there in some variations, open floor in others" },
   { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
@@ -407,6 +410,7 @@ const TOOL_HELP: Partial<Record<EditTool, string>> = {
   smoke: "click a wall, floor or anything: smoke from there (picked) · click its marker: pick it · right-click its marker: take it out",
   exit: "click a floor: a way off the ship there (picked) · click one: pick it · right-click: take it out",
   restricted: "click a floor: restricted (shaded red on the map) · again: not any more",
+  start: "click a floor: the party starts there, facing the way it faces now · click the start again: turn it a quarter",
   item: "click a floor or a table / bed / crate top: the item there · click an item: pick it · right-click: take it out",
   wall: "click a wall or a floor: a wall left to chance there (picked) · click one: pick it · right-click one: a plain wall again",
 };
@@ -929,6 +933,10 @@ export function EditorBar(p: Props) {
             <label className="flex items-center gap-1" title="A fire: flames, dark smoke off them, a flickering light - its cell burns (Color tints the flames)">
               <input type="checkbox" checked={p.smoke.fire} onChange={(e) => p.onSmokeChange({ fire: e.target.checked || undefined })} />
               Fire
+            </label>
+            <label className="flex items-center gap-1" title="Falling petals instead of smoke: Color is theirs, Amount and Puff size how many and how big, Blow the wind">
+              <input type="checkbox" checked={p.smoke.petals} onChange={(e) => p.onSmokeChange({ petals: e.target.checked || undefined })} />
+              Petals
             </label>
             {p.smoke.fire && (
               <label className="flex items-center gap-1" title="Only decoration (a torch): the flames and the light, but it doesn't burn the party and the actors walk into its cell">

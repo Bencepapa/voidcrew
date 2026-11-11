@@ -38,6 +38,7 @@ export interface MapFile {
   textures?: {
     wall?: string;
     accent?: string;
+    sky?: string;
     floor?: string;
     ceiling?: string;
     door?: string;
@@ -100,6 +101,7 @@ export interface MapFile {
     color?: string;
     blow?: { speed: number; yaw: number; pitch?: number };
     fire?: boolean;
+    petals?: boolean;
     decorative?: boolean;
     chance?: number;
     id?: string;
@@ -360,6 +362,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         color: s.color,
         blow: s.blow,
         fire: s.fire,
+        petals: s.petals,
         decorative: s.decorative,
         chance: s.chance,
         id: s.id,

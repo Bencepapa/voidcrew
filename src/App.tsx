@@ -20,7 +20,7 @@ import {
 } from "./editor/mapStore";
 import { MAPS, START_MAP } from "./game/map";
 import type { GameMap, Linked } from "./game/types";
-import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke } from "./editor/mapEdits";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart } from "./editor/mapEdits";
 import { PROP_TYPES, flamePosition, propRetexturable } from "./game/props";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
@@ -42,6 +42,7 @@ import { BaseScreen } from "./components/BaseScreen";
 import { ShipPicker } from "./components/ShipPicker";
 import { Minimap } from "./components/Minimap";
 import { PartyPanel } from "./components/PartyPanel";
+import { MoveControls } from "./components/MoveControls";
 import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
 import { HaulPanel } from "./components/HaulPanel";
@@ -113,6 +114,8 @@ export default function App() {
     log,
     moveForward,
     moveBackward,
+    strafeLeft,
+    strafeRight,
     turnL,
     turnR,
     openingDoor,
@@ -278,11 +281,13 @@ export default function App() {
       if (e.key === "ArrowDown" || e.key === "s") moveBackward();
       if (e.key === "ArrowLeft" || e.key === "a") turnL();
       if (e.key === "ArrowRight" || e.key === "d") turnR();
+      if (e.key === "q") strafeLeft();
+      if (e.key === "e") strafeRight();
       if (e.key === "x") jumpDown?.();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [grid, moveForward, moveBackward, turnL, turnR, jumpDown]);
+  }, [grid, moveForward, moveBackward, strafeLeft, strafeRight, turnL, turnR, jumpDown]);
 
   // The surface under the pointer, for the palette (see EditorBar).
   const onEditHover = (target: EditTarget | null) => {
@@ -521,6 +526,15 @@ export default function App() {
       if (!there && alt) return;
       result = applyEdit(map.id, (file) => toggleExit(file, cell));
       setSelectedExit(there ? null : cell);
+    } else if (editTool === "start") {
+      // the party starts here, facing as it faces now; the start itself turns a quarter
+      if (target.kind === "wall" || alt) return;
+      const cell = target.cell;
+      const here = map.start.cell.x === cell.x && map.start.cell.y === cell.y;
+      const order: Direction[] = ["N", "E", "S", "W"];
+      const facing: Direction = here ? order[(order.indexOf(map.start.facing) + 1) % 4] : dir;
+      result = applyEdit(map.id, (file) => setStart(file, cell, facing));
+      if (!("error" in result)) pushLog(`Editor: start at ${cell.x},${cell.y}, facing ${facing}.`);
     } else if (editTool === "restricted") {
       // a click on a floor: restricted, or not any more
       if (target.kind === "wall") return;
@@ -887,6 +901,7 @@ export default function App() {
         blow: { speed: selectedSmokeSpec.blow?.speed ?? 0, yaw: selectedSmokeSpec.blow?.yaw ?? 0, pitch: selectedSmokeSpec.blow?.pitch ?? 0 },
         fire: !!selectedSmokeSpec.fire,
         decorative: !!selectedSmokeSpec.decorative,
+        petals: !!selectedSmokeSpec.petals,
         chance: selectedSmokeSpec.chance ?? 1,
         links: linksOf(selectedSmokeSpec),
       }
@@ -1616,7 +1631,16 @@ export default function App() {
       )}
     </>
   );
-  // the turn / step / use buttons are left out for now (they come back later)
+  // what the Use button is called, by what's ahead of the party
+  const useLabel = (() => {
+    const ahead = { x: pos.x + DIR_VECTOR[dir].x, y: pos.y + DIR_VECTOR[dir].y };
+    if (cellAt(map, ahead.x, ahead.y) === "door") return "Open";
+    const container = (map.props ?? []).some(
+      (p) => p.cell.x === ahead.x && p.cell.y === ahead.y && PROP_TYPES[p.prop]?.container,
+    );
+    return container ? "Search" : "Use";
+  })();
+  // the old action menu is left out (the movement pad replaced it)
   const SHOW_ACTION_MENU = false;
   const actionMenu = grid ? (
     <ActionMenu
@@ -1749,7 +1773,27 @@ export default function App() {
         </div>
       </div>
 
-      {!editMode && <PartyPanel crew={crew} readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />}
+      {!editMode && (
+        <div className="flex gap-2 items-end">
+          {grid && (
+            <MoveControls
+              onTurnLeft={turnL}
+              onForward={moveForward}
+              onTurnRight={turnR}
+              onStrafeLeft={strafeLeft}
+              onBack={moveBackward}
+              onStrafeRight={strafeRight}
+              onUse={use}
+              useLabel={useLabel}
+              onInventory={toggleHaul}
+              onJumpDown={jumpDown ?? undefined}
+            />
+          )}
+          <div className="flex-1 min-w-0">
+            <PartyPanel crew={crew} readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

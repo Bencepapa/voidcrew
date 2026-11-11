@@ -8,7 +8,7 @@ import { DIR_VECTOR, rightOf } from "./movement";
 
 // a hand-placed free-standing light is a "point" (see MapLight.pos); a
 // window's starlight a "window"
-export type LightKind = "ceiling" | "point" | "window";
+export type LightKind = "ceiling" | "point" | "window" | "sky";
 
 export interface LightSpec {
   kind: LightKind;
@@ -47,7 +47,21 @@ export function ownCeilingLight(map: { lights?: MapLight[] }, cell: { x: number;
   return (map.lights ?? []).findIndex((l) => !l.pos && l.x === cell.x && l.y === cell.y);
 }
 
-export function generateLights(map: GameMap): LightSpec[] {
+// The light the sky gives to the cells under an open ("sky") ceiling: its
+// colour, strength, and where it comes from (azimuth: compass degrees, 0 north,
+// 90 east; elevation: degrees above the horizon) - a night, a noon, a dusk.
+export interface SkyLight {
+  color: number;
+  intensity: number;
+  azimuth: number;
+  elevation: number;
+}
+
+export function isSkyCeiling(map: GameMap, x: number, y: number): boolean {
+  return (map.ceilingTextureAt?.(x, y) ?? map.textures?.ceiling) === "sky";
+}
+
+export function generateLights(map: GameMap, sky?: SkyLight): LightSpec[] {
   const color = lampColor(map);
   const lights: LightSpec[] = [];
   (map.lights ?? []).forEach((own, source) => {
@@ -74,6 +88,30 @@ export function generateLights(map: GameMap): LightSpec[] {
     }
     lights.push(light);
   });
+  // The sky's light: one baked light per walkable cell under an open ceiling,
+  // leaned toward the sun by as much as the cell allows (so the light comes
+  // in from that side, the walls casting its shadows)
+  if (sky && sky.intensity > 0) {
+    const az = (sky.azimuth * Math.PI) / 180;
+    const el = Math.max(5, Math.min(90, sky.elevation)) * (Math.PI / 180);
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        if (map.cells[y]?.[x] === "wall" || !isSkyCeiling(map, x, y)) continue;
+        const room = ceilingHeight(map, x, y) - floorHeight(map, x, y);
+        const lean = Math.min(0.42, room / Math.tan(el));
+        lights.push({
+          kind: "sky",
+          x: x + Math.sin(az) * lean,
+          z: y - Math.cos(az) * lean,
+          y: ceilingHeight(map, x, y) - 0.05,
+          color: sky.color,
+          intensity: sky.intensity,
+          range: 2.8 + Math.max(0, room - 1) * 1.2,
+          source: -1,
+        });
+      }
+    }
+  }
   // A window's cold starlight: one light per panel, from just behind its
   // glass - shining in through the (shadowless) wall, it lights the room
   // without a highlight on the glass itself, which faces away from it.

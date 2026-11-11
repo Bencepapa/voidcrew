@@ -26,7 +26,14 @@ export type EditTool =
   | "exit"
   | "restricted"
   | "wall"
+  | "start"
   | "map";
+
+// Where the party starts the deck, and which way it looks.
+export function setStart(file: MapFile, cell: Vec2, facing: Direction): MapFile {
+  file.start = { x: cell.x, y: cell.y, facing };
+  return file;
+}
 
 // The surface under the pointer, which picks the tool's target (a wall's
 // face is seen from the open cell it belongs to - `from`).

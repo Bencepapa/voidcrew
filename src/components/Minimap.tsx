@@ -204,6 +204,11 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           {ladders}
           {windows}
           <rect x={0} y={0} width={W} height={H} fill="none" stroke="#4ade80" strokeWidth={0.1} strokeDasharray="0.5 0.3" />
+          {/* the deck's start: a flag-like marker, pointing the way the party faces there */}
+          <g transform={`translate(${map.start.cell.x + 0.5} ${map.start.cell.y + 0.5}) rotate(${FACING_DEGREES[map.start.facing]})`}>
+            <circle r={0.46} fill="none" stroke="#38bdf8" strokeWidth={0.1} />
+            <polygon points="0,-0.36 0.2,0.1 -0.2,0.1" fill="#38bdf8" />
+          </g>
           <g transform={`translate(${pos.x + 0.5} ${pos.y + 0.5}) rotate(${FACING_DEGREES[dir]})`}>
             <polygon points="0,-0.42 0.34,0.34 0,0.16 -0.34,0.34" fill={PLAYER_COLOR} stroke="#062b12" strokeWidth={0.07} strokeLinejoin="round" />
           </g>
