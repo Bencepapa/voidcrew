@@ -25,13 +25,20 @@ const LAYER_UNITS = 3;
 
 interface DecalManifestEntry {
   normal: boolean;
+  // wet and glossy: lights glint on it like on standing water (a puddle)
+  water?: boolean;
 }
 
+// how many lights standing water glints with
+const WATER_LIGHTS = 8;
+
 interface DecalAsset {
-  material: THREE.MeshStandardMaterial;
+  material: THREE.Material;
   // image size in surface pixels
   width: number;
   height: number;
+  // standing water: a flat sheet above the floor, not painted onto its bumps
+  water: boolean;
 }
 
 interface Projection {
@@ -40,11 +47,12 @@ interface Projection {
   index: number;
   // DecalSpec.action
   action?: string;
+  water: boolean;
   key: string;
   position: THREE.Vector3;
   orientation: THREE.Euler;
   size: THREE.Vector3;
-  material: THREE.MeshStandardMaterial;
+  material: THREE.Material;
 }
 
 export function fetchDecalManifest(baseUrl: string, bust: string): Promise<Record<string, DecalManifestEntry>> {
@@ -57,7 +65,7 @@ export class DecalLibrary {
   private manifest: Promise<Record<string, DecalManifestEntry>>;
   private assets = new Map<string, Promise<DecalAsset>>();
   // each decal's material at its layer (see DECAL_LAYERS), by "name|layer"
-  private layered = new Map<string, THREE.MeshStandardMaterial>();
+  private layered = new Map<string, THREE.Material>();
   // a surface can be several meshes (a tall wall's stacked panels), and they
   // may arrive at different times (each relief variant builds on its own)
   private surfaces = new Map<string, THREE.Mesh[]>();
@@ -86,6 +94,8 @@ export class DecalLibrary {
       wallHeight: number;
       // world heights of a cell's floor and ceiling
       levels: (cell: Vec2) => CellLevels;
+      // how far above a floor standing water lies (above its relief's bumps)
+      waterLift?: number;
       parent: THREE.Object3D;
     },
   ) {
@@ -157,21 +167,23 @@ export class DecalLibrary {
         map.magFilter = THREE.NearestFilter;
         const normalMap = entry.normal ? await this.loadTexture(`${dir}normal.png${bust}`) : null;
         if (normalMap) normalMap.magFilter = THREE.NearestFilter;
-        const material = new THREE.MeshStandardMaterial({
-          map,
-          normalMap,
-          // crisp pixel edges, no transparency sorting
-          alphaTest: 0.5,
-          // pull the decal in front of the surface it was cut from
-          polygonOffset: true,
-          polygonOffsetFactor: -4,
-          polygonOffsetUnits: -4,
-          roughness: 0.75,
-          metalness: 0.15,
-        });
+        const material: THREE.Material = entry.water
+          ? this.waterMaterial(map)
+          : new THREE.MeshStandardMaterial({
+              map,
+              normalMap,
+              // crisp pixel edges, no transparency sorting
+              alphaTest: 0.5,
+              // pull the decal in front of the surface it was cut from
+              polygonOffset: true,
+              polygonOffsetFactor: -4,
+              polygonOffsetUnits: -4,
+              roughness: 0.75,
+              metalness: 0.15,
+            });
         this.disposables.push(material);
         const image = map.image as { width: number; height: number };
-        return { material, width: image.width, height: image.height };
+        return { material, width: image.width, height: image.height, water: !!entry.water };
       });
       this.assets.set(name, asset);
     }
@@ -183,8 +195,10 @@ export class DecalLibrary {
     const frame = surfaceFrame(spec.cell, spec.surface, this.opts.wallHeight, this.opts.levels(spec.cell));
     const texelW = frame.width / SURFACE_PIXELS;
     const texelH = frame.height / SURFACE_PIXELS;
-    const w = asset.width * texelW;
-    const h = asset.height * texelH;
+    // (its scale grows it about its middle)
+    const scale = spec.scale ?? 1;
+    const w = asset.width * texelW * scale;
+    const h = asset.height * texelH * scale;
 
     // decal center in panel coordinates: centered on the origin, +Y up,
     // pixel row 0 at the top
@@ -207,6 +221,7 @@ export class DecalLibrary {
       decal: spec.decal,
       index,
       action: spec.action,
+      water: asset.water && spec.surface === "floor",
       key: surfaceKey(cell, spec.surface),
       position,
       orientation,
@@ -215,21 +230,143 @@ export class DecalLibrary {
     }));
   }
 
+  // The lights standing water glints with (see setWaterLights), and the clock
+  // that ripples it: shared by every puddle's material.
+  readonly waterUniforms = {
+    uLights: { value: Array.from({ length: WATER_LIGHTS }, () => new THREE.Vector3()) },
+    uColors: { value: Array.from({ length: WATER_LIGHTS }, () => new THREE.Vector3()) },
+    uCount: { value: 0 },
+    uTime: { value: 0 },
+    // the sky it mirrors (an equirectangular image), and how much of it
+    uSky: { value: new THREE.DataTexture(new Uint8Array([8, 10, 24, 255]), 1, 1) as THREE.Texture },
+    uSkyAmount: { value: 0 },
+  };
+
+  // the sky the water mirrors (null: none - a dungeon's puddles only catch
+  // the lights)
+  setWaterSky(sky: THREE.Texture | null) {
+    if (sky) this.waterUniforms.uSky.value = sky;
+    this.waterUniforms.uSkyAmount.value = sky ? 1 : 0;
+  }
+
+  // the lights a puddle reflects: world positions, colors, strengths (the
+  // nearest few, as many as the shader takes)
+  setWaterLights(lights: { x: number; y: number; z: number; color: number; intensity: number }[]) {
+    const u = this.waterUniforms;
+    const n = Math.min(WATER_LIGHTS, lights.length);
+    for (let i = 0; i < n; i++) {
+      const l = lights[i];
+      u.uLights.value[i].set(l.x, l.y, l.z);
+      const c = new THREE.Color(l.color);
+      u.uColors.value[i].set(c.r * l.intensity, c.g * l.intensity, c.b * l.intensity);
+    }
+    u.uCount.value = n;
+  }
+
+  // Standing water: the puddle's picture, lit by the lights around it (with a
+  // soft glow), its surface rippling a little, and each light a bright glint
+  // where it would mirror toward the eye - the glints slide as you move.
+  private waterMaterial(map: THREE.Texture): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      uniforms: { map: { value: map }, ...this.waterUniforms },
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+      vertexShader: `
+        varying vec3 vWorld;
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          vWorld = world.xyz;
+          gl_Position = projectionMatrix * viewMatrix * world;
+        }`,
+      fragmentShader: `
+        uniform sampler2D map;
+        uniform vec3 uLights[${WATER_LIGHTS}];
+        uniform vec3 uColors[${WATER_LIGHTS}];
+        uniform int uCount;
+        uniform float uTime;
+        uniform sampler2D uSky;
+        uniform float uSkyAmount;
+        varying vec3 vWorld;
+        varying vec2 vUv;
+        void main() {
+          vec4 base = texture2D(map, vUv);
+          if (base.a < 0.5) discard;
+          vec3 V = normalize(cameraPosition - vWorld);
+          // a restless surface: two slow cross ripples tilt the normal a little
+          vec2 p = vWorld.xz * 11.0;
+          vec3 N = normalize(vec3(
+            0.016 * sin(p.x * 1.3 + uTime * 1.2) + 0.011 * sin(p.y * 2.1 - uTime * 0.9),
+            1.0,
+            0.016 * cos(p.y * 1.1 + uTime * 1.0) + 0.011 * cos(p.x * 1.9 - uTime * 0.7)));
+          vec3 diffuse = vec3(0.0);
+          vec3 glint = vec3(0.0);
+          for (int i = 0; i < ${WATER_LIGHTS}; i++) {
+            if (i >= uCount) break;
+            vec3 toLight = uLights[i] - vWorld;
+            float dist = length(toLight);
+            vec3 L = toLight / dist;
+            float atten = 1.0 / (1.0 + dist * dist * 0.7);
+            diffuse += uColors[i] * max(dot(N, L), 0.0) * atten;
+            vec3 H = normalize(L + V);
+            // the light mirrored in the water: a tight, bright streak
+            glint += uColors[i] * pow(max(dot(N, H), 0.0), 700.0) * atten * 2.0;
+          }
+          // Mirroring: the more slanted the view, the more the water reflects
+          // (Schlick's fresnel, water's 2% head on) - the sky, where there is
+          // one, else a faint warm sheen of the room
+          float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+          vec3 R = reflect(-V, N);
+          vec2 skyUv = vec2(atan(R.z, R.x) / 6.2831853 + 0.5, asin(clamp(R.y, -1.0, 1.0)) / 3.1415927 + 0.5);
+          vec3 sky = texture2D(uSky, skyUv).rgb * 1.6;
+          vec3 mirror = mix(vec3(0.1, 0.085, 0.075), sky, uSkyAmount);
+          vec3 lit = base.rgb * (0.32 + diffuse * 1.1);
+          // (a mirror of the open sky shows even head on, a little)
+          float reflectance = min(1.0, fresnel * 1.6 + 0.18 * uSkyAmount);
+          vec3 color = mix(lit, mirror, reflectance) + glint;
+          gl_FragColor = vec4(color, 1.0);
+        }`,
+    });
+  }
+
   // a decal's material pulled forward as far as its place in the list says
-  private layer(name: string, base: THREE.MeshStandardMaterial, index: number): THREE.MeshStandardMaterial {
+  private layer(name: string, base: THREE.Material, index: number): THREE.Material {
+    // (water is a shader of its own, all of it sharing one set of light uniforms)
+    if (base instanceof THREE.ShaderMaterial) return base;
+    const std = base as THREE.MeshStandardMaterial;
     const layer = Math.min(index, DECAL_LAYERS - 1);
     const key = `${name}|${layer}`;
     let material = this.layered.get(key);
     if (!material) {
-      material = base.clone();
-      material.polygonOffsetUnits = base.polygonOffsetUnits - layer * LAYER_UNITS;
+      material = std.clone();
+      (material as THREE.MeshStandardMaterial).polygonOffsetUnits = std.polygonOffsetUnits - layer * LAYER_UNITS;
       this.layered.set(key, material);
       this.disposables.push(material);
     }
     return material;
   }
 
+  // the water sheets made so far (one per decal, whatever floors it reaches)
+  private sheets = new Set<number>();
+
   private build(p: Projection, mesh: THREE.Mesh) {
+    if (p.water) {
+      // Standing water is level: one flat sheet over the whole puddle, just
+      // above the floor's highest bumps, instead of a skin that follows them
+      if (this.sheets.has(p.index)) return;
+      this.sheets.add(p.index);
+      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(p.size.x, p.size.y), p.material);
+      this.disposables.push(sheet.geometry);
+      sheet.rotation.copy(p.orientation);
+      const up = new THREE.Vector3(0, 0, 1).applyEuler(p.orientation);
+      sheet.position.copy(p.position).addScaledVector(up, this.opts.waterLift ?? 0.02);
+      sheet.userData.decalIndex = p.index;
+      this.opts.parent.add(sheet);
+      this.built.push({ decal: p.decal, key: p.key, triangles: 2 });
+      return;
+    }
     mesh.updateWorldMatrix(true, false);
     const cache = this.opts.geometryCache;
     const key = cache

@@ -17,6 +17,14 @@ interface MinimapProps {
   // the restricted cells shaded (the editor: the crew finds out the hard
   // way)
   showRestricted?: boolean;
+  // editing the map: the whole map is shown with its bounds, and a click on a
+  // cell edits it (the right button: the other way) - `surface` says whether
+  // the floor or the ceiling is meant, and what the cells are shaded by
+  edit?: {
+    surface: "floor" | "ceiling";
+    onSurface: (surface: "floor" | "ceiling") => void;
+    onCell: (cell: Vec2, alt: boolean) => void;
+  };
 }
 
 // how many cells the window shows either side of the player
@@ -44,7 +52,7 @@ const BIG_LOOT_COLOR = "#ffd84a";
 // map sliding past), drawn as SVG in cell units: floors shaded by height,
 // doors, ladders (yellow) and windows (blue) on their cell's side, bridges
 // as a band along their axis, and the party as an arrow turning smoothly.
-export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted }: MinimapProps) {
+export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, edit }: MinimapProps) {
   const radius = compact ? RADIUS_COMPACT : RADIUS;
   const span = radius * 2 + 1;
 
@@ -62,11 +70,22 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted }
     return `rgb(${r}, ${g}, 18)`;
   };
 
+  // ceilings show lighter the higher they are (while editing them)
+  const ceilingShade = (x: number, y: number) => {
+    const h = ceilingHeight(map, x, y);
+    const g = Math.round(Math.max(30, Math.min(200, 40 + h * 45)));
+    return `rgb(30, ${Math.round(g * 0.7)}, ${g})`;
+  };
+
   const cells: ReactElement[] = [];
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
       const cell = map.cells[y][x];
-      if (cell === "wall") continue;
+      if (cell === "wall") {
+        // (when editing, every wall cell shows too: it can be dug out from here)
+        if (edit) cells.push(<rect key={`c${x},${y}`} x={x + 0.04} y={y + 0.04} width={0.92} height={0.92} fill="#171a17" />);
+        continue;
+      }
       // too low for the party (a duct the cleaning drones use): as good as
       // a wall to it
       if (ceilingHeight(map, x, y) - floorHeight(map, x, y) < MIN_HEADROOM - 1e-6) continue;
@@ -77,7 +96,9 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted }
           y={y + 0.04}
           width={0.92}
           height={0.92}
-          fill={cell === "door" ? (locked?.includes(`${x},${y}`) ? LOCKED_COLOR : DOOR_COLOR) : floor(x, y)}
+          fill={
+            cell === "door" ? (locked?.includes(`${x},${y}`) ? LOCKED_COLOR : DOOR_COLOR) : edit?.surface === "ceiling" ? ceilingShade(x, y) : floor(x, y)
+          }
         />,
       );
     }
@@ -135,6 +156,61 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted }
       <circle key={`loot${m.x},${m.y}`} cx={m.x + 0.5} cy={m.y + 0.5} r={0.12} fill={LOOT_COLOR} />
     ),
   );
+
+  if (edit) {
+    // the whole map, at one scale: bounds drawn, clickable
+    const W = map.width;
+    const H = map.height;
+    const click = (e: React.MouseEvent<SVGSVGElement>, alt: boolean) => {
+      const svg = e.currentTarget;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+      const x = Math.floor(p.x);
+      const y = Math.floor(p.y);
+      if (x < 0 || y < 0 || x >= W || y >= H) return;
+      e.preventDefault();
+      edit.onCell({ x, y }, alt);
+    };
+    return (
+      <div className="border border-green-800 bg-black/60 p-2 flex flex-col gap-1" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1 text-[10px] font-mono">
+          {(["floor", "ceiling"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => edit.onSurface(s)}
+              className={`border rounded-sm px-2 py-0.5 ${edit.surface === s ? "border-amber-400 bg-amber-400/20 text-amber-200" : "border-neutral-600 text-neutral-300 hover:bg-neutral-800"}`}
+              title={`Clicks here edit the ${s}s (right-click: the other way)`}
+            >
+              {s === "floor" ? "Floor" : "Ceiling"}
+            </button>
+          ))}
+          <span className="text-neutral-500 ml-auto">
+            {W} x {H}
+          </span>
+        </div>
+        <svg
+          viewBox={`-0.5 -0.5 ${W + 1} ${H + 1}`}
+          className="block w-full cursor-crosshair"
+          style={{ aspectRatio: `${W + 1} / ${H + 1}` }}
+          aria-label={`Map: ${map.name}`}
+          onClick={(e) => click(e, false)}
+          onContextMenu={(e) => click(e, true)}
+        >
+          {cells}
+          {restricted}
+          {bridges}
+          {ladders}
+          {windows}
+          <rect x={0} y={0} width={W} height={H} fill="none" stroke="#4ade80" strokeWidth={0.1} strokeDasharray="0.5 0.3" />
+          <g transform={`translate(${pos.x + 0.5} ${pos.y + 0.5}) rotate(${FACING_DEGREES[dir]})`}>
+            <polygon points="0,-0.42 0.34,0.34 0,0.16 -0.34,0.34" fill={PLAYER_COLOR} stroke="#062b12" strokeWidth={0.07} strokeLinejoin="round" />
+          </g>
+        </svg>
+      </div>
+    );
+  }
 
   return (
     <div className={`border border-green-800 ${compact ? "bg-black/25 p-1" : "bg-black/60 p-2"}`}>

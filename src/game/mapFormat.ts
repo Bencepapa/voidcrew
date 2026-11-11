@@ -3,6 +3,8 @@ import { ITEM_TYPES } from "./items";
 import { PROP_TYPES } from "./props";
 import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
 import type { Lock, Terminal, Trigger } from "./story";
+import { cleanRenderLook } from "./renderLook";
+import type { RenderLook } from "./renderLook";
 
 // Map files (src/maps/*.json): a character grid for the cells plus optional
 // per-cell layers, each its own character grid with a legend. Characters
@@ -35,6 +37,7 @@ export interface MapFile {
   // default texture sets for the deck (see GameMap.textures)
   textures?: {
     wall?: string;
+    accent?: string;
     floor?: string;
     ceiling?: string;
     door?: string;
@@ -56,6 +59,9 @@ export interface MapFile {
   // the main part keeps lightGridDensity's sharp shadows; unset: one grid
   lightGridAmbient?: number;
   reliefDepth?: number;
+  // render values saved with the deck: material, AO, relief, wall height,
+  // ambient light... (see renderLook.ts)
+  render?: RenderLook;
   start: { x: number; y: number; facing: Direction };
   layout: string[];
   layers?: {
@@ -94,6 +100,7 @@ export interface MapFile {
     color?: string;
     blow?: { speed: number; yaw: number; pitch?: number };
     fire?: boolean;
+    decorative?: boolean;
     chance?: number;
     id?: string;
     with?: string;
@@ -139,6 +146,7 @@ export interface MapFile {
     rotation?: number;
     offset?: [number, number];
     elevation?: number;
+    scale?: number;
     chance?: number;
     texture?: string;
     loot?: { item: string; count: number }[];
@@ -167,6 +175,7 @@ export interface MapFile {
     px: number;
     py: number;
     rotation?: number;
+    scale?: number;
     action?: string;
     chance?: number;
     id?: string;
@@ -274,6 +283,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     lightGridDensity: file.lightGridDensity,
     lightGridAmbient: file.lightGridAmbient,
     reliefDepth: file.reliefDepth,
+    render: cleanRenderLook(file.render),
     name: file.name,
     width,
     height,
@@ -327,6 +337,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         rotation: p.rotation,
         offset: p.offset,
         elevation: p.elevation,
+        scale: p.scale,
         chance: p.chance,
         texture: p.texture,
         loot: p.loot,
@@ -349,6 +360,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         color: s.color,
         blow: s.blow,
         fire: s.fire,
+        decorative: s.decorative,
         chance: s.chance,
         id: s.id,
         with: s.with,
@@ -399,6 +411,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       x: d.px,
       y: d.py,
       rotation: d.rotation,
+      scale: d.scale,
       action: d.action,
       chance: d.chance,
       id: d.id,

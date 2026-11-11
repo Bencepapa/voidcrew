@@ -97,6 +97,23 @@ export const TEXTURE_SETS = {
     depth: `${import.meta.env.BASE_URL}textures/fantasyfloor1/depth.png`,
     pixelArt: true,
   },
+  // the open sky: as a wall or a ceiling it isn't drawn at all, the starry
+  // sky shows through (these files are just the palette's swatch)
+  sky: {
+    kind: ["wall", "ceiling"], label: "Sky (open)",
+    diffuse: `${import.meta.env.BASE_URL}textures/sky/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/sky/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/sky/depth.png`,
+    pixelArt: true,
+  },
+  // forest floor: leaf litter, moss, twigs
+  fantasyforest1: {
+    kind: "floor", label: "Forest floor",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasyforest1/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasyforest1/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasyforest1/depth.png`,
+    pixelArt: true,
+  },
   // packed earth with pebbles (outdoor ground)
   fantasyearth1: {
     kind: "floor", label: "Earth",

@@ -39,6 +39,8 @@ const USAGE = `Usage: npm run texture:process -- --diffuse <file> [--depth <file
   [--normal-source levels] "levels" (follows the relief steps) or "smooth" (original depth shape)
   [--normal-bevel 2]      rounds edges over about this many pixels before deriving normals (0 = sharp),
                           which gives pipes and ledges round, light-catching top and bottom halves
+  [--smooth]              keep the depth continuous (no height levels): the game builds it as a smooth
+                          height field with slopes (stone, earth, hedges) - set the map's relief shape to Smooth
   [--trim]                crop both images to the diffuse's opaque area first (for cut-outs like door frames)
   [--flatten-paint]       flatten saturated paint (stripes, decals, rust) to the surface it's painted on
   [--paint-saturation 0.45] how saturated a color must be to count as paint
@@ -70,6 +72,7 @@ const { values: args } = parseArgs({
     "normal-source": { type: "string", default: "levels" },
     "normal-bevel": { type: "string", default: "2" },
     trim: { type: "boolean", default: false },
+    smooth: { type: "boolean", default: false },
     "flatten-paint": { type: "boolean", default: false },
     "paint-saturation": { type: "string", default: "0.45" },
     "paint-grow": { type: "string", default: "2" },
@@ -731,6 +734,36 @@ async function main() {
   const baseGray = mostCommonValue(solidOnly(rawDepth));
   const smooth = fillGapsBetweenRaised(rawDepth, outW, outH, fillGaps, baseGray);
   const solidSmooth = solidOnly(smooth);
+  if (args.smooth) {
+    // continuous depth: the median-filtered values stretched to the full range and lightly
+    // blurred, no levels - the normal map comes from the same heights
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const v of solidSmooth) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    const range = hi - lo || 1;
+    const stretched = Float32Array.from(smooth, (v) => ((v - lo) / range) * 255);
+    const soft = boxBlur(stretched, outW, outH, 1);
+    const channelsS = solid ? 2 : 1;
+    const depthS = Buffer.alloc(outW * outH * channelsS);
+    for (let i = 0; i < soft.length; i++) {
+      depthS[i * channelsS] = Math.round(soft[i]);
+      if (solid) depthS[i * 2 + 1] = solid[i] ? 255 : 0;
+    }
+    await sharp(depthS, { raw: { width: outW, height: outH, channels: channelsS } })
+      .png({ compressionLevel: 9 })
+      .toFile(path.join(outDir, "depth.png"));
+    const normalS = normalMapFromHeight(boxBlur(soft, outW, outH, normalBevel), outW, outH, normalStrength);
+    await sharp(normalS, { raw: { width: outW, height: outH, channels: 3 } })
+      .png({ compressionLevel: 9 })
+      .toFile(path.join(outDir, "normal.png"));
+    console.log(`${srcW}x${srcH} -> ${outW}x${outH} in ${path.relative(process.cwd(), outDir)}`);
+    console.log(`  diffuse.png: ${uniqueColors.size} colors`);
+    console.log(`  depth.png:   smooth (continuous), normal.png: strength ${normalStrength}`);
+    return;
+  }
   const centers = mergeCloseLevels(kmeans1d(solidSmooth, levels), solidSmooth, minLevelGap);
   let q = new Uint8Array(smooth.length);
   for (let i = 0; i < q.length; i++) q[i] = nearest(centers, smooth[i]);

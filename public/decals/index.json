@@ -8,8 +8,14 @@
   "bullet_holes": {
     "normal": true
   },
+  "bush_leafy": {
+    "normal": false
+  },
   "claw_marks": {
     "normal": true
+  },
+  "fern_big": {
+    "normal": false
   },
   "grass_blades": {
     "normal": false
@@ -21,6 +27,9 @@
     "normal": false
   },
   "grass_small": {
+    "normal": false
+  },
+  "grass_tall": {
     "normal": false
   },
   "grass_white": {
@@ -35,6 +44,9 @@
   "kid_drawing": {
     "normal": false
   },
+  "leaves_pile": {
+    "normal": false
+  },
   "lift_btn_0_down": {
     "normal": false
   },
@@ -45,6 +57,9 @@
     "normal": false
   },
   "lift_btn_2_up": {
+    "normal": false
+  },
+  "mushrooms": {
     "normal": false
   },
   "notice_board": {
@@ -70,6 +85,18 @@
   },
   "poster_planet": {
     "normal": false
+  },
+  "puddle_large": {
+    "normal": false,
+    "water": true
+  },
+  "puddle_long": {
+    "normal": false,
+    "water": true
+  },
+  "puddle_small": {
+    "normal": false,
+    "water": true
   },
   "scorch": {
     "normal": true
@@ -99,6 +126,9 @@
     "normal": true
   },
   "warning": {
+    "normal": false
+  },
+  "wildflowers": {
     "normal": false
   }
 }

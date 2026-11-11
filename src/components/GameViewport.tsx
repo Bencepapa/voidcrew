@@ -40,6 +40,8 @@ import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSe
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 
+import type { ReliefMode } from "../game/renderLook";
+
 export type { TextureSetId };
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 // debug: draw every surface with its textures, or just its polygons -
@@ -106,6 +108,11 @@ export interface ViewportSettings {
   reliefDepth: number;
   reliefLevels: number;
   reliefMinIsland: number;
+  // stepped levels, or a smooth height field with slopes
+  reliefMode: ReliefMode;
+  // the floors' own relief depth (world units) and normal strength; 0: as the walls'
+  floorReliefDepth: number;
+  floorNormalStrength: number;
   mapLightIntensity: number;
   roughness: number;
   metalness: number;
@@ -236,6 +243,9 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   reliefDepth: 0.04,
   reliefLevels: 6,
   reliefMinIsland: 3,
+  reliefMode: "steps",
+  floorReliefDepth: 0,
+  floorNormalStrength: 0,
   mapLightIntensity: 1.6,
   roughness: 0.55,
   metalness: 0.45,
@@ -462,6 +472,8 @@ interface WallKit {
   slots: WallSlot[];
   // a prop's own normal strength, relative to the viewer's (PropType.normal)
   normal?: number;
+  // a floor kit: it takes the floors' own normal strength
+  floor?: boolean;
 }
 
 // Stable pseudo-random 0..1 per wall face, from its position (face centers
@@ -565,6 +577,68 @@ const WINDOW_SET: TextureSetId = "window1";
 const WINDOW_DEPTH = 0.1;
 // props are small: a shallower relief than the walls'
 const PROP_RELIEF_SCALE = 0.6;
+
+// The starry sky behind open walls and ceilings (a map's "sky" texture set): a
+// night gradient with a few hundred stars, drawn once as the scene's
+// background (an equirectangular image, so it turns with the view and
+// stays out of the fog and the far plane). Seeded, so it's the same sky
+// every time.
+function makeSkyTexture(): THREE.Texture {
+  const w = 1024;
+  const h = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+  const gradient = ctx.createLinearGradient(0, 0, 0, h);
+  gradient.addColorStop(0, "#02030a");
+  gradient.addColorStop(0.55, "#0a1230");
+  gradient.addColorStop(1, "#16203f");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, w, h);
+  let seed = 20240611;
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  for (let i = 0; i < 700; i++) {
+    const x = Math.floor(random() * w);
+    const y = Math.floor(random() * h * 0.85);
+    const bright = 0.35 + random() * 0.65;
+    const size = random() < 0.08 ? 2 : 1;
+    ctx.fillStyle = `rgba(${Math.round(200 + 55 * random())}, ${Math.round(210 + 45 * random())}, 255, ${bright})`;
+    ctx.fillRect(x, y, size, size);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  // (the shader below writes these values as they are: no color conversion)
+  texture.colorSpace = THREE.NoColorSpace;
+  return texture;
+}
+
+// A pane of sky: it shows the sky image in the direction the camera looks
+// through it, so panes next to each other join up and the sky stays far away
+// whatever the pane's distance. Not lit, not fogged.
+function makeSkyMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { map: { value: makeSkyTexture() } },
+    side: THREE.DoubleSide,
+    vertexShader: `
+      varying vec3 vWorld;
+      void main() {
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        vWorld = world.xyz;
+        gl_Position = projectionMatrix * viewMatrix * world;
+      }`,
+    fragmentShader: `
+      uniform sampler2D map;
+      varying vec3 vWorld;
+      void main() {
+        vec3 dir = normalize(vWorld - cameraPosition);
+        vec2 uv = vec2(atan(dir.z, dir.x) / 6.2831853 + 0.5, asin(clamp(dir.y, -1.0, 1.0)) / 3.1415927 + 0.5);
+        gl_FragColor = vec4(texture2D(map, uv).rgb, 1.0);
+      }`,
+  });
+}
 // loot items' sprites: how tall (world units), how far above the floor, and
 // a spill's timing (ms): out of the container, lying there until, drawn in
 const ITEM_HEIGHT = 0.2;
@@ -1596,17 +1670,15 @@ export function GameViewport({
     const deckWall = isTextureSetId(map.textures?.wall) ? map.textures.wall : undefined;
     const primarySet = deckWall ?? settings.textureSet;
     const primaryKit = createWallKit(primarySet);
+    // (the map's own accent set, if it names one - else, for a deck without a wall
+    // set of its own, the viewer's)
+    const accentSet: string = isTextureSetId(map.textures?.accent) ? map.textures.accent : !deckWall ? settings.accentTextureSet : "none";
     const accentKit =
-      !deckWall &&
-      settings.accentTextureSet !== "none" &&
-      settings.accentTextureSet !== settings.textureSet &&
-      settings.accentRatio > 0
-        ? createWallKit(settings.accentTextureSet)
-        : null;
+      accentSet !== "none" && accentSet !== "sky" && accentSet !== primarySet && settings.accentRatio > 0 ? createWallKit(accentSet) : null;
     // wall kits by texture set: the default mix plus any the map asks for
     // (map.wallTextureAt), created on demand
     const wallKits = new Map<TextureSetId, WallKit>([[primarySet, primaryKit]]);
-    if (accentKit) wallKits.set(settings.accentTextureSet as TextureSetId, accentKit);
+    if (accentKit) wallKits.set(accentSet as TextureSetId, accentKit);
     function wallKitFor(setId: TextureSetId): WallKit {
       let kit = wallKits.get(setId);
       if (!kit) {
@@ -1626,6 +1698,7 @@ export function GameViewport({
       let kit = floorKits.get(setId);
       if (!kit) {
         kit = createWallKit(setId, false);
+        kit.floor = true;
         floorKits.set(setId, kit);
       }
       return kit;
@@ -1650,6 +1723,10 @@ export function GameViewport({
     let mapLights = generateLights(map);
     // the walls' relief depth: the map's own, else the settings'
     const reliefDepth = map.reliefDepth ?? settings.reliefDepth;
+    // the floors have a relief depth of their own (0: as the walls')
+    const floorDepth = settings.floorReliefDepth > 0 ? settings.floorReliefDepth : reliefDepth;
+    // props follow the wall profile: flat (or beveled) walls, flat props
+    const propReliefDepth = settings.wallProfile === "relief" ? reliefDepth : 0.0005;
     // the static lights, baked (see lightGrid.ts) - every lit material reads
     // it once the scene is built
     const lightGrid = createLightGridUniforms();
@@ -1762,6 +1839,16 @@ export function GameViewport({
     const ownMaterials: THREE.MeshStandardMaterial[] = [];
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
+    // the open sky: walls and ceilings of the "sky" set are panes that show the
+    // starry sky (looked at from the camera, as if far away) - nothing else is
+    // sky, so gaps between walls and the far distance stay black
+    // black backing behind every relief wall face, a little behind the deepest
+    // recess: a height map that doesn't tile exactly leaves slivers between
+    // panels that would show what's behind the wall (the next room, the floor)
+    const backingPositions: number[] = [];
+    const backingMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+    let skyMat: THREE.ShaderMaterial | null = null;
+    const skySurface = () => (skyMat ??= makeSkyMaterial());
 
     const WALL_SUBDIVISIONS = 10;
     // relief geometry needs the height map's pixels, so it's built once the
@@ -1803,6 +1890,8 @@ export function GameViewport({
       manifest: (cache.decalManifest ??= fetchDecalManifest(import.meta.env.BASE_URL, bust)),
       wallHeight,
       levels: (cell) => ({ floor: floorY(cell.x, cell.y), ceiling: ceilingY(cell.x, cell.y) }),
+      // standing water lies over the floor's highest relief
+      waterLift: (settings.floorReliefDepth > 0 ? settings.floorReliefDepth : (map.reliefDepth ?? settings.reliefDepth)) * 0.9 + 0.004,
       parent: group,
     });
     if (settings.decalsEnabled) track(decals.add(map.decals ?? []));
@@ -1925,8 +2014,14 @@ export function GameViewport({
           decals.registerSurface(surfaceKey({ x, y }, "floor"), mesh);
         }
 
-        const ceilingKit = ceilingKitAt(x, y);
-        if (ceilingKit) {
+        const ceilingId = map.ceilingTextureAt?.(x, y) ?? map.textures?.ceiling;
+        const ceilingKit = ceilingId === "sky" ? null : ceilingKitAt(x, y);
+        if (ceilingId === "sky") {
+          const pane = new THREE.Mesh(floorGeo, skySurface());
+          pane.rotation.x = Math.PI / 2;
+          pane.position.set(x, ceiling * wallHeight, y);
+          group.add(pane);
+        } else if (ceilingKit) {
           ceilingKit.slots.push({
             x,
             z: y,
@@ -1965,11 +2060,40 @@ export function GameViewport({
           if (!spans.length) return;
 
           const face = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d], key: surfaceKey({ x, y }, d) };
-          const kit = isTextureSetId(wallOverride)
-            ? wallKitFor(wallOverride)
+          const faceSet: string = isTextureSetId(wallOverride)
+            ? wallOverride
             : accentKit && wallVariantRoll(face.x, face.z) < settings.accentRatio
-              ? accentKit
-              : primaryKit;
+              ? accentSet
+              : primarySet;
+          if (faceSet === "sky") {
+            // an opening onto the sky
+            for (const span of spans) {
+              const geo = new THREE.PlaneGeometry(1, (span.top - span.bottom) * wallHeight);
+              geometries.push(geo);
+              const pane = new THREE.Mesh(geo, skySurface());
+              pane.position.set(face.x, ((span.bottom + span.top) / 2) * wallHeight, face.z);
+              pane.rotation.y = face.rotY;
+              group.add(pane);
+            }
+            return;
+          }
+          if (settings.wallProfile === "relief") {
+            // (the quad's corners: along the wall, and up)
+            const back = reliefDepth + 0.004;
+            const cx = face.x + v.x * back;
+            const cz = face.z + v.y * back;
+            const tx = v.y * 0.5;
+            const tz = -v.x * 0.5;
+            for (const span of spans) {
+              const y0 = span.bottom * wallHeight;
+              const y1 = span.top * wallHeight;
+              backingPositions.push(
+                cx - tx, y0, cz - tz, cx + tx, y0, cz + tz, cx + tx, y1, cz + tz,
+                cx - tx, y0, cz - tz, cx + tx, y1, cz + tz, cx - tx, y1, cz - tz,
+              );
+            }
+          }
+          const kit = wallKitFor(faceSet as TextureSetId);
           for (const span of spans) {
             for (const panel of wallPanels(span.bottom, span.top, span.anchor)) {
               const y = (panel.bottom + variantHeight(panel.variant) / 2) * wallHeight;
@@ -1988,6 +2112,14 @@ export function GameViewport({
       }
     }
     const kits = [...wallKits.values()];
+    // standing water mirrors the open sky, when there is one
+    decals.setWaterSky((skyMat as THREE.ShaderMaterial | null)?.uniforms.map.value ?? null);
+    if (backingPositions.length) {
+      const backingGeo = new THREE.BufferGeometry();
+      backingGeo.setAttribute("position", new THREE.Float32BufferAttribute(backingPositions, 3));
+      geometries.push(backingGeo);
+      group.add(new THREE.Mesh(backingGeo, backingMat));
+    }
 
     // floor glow fixtures, lifted above the floor relief once it's built
     const floorStrips: THREE.Mesh[] = [];
@@ -2037,6 +2169,7 @@ export function GameViewport({
         reliefDepth,
         settings.reliefLevels,
         settings.reliefMinIsland,
+        settings.reliefMode,
         settings.aoRadius,
       ].join("|");
       let built = cache.reliefs.get(key);
@@ -2063,6 +2196,7 @@ export function GameViewport({
             depth: shape.depth ?? reliefDepth,
             levels: settings.reliefLevels,
             minIsland: settings.reliefMinIsland,
+            smooth: settings.reliefMode === "smooth",
             aoRadius: settings.aoRadius,
             flushEdges: shape.flushEdges,
             holeBackZ: shape.holeBackZ,
@@ -2246,9 +2380,9 @@ export function GameViewport({
     for (const floorKit of floorKits.values()) {
       if (isRelief) {
         track(
-          buildRelief(floorKit, { height: 1, flushEdges: false }).then(async (relief) => [
+          buildRelief(floorKit, { height: 1, flushEdges: false, depth: floorDepth }).then(async (relief) => [
             relief,
-            relief && (await buildRelief(floorKit, { height: 1, flushEdges: false, coarse: LOD_FACTOR, lodOnly: true })),
+            relief && (await buildRelief(floorKit, { height: 1, flushEdges: false, depth: floorDepth, coarse: LOD_FACTOR, lodOnly: true })),
           ] as const),
         )
           .then(([relief, far]) => {
@@ -2367,31 +2501,40 @@ export function GameViewport({
       // takes the ship's livery like the walls)
       const setId = type.texture ?? primarySet;
       const kit = isTextureSetId(setId) ? wallKitFor(setId) : sharedPropKitFor(setId);
-      const relief = reliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
+      const relief = propReliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
       const foot = type.size[0];
       const shaft = type.shaft;
       const slope = (foot - shaft) / 2;
       const flare = Math.min(type.flare, Math.max(0, h / 2 - slope - 0.05));
       const group = new THREE.Group();
+      // The texture covers one wall height, as on a wall, and repeats up a taller
+      // pillar instead of stretching over it: a block is cut into pieces at
+      // every wall height.
+      const tile = wallHeight;
       // the whole panel first: it gives the kit its AO map
-      if (!(await buildRelief(kit, { width: 1, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE }))) return null;
+      if (!(await buildRelief(kit, { width: 1, height: tile, flushEdges: false, depth: relief, coarse: PROP_COARSE }))) return null;
       const block = async (w: number, y0: number, y1: number) => {
-        const cut = await buildRelief(kit, {
-          width: w,
-          height: y1 - y0,
-          flushEdges: false,
-          depth: relief,
-          coarse: PROP_COARSE,
-          cols: [0.5 - w / 2, 0.5 + w / 2],
-          rows: [(h - y1) / h, (h - y0) / h],
-        });
-        if (!cut) return false;
-        for (let i = 0; i < 4; i++) {
-          const a = (i * Math.PI) / 2;
-          const mesh = new THREE.Mesh(cut.geometry, [kit.wallMat, kit.sideMat]);
-          mesh.position.set((Math.sin(a) * w) / 2, (y0 + y1) / 2, (Math.cos(a) * w) / 2);
-          mesh.rotation.y = a;
-          group.add(mesh);
+        for (let s0 = y0; s0 < y1 - 1e-6; ) {
+          const k = Math.floor(s0 / tile + 1e-6);
+          const s1 = Math.min(y1, (k + 1) * tile);
+          const cut = await buildRelief(kit, {
+            width: w,
+            height: s1 - s0,
+            flushEdges: false,
+            depth: relief,
+            coarse: PROP_COARSE,
+            cols: [0.5 - w / 2, 0.5 + w / 2],
+            rows: [1 - (s1 - k * tile) / tile, 1 - (s0 - k * tile) / tile],
+          });
+          if (!cut) return false;
+          for (let i = 0; i < 4; i++) {
+            const a = (i * Math.PI) / 2;
+            const mesh = new THREE.Mesh(cut.geometry, [kit.wallMat, kit.sideMat]);
+            mesh.position.set((Math.sin(a) * w) / 2, (s0 + s1) / 2, (Math.cos(a) * w) / 2);
+            mesh.rotation.y = a;
+            group.add(mesh);
+          }
+          s0 = s1;
         }
         return true;
       };
@@ -2405,6 +2548,9 @@ export function GameViewport({
       const positions: number[] = [];
       const uvs: number[] = [];
       const band = (w0: number, y0: number, w1: number, y1: number) => {
+        // (v continues from the tile the band's middle is in)
+        const mid = (y0 + y1) / 2;
+        const vOf = (y: number) => (mid / tile) % 1 + (y - mid) / tile;
         for (let i = 0; i < 4; i++) {
           const a = (i * Math.PI) / 2;
           const s = Math.sin(a);
@@ -2412,10 +2558,10 @@ export function GameViewport({
           // (u across the face, its half width, y) to the pillar's space
           const at = (u: number, half: number, y: number) => [c * u + s * half, y, -s * u + c * half];
           const corners = [
-            [...at(-w0 / 2, w0 / 2, y0), 0.5 - w0 / 2, y0 / h],
-            [...at(w0 / 2, w0 / 2, y0), 0.5 + w0 / 2, y0 / h],
-            [...at(w1 / 2, w1 / 2, y1), 0.5 + w1 / 2, y1 / h],
-            [...at(-w1 / 2, w1 / 2, y1), 0.5 - w1 / 2, y1 / h],
+            [...at(-w0 / 2, w0 / 2, y0), 0.5 - w0 / 2, vOf(y0)],
+            [...at(w0 / 2, w0 / 2, y0), 0.5 + w0 / 2, vOf(y0)],
+            [...at(w1 / 2, w1 / 2, y1), 0.5 + w1 / 2, vOf(y1)],
+            [...at(-w1 / 2, w1 / 2, y1), 0.5 - w1 / 2, vOf(y1)],
           ];
           for (const k of [0, 1, 2, 0, 2, 3]) {
             positions.push(corners[k][0], corners[k][1], corners[k][2]);
@@ -2432,6 +2578,36 @@ export function GameViewport({
       slopes.computeVertexNormals();
       geometries.push(slopes);
       group.add(new THREE.Mesh(slopes, kit.wallMat));
+      // A solid black core inside, a little under the relief: the pillar is made
+      // of separate faces and slopes, and without a core the joins between them
+      // show what's behind it (the sky, the next room).
+      const inset = 2 * (relief + 0.012);
+      const coreMat = backingMat;
+      const core = (w: number, y0: number, y1: number) => {
+        const geo = new THREE.BoxGeometry(Math.max(0.02, w - inset), y1 - y0, Math.max(0.02, w - inset));
+        geometries.push(geo);
+        const mesh = new THREE.Mesh(geo, coreMat);
+        mesh.position.set(0, (y0 + y1) / 2, 0);
+        group.add(mesh);
+      };
+      // (the foot's width only where the foot is: over the slopes the pillar
+      // narrows, and a wider core would stick out of them)
+      core(foot, 0, flare);
+      core(shaft, flare, h - flare);
+      core(foot, h - flare, h);
+      // a fixed-height pillar (a pedestal) gets a stone top to stand things on
+      if (type.height) {
+        const top = new THREE.PlaneGeometry(foot, foot);
+        const uv = top.getAttribute("uv") as THREE.BufferAttribute;
+        // (the middle of the texture, stretched over it)
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, 0.3 + uv.getX(i) * 0.4, 0.3 + uv.getY(i) * 0.4);
+        top.setAttribute("uv1", uv.clone());
+        geometries.push(top);
+        const cap = new THREE.Mesh(top, kit.wallMat);
+        cap.rotation.x = -Math.PI / 2;
+        cap.position.y = h + 0.001;
+        group.add(cap);
+      }
       return group;
     }
 
@@ -2465,6 +2641,9 @@ export function GameViewport({
       }
     }
 
+    // the billboard props (trees): turned to face the camera every frame
+    const billboardProps: THREE.Object3D[] = [];
+    const billboardMaterials: THREE.MeshStandardMaterial[] = [];
     async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
       const [length, height, depth] = type.size;
       // (its texture sets take its own normal strength)
@@ -2475,7 +2654,7 @@ export function GameViewport({
         kit.wallMat.normalScale.set(normal, normal);
         return kit;
       };
-      const relief = reliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
+      const relief = propReliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
       const template = new THREE.Group();
       const face = (
         geo: THREE.BufferGeometry,
@@ -2503,6 +2682,27 @@ export function GameViewport({
           face(side.geometry, sideKit, [(Math.sin(a) * length) / 2, h / 2, (Math.cos(a) * depth) / 2], [0, a]);
         }
         face(top.geometry, topKit, [0, h, 0], [-Math.PI / 2, 0]);
+        return template;
+      }
+
+      if (type.kind === "billboard") {
+        // one flat sprite, turned to the viewer every frame (see billboardProps)
+        const base = `${import.meta.env.BASE_URL}textures/${type.texture}/`;
+        const diffuse = kitTexture(base + "diffuse.png" + bust);
+        const normalMap = kitTexture(base + "normal.png" + bust);
+        diffuse.colorSpace = THREE.SRGBColorSpace;
+        for (const tex of [diffuse, normalMap]) tex.magFilter = THREE.NearestFilter;
+        const mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap, alphaTest: 0.5, roughness: 0.85, metalness: 0.02, side: THREE.DoubleSide });
+        const normal = settingsRef.current.normalStrength * (type.normal ?? 1);
+        mat.normalScale.set(normal, normal);
+        useLightGrid(mat, lightGrid);
+        billboardMaterials.push(mat);
+        const h = height * wallHeight;
+        const geo = new THREE.PlaneGeometry(length, h);
+        geometries.push(geo);
+        const sprite = new THREE.Mesh(geo, mat);
+        sprite.position.y = h / 2;
+        template.add(sprite);
         return template;
       }
 
@@ -2797,10 +2997,14 @@ export function GameViewport({
           const prop = made.clone();
           prop.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
           prop.rotation.y = -yaw;
+          // (bigger or smaller: a pillar only wider - it still fills its room)
+          const scale = spec.scale ?? 1;
+          if (scale !== 1) prop.scale.set(scale, type.kind === "pillar" ? 1 : scale, scale);
           prop.userData.prop = true;
           // the editor picks it by this (its index in the map's props)
           prop.userData.propIndex = index;
           prop.userData.propType = name;
+          if (type.kind === "billboard") billboardProps.push(prop);
           propObjects.set(index, prop);
           group.add(prop);
         }
@@ -2987,7 +3191,7 @@ export function GameViewport({
           const grid = await gridPromise;
           const h = ITEM_HEIGHT;
           const w = (h * grid.width) / grid.height;
-          const relief = await buildRelief(kit, { width: w, height: h, flushEdges: false, depth: reliefDepth * PROP_RELIEF_SCALE * 0.6 });
+          const relief = await buildRelief(kit, { width: w, height: h, flushEdges: false, depth: propReliefDepth * PROP_RELIEF_SCALE * 0.6 });
           if (!relief) return null;
           for (const mat of kitMaterials(kit)) useLightGrid(mat, lightGrid);
           // a faint glow of their own: loot reads even in a dark room
@@ -3351,7 +3555,7 @@ export function GameViewport({
       }
       const rows: [number, number] = [(1 - BRIDGE_WIDTH) / 2, (1 + BRIDGE_WIDTH) / 2];
       const deckGeometry = isRelief
-        ? buildRelief(kit, { height: BRIDGE_WIDTH, flushEdges: false, rows, holeLevels: grate }).then(
+        ? buildRelief(kit, { height: BRIDGE_WIDTH, flushEdges: false, depth: floorDepth, rows, holeLevels: grate }).then(
             (relief) => relief?.geometry ?? null,
           )
         : Promise.resolve(createBandPlane(BRIDGE_WIDTH, rows));
@@ -3599,7 +3803,8 @@ export function GameViewport({
           x: e.x,
           y: e.y + FIRE_LIGHT_LIFT * wallHeight,
           z: e.z,
-          color: FIRE_LIGHT,
+          // (a fire with a color of its own lights in it)
+          color: e.color.r > 0.99 && e.color.g > 0.99 && e.color.b > 0.99 ? FIRE_LIGHT : e.color.getHex(),
           intensity: FIRE_LIGHT_INTENSITY * Math.sqrt(e.size * e.density) * fireFlicker(now, i),
           range: FIRE_LIGHT_RANGE * Math.sqrt(e.size),
           cell: e.cell,
@@ -4837,10 +5042,26 @@ export function GameViewport({
     let aimFovGoal = aimFov;
     let aimZoom = 1;
 
+    let waterLightsAt = -1e9;
     function renderFrame() {
       const s = settingsRef.current;
       const now = performance.now();
       const t = (now - startedAt) / 1000;
+      // standing water: its ripples' clock, and the few lights nearest the eye
+      // it glints with (the map's, and the fires')
+      decals.waterUniforms.uTime.value = t;
+      if (now - waterLightsAt > 250) {
+        waterLightsAt = now;
+        const eye = camera.position;
+        const lights = [
+          ...mapLights
+            .filter((l) => l.kind !== "window")
+            .map((l) => ({ x: l.x, y: l.y * wallHeight, z: l.z, color: l.color, intensity: l.intensity })),
+          ...fireEmitters.map((e) => ({ x: e.x, y: e.y + FIRE_LIGHT_LIFT * wallHeight, z: e.z, color: e.color.r > 0.99 && e.color.g > 0.99 && e.color.b > 0.99 ? FIRE_LIGHT : e.color.getHex(), intensity: FIRE_LIGHT_INTENSITY * 0.5 })),
+        ];
+        lights.sort((a, b) => (a.x - eye.x) ** 2 + (a.z - eye.z) ** 2 - ((b.x - eye.x) ** 2 + (b.z - eye.z) ** 2));
+        decals.setWaterLights(lights);
+      }
       // capped so a stall (tab switch, breakpoint) doesn't teleport the
       // free-moving player through a wall
       const dt = Math.min(0.05, (now - lastFrameAt) / 1000);
@@ -4995,12 +5216,18 @@ export function GameViewport({
         camera.updateProjectionMatrix();
       }
       aimZoom = Math.tan(THREE.MathUtils.degToRad(fov) / 2) / Math.tan(THREE.MathUtils.degToRad(viewFov) / 2);
+      // editing: the view looks up or down as dragged (the look target is a
+      // unit ahead, so the lift is the pitch's tangent)
+      if (peek && !editModeRef.current) peek.pitch = 0;
+      const editPitchLift = peek && editModeRef.current ? Math.tan(peek.pitch) : 0;
       camera.lookAt(
         camX + lookX + (aimLookAt.x - camX - lookX) * aimBlend,
-        eyeY + (aimLookAt.y - eyeY) * aimBlend + DOWN_LOOK_UP * fall,
+        eyeY + (aimLookAt.y - eyeY) * aimBlend + DOWN_LOOK_UP * fall + editPitchLift,
         camZ + lookZ + (aimLookAt.z - camZ - lookZ) * aimBlend,
       );
       camera.rotateZ(bobRoll * (1 - aimBlend) + DOWN_ROLL * fall);
+      // the billboards (trees) face the eye, turning about the vertical only
+      for (const b of billboardProps) b.rotation.y = Math.atan2(camera.position.x - b.position.x, camera.position.z - b.position.z);
 
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.headlamp ? s.pointLightIntensity * rideDip : 0;
@@ -5020,7 +5247,8 @@ export function GameViewport({
           }
           mat.aoMapIntensity = s.aoIntensity;
         }
-        const normal = s.normalStrength * (kit.normal ?? 1);
+        const strength = kit.floor && s.floorNormalStrength > 0 ? s.floorNormalStrength : s.normalStrength;
+        const normal = strength * (kit.normal ?? 1);
         kit.wallMat.normalScale.set(normal, normal);
         kit.litMat?.normalScale.set(normal, normal);
       }
@@ -5239,6 +5467,10 @@ export function GameViewport({
       fire.dispose();
       smokeMarkerMat.dispose();
       smokeBlowMat.dispose();
+      backingMat.dispose();
+      for (const mat of billboardMaterials) mat.dispose();
+      skyMat?.uniforms.map.value.dispose();
+      skyMat?.dispose();
       // the renderer stays for the next build (see SceneCache)
       renderer.renderLists.dispose();
     };
@@ -5258,6 +5490,8 @@ export function GameViewport({
     settings.reliefDepth,
     settings.reliefLevels,
     settings.reliefMinIsland,
+    settings.reliefMode,
+    settings.floorReliefDepth,
     settings.aoRadius,
     textureVersion,
   ]);

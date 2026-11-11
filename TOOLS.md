@@ -88,6 +88,7 @@ levels). Useful options (full list: `npm run texture:process`):
 
 - `--key ff00ff` – the magenta background becomes transparent (windows, door frames, decals)
 - `--trim` – crop to the opaque area (door frames)
+- `--smooth` – keep the depth continuous (no baked levels): with the map's **Relief shape: Smooth** (debug panel > Map attributes) the game builds a height field with slopes - for stone, earth, hedges, trees. Steps stay the default (machinery, panels).
 - `--glow <file>` – also writes `glow.png` from an image framed like the diffuse, black where nothing glows: the set's always-shining parts (indicator lamps, a status strip, a screen). Add `glow: ".../glow.png"` to the set in `TEXTURE_SETS` for the game to use it.
 - `--gloss <file>` / `--metal <file>` – also writes `surface.png` from a gloss map (white polished, black matte) and a metal mask (white bare metal, black none), both framed like the diffuse: per-texel roughness and metalness (prompts: same flow as the depth map). Add `surface: ".../surface.png"` to the set; the viewer's roughness/metalness sliders then leave it alone. See bridgewall1-4.
 - `--emissive-panel` – a mask of the glowing panel (ceiling lights)

@@ -135,6 +135,17 @@ const FIRE_RAMP: [number, [number, number, number]][] = [
   [0.3, [0.95, 0.32, 0.05]],
   [1, [0.4, 0.05, 0.01]],
 ];
+// A fire with a color of its own (a green or blue flame): the ramp's
+// brightness in that color, the hottest core going toward white. White (no
+// color set) leaves the ramp as it is.
+function tintFlame(ramp: THREE.Color, tint: THREE.Color): THREE.Color {
+  if (tint.r > 0.99 && tint.g > 0.99 && tint.b > 0.99) return ramp;
+  const luma = 0.299 * ramp.r + 0.587 * ramp.g + 0.114 * ramp.b;
+  const k = Math.min(1.5, luma * 1.7);
+  const hot = Math.max(0, luma - 0.7) * 1.2;
+  return ramp.setRGB(Math.min(1, tint.r * k + hot), Math.min(1, tint.g * k + hot), Math.min(1, tint.b * k + hot));
+}
+
 function fireColor(t: number, out: THREE.Color): THREE.Color {
   for (let i = 1; i < FIRE_RAMP.length; i++) {
     const [t1, c1] = FIRE_RAMP[i];
@@ -689,7 +700,7 @@ void main() {
         centers.setXYZ(n, p.x, p.y, p.z);
         params.setXYZW(n, width, Math.min(1, (fire ? FIRE_OPACITY : OPACITY) * (few ? FEW_OPACITY : 1)) * fade, turn, tile);
         // (a flame's color by its age, tinted by its fire's)
-        const c = fire ? fireColor(t, flame).multiply(e.color) : e.color;
+        const c = fire ? tintFlame(fireColor(t, flame), e.color) : e.color;
         colors.setXYZ(n, c.r * p.shade, c.g * p.shade, c.b * p.shade);
       });
       geometry.instanceCount = order.length;

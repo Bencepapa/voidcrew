@@ -405,6 +405,7 @@ export function blankMap(name: string, deck: number, width: number, height: numb
     ...(like?.lightGridDensity ? { lightGridDensity: like.lightGridDensity } : {}),
     ...(like?.lightGridAmbient ? { lightGridAmbient: like.lightGridAmbient } : {}),
     ...(like?.reliefDepth ? { reliefDepth: like.reliefDepth } : {}),
+    ...(like?.render ? { render: structuredClone(like.render) } : {}),
     start: { x: 3, y: 3, facing: "E" },
     layout,
     lights: [{ x: 3, y: 3 }],

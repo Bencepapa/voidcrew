@@ -16,8 +16,13 @@ export interface PeekState {
   // degrees off the offset in the same step, so the view carries on from
   // the released angle instead of restarting the turn
   pendingTurn: number;
+  // editing the map: the view's pitch (radians, + = looking up) - a mouse drag
+  // turns the view both ways, so the ceiling and the floor can be pointed at
+  pitch: number;
 }
 
+// how far up or down the editor can look (radians)
+const MAX_EDIT_PITCH = 1.45;
 export const MAX_PEEK = Math.PI / 3; // 60 degrees
 const MOUSE_PEEK_PER_PX = MAX_PEEK / 250;
 const TOUCH_PEEK_PER_PX = MAX_PEEK / 150;
@@ -70,7 +75,7 @@ const clampPeek = (v: number) => Math.max(-MAX_PEEK, Math.min(MAX_PEEK, v));
 // surfaces and the toolbar. A mouse drag turns the view (free movement) or
 // peeks (grid); a click without dragging is the editor's.
 export function useViewControls(opts: ViewControlsOptions) {
-  const peekRef = useRef<PeekState>({ offset: 0, lastInputAt: 0, held: false, pendingTurn: 0 });
+  const peekRef = useRef<PeekState>({ offset: 0, lastInputAt: 0, held: false, pendingTurn: 0, pitch: 0 });
   // a drag in progress; `axis`: what a peeking drag turned out to be, once
   // past the dead zone (and where the peek counts from: peekX)
   const drag = useRef<{
@@ -146,6 +151,13 @@ export function useViewControls(opts: ViewControlsOptions) {
 
     onPointerMove(e: PointerEvent<HTMLElement>) {
       const o = latest.current;
+      // editing: a mouse drag looks up and down too (past the same dead zone)
+      if (o.editing && e.pointerType === "mouse" && e.buttons) {
+        const d0 = drag.current;
+        if (d0 && d0.id === e.pointerId && Math.hypot(e.clientX - d0.x, e.clientY - d0.y) >= EDIT_DRAG_PX) {
+          peekRef.current.pitch = Math.max(-MAX_EDIT_PITCH, Math.min(MAX_EDIT_PITCH, peekRef.current.pitch - e.movementY * MOUSELOOK_PER_PX));
+        }
+      }
       if (!o.grid) {
         // editing: a mouse drag turns the view (past a small dead zone, so a
         // click that wobbles a little stays a click)

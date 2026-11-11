@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { mostCommonLevel, quantizeHeights, removeSmallIslands } from "./heightLevels";
+import { MAX_BAKED_LEVELS, mostCommonLevel, quantizeHeights, removeSmallIslands } from "./heightLevels";
 
 // Turns a grayscale height map into real, stepped wall geometry: every height
 // level becomes a flat front face and every step between levels becomes a
@@ -51,6 +51,10 @@ export interface ReliefOptions {
   // cut this many of the lowest levels out as holes - a grate's slots, to
   // see through
   holeLevels?: number;
+  // a smooth height field (slopes between the heights) instead of stepped
+  // levels - for stone, hedges, trees. Not for maps with holes or cut-out
+  // levels: those stay stepped.
+  smooth?: boolean;
 }
 
 export interface HoleBounds {
@@ -140,6 +144,7 @@ export function downsampleHeightGrid(grid: HeightGrid, factor: number): HeightGr
 }
 
 export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
+  if (opts.smooth && !grid.solid && !opts.holeLevels) return createSmoothReliefGeometry(grid, opts);
   const { width: fullW, height: fullH } = grid;
 
   const { q: quantized, heights, baked } = quantizeHeights(grid.data, opts.levels);
@@ -421,6 +426,120 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
     maxZ: levelZ(levelCount - 1),
     holeBounds,
   };
+}
+
+// The smooth variant: one vertex grid over the panel (at most SMOOTH_CELLS
+// quads along its long side), each vertex raised by the height map there -
+// slopes instead of steps. The heights are relative to the map's most common
+// gray (the base surface, at z=0, like the stepped build); a continuous map
+// is stretched over its 0.5%..99.5% range first, and the left and right
+// edges ease back to the base when the panel has to meet a perpendicular
+// wall (flushEdges). Normals come from the shape; the normal map adds the
+// fine detail on top.
+const SMOOTH_CELLS = 64;
+
+function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
+  const factor = Math.max(1, Math.ceil(Math.max(grid.width, grid.height) / SMOOTH_CELLS));
+  const src = factor > 1 ? downsampleHeightGrid(grid, factor) : grid;
+  const { width: fullW, height: fullH } = src;
+
+  // heights 0..1: absolute for a baked map, stretched for a continuous one
+  const sorted = Float32Array.from(src.data).sort();
+  const distinct = new Set<number>();
+  for (let i = 0; i < src.data.length && distinct.size <= 32; i++) distinct.add(Math.round(src.data[i] * 255));
+  const stretch = distinct.size > MAX_BAKED_LEVELS;
+  const lo = stretch ? sorted[Math.floor(sorted.length * 0.005)] : 0;
+  const hi = stretch ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.995))] : 1;
+  const range = hi - lo || 1;
+  const norm = (v: number) => Math.min(1, Math.max(0, (v - lo) / range));
+  // the base: the most common 8-bit gray
+  const counts = new Uint32Array(256);
+  for (const v of src.data) counts[Math.min(255, Math.round(norm(v) * 255))]++;
+  let baseGray = 0;
+  for (let g = 1; g < 256; g++) if (counts[g] > counts[baseGray]) baseGray = g;
+  const base = baseGray / 255;
+
+  const r0 = opts.rows ? Math.round(opts.rows[0] * fullH) : 0;
+  const r1 = opts.rows ? Math.max(r0 + 1, Math.round(opts.rows[1] * fullH)) : fullH;
+  const c0 = opts.cols ? Math.round(opts.cols[0] * fullW) : 0;
+  const c1 = opts.cols ? Math.max(c0 + 1, Math.round(opts.cols[1] * fullW)) : fullW;
+  const gh = r1 - r0;
+  const gw = c1 - c0;
+  const cellW = opts.wallWidth / gw;
+  const cellH = opts.wallHeight / gh;
+
+  // the cropped heights, per cell
+  const cellZ = new Float32Array(gw * gh);
+  let maxZ = 0;
+  let maxAbsZ = 0;
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      const z = (norm(src.data[(r0 + y) * fullW + c0 + x]) - base) * opts.depth;
+      cellZ[y * gw + x] = z;
+      if (z > maxZ) maxZ = z;
+      if (Math.abs(z) > maxAbsZ) maxAbsZ = Math.abs(z);
+    }
+  }
+  // the margin the side edges ease over, as in the stepped build
+  const margin = opts.flushEdges === false ? 0 : Math.min(Math.floor(gw / 2), Math.ceil(maxAbsZ / cellW - 1e-6));
+  if (margin > 0) {
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const t = Math.min(1, Math.min(x + 0.5, gw - x - 0.5) / margin);
+        cellZ[y * gw + x] *= t * t * (3 - 2 * t);
+      }
+    }
+  }
+
+  // bilinear height at a continuous cell position (cell centers at +0.5)
+  const sample = (fx: number, fy: number) => {
+    const x = Math.min(gw - 1, Math.max(0, fx - 0.5));
+    const y = Math.min(gh - 1, Math.max(0, fy - 0.5));
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const x1 = Math.min(gw - 1, x0 + 1);
+    const y1 = Math.min(gh - 1, y0 + 1);
+    const tx = x - x0;
+    const ty = y - y0;
+    const top = cellZ[y0 * gw + x0] * (1 - tx) + cellZ[y0 * gw + x1] * tx;
+    const bottom = cellZ[y1 * gw + x0] * (1 - tx) + cellZ[y1 * gw + x1] * tx;
+    return top * (1 - ty) + bottom * ty;
+  };
+
+  const nx = gw + 1;
+  const ny = gh + 1;
+  const positions = new Float32Array(nx * ny * 3);
+  const uvs = new Float32Array(nx * ny * 2);
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const k = j * nx + i;
+      positions[k * 3] = -opts.wallWidth / 2 + i * cellW;
+      positions[k * 3 + 1] = opts.wallHeight / 2 - j * cellH;
+      positions[k * 3 + 2] = sample(i, j);
+      uvs[k * 2] = (i + c0) / fullW;
+      uvs[k * 2 + 1] = 1 - (j + r0) / fullH;
+    }
+  }
+  const indices: number[] = [];
+  for (let j = 0; j < gh; j++) {
+    for (let i = 0; i < gw; i++) {
+      const a = j * nx + i;
+      const b = a + 1;
+      const c = a + nx;
+      const d = c + 1;
+      indices.push(a, c, d, a, d, b);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("uv1", new THREE.BufferAttribute(uvs.slice(), 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.addGroup(0, indices.length, 0);
+
+  const aoMap = createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
+  return { geometry, aoMap, triangles: indices.length / 3, levelCount: 0, baked: false, maxZ, holeBounds: null };
 }
 
 // Horizon-based ambient occlusion over the relief's height field: for each

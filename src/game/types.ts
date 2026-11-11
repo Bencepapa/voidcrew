@@ -1,4 +1,5 @@
 import type { Lock, Terminal, Trigger } from "./story";
+import type { RenderLook } from "./renderLook";
 
 export type Direction = "N" | "E" | "S" | "W";
 
@@ -40,6 +41,8 @@ export interface GameMap {
   // omitted falls back to the renderer's settings
   textures?: {
     wall?: string;
+    // a second wall set, mixed in on a share of the walls (render.accentRatio)
+    accent?: string;
     floor?: string;
     ceiling?: string;
     door?: string;
@@ -65,6 +68,8 @@ export interface GameMap {
   // the main part keeps lightGridDensity's sharp shadows; unset: one grid
   lightGridAmbient?: number;
   reliefDepth?: number;
+  // the deck's render values (see renderLook.ts)
+  render?: RenderLook;
   decals?: DecalSpec[];
   // door cells that aren't plain standard doors
   doors?: DoorSpec[];
@@ -177,6 +182,8 @@ export interface PropSpec extends Linked {
   offset?: [number, number];
   // raised off the floor (wall heights) - on another prop, say
   elevation?: number;
+  // bigger or smaller (1: as it is): a pillar only wider, not taller
+  scale?: number;
   // the chance (0..1) it's there in a variation of the deck (see
   // variation.ts); unset: always
   chance?: number;
@@ -208,6 +215,9 @@ export interface SmokeSpec extends Linked {
   // a fire (see fire.ts): flames, dark smoke off them, a flickering light,
   // and its cell burns (its color tints the flames)
   fire?: boolean;
+  // a fire that is only decoration (a torch): flames and light, but it
+  // doesn't burn and the actors walk into its cell
+  decorative?: boolean;
   // the chance (0..1) it's there in a variation (see variation.ts)
   chance?: number;
 }
@@ -326,6 +336,8 @@ export interface DecalSpec extends Linked {
   y: number;
   // degrees, clockwise as seen looking at the surface
   rotation?: number;
+  // bigger or smaller about its middle (1: as it is)
+  scale?: number;
   // touching (clicking, tapping) the decal does this - e.g. "lift"
   action?: string;
   // the chance (0..1) it's there in a variation of the deck (see

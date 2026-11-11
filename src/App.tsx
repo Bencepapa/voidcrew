@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
+import { pickRender, renderDefaults } from "./game/renderLook";
 import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { EditorBar } from "./editor/EditorBar";
 import { PropEditor } from "./editor/PropEditor";
@@ -20,13 +21,13 @@ import {
 import { MAPS, START_MAP } from "./game/map";
 import type { GameMap, Linked } from "./game/types";
 import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke } from "./editor/mapEdits";
-import { PROP_TYPES, propRetexturable } from "./game/props";
+import { PROP_TYPES, flamePosition, propRetexturable } from "./game/props";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
 import { ACTOR_TYPES } from "./game/actors";
 import { DOOR_EDGE_OFFSET, cellAt, ceilingHeight, doorAt, floorHeight } from "./game/map";
-import type { Direction, MapLight, Vec2 } from "./game/types";
+import type { Direction, MapLight, PropAnchor, PropSpec, Vec2 } from "./game/types";
 import { DIR_VECTOR, behindOf, rightOf } from "./game/movement";
 import { generateLights, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, TextureLayer } from "./editor/mapEdits";
@@ -125,6 +126,8 @@ export default function App() {
   // walls don't stop the party and the headlamp is lit
   const [editMode, setEditMode] = useState(false);
   const [editTool, setEditTool] = useState<EditTool>("dig");
+  // where the editor toolbar docks (the right column), when there is one
+  const [editDock, setEditDock] = useState<HTMLElement | null>(null);
   // the Light tool: the selected hand-placed light (its index in the map's
   // lights), and what a plain click places - a ceiling lamp, or (as a
   // Shift+click does) a free-standing light where it's pointed
@@ -448,19 +451,42 @@ export default function App() {
           setSelectedProp(picked);
           return;
         }
-        result = applyEdit(map.id, (file) => removePropIndex(file, picked));
+        const gone = map.props?.[picked];
+        result = applyEdit(map.id, (file) => {
+          // (a torch takes its fire with it)
+          const at = gone && flamePosition(gone);
+          const found = at && gone ? flameSmokeIndex(file, gone.cell, at) : -1;
+          if (found >= 0) removeSmoke(file, found);
+          return removePropIndex(file, picked);
+        });
         setSelectedProp((sel) => (sel === null || sel === picked ? null : sel > picked ? sel - 1 : sel));
       } else {
-        if (target.kind === "wall") return;
-        const cell = target.cell;
+        const wallProp = !!PROP_TYPES[propChoice]?.wall;
+        // a prop hung on a wall: a click on the wall itself puts it there (on
+        // the open cell in front of it, at that side)
+        const onWall = target.kind === "wall" && wallProp && !alt ? target.surfacePoint : undefined;
+        if (target.kind === "wall" && !(onWall && onWall.surface !== "floor" && onWall.surface !== "ceiling")) return;
+        const cell = onWall ? onWall.cell : target.cell;
         const [dx, , dz] = target.spot && target.spot.cell.x === cell.x && target.spot.cell.y === cell.y ? target.spot.pos : [0, 0, 0];
+        // (on a floor: the nearest side that really is a wall)
+        const wallSide = (): PropAnchor => {
+          const sides = (Object.keys(DIR_VECTOR) as Direction[])
+            .map((d) => ({ d, score: dx * DIR_VECTOR[d].x + dz * DIR_VECTOR[d].y }))
+            .sort((a, b) => b.score - a.score);
+          return (sides.find((s) => cellAt(map, cell.x + DIR_VECTOR[s.d].x, cell.y + DIR_VECTOR[s.d].y) === "wall") ?? sides[0]).d;
+        };
         if (alt) {
           result = applyEdit(map.id, (file) => removeProp(file, cell, anchorAt(dx, dz)));
           setSelectedProp(null);
         } else {
-          const anchor = anchorAt(dx, dz, !!PROP_TYPES[propChoice]?.wall);
+          const anchor: PropAnchor = onWall ? (onWall.surface as Direction) : wallProp ? wallSide() : anchorAt(dx, dz);
           const count = map.props?.length ?? 0;
-          result = applyEdit(map.id, (file) => addProp(file, propChoice, cell, anchor, propRotation));
+          result = applyEdit(map.id, (file) => {
+            addProp(file, propChoice, cell, anchor, propRotation);
+            const flame = flamePosition({ prop: propChoice, cell, at: anchor, rotation: propRotation });
+            if (flame) addSmoke(file, { x: cell.x, y: cell.y, pos: flame, fire: true, decorative: true });
+            return file;
+          });
           setSelectedProp(count);
         }
       }
@@ -568,6 +594,21 @@ export default function App() {
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
+  // The minimap while editing: a click on a cell is a click on that cell's floor
+  // or ceiling (as the minimap's toggle says) - or on the wall, for a wall cell
+  // (it digs from an open side). So the ceiling and the floor can be reached
+  // without looking at them.
+  const [miniSurface, setMiniSurface] = useState<"floor" | "ceiling">("floor");
+  const onMinimapCell = (cell: Vec2, alt: boolean) => {
+    if (cellAt(map, cell.x, cell.y) === "wall") {
+      const from = (Object.values(DIR_VECTOR) as { x: number; y: number }[])
+        .map((v) => ({ x: cell.x + v.x, y: cell.y + v.y }))
+        .find((n) => cellAt(map, n.x, n.y) !== "wall");
+      if (from) onEdit({ kind: "wall", cell, from }, alt);
+      return;
+    }
+    onEdit({ kind: miniSurface, cell }, alt);
+  };
   const editUndo = () => {
     const m = undo(map.id);
     if (m) replaceMap(m);
@@ -617,6 +658,65 @@ export default function App() {
     const url = new URL(location.href);
     url.searchParams.set("map", to.id);
     history.replaceState(null, "", url);
+  };
+  // a map's render values (material, AO, relief, wall height, ambient...):
+  // applied when it opens, over the viewer's defaults, so every deck keeps
+  // its own look; "Save to map" writes the sliders' current ones into its file
+  // (only when the deck changes: an effect re-run - a hot reload, say - must not
+  // throw the sliders' values away)
+  const renderAppliedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (renderAppliedFor.current === map.id) return;
+    renderAppliedFor.current = map.id;
+    setSettings((s) => ({ ...s, ...renderDefaults(DEFAULT_SETTINGS), ...map.render }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map.id]);
+  const saveRender = (clear = false) => {
+    const render = clear ? undefined : pickRender(settings, DEFAULT_SETTINGS);
+    // nothing differs from the defaults: say so instead of wiping what the map has
+    if (!clear && !render) {
+      pushLog("Editor: the render values are all the defaults - nothing to save (Clear removes the map's).");
+      return;
+    }
+    const result = applyEdit(map.id, (file) => {
+      if (render) file.render = render;
+      else delete file.render;
+      return file;
+    });
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else {
+      replaceMap(result.map);
+      // (in dev straight to disk too: it is meant to be kept)
+      const note = render ? "Render values saved to the map" : "Render values removed from the map";
+      if (import.meta.env.DEV) {
+        saveMap(map.id)
+          .then((path) => pushLog(`Editor: ${note} - saved ${path}.`))
+          .catch((err) => pushLog(`Editor: ${note}, but not saved - ${err instanceof Error ? err.message : err}`));
+      } else pushLog(`Editor: ${note} (download the map to keep it).`);
+    }
+    if (clear) setSettings((s) => ({ ...s, ...renderDefaults(DEFAULT_SETTINGS) }));
+    setEdits((n) => n + 1);
+  };
+  // one of the map's default texture sets (wall, accent, floor, ceiling, doors...)
+  // the decorative fire nearest `at` (cell-relative) in a cell: a torch's flame
+  const flameSmokeIndex = (file: Parameters<typeof updateProp>[0], cell: Vec2, at: [number, number, number]) => {
+    let best = -1;
+    let bestDist = 0.6;
+    (file.smokes ?? []).forEach((s, i) => {
+      if (!s.fire || !s.decorative || s.x !== cell.x || s.y !== cell.y) return;
+      const d = Math.hypot(s.pos[0] - at[0], s.pos[1] - at[1], s.pos[2] - at[2]);
+      if (d < bestDist) {
+        best = i;
+        bestDist = d;
+      }
+    });
+    return best;
+  };
+  const changeMapTexture = (slot: string, setId: string | undefined) => {
+    const textures: Record<string, string> = { ...(map.textures as Record<string, string> | undefined) };
+    if (setId) textures[slot] = setId;
+    else delete textures[slot];
+    changeMapLook({ textures: Object.keys(textures).length ? textures : undefined } as MapLook);
   };
   // the map's own look (undefined: back to the viewer's default)
   const changeMapLook = (patch: MapLook) => {
@@ -786,6 +886,7 @@ export default function App() {
           ceilingHeight(map, selectedSmokeSpec.cell.x, selectedSmokeSpec.cell.y) - floorHeight(map, selectedSmokeSpec.cell.x, selectedSmokeSpec.cell.y),
         blow: { speed: selectedSmokeSpec.blow?.speed ?? 0, yaw: selectedSmokeSpec.blow?.yaw ?? 0, pitch: selectedSmokeSpec.blow?.pitch ?? 0 },
         fire: !!selectedSmokeSpec.fire,
+        decorative: !!selectedSmokeSpec.decorative,
         chance: selectedSmokeSpec.chance ?? 1,
         links: linksOf(selectedSmokeSpec),
       }
@@ -958,7 +1059,7 @@ export default function App() {
   const selectedDecalInfo: DecalInfo | null = (() => {
     const spec = selectedDecal === null ? undefined : map.decals?.[selectedDecal];
     return spec
-      ? { name: spec.decal, rotation: spec.rotation ?? 0, action: spec.action, chance: spec.chance ?? 1, links: linksOf(spec) }
+      ? { name: spec.decal, rotation: spec.rotation ?? 0, scale: spec.scale ?? 1, action: spec.action, chance: spec.chance ?? 1, links: linksOf(spec) }
       : null;
   })();
   const changeDecal = (patch: Parameters<typeof updateDecal>[2], merge?: string) => {
@@ -1032,6 +1133,7 @@ export default function App() {
       retexturable: !!type && propRetexturable(type),
       links: linksOf(spec),
       rotation: spec.rotation ?? 0,
+      scale: spec.scale ?? 1,
       elevation: spec.elevation ?? 0,
       chance: spec.chance ?? 1,
       roomHeight: ceilingHeight(map, spec.cell.x, spec.cell.y) - floorHeight(map, spec.cell.x, spec.cell.y),
@@ -1042,7 +1144,21 @@ export default function App() {
   const changeProp = (patch: Parameters<typeof updateProp>[2], merge?: string) => {
     if (selectedProp === null) return;
     const index = selectedProp;
-    const result = applyEdit(map.id, (file) => updateProp(file, index, patch), merge && `prop ${index} ${merge}`);
+    const result = applyEdit(
+      map.id,
+      (file) => {
+        // (a torch's flame moves with it)
+        const before = file.props?.[index];
+        const was = before && flamePosition({ ...before, cell: { x: before.x, y: before.y } } as PropSpec);
+        const found = was && before ? flameSmokeIndex(file, { x: before.x, y: before.y }, was) : -1;
+        updateProp(file, index, patch);
+        const after = file.props?.[index];
+        const now = after && flamePosition({ ...after, cell: { x: after.x, y: after.y } } as PropSpec);
+        if (found >= 0 && now && file.smokes) file.smokes[found] = { ...file.smokes[found], pos: now };
+        return file;
+      },
+      merge && `prop ${index} ${merge}`,
+    );
     if ("error" in result) pushLog(`Editor: ${result.error}`);
     else replaceMap(result.map);
     setEdits((n) => n + 1);
@@ -1050,7 +1166,13 @@ export default function App() {
   const deleteProp = () => {
     if (selectedProp === null) return;
     const index = selectedProp;
-    const result = applyEdit(map.id, (file) => removePropIndex(file, index));
+    const result = applyEdit(map.id, (file) => {
+      const gone = file.props?.[index];
+      const at = gone && flamePosition({ ...gone, cell: { x: gone.x, y: gone.y } } as PropSpec);
+      const found = at && gone ? flameSmokeIndex(file, { x: gone.x, y: gone.y }, at) : -1;
+      if (found >= 0) removeSmoke(file, found);
+      return removePropIndex(file, index);
+    });
     if (!("error" in result)) replaceMap(result.map);
     setSelectedProp(null);
     setEdits((n) => n + 1);
@@ -1118,7 +1240,7 @@ export default function App() {
       } else if (e.key === "PageUp" || e.key === "PageDown") {
         stop();
         const up = e.key === "PageUp" ? step : -step;
-        const elevation = round(Math.min(info.roomHeight - 0.05, Math.max(0, info.elevation + up)));
+        const elevation = round(Math.min(info.roomHeight - 0.05, Math.max(-0.5, info.elevation + up)));
         change({ elevation: elevation || undefined }, "elevation");
       }
     }
@@ -1376,6 +1498,7 @@ export default function App() {
       {editMode && <PropEditor />}
       {editMode && (
         <EditorBar
+          dock={compact ? null : editDock}
           tool={editTool}
           onTool={setEditTool}
           surface={editSurface}
@@ -1415,7 +1538,7 @@ export default function App() {
           onOpenMap={(id) => MAPS[id] && openMap(MAPS[id])}
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
-          mapLook={{ lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent }}
+          mapLook={{ lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures }}
           onMapLook={changeMapLook}
           decalChoice={decalChoice?.name ?? null}
           onDecalChoice={setDecalChoice}
@@ -1493,6 +1616,8 @@ export default function App() {
       )}
     </>
   );
+  // the turn / step / use buttons are left out for now (they come back later)
+  const SHOW_ACTION_MENU = false;
   const actionMenu = grid ? (
     <ActionMenu
       onForward={moveForward}
@@ -1537,7 +1662,7 @@ export default function App() {
           </button>
           {menuOpen && (
             <div className="pointer-events-auto w-48 min-h-0 flex flex-col gap-1 overflow-y-auto">
-              {actionMenu}
+              {SHOW_ACTION_MENU && actionMenu}
               <DebugPanel
                 settings={settings}
                 onChange={setSettings}
@@ -1549,6 +1674,11 @@ export default function App() {
                 mood={mood}
                 moodOverride={moodOverride}
                 onMood={setMoodOverride}
+                mapHasRender={!!map.render}
+                mapTextures={map.textures}
+                onMapTexture={changeMapTexture}
+                onSaveRender={() => saveRender()}
+                onClearRender={() => saveRender(true)}
                 compact
               />
             </div>
@@ -1569,7 +1699,15 @@ export default function App() {
     <div className="h-screen w-screen flex flex-col p-2 gap-2 font-sans">
       <div className="flex-1 flex gap-2 min-h-0">
         <div className="w-56 flex flex-col gap-2">
-          <Minimap map={map} pos={pos} dir={dir} loot={editMode ? undefined : lootMarks} locked={lockedDoors} showRestricted={editMode} />
+          <Minimap
+            map={map}
+            pos={pos}
+            dir={dir}
+            loot={editMode ? undefined : lootMarks}
+            locked={lockedDoors}
+            showRestricted={editMode}
+            edit={editMode ? { surface: miniSurface, onSurface: setMiniSurface, onCell: onMinimapCell } : undefined}
+          />
           <div className="text-[10px] text-neutral-500 px-1">
             <div>{map.name}</div>
             <div>Deck {map.deck} &middot; Day 17</div>
@@ -1585,8 +1723,10 @@ export default function App() {
           {overlays}
         </div>
 
-        <div className="w-56 flex flex-col gap-2 min-h-0">
-          {actionMenu}
+        <div className={`${editMode ? "w-80" : "w-56"} flex flex-col gap-2 min-h-0`}>
+          {SHOW_ACTION_MENU && actionMenu}
+          {/* the map editor's tools dock here while editing (see EditorBar) */}
+          {editMode && <div ref={setEditDock} className="flex flex-col gap-1 shrink-0 max-h-[55%] overflow-y-auto" />}
           <div className="flex-1 min-h-0">
             <DebugPanel
               settings={settings}
@@ -1599,6 +1739,11 @@ export default function App() {
               mood={mood}
               moodOverride={moodOverride}
               onMood={setMoodOverride}
+              mapHasRender={!!map.render}
+              mapTextures={map.textures}
+              onMapTexture={changeMapTexture}
+              onSaveRender={() => saveRender()}
+              onClearRender={() => saveRender(true)}
             />
           </div>
         </div>

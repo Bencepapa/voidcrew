@@ -11,6 +11,7 @@
 import type { Lock } from "../game/story";
 import type { ActorWake } from "../game/types";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { fetchDecalManifest } from "../render/decals";
 import type { TextureSetId } from "../render/textureSets";
@@ -26,16 +27,31 @@ export interface MapLook {
   lightGridDensity?: number;
   lightGridAmbient?: number;
   reliefDepth?: number;
+  // the deck's default texture sets (see MapFile.textures)
+  textures?: Record<string, string | undefined>;
   // the deck's accent hue (see GameMap.accent)
   accent?: { hue: number; range?: number };
 }
 // what a prop can wear (see PropSpec.texture): the wall and prop face sets
 // (a box's top comes with its side)
 const PROP_TEXTURES = [...textureSetsOfKind("wall"), ...textureSetsOfKind("propFace")].filter((id) => !id.endsWith("_top"));
+// the deck's default texture sets: the slot, and which sets are offered for it
+const TEXTURE_SLOTS: { slot: string; label: string; kind: "wall" | "floor" | "ceiling" | "door" | "window" }[] = [
+  { slot: "wall", label: "Wall", kind: "wall" },
+  { slot: "floor", label: "Floor", kind: "floor" },
+  { slot: "ceiling", label: "Ceiling", kind: "ceiling" },
+  { slot: "door", label: "Door", kind: "door" },
+  { slot: "doorFrame", label: "Door frame", kind: "door" },
+  { slot: "liftDoor", label: "Lift door", kind: "door" },
+  { slot: "window", label: "Window", kind: "window" },
+];
 const DENSITIES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
 const RELIEF_DEPTHS = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.12];
 
 interface Props {
+  // an element to draw the toolbar into (the right column) instead of over
+  // the top of the view
+  dock?: HTMLElement | null;
   tool: EditTool;
   onTool: (tool: EditTool) => void;
   // the Texture tool: the surface the pointer is on (its row is marked),
@@ -89,12 +105,12 @@ interface Props {
   onDecalChoice: (choice: DecalChoice) => void;
   decalRotation: number;
   decal: DecalInfo | null;
-  onDecalChange: (patch: { rotation?: number; chance?: number; action?: string } & Linked) => void;
+  onDecalChange: (patch: { rotation?: number; scale?: number; chance?: number; action?: string } & Linked) => void;
   onDecalDelete: () => void;
   onDecalDeselect: () => void;
   // the selected prop, and what the panel does with it
   prop: PropInfo | null;
-  onPropChange: (patch: { rotation?: number; elevation?: number; chance?: number; texture?: string } & Linked) => void;
+  onPropChange: (patch: { rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string } & Linked) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
   // the Smoke tool: the picked emitter
@@ -108,6 +124,7 @@ interface Props {
       pos?: [number, number, number];
       blow?: { speed: number; yaw: number; pitch?: number };
       fire?: boolean;
+      decorative?: boolean;
     } & Linked,
   ) => void;
   onSmokeDelete: () => void;
@@ -188,6 +205,7 @@ export interface DoorInfo {
 export interface DecalInfo {
   name: string;
   rotation: number;
+  scale: number;
   // what touching it does (a lift button)
   action?: string;
   chance: number;
@@ -214,6 +232,8 @@ export interface SmokeInfo {
   blow: { speed: number; yaw: number; pitch: number };
   // a fire (see fire.ts)
   fire: boolean;
+  // a fire that is only decoration: it doesn't burn
+  decorative: boolean;
   chance: number;
   links: Linked;
 }
@@ -237,6 +257,7 @@ export interface PropInfo {
   retexturable: boolean;
   links: Linked;
   rotation: number;
+  scale: number;
   elevation: number;
   // its cell's floor-to-ceiling height, and where a prop on it would stand
   roomHeight: number;
@@ -398,9 +419,10 @@ const idle = "border-neutral-600 bg-black/60 text-neutral-200 hover:bg-neutral-8
 const active = "border-amber-400 bg-amber-400/20 text-amber-200";
 
 export function EditorBar(p: Props) {
-  return (
+  const docked = !!p.dock;
+  const bar = (
     <div
-      className={`absolute ${p.compact ? "bottom-2" : "top-2"} inset-x-2 z-20 flex flex-wrap justify-center gap-1 font-mono`}
+      className={docked ? "flex flex-wrap gap-1 font-mono" : `absolute ${p.compact ? "bottom-2" : "top-2"} inset-x-2 z-20 flex flex-wrap justify-center gap-1 font-mono`}
       // the view underneath mustn't take these as peeks or steps
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
@@ -750,6 +772,27 @@ export function EditorBar(p: Props) {
               slider("+-", p.mapLook.accent.range ?? 30, 5, 90, 1, (v) =>
                 p.onMapLook({ accent: { ...p.mapLook.accent!, range: v === 30 ? undefined : v } }),
               )}
+            {TEXTURE_SLOTS.map(({ slot, label, kind }) => (
+              <label key={slot} className="flex items-center gap-1" title={`The deck's default ${label.toLowerCase()} texture set (what isn't painted otherwise)`}>
+                {label}
+                <select
+                  value={p.mapLook.textures?.[slot] ?? ""}
+                  onChange={(e) => {
+                    const textures = { ...p.mapLook.textures, [slot]: e.target.value || undefined };
+                    for (const k of Object.keys(textures)) if (!textures[k]) delete textures[k];
+                    p.onMapLook({ textures: Object.keys(textures).length ? textures : undefined });
+                  }}
+                  className="bg-neutral-800 border border-neutral-700 px-1 py-0.5 max-w-[7rem]"
+                >
+                  <option value="">default</option>
+                  {textureSetsOfKind(kind).map((id) => (
+                    <option key={id} value={id}>
+                      {TEXTURE_SETS[id].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
             <label className="flex items-center gap-1" title="How deep the walls' relief is (rebuilds the deck)">
               Relief
               <select
@@ -781,6 +824,7 @@ export function EditorBar(p: Props) {
                   {p.decal.action ? ` (${p.decal.action})` : ""}
                 </span>
                 {slider("Turn", p.decal.rotation, 0, 345, 15, (v) => p.onDecalChange({ rotation: v || undefined }))}
+                {slider("Scale", p.decal.scale, 0.25, 4, 0.05, (v) => p.onDecalChange({ scale: v === 1 ? undefined : v }))}
                 <label className="flex items-center gap-1" title='What touching it does: "terminal:<id>" opens that terminal of the map, "lift" a lift button'>
                   Action
                   <input
@@ -829,7 +873,8 @@ export function EditorBar(p: Props) {
               <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
                 <span className="text-amber-200">{p.prop.name}</span>
                 {slider("Turn", p.prop.rotation, 0, 345, 15, (v) => p.onPropChange({ rotation: v || undefined }))}
-                {slider("Height", p.prop.elevation, 0, Math.max(0, p.prop.roomHeight - 0.05), 0.05, (v) =>
+                {slider("Scale", p.prop.scale, 0.25, 4, 0.05, (v) => p.onPropChange({ scale: v === 1 ? undefined : v }))}
+                {slider("Height", p.prop.elevation, -0.5, Math.max(0, p.prop.roomHeight - 0.05), 0.05, (v) =>
                   p.onPropChange({ elevation: v || undefined }),
                 )}
                 {chanceSlider(p.prop.chance, (chance) => p.onPropChange({ chance }))}
@@ -885,6 +930,12 @@ export function EditorBar(p: Props) {
               <input type="checkbox" checked={p.smoke.fire} onChange={(e) => p.onSmokeChange({ fire: e.target.checked || undefined })} />
               Fire
             </label>
+            {p.smoke.fire && (
+              <label className="flex items-center gap-1" title="Only decoration (a torch): the flames and the light, but it doesn't burn the party and the actors walk into its cell">
+                <input type="checkbox" checked={p.smoke.decorative} onChange={(e) => p.onSmokeChange({ decorative: e.target.checked || undefined })} />
+                Decoration
+              </label>
+            )}
             {slider("Amount", p.smoke.density, 0.25, 3, 0.25, (v) => p.onSmokeChange({ density: v === 1 ? undefined : v }))}
             {slider("Puff size", p.smoke.size, 0.4, 2.5, 0.1, (v) => p.onSmokeChange({ size: v === 1 ? undefined : v }))}
             {slider("Height", p.smoke.height, 0, Math.max(0, p.smoke.roomHeight - 0.05), 0.05, (v) => p.onSmokeChange({ pos: [NaN, v, NaN] }))}
@@ -1090,4 +1141,5 @@ export function EditorBar(p: Props) {
       )}
     </div>
   );
+  return p.dock ? createPortal(bar, p.dock) : bar;
 }

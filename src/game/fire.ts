@@ -11,7 +11,7 @@ export const FIRE_BURN_MS = 1000;
 export const FIRE_DAMAGE: [number, number] = [3, 6];
 export const FIRE_ACTOR_DAMAGE = 6;
 
-// the burning cells ("x,y")
+// the burning cells ("x,y"): a decorative fire (a torch) doesn't count
 export function fireCells(map: GameMap): Set<string> {
-  return new Set((map.smokes ?? []).filter((s) => s.fire).map((s) => `${s.cell.x},${s.cell.y}`));
+  return new Set((map.smokes ?? []).filter((s) => s.fire && !s.decorative).map((s) => `${s.cell.x},${s.cell.y}`));
 }

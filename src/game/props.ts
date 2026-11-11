@@ -41,6 +41,10 @@ export type PropType = {
   // something to loot (see items.ts): the loot table its contents are
   // rolled from, unless the map puts some in by hand (PropSpec.loot)
   container?: string;
+  // a flame burning on it (a torch): putting the prop in the map editor puts a
+  // decorative fire in with it, `up` wall heights above the floor, at the side
+  // it hangs on (taking the prop out takes the fire too)
+  flame?: { up: number };
 } & (
   | {
       // a relief box: `side` texture set on its four sides, `top` on top
@@ -84,6 +88,15 @@ export type PropType = {
       elevation?: number;
     }
   | {
+      // one flat picture that always turns to face the viewer (like the robots'
+      // sprites, with one view): a tree. `texture`: a folder under
+      // public/textures/ with its diffuse.png and normal.png (texture:process
+      // --key ff00ff --trim); `size`: its width, height and (for the footprint)
+      // depth
+      kind: "billboard";
+      texture: string;
+    }
+  | {
       // two such cutouts crossed at right angles (a potted plant): it reads
       // as solid from any side
       kind: "cross";
@@ -100,6 +113,9 @@ export type PropType = {
       shaft: number;
       flare: number;
       texture?: string;
+      // a fixed height (wall heights) instead of the room's, with a stone top to
+      // stand things on (a pedestal: a magic fire, a loose item)
+      height?: number;
     }
   | {
       // a 45 degree wall across a corner of its cell (at a corner anchor),
@@ -215,6 +231,13 @@ export const PROP_TYPES: Record<string, PropType> = {
   },
   curtain_open: { kind: "panel", texture: "curtain_open", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12, relief: 0.3 },
   plant1: { kind: "cross", texture: "plant1", size: [0.3, 0.58, 0.3] },
+  // a big oak (two crossed cutouts): it stands taller than a room is high, so
+  // use it in the open (a sky ceiling)
+  fantasytree1: { kind: "cross", texture: "fantasytree1", size: [1, 1.33, 1], blocks: true },
+  // a tall pine: one picture that always faces the viewer (a billboard)
+  fantasypine1: { kind: "billboard", texture: "fantasypine1", size: [0.9, 1.97, 0.3], blocks: true },
+  // a broad, gnarled one with the roots showing
+  fantasytree2: { kind: "cross", texture: "fantasytree2", size: [1.1, 1.15, 1.1], blocks: true },
   // a strip curtain over a duct's mouth (the low corridors the cleaning
   // drones use): as wide as the cell, as tall as the lowest corridor - on
   // the room's side of the wall the duct opens in
@@ -226,7 +249,9 @@ export const PROP_TYPES: Record<string, PropType> = {
   fantasypillar1: { kind: "pillar", size: [0.26, 1, 0.26], shaft: 0.16, flare: 0.1, texture: "fantasywall1" },
   fantasypillar2: { kind: "pillar", size: [0.42, 1, 0.42], shaft: 0.28, flare: 0.14, texture: "fantasywall1" },
   // an iron wall torch (unlit: the fire is a separate flame/light)
-  fantasytorch1: { kind: "panel", texture: "fantasytorch1", size: [0.1, 0.3, 0.08], wall: true, elevation: 0.5, relief: 1 },
+  fantasytorch1: { kind: "panel", texture: "fantasytorch1", size: [0.1, 0.3, 0.08], wall: true, elevation: 0.5, relief: 1, flame: { up: 0.82 } },
+  // a pedestal: a short pillar of a fixed height, flat on top, for a fire or an item
+  fantasypedestal1: { kind: "pillar", size: [0.34, 1, 0.34], shaft: 0.27, flare: 0.07, height: 0.4, texture: "fantasywall1" },
   // corner cuts: half the cell's sides, and more of them
   chamfer1: { kind: "chamfer", size: [0.5 * Math.SQRT2, 1, 0.02], cut: 0.5, wall: true },
   chamfer2: { kind: "chamfer", size: [0.7 * Math.SQRT2, 1, 0.02], cut: 0.7, wall: true },
@@ -284,6 +309,7 @@ export function propHeight(map: GameMap, spec: PropSpec): number {
   const type = PROP_TYPES[spec.prop];
   // (the heights read here, not through map.ts: it imports this module)
   const { x, y } = spec.cell;
+  if (type.kind === "pillar" && type.height) return type.height;
   if (type.kind === "pillar" || type.kind === "chamfer") return (map.ceilingHeights[y]?.[x] ?? 1) - (map.floorHeights[y]?.[x] ?? 0);
   return type.size[1];
 }
@@ -344,9 +370,10 @@ export function propPlacement(spec: PropSpec): PropPlacement {
   const yaw = ((base + (spec.rotation ?? 0)) * Math.PI) / 180;
   const cos = Math.abs(Math.cos(yaw));
   const sin = Math.abs(Math.sin(yaw));
+  const scale = spec.scale ?? 1;
   const [length, , depth] = type.size;
-  const reachX = (cos * length + sin * depth) / 2;
-  const reachZ = (sin * length + cos * depth) / 2;
+  const reachX = (scale * (cos * length + sin * depth)) / 2;
+  const reachZ = (scale * (sin * length + cos * depth)) / 2;
   const [ax, az] = ANCHOR_VECTOR[spec.at];
   const [ox, oz] = spec.offset ?? [0, 0];
   return {
@@ -357,6 +384,16 @@ export function propPlacement(spec: PropSpec): PropPlacement {
     reachZ,
     type,
   };
+}
+
+// where a prop's flame burns (see PropType.flame): relative to its cell's
+// center, across, up (wall heights) and along - at the prop, wherever it is
+// pushed, nudged or raised
+export function flamePosition(spec: PropSpec): [number, number, number] | null {
+  const flame = PROP_TYPES[spec.prop]?.flame;
+  if (!flame) return null;
+  const at = propPlacement(spec);
+  return [Math.round((at.x - spec.cell.x) * 100) / 100, Math.round(((spec.elevation ?? 0) + flame.up) * 100) / 100, Math.round((at.z - spec.cell.y) * 100) / 100];
 }
 
 // footprints of the props in a cell (axis-aligned around their turn), with
