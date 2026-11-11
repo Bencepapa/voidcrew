@@ -55,6 +55,8 @@ export interface ReliefOptions {
   // levels - for stone, hedges, trees. Not for maps with holes or cut-out
   // levels: those stay stepped.
   smooth?: boolean;
+  // for a smooth one: how many cells along its long side (the graphics setting; default 64)
+  smoothCells?: number;
 }
 
 export interface HoleBounds {
@@ -436,11 +438,11 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
 // edges ease back to the base when the panel has to meet a perpendicular
 // wall (flushEdges). Normals come from the shape; the normal map adds the
 // fine detail on top.
-// (half as many on a touch screen: a smooth wall is 8192 triangles at 64, 2048 at 32)
-const SMOOTH_CELLS = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches ? 32 : 64;
+// (a smooth wall is 8192 triangles at 64 cells, 2048 at 32, 512 at 16)
+const SMOOTH_CELLS = 64;
 
 function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
-  const factor = Math.max(1, Math.ceil(Math.max(grid.width, grid.height) / SMOOTH_CELLS));
+  const factor = Math.max(1, Math.ceil(Math.max(grid.width, grid.height) / (opts.smoothCells ?? SMOOTH_CELLS)));
   const src = factor > 1 ? downsampleHeightGrid(grid, factor) : grid;
   const { width: fullW, height: fullH } = src;
 

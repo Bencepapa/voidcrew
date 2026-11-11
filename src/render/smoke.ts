@@ -274,15 +274,12 @@ const CORNERS: [number, number][] = [
   [1, 1],
 ];
 
-// How many puffs a device draws, relative to a desktop's: half on a touch screen
-// (a phone's GPU and CPU have the torches to carry too)
-export const PARTICLE_QUALITY = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches ? 0.5 : 1;
-
 // (`fire`: flames instead - see FIRE_PUFFS)
-export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, world?: SmokeWorld, { fire = false } = {}): Smoke {
+// (`quality`: how many puffs, relative to the full amount - the player's graphics setting)
+export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, world?: SmokeWorld, { fire = false, quality = 1 } = {}): Smoke {
   const puffs: Puff[] = [];
   const perEmitter = fire ? FIRE_PUFFS : PUFFS;
-  const count = Math.min(MAX_PUFFS, emitters.reduce((n, e) => n + Math.max(1, Math.round(perEmitter * e.density * PARTICLE_QUALITY)), 0));
+  const count = Math.min(MAX_PUFFS, emitters.reduce((n, e) => n + Math.max(1, Math.round(perEmitter * e.density * quality)), 0));
   const between = (r: [number, number]) => r[0] + Math.random() * (r[1] - r[0]);
   const spawn = (emitter: number, age: number): Puff => {
     const e = emitters[emitter];
@@ -314,7 +311,7 @@ export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, w
   // (each emitter's puffs spread over their lives, as if it had been
   // smoking all along)
   emitters.forEach((e, i) => {
-    const n = Math.max(1, Math.round(perEmitter * e.density * PARTICLE_QUALITY));
+    const n = Math.max(1, Math.round(perEmitter * e.density * quality));
     for (let k = 0; k < n && puffs.length < count; k++) {
       const p = spawn(i, 0);
       p.age = (k / n) * p.life;

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
+import { saveGraphics } from "./render/graphics";
 import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { EditorBar } from "./editor/EditorBar";
 import { PropEditor } from "./editor/PropEditor";
@@ -190,6 +191,8 @@ export default function App() {
   const [paint, setPaint] = useState<Record<EditSurface, TextureSetId | null>>({ wall: null, floor: null, ceiling: null });
   // bumped by every edit, undo, redo and save, to redraw the toolbar
   const [, setEdits] = useState(0);
+  // the graphics choices belong to the device: kept in this browser
+  useEffect(() => saveGraphics(settings), [settings.particleQuality, settings.wallDetail, settings.pixelRatioCap, settings.particleEvery]);
   const viewSettings = editMode ? { ...settings, noclip: true, headlamp: true } : settings;
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);

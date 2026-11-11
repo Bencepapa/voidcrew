@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { PARTICLE_QUALITY } from "./smoke";
 
 // Falling petals (a smoke emitter with `petals`): small coloured squares that
 // drift down from the emitter's height to the floor, swaying, carried by the
@@ -29,11 +28,11 @@ export interface Petals {
   dispose(): void;
 }
 
-export function createPetals(emitters: PetalEmitter[]): Petals {
+export function createPetals(emitters: PetalEmitter[], quality = 1): Petals {
   const items: { e: PetalEmitter; i0: number; n: number }[] = [];
   let total = 0;
   for (const e of emitters) {
-    const n = Math.max(1, Math.round(PER_EMITTER * e.density * PARTICLE_QUALITY));
+    const n = Math.max(1, Math.round(PER_EMITTER * e.density * quality));
     items.push({ e, i0: total, n });
     total += n;
   }

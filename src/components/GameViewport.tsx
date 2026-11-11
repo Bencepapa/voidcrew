@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
-import { PARTICLE_QUALITY, createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
+import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
+import { loadGraphics } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, itemSpot } from "../game/items";
@@ -115,6 +116,11 @@ export interface ViewportSettings {
   // the floors' own relief depth (world units) and normal strength; 0: as the walls'
   floorReliefDepth: number;
   floorNormalStrength: number;
+  // the player's graphics choices (see render/graphics.ts)
+  particleQuality: number;
+  wallDetail: number;
+  pixelRatioCap: number;
+  particleEvery: number;
   mapLightIntensity: number;
   // the sky's light on the cells under an open ceiling (see lights.ts SkyLight)
   skyLightIntensity: number;
@@ -256,6 +262,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   reliefMode: "steps",
   floorReliefDepth: 0,
   floorNormalStrength: 0,
+  ...loadGraphics(),
   mapLightIntensity: 1.6,
   skyLightIntensity: 0,
   skyLightAzimuth: 200,
@@ -1520,8 +1527,7 @@ export function GameViewport({
     const renderer = cache.renderer ?? (cache.renderer = new THREE.WebGLRenderer({ antialias: true }));
     // phones (touch screens) render at most 1.5 device pixels per CSS pixel:
     // their 3x screens cost 4x the pixels of 1.5x, for no pixel-art detail
-    const maxPixelRatio = window.matchMedia("(pointer: coarse)").matches ? 1.5 : 2;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, settings.pixelRatioCap));
     renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
     container.appendChild(renderer.domElement);
 
@@ -2245,6 +2251,7 @@ export function GameViewport({
         settings.reliefLevels,
         settings.reliefMinIsland,
         settings.reliefMode,
+        settings.wallDetail,
         settings.aoRadius,
       ].join("|");
       let built = cache.reliefs.get(key);
@@ -2272,6 +2279,7 @@ export function GameViewport({
             levels: settings.reliefLevels,
             minIsland: settings.reliefMinIsland,
             smooth: settings.reliefMode === "smooth",
+            smoothCells: settings.wallDetail,
             aoRadius: settings.aoRadius,
             flushEdges: shape.flushEdges,
             holeBackZ: shape.holeBackZ,
@@ -3253,9 +3261,10 @@ export function GameViewport({
       }),
       lightGrid,
       smokeWorld(m),
+      { quality: settings.particleQuality },
     );
     };
-    const buildFire = (m: GameMap) => createSmoke(fireEmitters, lightGrid, smokeWorld(m), { fire: true });
+    const buildFire = (m: GameMap) => createSmoke(fireEmitters, lightGrid, smokeWorld(m), { fire: true, quality: settings.particleQuality });
     // what the smoke bumps into: the deck's walls, floors and ceilings, and
     // its props as boxes (not the 45-degree cuts: a box would close their
     // whole corner)
@@ -3286,7 +3295,7 @@ export function GameViewport({
     scene.add(smoke.mesh);
     let fire = buildFire(map);
     scene.add(fire.mesh);
-    let petals = createPetals(petalEmitters);
+    let petals = createPetals(petalEmitters, settings.particleQuality);
     scene.add(petals.mesh);
     // the editor changed only the smoke: made anew, the rest stays built
     function applySmoke(next: GameMap) {
@@ -3300,7 +3309,7 @@ export function GameViewport({
       scene.add(smoke.mesh);
       fire = buildFire(next);
       scene.add(fire.mesh);
-      petals = createPetals(petalEmitters);
+      petals = createPetals(petalEmitters, settings.particleQuality);
       scene.add(petals.mesh);
     }
 
@@ -5519,10 +5528,11 @@ export function GameViewport({
       updateActors(camX, camZ);
       updateLoot(camX, camZ, cam.y * wallHeight);
       const smokePhysics = { walls: s.smokeWalls, props: s.smokeProps, actors: s.smokeActors ? smokeBodies : null };
-      // (on a touch screen the particles are moved every other frame, by two frames' time)
+      // (with a lighter setting the particles are moved every 2nd or 3rd frame, by that many frames' time)
       particleFrame++;
-      if (PARTICLE_QUALITY >= 1 || particleFrame % 2 === 0) {
-        const pdt = PARTICLE_QUALITY >= 1 ? gameDt : gameDt * 2;
+      const every = Math.max(1, Math.round(s.particleEvery));
+      if (every === 1 || particleFrame % every === 0) {
+        const pdt = gameDt * every;
         smoke.update(pdt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
         fire.update(pdt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
         petals.update(pdt, t);
@@ -5760,6 +5770,9 @@ export function GameViewport({
     settings.reliefLevels,
     settings.reliefMinIsland,
     settings.reliefMode,
+    settings.wallDetail,
+    settings.pixelRatioCap,
+    settings.particleQuality,
     settings.floorReliefDepth,
     settings.skyLightIntensity,
     settings.skyLightAzimuth,

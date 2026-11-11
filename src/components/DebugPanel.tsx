@@ -6,6 +6,7 @@ import type { ViewportSettings, ViewportStats, WallProfileId } from "./GameViewp
 import { downloadMap } from "../editor/mapStore";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { LOCKED_WORLD, WORLDS, switchWorld } from "../game/worlds";
+import { GRAPHICS_PRESETS, presetOf } from "../render/graphics";
 import type { WorldId } from "../game/worlds";
 import type { TextureSetKind } from "../render/textureSets";
 
@@ -56,7 +57,6 @@ interface SliderConfig {
 }
 
 const VIEW_SLIDERS: SliderConfig[] = [
-  { key: "viewDistance", label: "View distance (cells)", min: 5, max: 9, step: 0.5 },
   { key: "fov", label: "FOV", min: 40, max: 100, step: 1 },
   { key: "moveDurationMs", label: "Step duration (ms)", min: 60, max: 600, step: 10 },
 ];
@@ -425,6 +425,61 @@ export function DebugPanel({
           )}
         </>,
         "wall, accent, floor, ceiling, doors",
+      )}
+
+      {section(
+        "Graphics",
+        <>
+          <div className="text-[10px] text-neutral-500">
+            For a weaker device: fewer particles, coarser walls, a lower resolution. Kept on this device. Some of these
+            rebuild the scene.
+          </div>
+          {select(
+            "Preset",
+            <select
+              value={presetOf(settings)}
+              onChange={(e) => {
+                const preset = GRAPHICS_PRESETS[e.target.value];
+                if (preset) onChange({ ...settings, ...preset });
+              }}
+              className={SELECT}
+            >
+              {presetOf(settings) === "Custom" && <option value="Custom">Custom</option>}
+              {Object.keys(GRAPHICS_PRESETS).map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>,
+          )}
+          {slider({ key: "particleQuality", label: "Particles (smoke, flames, petals)", min: 0.1, max: 1, step: 0.05 })}
+          {select(
+            "Particle updates",
+            <select value={settings.particleEvery} onChange={(e) => set("particleEvery", Number(e.target.value))} className={SELECT}>
+              <option value={1}>every frame</option>
+              <option value={2}>every 2nd frame</option>
+              <option value={3}>every 3rd frame</option>
+            </select>,
+          )}
+          {select(
+            "Smooth wall polygons",
+            <select value={settings.wallDetail} onChange={(e) => set("wallDetail", Number(e.target.value))} className={SELECT}>
+              <option value={16}>low (512 triangles a wall)</option>
+              <option value={32}>medium (2 048)</option>
+              <option value={64}>high (8 192)</option>
+            </select>,
+          )}
+          {select(
+            "Resolution (device pixels per pixel)",
+            <select value={settings.pixelRatioCap} onChange={(e) => set("pixelRatioCap", Number(e.target.value))} className={SELECT}>
+              <option value={1}>1x (lowest)</option>
+              <option value={1.5}>1.5x</option>
+              <option value={2}>2x (sharpest)</option>
+            </select>,
+          )}
+          {slider({ key: "viewDistance", label: "View distance (cells)", min: 5, max: 9, step: 0.5 })}
+        </>,
+        "particles, wall polygons, resolution",
       )}
 
       {section(
