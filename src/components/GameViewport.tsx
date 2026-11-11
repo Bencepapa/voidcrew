@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
-import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
+import { PARTICLE_QUALITY, createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
@@ -207,6 +207,9 @@ export interface ViewportStats {
   drawCalls: number;
   // cells in sight (see updateSight)
   visibleCells: number;
+  // frames per second, and the milliseconds a frame takes on average (over half a second)
+  fps: number;
+  frameMs: number;
   // null unless the relief wall type is active and built
   relief: ReliefStats | null;
 }
@@ -5253,6 +5256,10 @@ export function GameViewport({
     const startedAt = performance.now();
     let lastFrameAt = startedAt;
     let lastStatsAt = 0;
+    let particleFrame = 0;
+    // frames counted for the fps
+    let fpsFrames = 0;
+    let fpsSince = performance.now();
 
     // aiming camera (see renderFrame): how far it's turned to the target
     // (0..1), where it looks, and its field of view there
@@ -5512,9 +5519,14 @@ export function GameViewport({
       updateActors(camX, camZ);
       updateLoot(camX, camZ, cam.y * wallHeight);
       const smokePhysics = { walls: s.smokeWalls, props: s.smokeProps, actors: s.smokeActors ? smokeBodies : null };
-      smoke.update(gameDt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
-      fire.update(gameDt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
-      petals.update(gameDt, t);
+      // (on a touch screen the particles are moved every other frame, by two frames' time)
+      particleFrame++;
+      if (PARTICLE_QUALITY >= 1 || particleFrame % 2 === 0) {
+        const pdt = PARTICLE_QUALITY >= 1 ? gameDt : gameDt * 2;
+        smoke.update(pdt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
+        fire.update(pdt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
+        petals.update(pdt, t);
+      }
       for (const marker of smokeMarkers.values()) marker.visible = editModeRef.current;
       // the exits' plates throb
       exitMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
@@ -5574,12 +5586,19 @@ export function GameViewport({
       scene.overrideMaterial = geometryViewMaterial(s.geometryView);
       renderer.render(scene, camera);
 
+      fpsFrames++;
       if (now - lastStatsAt > 500) {
         lastStatsAt = now;
+        const elapsed = now - fpsSince;
+        const fps = elapsed > 0 ? (fpsFrames * 1000) / elapsed : 0;
+        fpsFrames = 0;
+        fpsSince = now;
         onStatsRef.current?.({
           renderedTriangles: renderer.info.render.triangles,
           drawCalls: renderer.info.render.calls,
           visibleCells: sight.cells.size,
+          fps,
+          frameMs: fps > 0 ? 1000 / fps : 0,
           relief: reliefStats,
         });
       }

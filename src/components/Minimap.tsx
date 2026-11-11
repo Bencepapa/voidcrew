@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import type { ReactElement } from "react";
-import { ceilingHeight, floorHeight, windowPanels } from "../game/map";
+import { ceilingHeight, doorAt, floorHeight, windowPanels } from "../game/map";
 import { MIN_HEADROOM } from "../game/heights";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 
@@ -58,6 +58,14 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
   const radius = compact ? RADIUS_COMPACT : RADIUS;
   const span = radius * 2 + 1;
 
+  // Void Fantasy's map: a parchment chart - the rooms washed yellow, the walls
+  // hatched in ink, the doors thick bars across their cells
+  const paper = map.world === "fantasy";
+  const INK = "#4a3210";
+  const hatchId = `hatch-${compact ? "c" : "m"}`;
+  const hatchedWalls: ReactElement[] = [];
+  const doorBars: ReactElement[] = [];
+
   // turn the arrow the short way round: keep a running angle
   const angleRef = useRef(FACING_DEGREES[dir]);
   const target = FACING_DEGREES[dir];
@@ -67,6 +75,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
   // raised floors show lighter, sunken ones darker
   const floor = (x: number, y: number) => {
     const h = floorHeight(map, x, y);
+    if (paper) return `hsl(46 ${Math.round(78 + Math.min(10, h * 8))}% ${Math.round(Math.max(48, Math.min(80, 72 - h * 14)))}%)`;
     const g = Math.round(Math.max(18, Math.min(110, 42 + h * 90)));
     const r = Math.round(Math.max(4, 10 + h * 20));
     return `rgb(${r}, ${g}, 18)`;
@@ -84,6 +93,12 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
     for (let x = 0; x < map.width; x++) {
       const cell = map.cells[y][x];
       if (cell === "wall") {
+        if (paper) {
+          // hatched, where it borders a room (or all of them, when editing)
+          const borders = [-1, 0, 1].some((dy) => [-1, 0, 1].some((dx) => (dx || dy) && map.cells[y + dy]?.[x + dx] !== undefined && map.cells[y + dy][x + dx] !== "wall"));
+          if (edit || borders) hatchedWalls.push(<rect key={`w${x},${y}`} x={x} y={y} width={1} height={1} fill={`url(#${hatchId})`} />);
+          continue;
+        }
         // (when editing, every wall cell shows too: it can be dug out from here)
         if (edit) cells.push(<rect key={`c${x},${y}`} x={x + 0.04} y={y + 0.04} width={0.92} height={0.92} fill="#171a17" />);
         continue;
@@ -91,13 +106,32 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
       // too low for the party (a duct the cleaning drones use): as good as
       // a wall to it
       if (ceilingHeight(map, x, y) - floorHeight(map, x, y) < MIN_HEADROOM - 1e-6) continue;
+      if (paper && cell === "door") {
+        // a thick bar across the doorway (a locked one in red ink), on the room's yellow
+        const facing = doorAt(map, x, y).facing;
+        const horizontal = facing === "N" || facing === "S";
+        cells.push(<rect key={`c${x},${y}`} x={x} y={y} width={1} height={1} fill={floor(x, y)} />);
+        doorBars.push(
+          <rect
+            key={`d${x},${y}`}
+            x={horizontal ? x + 0.02 : x + 0.36}
+            y={horizontal ? y + 0.36 : y + 0.02}
+            width={horizontal ? 0.96 : 0.28}
+            height={horizontal ? 0.28 : 0.96}
+            fill={locked?.includes(`${x},${y}`) ? "#9c1f18" : "#3a240a"}
+            stroke={INK}
+            strokeWidth={0.04}
+          />,
+        );
+        continue;
+      }
       cells.push(
         <rect
           key={`c${x},${y}`}
-          x={x + 0.04}
-          y={y + 0.04}
-          width={0.92}
-          height={0.92}
+          x={paper ? x : x + 0.04}
+          y={paper ? y : y + 0.04}
+          width={paper ? 1 : 0.92}
+          height={paper ? 1 : 0.92}
           fill={
             cell === "door" ? (locked?.includes(`${x},${y}`) ? LOCKED_COLOR : DOOR_COLOR) : edit?.surface === "ceiling" ? ceilingShade(x, y) : floor(x, y)
           }
@@ -206,7 +240,18 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           onClick={(e) => click(e, false)}
           onContextMenu={(e) => click(e, true)}
         >
+        {paper && (
+          <defs>
+            <pattern id={hatchId} width={0.34} height={0.34} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width={0.34} height={0.34} fill="#e9d9a8" />
+              <line x1={0} y1={0} x2={0} y2={0.34} stroke={INK} strokeWidth={0.09} />
+            </pattern>
+          </defs>
+        )}
+          {paper && <rect x={-0.5} y={-0.5} width={W + 1} height={H + 1} fill="#ecdcab" />}
           {cells}
+          {hatchedWalls}
+          {doorBars}
           {restricted}
           {bridges}
           {ladders}
@@ -218,7 +263,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
             <polygon points="0,-0.36 0.2,0.1 -0.2,0.1" fill="#38bdf8" />
           </g>
           <g transform={`translate(${pos.x + 0.5} ${pos.y + 0.5}) rotate(${FACING_DEGREES[dir]})`}>
-            <polygon points="0,-0.42 0.34,0.34 0,0.16 -0.34,0.34" fill={PLAYER_COLOR} stroke="#062b12" strokeWidth={0.07} strokeLinejoin="round" />
+            <polygon points="0,-0.42 0.34,0.34 0,0.16 -0.34,0.34" fill={paper ? "#9c1f18" : PLAYER_COLOR} stroke={paper ? "#3a0d0a" : "#062b12"} strokeWidth={0.07} strokeLinejoin="round" />
           </g>
         </svg>
       </div>
@@ -226,7 +271,9 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
   }
 
   return (
-    <div className={`border border-green-800 ${compact ? "bg-black/25 p-1" : "bg-black/60 p-2"}`}>
+    <div
+      className={`border ${paper ? "border-[#8a6a2a] bg-[#ecdcab]" : `border-green-800 ${compact ? "bg-black/25" : "bg-black/60"}`} ${compact ? "p-1" : "p-2"}`}
+    >
       <svg
         viewBox={`0 0 ${span} ${span}`}
         className="block w-full aspect-square"
@@ -234,6 +281,14 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         aria-label={`Map: ${map.name}`}
       >
         {/* the map, slid so the player's cell sits in the middle */}
+        {paper && (
+          <defs>
+            <pattern id={hatchId} width={0.34} height={0.34} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width={0.34} height={0.34} fill="#e9d9a8" />
+              <line x1={0} y1={0} x2={0} y2={0.34} stroke={INK} strokeWidth={0.09} />
+            </pattern>
+          </defs>
+        )}
         <g
           style={{
             transform: `translate(${radius - pos.x}px, ${radius - pos.y}px)`,
@@ -241,6 +296,8 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           }}
         >
           {cells}
+          {hatchedWalls}
+          {doorBars}
           {restricted}
           {bridges}
           {ladders}
@@ -256,8 +313,8 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         >
           <polygon
             points="0,-0.42 0.34,0.34 0,0.16 -0.34,0.34"
-            fill={PLAYER_COLOR}
-            stroke="#062b12"
+            fill={paper ? "#9c1f18" : PLAYER_COLOR}
+            stroke={paper ? "#3a0d0a" : "#062b12"}
             strokeWidth={0.07}
             strokeLinejoin="round"
           />

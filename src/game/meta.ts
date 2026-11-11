@@ -96,6 +96,61 @@ export const WEAPON_TYPES: Record<string, WeaponType> = {
     sway: 0.025,
     aimZoom: 4,
   },
+  // Void Fantasy's: all of them from a distance
+  spear: {
+    name: "Throwing spear",
+    blurb: "A hurled spear: steady, hard-hitting.",
+    price: 150,
+    kind: "shot",
+    amount: [8, 13],
+    cooldownMs: 4500,
+    range: 5,
+    accuracy: 0.92,
+    falloff: 0.08,
+    sway: 0.04,
+    aimZoom: 1.4,
+  },
+  crossbow: {
+    name: "Crossbow",
+    blurb: "A heavy bolt, slow to wind.",
+    price: 260,
+    kind: "shot",
+    amount: [14, 22],
+    cooldownMs: 8000,
+    range: 7,
+    accuracy: 0.95,
+    falloff: 0.05,
+    sway: 0.035,
+    aimZoom: 2.2,
+  },
+  longbow: {
+    name: "Longbow",
+    blurb: "Long reach, one careful arrow.",
+    price: 300,
+    kind: "shot",
+    amount: [10, 17],
+    cooldownMs: 6500,
+    range: 10,
+    accuracy: 0.96,
+    falloff: 0.03,
+    sway: 0.03,
+    aimZoom: 3,
+  },
+  arcane_staff: {
+    name: "Arcane staff",
+    blurb: "Bolts of cold light that stun.",
+    price: 240,
+    kind: "shot",
+    amount: [5, 9],
+    cooldownMs: 4000,
+    range: 7,
+    accuracy: 0.95,
+    falloff: 0.04,
+    sway: 0.03,
+    aimZoom: 1.5,
+    stunMs: 1800,
+  },
+  healing_staff: { name: "Healing staff", blurb: "Mends wounds with warm light.", price: 220, kind: "heal", amount: [9, 15], cooldownMs: 9000 },
   trauma_kit: { name: "Trauma kit", blurb: "A bigger heal, slower.", price: 300, kind: "heal", amount: [16, 24], cooldownMs: 12000 },
 };
 
@@ -124,20 +179,36 @@ export interface Meta {
   story: string[];
 }
 
-const STARTING: [string, string][] = [
+// who starts with what: the crew member, their weapon, and (maybe) a second
+const STARTING: [string, string, string?][] = [
   ["reese", "pulse_rifle"],
   ["lyn", "arc_welder"],
   ["orion", "shock_emitter"],
   ["kell", "stim_injector"],
+  // Void Fantasy's party
+  ["aldra", "spear"],
+  ["borin", "crossbow"],
+  ["merlen", "arcane_staff", "healing_staff"],
+  ["elara", "longbow"],
 ];
 
 function fresh(): Meta {
-  const weapons = STARTING.map(([, type], id) => ({ id, type, level: 0 }));
+  const weapons: OwnedWeapon[] = [];
+  const loadout: Record<string, [number | null, number | null]> = {};
+  for (const [crew, first, second] of STARTING) {
+    const slots: [number | null, number | null] = [null, null];
+    [first, second].forEach((type, slot) => {
+      if (!type) return;
+      slots[slot] = weapons.length;
+      weapons.push({ id: weapons.length, type, level: 0 });
+    });
+    loadout[crew] = slots;
+  }
   return {
     credits: 0,
     stash: {},
     weapons,
-    loadout: Object.fromEntries(STARTING.map(([crew], id) => [crew, [id, null]])),
+    loadout,
     active: {},
     depth: 0,
     runs: 0,
@@ -150,11 +221,28 @@ const KEY = "voidcrew-meta-v1";
 function load(): Meta {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? "null") as Meta | null;
-    if (saved && Array.isArray(saved.weapons) && saved.loadout) return { ...fresh(), ...saved };
+    if (saved && Array.isArray(saved.weapons) && saved.loadout) return withStarting({ ...fresh(), ...saved });
   } catch {
     // (a broken save: start over)
   }
   return fresh();
+}
+
+// (an older save has no weapons for the crew that came later: they're given them)
+function withStarting(m: Meta): Meta {
+  const next: Meta = { ...m, weapons: [...m.weapons], loadout: { ...m.loadout } };
+  for (const [crew, first, second] of STARTING) {
+    if (next.loadout[crew]) continue;
+    const slots: [number | null, number | null] = [null, null];
+    [first, second].forEach((type, slot) => {
+      if (!type) return;
+      const id = next.nextId++;
+      next.weapons.push({ id, type, level: 0 });
+      slots[slot] = id;
+    });
+    next.loadout[crew] = slots;
+  }
+  return next;
 }
 
 let meta = load();

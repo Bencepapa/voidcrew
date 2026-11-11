@@ -223,6 +223,10 @@ export default function App() {
   const aimWeapon = aim ? (crewWeapon(crew[aim.crew].id) ?? null) : null;
   // the editor's palettes follow the world of the map on screen
   setActiveWorld(map.world);
+  // (and the page wears the world's look - see index.css)
+  useEffect(() => {
+    document.documentElement.classList.toggle("theme-fantasy", map.world === "fantasy");
+  }, [map.world]);
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");

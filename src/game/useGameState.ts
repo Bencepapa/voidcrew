@@ -5,7 +5,7 @@ import { MAPS, START_MAP, cellAt, doorAt, doorCrossed, floorHeight, liftAt, lift
 import { DIR_VECTOR, behindOf, leftOf, rightOf, stepForward } from "./movement";
 import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
 import type { Direction, GameMap, Vec2, PropSpec } from "./types";
-import { initialCrew } from "./crew";
+import { crewOf } from "./crew";
 import { variantOf } from "./variation";
 import { rollLoot, stacksText, stacksValue } from "./items";
 import type { ItemStack, LootSpill } from "./items";
@@ -124,7 +124,7 @@ export function useGameState() {
   const [dir, setDir] = useState<Direction>(map.start.facing);
   // the height the party stands at: the cell's floor, or a bridge above it
   const [elevation, setElevation] = useState(() => floorHeight(map, map.start.cell.x, map.start.cell.y));
-  const [crew, setCrew] = useState(initialCrew);
+  const [crew, setCrew] = useState(() => crewOf(START_MAP.world));
   const crewRef = useRef(crew);
   crewRef.current = crew;
   // when each crewmate's weapon is ready again (game time)
@@ -1432,7 +1432,7 @@ export function useGameState() {
     firedRef.current = new Set();
     storyMapRef.current = null;
     setTerminal(null);
-    setCrew(initialCrew);
+    setCrew(crewOf(mapRef.current.world));
     setRunStart(gameClock.now());
     setRunEnd(null);
   }, [haul]);
@@ -1446,7 +1446,7 @@ export function useGameState() {
     stanceRef.current = null;
     alertShownRef.current = 0;
     setAlertShown(0);
-    setCrew(initialCrew);
+    setCrew(crewOf(mapRef.current.world));
   }, []);
   // standing on a way out says so
   const exitHere = (map.exits ?? []).find((e) => e.cell.x === pos.x && e.cell.y === pos.y);

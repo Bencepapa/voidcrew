@@ -525,6 +525,9 @@ export function DebugPanel({
         section(
           "Stats",
           <div className="text-[10px] text-neutral-500 flex flex-col">
+            <span className={stats.fps < 30 ? "text-red-500 font-semibold" : stats.fps < 50 ? "text-amber-700 font-semibold" : "font-semibold"}>
+              FPS: {stats.fps.toFixed(0)} ({stats.frameMs.toFixed(1)} ms)
+            </span>
             <span>Rendered triangles: {stats.renderedTriangles.toLocaleString()}</span>
             <span>Draw calls: {stats.drawCalls}</span>
             <span>Cells in sight: {stats.visibleCells}</span>

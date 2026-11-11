@@ -436,7 +436,8 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
 // edges ease back to the base when the panel has to meet a perpendicular
 // wall (flushEdges). Normals come from the shape; the normal map adds the
 // fine detail on top.
-const SMOOTH_CELLS = 64;
+// (half as many on a touch screen: a smooth wall is 8192 triangles at 64, 2048 at 32)
+const SMOOTH_CELLS = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches ? 32 : 64;
 
 function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
   const factor = Math.max(1, Math.ceil(Math.max(grid.width, grid.height) / SMOOTH_CELLS));

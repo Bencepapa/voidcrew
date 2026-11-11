@@ -29,6 +29,10 @@ const ROLE_TINT: Record<string, string> = {
   ENGINEER: "#5a4214",
   ANDROID: "#1f3357",
   MEDIC: "#1d4a2e",
+  WARRIOR: "#6b2a1c",
+  DWARF: "#6a4a1a",
+  MAGE: "#47245f",
+  ELF: "#2a5a2a",
 };
 
 // A crewmate's portrait: public/portraits/<id>.webp (made by

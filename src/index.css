@@ -12,3 +12,68 @@
 .hurt-flash {
   animation: hurt-flash 450ms ease-out forwards;
 }
+
+/* ---- Void Fantasy's look: parchment, dark ink, yellow and brown buttons ----
+   The sci-fi UI is built from Tailwind's neutral / green / amber colours on
+   black; the fantasy one swaps the palette (on <html>, see App) instead of
+   restyling every panel: the neutral scale runs from parchment (the old darks)
+   to dark ink (the old lights), black becomes the tan of buttons and panels,
+   and the green terminal text and the amber highlights turn brown and
+   dark gold, so everything stays readable on the light paper. */
+.theme-fantasy {
+  color-scheme: light;
+  --color-neutral-950: #f0e4c3;
+  --color-neutral-900: #e8d9ae;
+  --color-neutral-800: #dcc78f;
+  --color-neutral-700: #b99d62;
+  --color-neutral-600: #9c7e43;
+  --color-neutral-500: #6f5528;
+  --color-neutral-400: #56411d;
+  --color-neutral-300: #3f2e13;
+  --color-neutral-200: #2e200b;
+  --color-neutral-100: #201607;
+  --color-neutral-50: #150e04;
+  /* panels and buttons: a warm tan / yellow */
+  --color-black: #e2bd5c;
+  /* the green of the log and the minimap frame */
+  --color-green-200: #5a3d0f;
+  --color-green-300: #5a3d0f;
+  --color-green-400: #4a3009;
+  --color-green-500: #6e4a12;
+  --color-green-600: #7d5a1c;
+  --color-green-700: #8e6a2a;
+  --color-green-800: #a07a38;
+  --color-green-900: #c9a867;
+  --color-green-950: #e2cf9a;
+  /* highlights that were light-on-dark: dark gold, dark red, dark green, dark blue */
+  --color-amber-200: #6e3f00;
+  --color-amber-300: #7d4800;
+  --color-amber-400: #9a5a00;
+  --color-amber-500: #b06a00;
+  --color-amber-600: #b8761a;
+  --color-red-200: #7c1913;
+  --color-red-300: #8c1f1a;
+  --color-red-400: #9c231d;
+  --color-red-500: #a8231c;
+  /* (the ready weapons, and the minimap's "floor": gold and brown) */
+  --color-emerald-200: #5e3b00;
+  --color-emerald-300: #6e4600;
+  --color-emerald-400: #7d5200;
+  --color-emerald-500: #a06a00;
+  --color-emerald-700: #d0a030;
+  --color-emerald-900: #b98a1f;
+  --color-sky-200: #1c4670;
+  --color-sky-300: #1f5183;
+  --color-sky-400: #2a67a3;
+  --color-blue-400: #2a67a3;
+  --color-cyan-300: #1d5e6b;
+  --color-yellow-200: #6e4a00;
+  --color-yellow-300: #7d5400;
+}
+/* buttons: yellow / brown paper, ink text */
+.theme-fantasy button:not(:disabled) {
+  text-shadow: none;
+}
+.theme-fantasy input[type="range"] {
+  accent-color: #8a5a14;
+}
