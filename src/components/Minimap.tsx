@@ -61,7 +61,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
   // Void Fantasy's map: a parchment chart - the rooms washed yellow, the walls
   // hatched in ink, the doors thick bars across their cells
   const paper = map.world === "fantasy";
-  const INK = "#4a3210";
+  const INK = "#c9a24a";
   const hatchId = `hatch-${compact ? "c" : "m"}`;
   const hatchedWalls: ReactElement[] = [];
   const doorBars: ReactElement[] = [];
@@ -243,12 +243,12 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         {paper && (
           <defs>
             <pattern id={hatchId} width={0.34} height={0.34} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <rect width={0.34} height={0.34} fill="#e9d9a8" />
-              <line x1={0} y1={0} x2={0} y2={0.34} stroke={INK} strokeWidth={0.09} />
+              <rect width={0.34} height={0.34} fill="#241a0f" />
+              <line x1={0} y1={0} x2={0} y2={0.34} stroke="#5a4220" strokeWidth={0.09} />
             </pattern>
           </defs>
         )}
-          {paper && <rect x={-0.5} y={-0.5} width={W + 1} height={H + 1} fill="#ecdcab" />}
+          {paper && <rect x={-0.5} y={-0.5} width={W + 1} height={H + 1} fill="#1c140c" />}
           {cells}
           {hatchedWalls}
           {doorBars}
@@ -272,7 +272,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
 
   return (
     <div
-      className={`border ${paper ? "border-[#8a6a2a] bg-[#ecdcab]" : `border-green-800 ${compact ? "bg-black/25" : "bg-black/60"}`} ${compact ? "p-1" : "p-2"}`}
+      className={`border ${paper ? "border-[#b8902f] bg-[#1c140c]" : `border-green-800 ${compact ? "bg-black/25" : "bg-black/60"}`} ${compact ? "p-1" : "p-2"}`}
     >
       <svg
         viewBox={`0 0 ${span} ${span}`}
@@ -284,8 +284,8 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         {paper && (
           <defs>
             <pattern id={hatchId} width={0.34} height={0.34} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <rect width={0.34} height={0.34} fill="#e9d9a8" />
-              <line x1={0} y1={0} x2={0} y2={0.34} stroke={INK} strokeWidth={0.09} />
+              <rect width={0.34} height={0.34} fill="#241a0f" />
+              <line x1={0} y1={0} x2={0} y2={0.34} stroke="#5a4220" strokeWidth={0.09} />
             </pattern>
           </defs>
         )}

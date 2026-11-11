@@ -19,7 +19,7 @@ interface MoveControlsProps {
 }
 
 const ARROW =
-  "w-9 h-8 flex items-center justify-center border border-neutral-600 bg-neutral-900/80 text-neutral-200 text-sm rounded-sm hover:bg-neutral-700 active:bg-neutral-600 select-none";
+  "move-arrow w-9 h-8 flex items-center justify-center border border-neutral-600 bg-neutral-900/80 text-neutral-200 text-sm rounded-sm hover:bg-neutral-700 active:bg-neutral-600 select-none";
 const SIDE =
   "px-2 h-8 min-w-[5.5rem] flex items-center justify-center border border-neutral-600 bg-neutral-900/80 text-neutral-200 text-[11px] rounded-sm hover:bg-neutral-700 active:bg-neutral-600 select-none";
 

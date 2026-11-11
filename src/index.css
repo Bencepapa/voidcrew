@@ -13,66 +13,84 @@
   animation: hurt-flash 450ms ease-out forwards;
 }
 
-/* ---- Void Fantasy's look: parchment, dark ink, yellow and brown buttons ----
+/* ---- Void Fantasy's look: dark brown panels, gold borders and lettering ----
    The sci-fi UI is built from Tailwind's neutral / green / amber colours on
    black; the fantasy one swaps the palette (on <html>, see App) instead of
-   restyling every panel: the neutral scale runs from parchment (the old darks)
-   to dark ink (the old lights), black becomes the tan of buttons and panels,
-   and the green terminal text and the amber highlights turn brown and
-   dark gold, so everything stays readable on the light paper. */
+   restyling every panel: the neutral scale becomes dark brown with gold-cream
+   lettering, the panel black a deep brown, the borders (neutral-700, green)
+   gold, the green terminal text and amber highlights gold. */
 .theme-fantasy {
-  color-scheme: light;
-  --color-neutral-950: #f0e4c3;
-  --color-neutral-900: #e8d9ae;
-  --color-neutral-800: #dcc78f;
-  --color-neutral-700: #b99d62;
-  --color-neutral-600: #9c7e43;
-  --color-neutral-500: #6f5528;
-  --color-neutral-400: #56411d;
-  --color-neutral-300: #3f2e13;
-  --color-neutral-200: #2e200b;
-  --color-neutral-100: #201607;
-  --color-neutral-50: #150e04;
-  /* panels and buttons: a warm tan / yellow */
-  --color-black: #e2bd5c;
-  /* the green of the log and the minimap frame */
-  --color-green-200: #5a3d0f;
-  --color-green-300: #5a3d0f;
-  --color-green-400: #4a3009;
-  --color-green-500: #6e4a12;
-  --color-green-600: #7d5a1c;
-  --color-green-700: #8e6a2a;
-  --color-green-800: #a07a38;
-  --color-green-900: #c9a867;
-  --color-green-950: #e2cf9a;
-  /* highlights that were light-on-dark: dark gold, dark red, dark green, dark blue */
-  --color-amber-200: #6e3f00;
-  --color-amber-300: #7d4800;
-  --color-amber-400: #9a5a00;
-  --color-amber-500: #b06a00;
-  --color-amber-600: #b8761a;
-  --color-red-200: #7c1913;
-  --color-red-300: #8c1f1a;
-  --color-red-400: #9c231d;
-  --color-red-500: #a8231c;
-  /* (the ready weapons, and the minimap's "floor": gold and brown) */
-  --color-emerald-200: #5e3b00;
-  --color-emerald-300: #6e4600;
-  --color-emerald-400: #7d5200;
-  --color-emerald-500: #a06a00;
-  --color-emerald-700: #d0a030;
-  --color-emerald-900: #b98a1f;
-  --color-sky-200: #1c4670;
-  --color-sky-300: #1f5183;
-  --color-sky-400: #2a67a3;
-  --color-blue-400: #2a67a3;
-  --color-cyan-300: #1d5e6b;
-  --color-yellow-200: #6e4a00;
-  --color-yellow-300: #7d5400;
+  color-scheme: dark;
+  --color-neutral-950: #120d08;
+  --color-neutral-900: #1c140c;
+  --color-neutral-800: #2a1e12;
+  --color-neutral-700: #9a7a30;
+  --color-neutral-600: #a98334;
+  --color-neutral-500: #bfa06a;
+  --color-neutral-400: #d4b97e;
+  --color-neutral-300: #e3cd9a;
+  --color-neutral-200: #f0deb0;
+  --color-neutral-100: #f8ecc8;
+  --color-neutral-50: #fff8e0;
+  /* panels and buttons: deep brown */
+  --color-black: #1a120a;
+  /* the log's text and the minimap frame */
+  --color-green-200: #f0deb0;
+  --color-green-300: #ecd79a;
+  --color-green-400: #e8cf8a;
+  --color-green-500: #c9a24a;
+  --color-green-600: #a98334;
+  --color-green-700: #8a6a2a;
+  --color-green-800: #b8902f;
+  --color-green-900: #8a6a2a;
+  --color-green-950: #2a1e12;
+  --color-amber-200: #ffd978;
+  --color-amber-300: #f5c451;
+  --color-amber-400: #e8b23a;
+  --color-amber-500: #d99a1e;
+  --color-amber-600: #d9a02a;
+  --color-red-200: #ffb4a8;
+  --color-red-300: #ff8f80;
+  --color-red-400: #f26b5b;
+  --color-red-500: #e0453a;
+  /* (the ready weapons, and the minimap's "floor": gold) */
+  --color-emerald-200: #ffe08a;
+  --color-emerald-300: #f5c451;
+  --color-emerald-400: #e8b23a;
+  --color-emerald-500: #d4a030;
+  --color-emerald-700: #6b4d12;
+  --color-emerald-900: #4a350c;
+  --color-sky-200: #bfe0ff;
+  --color-sky-300: #8ec5f5;
+  --color-sky-400: #5aa6ea;
+  --color-blue-400: #5aa6ea;
+  --color-cyan-300: #8fd6e0;
+  --color-yellow-200: #ffe08a;
+  --color-yellow-300: #f5c451;
 }
-/* buttons: yellow / brown paper, ink text */
-.theme-fantasy button:not(:disabled) {
-  text-shadow: none;
+/* every framed panel and button: a gold line, a dark one inside, a fainter gold one inside that */
+.theme-fantasy .border {
+  box-shadow: inset 0 0 0 1px #20160a, inset 0 0 0 2px rgba(201, 162, 74, 0.5), 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+/* the movement arrows: thick gold ones on a brown plate */
+.theme-fantasy .move-arrow {
+  width: 3.4rem;
+  height: 3rem;
+  font-size: 1.7rem;
+  line-height: 1;
+  font-weight: 900;
+  color: #e8b23a;
+  border: 2px solid #b8902f;
+  border-radius: 4px;
+  background: linear-gradient(#3a2916, #1e150b);
+  text-shadow: 0 2px 0 #000;
+}
+.theme-fantasy .move-arrow:hover {
+  color: #ffd978;
+  background: linear-gradient(#4a3520, #2a1d0f);
+}
+.theme-fantasy .move-arrow:active {
+  background: #120d08;
 }
 .theme-fantasy input[type="range"] {
   accent-color: #8a5a14;
