@@ -803,6 +803,14 @@ export default function App() {
     setSelectedChanceWall(null);
     setEdits((n) => n + 1);
   };
+  // layers hidden from the view while editing (NPCs, particles, props, decals, items)
+  const [hiddenLayers, setHiddenLayers] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleLayer = (layer: string) =>
+    setHiddenLayers((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(layer)) next.add(layer);
+      return next;
+    });
   const editUndo = () => {
     const m = undo(map.id);
     if (m) replaceMap(m);
@@ -1599,6 +1607,7 @@ export default function App() {
       partyCoverRef={partyCoverRef}
       onTouch={touch}
       editMode={editMode}
+      hiddenLayers={hiddenLayers}
       editTool={editTool}
       onEdit={onEdit}
       selectedLight={selectedLightInfo ? selectedLight : null}
@@ -1718,6 +1727,8 @@ export default function App() {
           onDownload={() => downloadMap(map.id)}
           onExit={() => setEditMode(false)}
           onClearLayer={clearLayer}
+          hiddenLayers={hiddenLayers}
+          onToggleLayer={toggleLayer}
           propChoice={propChoice}
           onPropChoice={setPropChoice}
           propRotation={propRotation}

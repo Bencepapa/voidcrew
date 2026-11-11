@@ -588,6 +588,7 @@ const WINDOW_SET: TextureSetId = "window1";
 const WINDOW_DEPTH = 0.1;
 // props are small: a shallower relief than the walls'
 const PROP_RELIEF_SCALE = 0.6;
+const NO_LAYERS: ReadonlySet<string> = new Set();
 
 // The starry sky behind open walls and ceilings (a map's "sky" texture set): a
 // night gradient with a few hundred stars, drawn once as the scene's
@@ -882,6 +883,9 @@ interface GameViewportProps {
   // the map editor is on: the cell under the pointer is highlighted, and a
   // click or tap edits it (`alt`: the right button)
   editMode?: boolean;
+  // the editor's layers hidden from the view ("robot" for the NPCs, "smoke" for the
+  // particles, "prop", "decal", "item") - drawing only, the map still has them
+  hiddenLayers?: ReadonlySet<string>;
   // the tool the editor has picked: what the highlight says a click does
   editTool?: EditTool;
   onEdit?: (target: EditTarget, alt: boolean, shift: boolean) => void;
@@ -1261,6 +1265,7 @@ export function GameViewport({
   partyCoverRef,
   onTouch,
   editMode,
+  hiddenLayers,
   editTool,
   onEdit,
   onEditHover,
@@ -1369,6 +1374,8 @@ export function GameViewport({
   rideRef.current = ride;
   const onTouchRef = useRef(onTouch);
   onTouchRef.current = onTouch;
+  const hiddenLayersRef = useRef<ReadonlySet<string>>(hiddenLayers ?? new Set());
+  hiddenLayersRef.current = hiddenLayers ?? hiddenLayersRef.current;
   const editModeRef = useRef(!!editMode);
   editModeRef.current = !!editMode;
   const onEditRef = useRef(onEdit);
@@ -5236,6 +5243,8 @@ export function GameViewport({
     let aimZoom = 1;
 
     let waterLightsAt = -1e9;
+    // (whether a layer was hidden last frame: showing it again needs one pass)
+    let hiddenApplied = false;
     function renderFrame() {
       const s = settingsRef.current;
       const now = performance.now();
@@ -5518,6 +5527,30 @@ export function GameViewport({
         shaftLight.intensity = 0;
       }
 
+      // the layers the editor hides (only while editing)
+      const hidden = editModeRef.current ? hiddenLayersRef.current : NO_LAYERS;
+      if (hidden.size || hiddenApplied) {
+        const smokeShown = !hidden.has("smoke");
+        smoke.mesh.visible = smokeShown;
+        fire.mesh.visible = smokeShown;
+        petals.mesh.visible = smokeShown;
+        const propsHidden = hidden.has("prop");
+        for (const obj of propObjects.values()) obj.visible = !propsHidden;
+        // (shown again: the culling pass decides afresh which are in sight)
+        if (!propsHidden) culledCount = -1;
+        decals.setVisible(!hidden.has("decal"));
+        if (hidden.has("item")) {
+          for (const item of looseItems.values()) item.obj.visible = false;
+          for (const f of flyers) f.obj.visible = false;
+        }
+        if (hidden.has("robot")) {
+          for (const entry of actorMeshes.values()) {
+            entry.mesh.visible = false;
+            entry.shadow.visible = false;
+          }
+        }
+        hiddenApplied = hidden.size > 0;
+      }
       scene.overrideMaterial = geometryViewMaterial(s.geometryView);
       renderer.render(scene, camera);
 

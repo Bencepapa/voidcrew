@@ -66,6 +66,55 @@ export const LOOT_TABLES: Record<string, LootTable> = {
       { item: "datachip", weight: 2, count: [1, 1] },
     ],
   },
+  // the fantasy world's fallen (the skeleton leaves nothing)
+  ogre: {
+    rolls: [2, 3],
+    empty: 0.1,
+    entries: [
+      { item: "purse", weight: 24, count: [1, 1] },
+      { item: "coins", weight: 24, count: [1, 3] },
+      { item: "skull", weight: 16, count: [1, 1] },
+      { item: "sword", weight: 14, count: [1, 1] },
+      { item: "gem", weight: 12, count: [1, 1] },
+      { item: "potion_red", weight: 10, count: [1, 1] },
+    ],
+  },
+  goblin: {
+    rolls: [1, 2],
+    empty: 0.15,
+    entries: [
+      { item: "coins", weight: 28, count: [1, 2] },
+      { item: "dagger", weight: 22, count: [1, 1] },
+      { item: "arrows", weight: 20, count: [1, 3] },
+      { item: "purse", weight: 14, count: [1, 1] },
+      { item: "skull", weight: 10, count: [1, 1] },
+      { item: "potion_red", weight: 6, count: [1, 1] },
+    ],
+  },
+  mage: {
+    rolls: [1, 3],
+    empty: 0.1,
+    entries: [
+      { item: "scroll", weight: 28, count: [1, 2] },
+      { item: "potion_blue", weight: 26, count: [1, 2] },
+      { item: "potion_red", weight: 16, count: [1, 1] },
+      { item: "gem", weight: 14, count: [1, 1] },
+      { item: "purse", weight: 10, count: [1, 1] },
+      { item: "coins", weight: 6, count: [1, 2] },
+    ],
+  },
+  thief: {
+    rolls: [2, 3],
+    empty: 0.08,
+    entries: [
+      { item: "purse", weight: 28, count: [1, 2] },
+      { item: "coins", weight: 26, count: [1, 3] },
+      { item: "dagger", weight: 18, count: [1, 1] },
+      { item: "gem", weight: 14, count: [1, 1] },
+      { item: "potion_red", weight: 8, count: [1, 1] },
+      { item: "arrows", weight: 6, count: [1, 2] },
+    ],
+  },
   // a combat robot's wreck: parts
   robot: {
     rolls: [1, 3],

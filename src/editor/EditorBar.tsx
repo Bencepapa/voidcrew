@@ -70,6 +70,9 @@ interface Props {
   onExit: () => void;
   // takes everything of the current tool's layer off the map (NPCs, particles, props...)
   onClearLayer: (tool: EditTool) => void;
+  // the layers hidden from the view, and hiding or showing one (the tool's)
+  hiddenLayers: ReadonlySet<string>;
+  onToggleLayer: (layer: string) => void;
   // the Prop tool: the prop a click puts in, and its turn (degrees)
   propChoice: string;
   onPropChoice: (prop: string) => void;
@@ -400,6 +403,8 @@ const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
   { tool: "wall", label: "Chance wall", title: "Walls left to chance: there in some variations, open floor in others" },
   { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
 ];
+// the tools whose layer can be hidden from the view: the layer's name
+const HIDEABLE_LAYERS: Partial<Record<EditTool, string>> = { robot: "robot", smoke: "smoke", prop: "prop", decal: "decal", item: "item" };
 // the tools with a layer of their own that "Clear all" can empty
 const CLEARABLE_TOOLS = new Set<EditTool>(["robot", "smoke", "prop", "decal", "item", "light", "exit", "restricted", "wall", "bridge", "ladder"]);
 // what a click does with each (where the toolbar doesn't say otherwise)
@@ -485,6 +490,16 @@ export function EditorBar(p: Props) {
       <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canRedo} onClick={p.onRedo} title="Y">
         Redo
       </button>
+      {HIDEABLE_LAYERS[p.tool] && (
+        <button
+          type="button"
+          className={`${BUTTON} ${p.hiddenLayers.has(HIDEABLE_LAYERS[p.tool]!) ? active : idle}`}
+          onClick={() => p.onToggleLayer(HIDEABLE_LAYERS[p.tool]!)}
+          title="Hide this layer from the view (to see past it) - or show it again; the map keeps it"
+        >
+          {p.hiddenLayers.has(HIDEABLE_LAYERS[p.tool]!) ? "Show" : "Hide"}
+        </button>
+      )}
       {CLEARABLE_TOOLS.has(p.tool) && (
         <button
           type="button"
