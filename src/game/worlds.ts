@@ -47,7 +47,7 @@ export function worldOfMap(id: string): WorldId {
 const STORE_KEY = "voidcrew.world";
 
 // The world the game opens in: ?world= in the URL, else the build's (a
-// packaged world: VITE_WORLD), else the one played last.
+// packaged world: VITE_WORLD), else the one played last, else Void Fantasy.
 export function startWorld(): WorldId {
   const fromUrl = typeof location !== "undefined" ? new URLSearchParams(location.search).get("world") : null;
   if (isWorldId(fromUrl)) return fromUrl;
@@ -59,7 +59,8 @@ export function startWorld(): WorldId {
   } catch {
     // (no storage: the default)
   }
-  return "scifi";
+  // (nothing asked for: Void Fantasy)
+  return "fantasy";
 }
 
 // a build made for one world (the world picker is left out)
