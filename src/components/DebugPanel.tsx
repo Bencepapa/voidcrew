@@ -150,7 +150,7 @@ export function DebugPanel({
   function slider(s: SliderConfig) {
     return (
       <div key={s.key} className="flex flex-col gap-0.5">
-        <div className="flex justify-between text-[10px] text-neutral-500">
+        <div className="flex justify-between text-[10px] text-neutral-300">
           <span>{s.label}</span>
           <span>{(settings[s.key] as number).toFixed(s.step >= 1 ? 0 : s.step >= 0.01 ? 2 : 3)}</span>
         </div>
@@ -181,11 +181,11 @@ export function DebugPanel({
   }
 
   const heading = (text: string) => (
-    <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wide pt-1">{text}</div>
+    <div className="text-[10px] font-semibold text-neutral-300 uppercase tracking-wide pt-1">{text}</div>
   );
   const select = (label: string, control: ReactNode) => (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] text-neutral-500">{label}</span>
+      <span className="text-[10px] text-neutral-300">{label}</span>
       {control}
     </label>
   );
@@ -222,9 +222,9 @@ export function DebugPanel({
   // a collapsible category, closed until opened
   const section = (title: string, children: ReactNode, hint?: string) => (
     <details className="border border-neutral-800 rounded-sm bg-black/20">
-      <summary className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide cursor-pointer px-2 py-1 select-none">
+      <summary className="text-[10px] font-semibold text-neutral-200 uppercase tracking-wide cursor-pointer px-2 py-1 select-none">
         {title}
-        {hint && <span className="ml-2 normal-case font-normal text-neutral-600">{hint}</span>}
+        {hint && <span className="ml-2 normal-case font-normal text-neutral-400">{hint}</span>}
       </summary>
       <div className="flex flex-col gap-2 px-2 pb-2 pt-1">{children}</div>
     </details>
@@ -233,9 +233,9 @@ export function DebugPanel({
 
   return (
     <div
-      className={`w-full flex flex-col gap-1 border border-neutral-700 rounded-sm p-2 text-neutral-300 ${compact ? "bg-black/40" : "h-full bg-neutral-900/80 overflow-y-auto"}`}
+      className={`w-full flex flex-col gap-1 border border-neutral-700 rounded-sm p-2 text-neutral-200 ${compact ? "bg-neutral-950/95" : "h-full bg-neutral-900/80 overflow-y-auto"}`}
     >
-      <div className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">Debug</div>
+      <div className="text-[11px] font-semibold text-neutral-200 uppercase tracking-wide">Debug</div>
       {world && !LOCKED_WORLD &&
         select(
           "World",
@@ -251,7 +251,7 @@ export function DebugPanel({
       {section(
         "Map attributes",
         <>
-          <div className="text-[10px] text-neutral-500">
+          <div className="text-[10px] text-neutral-300">
             Values saved with the map ({mapId ?? "map"}.json): applied when it opens, over the viewer defaults.
           </div>
           {select(
@@ -396,7 +396,7 @@ export function DebugPanel({
       {section(
         "Texture defaults",
         <>
-          <div className="text-[10px] text-neutral-500">
+          <div className="text-[10px] text-neutral-300">
             The map's default texture sets (what isn't painted over): saved in the map file with Save to map.
           </div>
           {onMapTexture && (
@@ -430,7 +430,7 @@ export function DebugPanel({
       {section(
         "Graphics",
         <>
-          <div className="text-[10px] text-neutral-500">
+          <div className="text-[10px] text-neutral-300">
             For a weaker device: fewer particles, coarser walls, a lower resolution. Kept on this device. Some of these
             rebuild the scene.
           </div>
@@ -579,8 +579,8 @@ export function DebugPanel({
       {stats &&
         section(
           "Stats",
-          <div className="text-[10px] text-neutral-500 flex flex-col">
-            <span className={stats.fps < 30 ? "text-red-500 font-semibold" : stats.fps < 50 ? "text-amber-700 font-semibold" : "font-semibold"}>
+          <div className="text-[10px] text-neutral-300 flex flex-col">
+            <span className={stats.fps < 30 ? "text-red-500 font-semibold" : stats.fps < 50 ? "text-amber-600 font-semibold" : "font-semibold"}>
               FPS: {stats.fps.toFixed(0)} ({stats.frameMs.toFixed(1)} ms)
             </span>
             <span>Rendered triangles: {stats.renderedTriangles.toLocaleString()}</span>

@@ -1911,25 +1911,28 @@ export default function App() {
           {overlays}
         </div>
 
-        <div className="absolute top-2 left-2 w-52 max-w-[48vw] flex flex-col gap-1 pointer-events-none">
-          <div className="w-28">
-          <Minimap map={map} pos={pos} dir={dir} compact loot={editMode ? undefined : lootMarks} locked={lockedDoors} showRestricted={editMode} />
+        <div className="absolute top-2 left-2 right-12 flex gap-1 pointer-events-none">
+          <div className="w-28 shrink-0">
+            <Minimap map={map} pos={pos} dir={dir} compact loot={editMode ? undefined : lootMarks} locked={lockedDoors} showRestricted={editMode} />
           </div>
-          <div className="h-36">
+          <div className="flex-1 min-w-0 h-28">
             <LogPanel log={log} compact />
           </div>
         </div>
 
-        <div className="absolute top-2 right-2 bottom-14 flex flex-col items-end gap-1 pointer-events-none">
-          <button
-            onClick={() => setMenuOpen((open) => !open)}
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            className="pointer-events-auto w-9 h-9 flex items-center justify-center border border-neutral-700 bg-black/40 text-neutral-200 text-lg rounded-sm"
-          >
-            {menuOpen ? "✕" : "☰"}
-          </button>
+        <button
+          onClick={() => setMenuOpen((open) => !open)}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          className="absolute top-2 right-2 pointer-events-auto w-9 h-9 flex items-center justify-center border border-neutral-700 bg-neutral-950/90 text-neutral-200 text-lg rounded-sm"
+        >
+          {menuOpen ? "✕" : "☰"}
+        </button>
+
+        {/* the party at the bottom, the menu (action + debug) under it: scrolls when it is long */}
+        <div className="absolute bottom-2 inset-x-2 max-h-[calc(100%-8.5rem)] overflow-y-auto flex flex-col gap-1 pointer-events-none">
+          {!editMode && <PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />}
           {menuOpen && (
-            <div className="pointer-events-auto w-48 min-h-0 flex flex-col gap-1 overflow-y-auto">
+            <div className="pointer-events-auto flex flex-col gap-1">
               {SHOW_ACTION_MENU && actionMenu}
               <DebugPanel
                 settings={settings}
@@ -1953,13 +1956,6 @@ export default function App() {
             </div>
           )}
         </div>
-
-        {/* (not while editing the map: no fighting, and the room it takes) */}
-        {!editMode && (
-          <div className="absolute bottom-2 inset-x-2 pointer-events-none">
-            <PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />
-          </div>
-        )}
       </div>
     );
   }
