@@ -2541,10 +2541,10 @@ export function GameViewport({
     // A pillar `h` tall (world units): its foot, shaft and head as relief
     // blocks cut from its texture (as a wall of the same height would show
     // it), the 45 degree slopes between them flat.
-    async function buildPillar(type: Extract<PropType, { kind: "pillar" }>, h: number): Promise<THREE.Group | null> {
-      // (in a deck texture - its own, or the wall's - it's the deck's: it
+    async function buildPillar(type: Extract<PropType, { kind: "pillar" }>, h: number, cellSet: string): Promise<THREE.Group | null> {
+      // (in a deck texture - its own, the wall's around it - it's the deck's: it
       // takes the ship's livery like the walls)
-      const setId = type.texture ?? primarySet;
+      const setId = type.texture ?? cellSet;
       const kit = isTextureSetId(setId) ? wallKitFor(setId) : sharedPropKitFor(setId);
       const relief = propReliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
       const foot = type.size[0];
@@ -3022,14 +3022,18 @@ export function GameViewport({
           let made = template;
           if (perCell) {
             const h = propHeight(map, spec) * wallHeight;
-            const own = texture || map.wallTextureAt?.(spec.cell.x, spec.cell.y);
+            // its own texture, else the wall texture painted in its cell or beside it, else the deck's
+            const near = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]
+              .map(([dx, dy]) => map.wallTextureAt?.(spec.cell.x + dx, spec.cell.y + dy))
+              .find((id) => isTextureSetId(id));
+            const own = texture || near;
             const setId = isTextureSetId(own) ? own : primarySet;
-            const key = `${h}|${type.kind === "chamfer" ? setId : ""}`;
+            const key = `${h}|${setId}`;
             let built = builds.get(key);
             if (!built) {
               built =
                 type.kind === "pillar"
-                  ? buildPillar(type, h)
+                  ? buildPillar(type, h, setId)
                   : type.kind === "chamfer"
                     ? buildChamfer(type, wallKitFor(setId), h)
                     : Promise.resolve(null);

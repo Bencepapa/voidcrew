@@ -233,17 +233,17 @@ export const PROP_TYPES: Record<string, PropType> = {
   plant1: { kind: "cross", texture: "plant1", size: [0.3, 0.58, 0.3] },
   // a big oak (two crossed cutouts): it stands taller than a room is high, so
   // use it in the open (a sky ceiling)
-  fantasytree1: { kind: "cross", texture: "fantasytree1", size: [1, 1.33, 1], blocks: true },
+  tree1: { kind: "cross", texture: "fantasytree1", size: [1, 1.33, 1], blocks: true },
   // a tall pine: one picture that always faces the viewer (a billboard)
-  fantasypine1: { kind: "billboard", texture: "fantasypine1", size: [0.9, 1.97, 0.3], blocks: true },
+  pine1: { kind: "billboard", texture: "fantasypine1", size: [0.9, 1.97, 0.3], blocks: true },
   // billboard bushes, a barrel and a dead tree (one picture facing the viewer)
-  fantasybush1: { kind: "billboard", texture: "fantasy_bokor_kerek", size: [0.7, 0.56, 0.3] },
-  fantasybush2: { kind: "billboard", texture: "fantasy_bokor_bogyos", size: [0.7, 0.54, 0.3] },
-  fantasyfern1: { kind: "billboard", texture: "fantasy_bokor_pazsit", size: [0.8, 0.43, 0.3] },
-  fantasybarrel1: { kind: "billboard", texture: "fantasybarrel1", size: [0.4, 0.49, 0.4], blocks: true },
-  fantasydeadtree1: { kind: "billboard", texture: "fantasydeadtree1", size: [0.9, 1.4, 0.3], blocks: true },
+  bush1: { kind: "billboard", texture: "fantasy_bokor_kerek", size: [0.7, 0.56, 0.3] },
+  bush2: { kind: "billboard", texture: "fantasy_bokor_bogyos", size: [0.7, 0.54, 0.3] },
+  fern1: { kind: "billboard", texture: "fantasy_bokor_pazsit", size: [0.8, 0.43, 0.3] },
+  barrel1: { kind: "billboard", texture: "fantasybarrel1", size: [0.4, 0.49, 0.4], blocks: true },
+  deadtree1: { kind: "billboard", texture: "fantasydeadtree1", size: [0.9, 1.4, 0.3], blocks: true },
   // a broad, gnarled one with the roots showing
-  fantasytree2: { kind: "cross", texture: "fantasytree2", size: [1.1, 1.15, 1.1], blocks: true },
+  tree2: { kind: "cross", texture: "fantasytree2", size: [1.1, 1.15, 1.1], blocks: true },
   // a strip curtain over a duct's mouth (the low corridors the cleaning
   // drones use): as wide as the cell, as tall as the lowest corridor - on
   // the room's side of the wall the duct opens in
@@ -251,13 +251,10 @@ export const PROP_TYPES: Record<string, PropType> = {
   // pillars: a slim one and a heavy one (their height: the cell's)
   pillar1: { kind: "pillar", size: [0.26, 1, 0.26], shaft: 0.16, flare: 0.1 },
   pillar2: { kind: "pillar", size: [0.42, 1, 0.42], shaft: 0.28, flare: 0.14 },
-  // the same two in the fantasy set's mossy stone
-  fantasypillar1: { kind: "pillar", size: [0.26, 1, 0.26], shaft: 0.16, flare: 0.1, texture: "fantasywall1" },
-  fantasypillar2: { kind: "pillar", size: [0.42, 1, 0.42], shaft: 0.28, flare: 0.14, texture: "fantasywall1" },
   // an iron wall torch (unlit: the fire is a separate flame/light)
-  fantasytorch1: { kind: "panel", texture: "fantasytorch1", size: [0.1, 0.3, 0.08], wall: true, elevation: 0.5, relief: 1, flame: { up: 0.82 } },
+  torch1: { kind: "panel", texture: "fantasytorch1", size: [0.1, 0.3, 0.08], wall: true, elevation: 0.5, relief: 1, flame: { up: 0.82 } },
   // a pedestal: a short pillar of a fixed height, flat on top, for a fire or an item
-  fantasypedestal1: { kind: "pillar", size: [0.34, 1, 0.34], shaft: 0.27, flare: 0.07, height: 0.4, texture: "fantasywall1" },
+  pedestal1: { kind: "pillar", size: [0.34, 1, 0.34], shaft: 0.27, flare: 0.07, height: 0.4 },
   // corner cuts: half the cell's sides, and more of them
   chamfer1: { kind: "chamfer", size: [0.5 * Math.SQRT2, 1, 0.02], cut: 0.5, wall: true },
   chamfer2: { kind: "chamfer", size: [0.7 * Math.SQRT2, 1, 0.02], cut: 0.7, wall: true },
