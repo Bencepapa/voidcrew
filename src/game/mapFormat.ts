@@ -332,6 +332,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       // (redone in place by the viewport - see applyLightsRef)
       decals: undefined,
       props: undefined,
+      items: undefined,
       render: undefined,
     }),
     windows,

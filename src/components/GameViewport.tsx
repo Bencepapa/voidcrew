@@ -908,7 +908,7 @@ interface GameViewportProps {
   onEditHover?: (target: EditTarget | null) => void;
   // The editor: a prop or decal dragged (see App). The first call may copy it
   // (Ctrl held); it returns the index of what is being dragged from then on.
-  onEditDrag?: (drag: { kind: "prop" | "decal"; index: number; copy: boolean; first: boolean }, target: EditTarget) => number | void;
+  onEditDrag?: (drag: { kind: "prop" | "decal" | "item" | "smoke"; index: number; copy: boolean; first: boolean }, target: EditTarget) => number | void;
   // The editor: the wheel (or Alt+drag) over the view raises, scales or turns the
   // selected prop or decal by a step
   onEditAdjust?: (adjust: { what: "height" | "scale" | "rotate"; delta: number }) => void;
@@ -3370,10 +3370,14 @@ export function GameViewport({
       start: number;
     }
     const flyers: Flyer[] = [];
-    (map.items ?? []).forEach((spec, index) => {
+    // (built again, in place, when the map's items change - see applyLightsRef)
+    let itemsVersion = 0;
+    function buildItems(m: GameMap) {
+    const version = ++itemsVersion;
+    (m.items ?? []).forEach((spec, index) => {
       track(async () => {
         const template = await itemTemplate(spec.item);
-        if (!template || disposed) return;
+        if (!template || disposed || version !== itemsVersion) return;
         const [dx, dz] = itemSpot(spec.offset, index);
         const obj = template.clone();
         obj.position.set(spec.cell.x + dx, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight + ITEM_LIFT, spec.cell.y + dz);
@@ -3385,6 +3389,13 @@ export function GameViewport({
         looseItems.set(index, { obj, cell: cellKey(spec.cell.x, spec.cell.y), taken: false });
       }).catch((err) => console.error("Item build failed:", err));
     });
+    }
+    function clearItems() {
+      itemsVersion++;
+      for (const it of looseItems.values()) group.remove(it.obj);
+      looseItems.clear();
+    }
+    buildItems(map);
     // spills already shown (before this build) aren't shown again
     let lastSpill = Math.max(0, ...(lootRef.current.spills ?? []).map((s) => s.id));
     async function spill(event: LootSpill) {
@@ -3884,6 +3895,10 @@ export function GameViewport({
       if (JSON.stringify(next.decals) !== JSON.stringify(applied.decals) && settingsRef.current.decalsEnabled) {
         // (decals: redone on the surfaces already there)
         track(decals.reset(next.decals ?? []));
+      }
+      if (JSON.stringify(next.items) !== JSON.stringify(applied.items)) {
+        clearItems();
+        buildItems(next);
       }
       if (JSON.stringify(next.props) !== JSON.stringify(applied.props)) {
         applyProps(next, applied);
@@ -4519,6 +4534,10 @@ export function GameViewport({
       const first = Array.isArray(mat) ? mat[0] : mat;
       return !!first && first.transparent && !first.depthWrite;
     };
+    const isItemObject = (obj: THREE.Object3D) => {
+      for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (o.userData.itemIndex !== undefined) return true;
+      return false;
+    };
     const isProp = (obj: THREE.Object3D) => {
       for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (o.userData.prop) return true;
       return false;
@@ -4771,15 +4790,15 @@ export function GameViewport({
     raycaster.far = TOUCH_REACH + settings.cameraPullback;
     let press: { x: number; y: number; at: number } | null = null;
     // a prop or decal grabbed in the editor: dragged along the surfaces it's moved over
-    let dragItem: { kind: "prop" | "decal"; index: number; copy: boolean; first: boolean; x: number; y: number; moved: boolean } | null = null;
+    let dragItem: { kind: "prop" | "decal" | "item" | "smoke"; index: number; copy: boolean; first: boolean; x: number; y: number; moved: boolean } | null = null;
     const onPress = (e: PointerEvent) => {
       press = { x: e.clientX, y: e.clientY, at: performance.now() };
       dragItem = null;
       if (editModeRef.current && e.button === 0) {
         const tool = editToolRef.current;
-        if (tool === "prop" || tool === "decal") {
+        if (tool === "prop" || tool === "decal" || tool === "item" || tool === "smoke") {
           const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
-          const index = tool === "prop" ? hit?.prop : hit?.decal;
+          const index = tool === "prop" ? hit?.prop : tool === "decal" ? hit?.decal : tool === "item" ? hit?.item : hit?.smoke;
           if (index !== undefined) dragItem = { kind: tool, index, copy: e.ctrlKey || e.metaKey, first: true, x: e.clientX, y: e.clientY, moved: false };
         }
       }
@@ -4808,7 +4827,7 @@ export function GameViewport({
     const onWheel = (e: WheelEvent) => {
       if (!editModeRef.current || !onEditAdjustRef.current) return;
       const tool = editToolRef.current;
-      if (tool !== "prop" && tool !== "decal") return;
+      if (tool !== "prop" && tool !== "decal" && tool !== "item") return;
       e.preventDefault();
       const dir = e.deltaY < 0 ? 1 : -1;
       if (e.ctrlKey || e.metaKey) onEditAdjustRef.current({ what: "scale", delta: dir * 0.05 });
@@ -4914,7 +4933,8 @@ export function GameViewport({
             (h.object.userData.actorId === undefined || editToolRef.current === "robot") &&
             (lightTool || h.object.userData.mapLight === undefined) &&
             drawnChain(h.object) &&
-            !seeThrough(h.object),
+            // (the loose items are see-through sprites, but the Item tool can point at them)
+            (!seeThrough(h.object) || (editToolRef.current === "item" && isItemObject(h.object))),
         );
       const hit = hits[0];
       if (!hit?.face) return null;
