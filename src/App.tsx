@@ -1911,11 +1911,11 @@ export default function App() {
           {overlays}
         </div>
 
-        <div className="absolute top-2 left-2 right-12 flex gap-1 pointer-events-none">
+        <div className="absolute top-2 left-2 flex gap-1 pointer-events-none portrait:right-12 landscape:w-52 landscape:max-w-[48vw] landscape:flex-col">
           <div className="w-28 shrink-0">
             <Minimap map={map} pos={pos} dir={dir} compact loot={editMode ? undefined : lootMarks} locked={lockedDoors} showRestricted={editMode} />
           </div>
-          <div className="flex-1 min-w-0 h-28">
+          <div className="min-w-0 portrait:flex-1 portrait:h-28 landscape:h-36">
             <LogPanel log={log} compact />
           </div>
         </div>
@@ -1929,10 +1929,10 @@ export default function App() {
         </button>
 
         {/* the party at the bottom, the menu (action + debug) under it: scrolls when it is long */}
-        <div className="absolute bottom-2 inset-x-2 max-h-[calc(100%-8.5rem)] overflow-y-auto flex flex-col gap-1 pointer-events-none">
+        <div className="absolute bottom-2 inset-x-2 max-h-[calc(100%-8.5rem)] overflow-y-auto flex flex-col gap-1 pointer-events-none landscape:max-h-none landscape:overflow-visible">
           {!editMode && <PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />}
           {menuOpen && (
-            <div className="pointer-events-auto flex flex-col gap-1">
+            <div className="pointer-events-auto flex flex-col gap-1 landscape:fixed landscape:top-12 landscape:right-2 landscape:bottom-16 landscape:w-48 landscape:overflow-y-auto">
               {SHOW_ACTION_MENU && actionMenu}
               <DebugPanel
                 settings={settings}
