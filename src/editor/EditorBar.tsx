@@ -68,6 +68,8 @@ interface Props {
   onSave: () => void;
   onDownload: () => void;
   onExit: () => void;
+  // takes everything of the current tool's layer off the map (NPCs, particles, props...)
+  onClearLayer: (tool: EditTool) => void;
   // the Prop tool: the prop a click puts in, and its turn (degrees)
   propChoice: string;
   onPropChoice: (prop: string) => void;
@@ -384,21 +386,22 @@ function slider(label: string, value: number, min: number, max: number, step: nu
 }
 // the tools after Light
 const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
-  { tool: "height", label: "Height", title: "Raise or lower a floor or ceiling" },
   { tool: "ladder", label: "Ladder", title: "Put a ladder up to a higher cell" },
   { tool: "bridge", label: "Bridge", title: "Span a cell with a bridge" },
   { tool: "door", label: "Door", title: "Make a cell a door, or back" },
   { tool: "prop", label: "Prop", title: "Put in or take out props" },
   { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
-  { tool: "robot", label: "Robot", title: "Put in robots, their facing, route and chance" },
+  { tool: "robot", label: "NPC", title: "Put in NPCs (robots, monsters), their facing, route and chance" },
   { tool: "item", label: "Item", title: "Put loot on floors, tables, beds and crates" },
-  { tool: "smoke", label: "Smoke/Fire", title: "Smoke emitters: puffs rising from a point, lit by the light around" },
+  { tool: "smoke", label: "Particles", title: "Smoke emitters: puffs rising from a point, lit by the light around" },
   { tool: "exit", label: "Exit", title: "Ways off the ship: standing there, Use ends the run" },
   { tool: "start", label: "Start", title: "Where the party starts the deck, and which way it looks" },
   { tool: "restricted", label: "Restricted", title: "Where the crew mustn't be: cameras and robots that take it for crew still call it in here" },
   { tool: "wall", label: "Chance wall", title: "Walls left to chance: there in some variations, open floor in others" },
   { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
 ];
+// the tools with a layer of their own that "Clear all" can empty
+const CLEARABLE_TOOLS = new Set<EditTool>(["robot", "smoke", "prop", "decal", "item", "light", "exit", "restricted", "wall", "bridge", "ladder"]);
 // what a click does with each (where the toolbar doesn't say otherwise)
 const TOOL_HELP: Partial<Record<EditTool, string>> = {
   height: "click a floor or ceiling: up 0.25 · right-click: down",
@@ -432,11 +435,21 @@ export function EditorBar(p: Props) {
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
     >
-      <button type="button" className={`${BUTTON} ${p.tool === "dig" ? active : idle}`} onClick={() => p.onTool("dig")}>
-        Dig
+      <button
+        type="button"
+        className={`${BUTTON} ${p.tool === "dig" || p.tool === "fill" ? active : idle}`}
+        onClick={() => p.onTool("dig")}
+        title="Left click: dig a wall out - right click: fill a floor in"
+      >
+        Dig/Fill
       </button>
-      <button type="button" className={`${BUTTON} ${p.tool === "fill" ? active : idle}`} onClick={() => p.onTool("fill")}>
-        Fill
+      <button
+        type="button"
+        className={`${BUTTON} ${p.tool === "height" ? active : idle}`}
+        onClick={() => p.onTool("height")}
+        title="Raise (left click) or lower (right click) a floor or ceiling"
+      >
+        Height
       </button>
       <button
         type="button"
@@ -472,6 +485,16 @@ export function EditorBar(p: Props) {
       <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canRedo} onClick={p.onRedo} title="Y">
         Redo
       </button>
+      {CLEARABLE_TOOLS.has(p.tool) && (
+        <button
+          type="button"
+          className={`${BUTTON} border-red-700/70 bg-black/60 text-red-300 hover:bg-red-900/30`}
+          onClick={() => p.onClearLayer(p.tool)}
+          title="Take everything of this tool's layer off the map (Undo brings it back)"
+        >
+          Clear all
+        </button>
+      )}
       <span className="w-2" />
       {import.meta.env.DEV && (
         <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSave} title="Ctrl+S">
@@ -1004,7 +1027,7 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            {Object.entries(ITEM_TYPES).map(([id, type]) => (
+            {Object.entries(ITEM_TYPES).filter(([id]) => assetInWorld(id)).map(([id, type]) => (
               <button key={id} type="button" className={`${BUTTON} ${p.itemChoice === id ? active : idle}`} onClick={() => p.onItemChoice(id)}>
                 {type.name}
               </button>
@@ -1021,7 +1044,7 @@ export function EditorBar(p: Props) {
                     onChange={(e) => p.onItemChange({ item: e.target.value })}
                     className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
                   >
-                    {Object.entries(ITEM_TYPES).map(([id, type]) => (
+                    {Object.entries(ITEM_TYPES).filter(([id]) => assetInWorld(id)).map(([id, type]) => (
                       <option key={id} value={id}>
                         {type.name}
                       </option>

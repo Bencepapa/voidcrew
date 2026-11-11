@@ -22,6 +22,17 @@ export const ITEM_TYPES: Record<string, ItemType> = {
   rations: { name: "Rations", category: "supplies", value: 5 },
   credits: { name: "Credit chip", category: "valuables", value: 50 },
   datachip: { name: "Data chip", category: "data", value: 30 },
+  // the fantasy world's
+  potion_red: { name: "Healing potion", category: "supplies", value: 20 },
+  potion_blue: { name: "Mana potion", category: "supplies", value: 24 },
+  scroll: { name: "Scroll", category: "data", value: 35 },
+  purse: { name: "Coin purse", category: "valuables", value: 40 },
+  sword: { name: "Sword", category: "salvage", value: 45 },
+  skull: { name: "Skull", category: "salvage", value: 6 },
+  coins: { name: "Gold coins", category: "valuables", value: 25 },
+  dagger: { name: "Dagger", category: "salvage", value: 22 },
+  arrows: { name: "Arrows", category: "supplies", value: 8 },
+  gem: { name: "Green gem", category: "valuables", value: 60 },
 };
 
 export interface ItemStack {

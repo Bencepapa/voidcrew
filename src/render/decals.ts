@@ -350,6 +350,20 @@ export class DecalLibrary {
 
   // the water sheets made so far (one per decal, whatever floors it reaches)
   private sheets = new Set<number>();
+  // every mesh put in the scene, to take out again (see reset)
+  private meshes: THREE.Object3D[] = [];
+
+  // The map's decals changed (one put in, moved, taken out): all of them redone
+  // on the surfaces already in the scene. Unchanged ones come out of the
+  // geometry cache, so only what's new costs anything.
+  reset(specs: DecalSpec[]) {
+    for (const mesh of this.meshes) this.opts.parent.remove(mesh);
+    this.meshes = [];
+    this.projections.clear();
+    this.built.length = 0;
+    this.sheets.clear();
+    return this.add(specs);
+  }
 
   private build(p: Projection, mesh: THREE.Mesh) {
     if (p.water) {
@@ -364,6 +378,7 @@ export class DecalLibrary {
       sheet.position.copy(p.position).addScaledVector(up, this.opts.waterLift ?? 0.02);
       sheet.userData.decalIndex = p.index;
       this.opts.parent.add(sheet);
+      this.meshes.push(sheet);
       this.built.push({ decal: p.decal, key: p.key, triangles: 2 });
       return;
     }
@@ -397,6 +412,7 @@ export class DecalLibrary {
     // the map editor picks it by this
     decal.userData.decalIndex = p.index;
     this.opts.parent.add(decal);
+    this.meshes.push(decal);
     this.built.push({ decal: p.decal, key: p.key, triangles });
   }
 }

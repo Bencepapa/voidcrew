@@ -902,6 +902,12 @@ interface GameViewportProps {
   // the surface under the pointer whenever it changes - the editor's
   // texture palette follows it
   onEditHover?: (target: EditTarget | null) => void;
+  // The editor: a prop or decal dragged (see App). The first call may copy it
+  // (Ctrl held); it returns the index of what is being dragged from then on.
+  onEditDrag?: (drag: { kind: "prop" | "decal"; index: number; copy: boolean; first: boolean }, target: EditTarget) => number | void;
+  // The editor: the wheel (or Alt+drag) over the view raises, scales or turns the
+  // selected prop or decal by a step
+  onEditAdjust?: (adjust: { what: "height" | "scale" | "rotate"; delta: number }) => void;
   // a map's scene is fully built and shown (after the loading screen)
   onReady?: (mapId: string) => void;
   // free movement: called every frame with the frame time (s), returns the
@@ -1258,6 +1264,8 @@ export function GameViewport({
   editTool,
   onEdit,
   onEditHover,
+  onEditDrag,
+  onEditAdjust,
   selectedLight,
   selectedProp,
   selectedItem,
@@ -1383,6 +1391,10 @@ export function GameViewport({
   editToolRef.current = editTool ?? "dig";
   const onEditHoverRef = useRef(onEditHover);
   onEditHoverRef.current = onEditHover;
+  const onEditDragRef = useRef(onEditDrag);
+  onEditDragRef.current = onEditDrag;
+  const onEditAdjustRef = useRef(onEditAdjust);
+  onEditAdjustRef.current = onEditAdjust;
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   // the loading screen, up while a new map's scene is built; the map last
@@ -1764,6 +1776,14 @@ export function GameViewport({
       setLightGrid(lightGrid, bakeLightGrid(m, mapLights, wallHeight, options), ambient);
     };
     bake(map);
+    // the bake, a moment after the last call (a slider dragged, a prop moved)
+    let bakeTimer: ReturnType<typeof setTimeout> | undefined;
+    const bakeSoon = (m: GameMap | (() => GameMap), delay: number) => {
+      clearTimeout(bakeTimer);
+      bakeTimer = setTimeout(() => {
+        if (!disposed) bake(typeof m === "function" ? m() : m);
+      }, delay);
+    };
     // baked again when its settings change (see the effect on them)
     rebakeRef.current = () => bake(latestMapRef.current);
     const ceilingLightCells = (lights: LightSpec[]) =>
@@ -3005,8 +3025,13 @@ export function GameViewport({
     const doorGroups = new Map<string, THREE.Object3D>();
     // the props placed, by index in the map's props (the editor's selection)
     const propObjects = new Map<number, THREE.Object3D>();
+    const markedProps = new Set<number>();
+    // (built again, in place, when the props change - see applyProps)
+    let propsVersion = 0;
+    function buildProps(m: GameMap) {
+    const version = ++propsVersion;
     // each type in each texture it wears
-    const propLooks = [...new Set((map.props ?? []).map((p) => `${p.prop}|${p.texture ?? ""}`))];
+    const propLooks = [...new Set((m.props ?? []).map((p) => `${p.prop}|${p.texture ?? ""}`))];
     for (const look of propLooks) {
       const [name, texture] = look.split("|");
       track(async () => {
@@ -3017,14 +3042,15 @@ export function GameViewport({
         const builds = new Map<string, Promise<THREE.Group | null>>();
         const template = perCell ? null : await buildPropTemplate(type);
         if (!template && !perCell) return;
-        for (const [index, spec] of (map.props ?? []).entries()) {
+        if (version !== propsVersion) return;
+        for (const [index, spec] of (m.props ?? []).entries()) {
           if (spec.prop !== name || (spec.texture ?? "") !== texture) continue;
           let made = template;
           if (perCell) {
-            const h = propHeight(map, spec) * wallHeight;
+            const h = propHeight(m, spec) * wallHeight;
             // its own texture, else the wall texture painted in its cell or beside it, else the deck's
             const near = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]
-              .map(([dx, dy]) => map.wallTextureAt?.(spec.cell.x + dx, spec.cell.y + dy))
+              .map(([dx, dy]) => m.wallTextureAt?.(spec.cell.x + dx, spec.cell.y + dy))
               .find((id) => isTextureSetId(id));
             const own = texture || near;
             const setId = isTextureSetId(own) ? own : primarySet;
@@ -3041,7 +3067,7 @@ export function GameViewport({
             }
             made = await built;
           }
-          if (!made) continue;
+          if (!made || version !== propsVersion) continue;
           const { x, z, yaw } = propPlacement(spec);
           const prop = made.clone();
           prop.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
@@ -3059,6 +3085,41 @@ export function GameViewport({
         }
         refreshPropWires();
       }).catch((err) => console.error("Prop build failed:", err));
+    }
+    }
+    buildProps(map);
+    // the props gone from the scene (before they're built anew)
+    function clearProps() {
+      propsVersion++;
+      for (const obj of propObjects.values()) group.remove(obj);
+      propObjects.clear();
+      billboardProps.length = 0;
+      markedProps.clear();
+    }
+    // The map's props changed (the editor): the same props moved, turned, raised
+    // or scaled are just set again; more, fewer or others are built afresh (the
+    // models are cached, so it's quick).
+    function applyProps(next: GameMap, prev: GameMap) {
+      const a = next.props ?? [];
+      const b = prev.props ?? [];
+      const sameShape =
+        a.length === b.length &&
+        a.every((p, i) => p.prop === b[i].prop && (p.texture ?? "") === (b[i].texture ?? "") && p.cell.x === b[i].cell.x && p.cell.y === b[i].cell.y && propObjects.has(i));
+      if (!sameShape) {
+        clearProps();
+        buildProps(next);
+        return;
+      }
+      a.forEach((spec, i) => {
+        if (JSON.stringify(spec) === JSON.stringify(b[i])) return;
+        const obj = propObjects.get(i)!;
+        const type = PROP_TYPES[spec.prop];
+        const { x, z, yaw } = propPlacement(spec);
+        obj.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
+        obj.rotation.y = -yaw;
+        const scale = spec.scale ?? 1;
+        obj.scale.set(scale, type.kind === "pillar" ? 1 : scale, scale);
+      });
     }
 
     // the prop editor's boxes (see propEditState) over each prop of the
@@ -3385,7 +3446,6 @@ export function GameViewport({
       chalked.set(mat, material);
       return material;
     }
-    const markedProps = new Set<number>();
     function markLooted(looted: ReadonlySet<number> | undefined) {
       for (const index of looted ?? []) {
         if (markedProps.has(index)) continue;
@@ -3799,8 +3859,9 @@ export function GameViewport({
       placeFixtures();
       // the new fixtures get culled with the rest on the next frame
       culledCount = -1;
-      // and the baked light follows
-      bake(next);
+      // and the baked light follows (a moment after the last change: a colour
+      // being dragged doesn't bake at every step)
+      bakeSoon(next, 250);
     }
     // A new version of the map with the same structure (see structureKey):
     // what differs in it is redone in place. Its robots need nothing here -
@@ -3812,6 +3873,16 @@ export function GameViewport({
       if (JSON.stringify(next.smokes) !== JSON.stringify(applied.smokes)) {
         applySmoke(next);
         sceneVersion++;
+      }
+      if (JSON.stringify(next.decals) !== JSON.stringify(applied.decals) && settingsRef.current.decalsEnabled) {
+        // (decals: redone on the surfaces already there)
+        track(decals.reset(next.decals ?? []));
+      }
+      if (JSON.stringify(next.props) !== JSON.stringify(applied.props)) {
+        applyProps(next, applied);
+        // The props shade the baked light and shape the smoke's world: seen to
+        // once the work on them has stopped for a few seconds
+        bakeSoon(() => latestMapRef.current, 3000);
       }
       applied = next;
     };
@@ -4692,9 +4763,52 @@ export function GameViewport({
     const raycaster = new THREE.Raycaster();
     raycaster.far = TOUCH_REACH + settings.cameraPullback;
     let press: { x: number; y: number; at: number } | null = null;
+    // a prop or decal grabbed in the editor: dragged along the surfaces it's moved over
+    let dragItem: { kind: "prop" | "decal"; index: number; copy: boolean; first: boolean; x: number; y: number; moved: boolean } | null = null;
     const onPress = (e: PointerEvent) => {
       press = { x: e.clientX, y: e.clientY, at: performance.now() };
+      dragItem = null;
+      if (editModeRef.current && e.button === 0) {
+        const tool = editToolRef.current;
+        if (tool === "prop" || tool === "decal") {
+          const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
+          const index = tool === "prop" ? hit?.prop : hit?.decal;
+          if (index !== undefined) dragItem = { kind: tool, index, copy: e.ctrlKey || e.metaKey, first: true, x: e.clientX, y: e.clientY, moved: false };
+        }
+      }
     };
+    // (heard on the window, in the capture phase: while a drag is on, the view
+    // controls underneath mustn't turn the view too)
+    const onDragMove = (e: PointerEvent) => {
+      const d = dragItem;
+      if (!d || !editModeRef.current || !(e.buttons & 1)) return;
+      if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
+      d.moved = true;
+      e.stopPropagation();
+      if (e.altKey) {
+        // Alt + drag: up and down raises or lowers
+        onEditAdjustRef.current?.({ what: "height", delta: -e.movementY * 0.004 });
+        return;
+      }
+      const target = editTargetAt(viewNdc(e.clientX, e.clientY));
+      if (!target) return;
+      const index = onEditDragRef.current?.({ kind: d.kind, index: d.index, copy: d.copy, first: d.first }, target);
+      d.first = false;
+      if (typeof index === "number") d.index = index;
+    };
+    window.addEventListener("pointermove", onDragMove, true);
+    // the wheel over the view, while a prop or decal is selected: height, Ctrl: scale, Alt: turn
+    const onWheel = (e: WheelEvent) => {
+      if (!editModeRef.current || !onEditAdjustRef.current) return;
+      const tool = editToolRef.current;
+      if (tool !== "prop" && tool !== "decal") return;
+      e.preventDefault();
+      const dir = e.deltaY < 0 ? 1 : -1;
+      if (e.ctrlKey || e.metaKey) onEditAdjustRef.current({ what: "scale", delta: dir * 0.05 });
+      else if (e.altKey) onEditAdjustRef.current({ what: "rotate", delta: dir * 15 });
+      else onEditAdjustRef.current({ what: "height", delta: dir * 0.05 });
+    };
+    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
     // a point of the view in normalized device coordinates - its center
     // while the pointer is locked (free mouselook)
     const viewNdc = (clientX: number, clientY: number) => {
@@ -4705,6 +4819,12 @@ export function GameViewport({
     const onRelease = (e: PointerEvent) => {
       const p = press;
       press = null;
+      // a drag just ended: not a click
+      if (dragItem?.moved) {
+        dragItem = null;
+        return;
+      }
+      dragItem = null;
       if (!p || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8 || performance.now() - p.at > 500) return;
       const ndc = viewNdc(e.clientX, e.clientY);
       if (editModeRef.current) {
@@ -5499,6 +5619,8 @@ export function GameViewport({
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPress);
+      window.removeEventListener("pointermove", onDragMove, true);
+      renderer.domElement.removeEventListener("wheel", onWheel);
       window.removeEventListener("pointerup", onRelease);
       renderer.domElement.removeEventListener("pointermove", onHover);
       renderer.domElement.removeEventListener("pointerleave", onLeave);

@@ -295,9 +295,141 @@ export default function App() {
   }, [grid, moveForward, moveBackward, strafeLeft, strafeRight, turnL, turnR, jumpDown]);
 
   // The surface under the pointer, for the palette (see EditorBar).
+  const hoverTargetRef = useRef<EditTarget | null>(null);
   const onEditHover = (target: EditTarget | null) => {
     if (target) setEditSurface(target.kind);
+    hoverTargetRef.current = target;
   };
+  // Where a prop lands for a target: a wall prop on the nearest wall side of the
+  // cell, else the point pointed at on its floor
+  const propPlace = (name: string, target: EditTarget) => {
+    if (target.kind !== "floor") return null;
+    const cell = target.cell;
+    const [dx, , dz] = target.point && target.point.cell.x === cell.x && target.point.cell.y === cell.y ? target.point.pos : [0, 0, 0];
+    const clamp = (v: number) => Math.round(Math.max(-0.45, Math.min(0.45, v)) * 100) / 100;
+    if (PROP_TYPES[name]?.wall) return { x: cell.x, y: cell.y, at: anchorAt(dx, dz, true), offset: undefined };
+    return { x: cell.x, y: cell.y, at: "center" as PropAnchor, offset: (dx || dz ? [clamp(dx), clamp(dz)] : undefined) as [number, number] | undefined };
+  };
+  // dragging a prop (horizontally, on the floor) or a decal (on its surface); with
+  // Ctrl a copy is made at the start and that's what's dragged
+  const dragGrab = useRef<[number, number] | null>(null);
+  const onEditDrag = (drag: { kind: "prop" | "decal"; index: number; copy: boolean; first: boolean }, target: EditTarget) => {
+    const file = mapFile(map.id);
+    if (!file) return drag.index;
+    let index = drag.index;
+    if (drag.first) dragGrab.current = null;
+    if (drag.kind === "prop") {
+      if (drag.first && drag.copy && file.props?.[index]) {
+        const count = file.props.length;
+        const from = index;
+        applyEdit(map.id, (f) => {
+          f.props!.push(structuredClone(f.props![from]));
+          return f;
+        });
+        index = count;
+      }
+      if (drag.first) setSelectedProp(index);
+      const spec = mapFile(map.id)?.props?.[index];
+      const place = spec && propPlace(spec.prop, target);
+      if (!place) return index;
+      const result = applyEdit(map.id, (f) => updateProp(f, index, place), `prop ${index} drag`);
+      if (!("error" in result)) replaceMap(result.map);
+    } else {
+      if (drag.first && drag.copy && file.decals?.[index]) {
+        const count = file.decals.length;
+        const from = index;
+        applyEdit(map.id, (f) => {
+          f.decals!.push(structuredClone(f.decals![from]));
+          return f;
+        });
+        index = count;
+      }
+      if (drag.first) setSelectedDecal(index);
+      const sp = target.surfacePoint;
+      const spec = mapFile(map.id)?.decals?.[index];
+      if (!sp || !spec) return index;
+      // (grabbed where it was: the point under the pointer keeps its place on the decal)
+      if (!dragGrab.current) dragGrab.current = sp.surface === spec.surface && sp.cell.x === spec.x && sp.cell.y === spec.y ? [spec.px - sp.u, spec.py - sp.v] : [0, 0];
+      const [gx, gy] = dragGrab.current;
+      const patch = { x: sp.cell.x, y: sp.cell.y, surface: sp.surface, px: Math.round(sp.u + gx), py: Math.round(sp.v + gy) };
+      const result = applyEdit(map.id, (f) => updateDecal(f, index, patch), `decal ${index} drag`);
+      if (!("error" in result)) replaceMap(result.map);
+    }
+    setEdits((n) => n + 1);
+    return index;
+  };
+  // the wheel (height, Ctrl: scale, Alt: turn) or Alt + drag on the selected prop or decal
+  const onEditAdjust = (adjust: { what: "height" | "scale" | "rotate"; delta: number }) => {
+    const round = (v: number) => Math.round(v * 100) / 100;
+    if (editTool === "prop" && selectedProp !== null) {
+      const spec = map.props?.[selectedProp];
+      if (!spec) return;
+      if (adjust.what === "height") changeProp({ elevation: round(Math.max(-0.5, (spec.elevation ?? 0) + adjust.delta)) || undefined }, "wheel-height");
+      else if (adjust.what === "scale") changeProp({ scale: round(Math.min(4, Math.max(0.25, (spec.scale ?? 1) + adjust.delta))) === 1 ? undefined : round(Math.min(4, Math.max(0.25, (spec.scale ?? 1) + adjust.delta))) }, "wheel-scale");
+      else changeProp({ rotation: (((spec.rotation ?? 0) + adjust.delta) % 360 + 360) % 360 || undefined }, "wheel-rotate");
+    } else if (editTool === "decal" && selectedDecal !== null) {
+      const spec = map.decals?.[selectedDecal];
+      if (!spec) return;
+      if (adjust.what === "scale") {
+        const scale = round(Math.min(4, Math.max(0.25, (spec.scale ?? 1) + adjust.delta)));
+        changeDecal({ scale: scale === 1 ? undefined : scale }, "wheel-scale");
+      } else if (adjust.what === "rotate") changeDecal({ rotation: (((spec.rotation ?? 0) + adjust.delta) % 360 + 360) % 360 || undefined }, "wheel-rotate");
+    }
+  };
+  // Ctrl+C / Ctrl+V on the selected prop or decal (pasted where the pointer is)
+  const clipboardRef = useRef<{ kind: "prop" | "decal"; spec: Record<string, unknown> } | null>(null);
+  useEffect(() => {
+    if (!editMode) return;
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) return;
+      const key = e.key.toLowerCase();
+      if (key === "c") {
+        const file = mapFile(map.id);
+        if (editTool === "prop" && selectedProp !== null && file?.props?.[selectedProp]) {
+          clipboardRef.current = { kind: "prop", spec: structuredClone(file.props[selectedProp]) as unknown as Record<string, unknown> };
+          pushLog("Editor: prop copied (Ctrl+V pastes it where the pointer is).");
+        } else if (editTool === "decal" && selectedDecal !== null && file?.decals?.[selectedDecal]) {
+          clipboardRef.current = { kind: "decal", spec: structuredClone(file.decals[selectedDecal]) as unknown as Record<string, unknown> };
+          pushLog("Editor: decal copied (Ctrl+V pastes it where the pointer is).");
+        }
+      } else if (key === "v" && clipboardRef.current) {
+        const clip = clipboardRef.current;
+        const target = hoverTargetRef.current;
+        if (!target || (clip.kind === "prop" && editTool !== "prop") || (clip.kind === "decal" && editTool !== "decal")) return;
+        e.preventDefault();
+        if (clip.kind === "prop") {
+          const place = propPlace(clip.spec.prop as string, target);
+          if (!place) return;
+          const count = map.props?.length ?? 0;
+          const result = applyEdit(map.id, (f) => {
+            (f.props ?? (f.props = [])).push({ ...structuredClone(clip.spec), ...place } as NonNullable<typeof f.props>[number]);
+            return f;
+          });
+          if (!("error" in result)) {
+            replaceMap(result.map);
+            setSelectedProp(count);
+          }
+        } else if (target.surfacePoint) {
+          const sp = target.surfacePoint;
+          const count = map.decals?.length ?? 0;
+          const result = applyEdit(map.id, (f) => {
+            (f.decals ?? (f.decals = [])).push({ ...structuredClone(clip.spec), x: sp.cell.x, y: sp.cell.y, surface: sp.surface, px: Math.round(sp.u), py: Math.round(sp.v) } as NonNullable<typeof f.decals>[number]);
+            return f;
+          });
+          if (!("error" in result)) {
+            replaceMap(result.map);
+            setSelectedDecal(count);
+          }
+        }
+        setEdits((n) => n + 1);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, editTool, selectedProp, selectedDecal, map]);
   // The map editor's edits: a click digs out the wall pointed at or fills in
   // the floor (the Fill tool, or the right button), paints the surface with
   // the set picked in the palette (the right button paints the map's own
@@ -627,6 +759,49 @@ export default function App() {
       return;
     }
     onEdit({ kind: miniSurface, cell }, alt);
+  };
+  // "Clear all": everything of the current tool's layer off the map (one undo step)
+  const clearLayer = (tool: EditTool) => {
+    const layers: Partial<Record<EditTool, { key: keyof NonNullable<ReturnType<typeof mapFile>>; label: string }>> = {
+      robot: { key: "actors", label: "NPCs" },
+      smoke: { key: "smokes", label: "particle emitters" },
+      prop: { key: "props", label: "props" },
+      decal: { key: "decals", label: "decals" },
+      item: { key: "items", label: "items" },
+      light: { key: "lights", label: "lights" },
+      exit: { key: "exits", label: "exits" },
+      restricted: { key: "restricted", label: "restricted cells" },
+      wall: { key: "chanceWalls", label: "chance walls" },
+      bridge: { key: "bridges", label: "bridges" },
+      ladder: { key: "ladders", label: "ladders" },
+    };
+    const layer = layers[tool];
+    const file = mapFile(map.id);
+    if (!layer || !file) return;
+    const count = (file[layer.key] as unknown[] | undefined)?.length ?? 0;
+    if (!count) {
+      pushLog(`Editor: no ${layer.label} to clear.`);
+      return;
+    }
+    if (!window.confirm(`Remove all ${count} ${layer.label} from this map? (Undo brings them back.)`)) return;
+    const result = applyEdit(map.id, (f) => {
+      delete (f as unknown as Record<string, unknown>)[layer.key as string];
+      return f;
+    });
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else {
+      replaceMap(result.map);
+      pushLog(`Editor: all ${count} ${layer.label} removed.`);
+    }
+    setSelectedLight(null);
+    setSelectedProp(null);
+    setSelectedDecal(null);
+    setSelectedSmoke(null);
+    setSelectedItem(null);
+    setSelectedActor(null);
+    setSelectedExit(null);
+    setSelectedChanceWall(null);
+    setEdits((n) => n + 1);
   };
   const editUndo = () => {
     const m = undo(map.id);
@@ -1434,6 +1609,8 @@ export default function App() {
       selectedDoor={selectedDoorInfo ? selectedDoor : null}
       selectedActor={selectedActorInfo ? selectedActor : null}
       onEditHover={onEditHover}
+      onEditDrag={onEditDrag}
+      onEditAdjust={onEditAdjust}
       onReady={sceneReady}
       freeTick={grid ? undefined : free.tick}
       peekRef={view.peekRef}
@@ -1540,6 +1717,7 @@ export default function App() {
           onSave={editSave}
           onDownload={() => downloadMap(map.id)}
           onExit={() => setEditMode(false)}
+          onClearLayer={clearLayer}
           propChoice={propChoice}
           onPropChoice={setPropChoice}
           propRotation={propRotation}
@@ -1744,7 +1922,16 @@ export default function App() {
             loot={editMode ? undefined : lootMarks}
             locked={lockedDoors}
             showRestricted={editMode}
-            edit={editMode ? { surface: miniSurface, onSurface: setMiniSurface, onCell: onMinimapCell } : undefined}
+            edit={
+              editMode
+                ? {
+                    verb: editTool === "height" ? "raise (right: lower) the" : editTool === "texture" ? "paint (right: clear) the" : editTool === "dig" || editTool === "fill" ? "dig / fill (right) the" : "edit the",
+                    surface: miniSurface,
+                    onSurface: setMiniSurface,
+                    onCell: onMinimapCell,
+                  }
+                : undefined
+            }
           />
           <div className="text-[10px] text-neutral-500 px-1">
             <div>{map.name}</div>

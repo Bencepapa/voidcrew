@@ -21,6 +21,8 @@ interface MinimapProps {
   // cell edits it (the right button: the other way) - `surface` says whether
   // the floor or the ceiling is meant, and what the cells are shaded by
   edit?: {
+    // what a click does now, in words ("Raise the", "Paint the"...): the tool's
+    verb: string;
     surface: "floor" | "ceiling";
     onSurface: (surface: "floor" | "ceiling") => void;
     onCell: (cell: Vec2, alt: boolean) => void;
@@ -174,13 +176,19 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
     };
     return (
       <div className="border border-green-800 bg-black/60 p-2 flex flex-col gap-1" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="text-[10px] font-mono text-neutral-300">
+          Click: <span className="text-amber-200">{edit.verb}</span>{" "}
+          <span className={edit.surface === "floor" ? "text-emerald-300 font-semibold" : "text-sky-300 font-semibold"}>
+            {edit.surface === "floor" ? "FLOOR" : "CEILING"}
+          </span>
+        </div>
         <div className="flex items-center gap-1 text-[10px] font-mono">
           {(["floor", "ceiling"] as const).map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => edit.onSurface(s)}
-              className={`border rounded-sm px-2 py-0.5 ${edit.surface === s ? "border-amber-400 bg-amber-400/20 text-amber-200" : "border-neutral-600 text-neutral-300 hover:bg-neutral-800"}`}
+              className={`border rounded-sm px-2 py-0.5 ${edit.surface === s ? (s === "floor" ? "border-emerald-400 bg-emerald-400/20 text-emerald-200" : "border-sky-400 bg-sky-400/20 text-sky-200") : "border-neutral-600 text-neutral-300 hover:bg-neutral-800"}`}
               title={`Clicks here edit the ${s}s (right-click: the other way)`}
             >
               {s === "floor" ? "Floor" : "Ceiling"}
@@ -203,7 +211,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           {bridges}
           {ladders}
           {windows}
-          <rect x={0} y={0} width={W} height={H} fill="none" stroke="#4ade80" strokeWidth={0.1} strokeDasharray="0.5 0.3" />
+          <rect x={0} y={0} width={W} height={H} fill="none" stroke={edit.surface === "floor" ? "#4ade80" : "#38bdf8"} strokeWidth={0.1} strokeDasharray="0.5 0.3" />
           {/* the deck's start: a flag-like marker, pointing the way the party faces there */}
           <g transform={`translate(${map.start.cell.x + 0.5} ${map.start.cell.y + 0.5}) rotate(${FACING_DEGREES[map.start.facing]})`}>
             <circle r={0.46} fill="none" stroke="#38bdf8" strokeWidth={0.1} />

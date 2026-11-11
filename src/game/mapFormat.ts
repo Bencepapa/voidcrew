@@ -329,6 +329,10 @@ export function parseMap(id: string, file: MapFile): GameMap {
       triggers: undefined,
       accent: undefined,
       restricted: undefined,
+      // (redone in place by the viewport - see applyLightsRef)
+      decals: undefined,
+      props: undefined,
+      render: undefined,
     }),
     windows,
     props: (file.props ?? []).map((p) => {

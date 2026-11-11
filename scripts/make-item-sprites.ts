@@ -15,10 +15,14 @@ import * as path from "node:path";
 // placeholders below.
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const SHEET = path.join(ROOT, "concept/gen/items/items.png");
-const DEPTH = path.join(ROOT, "concept/gen/items/items_depth.png");
-const WORK = path.join(ROOT, "concept/gen/items/cut");
-const ITEM_ORDER = ["scrap", "wiring", "circuit", "powercell", "servo", "medkit", "ammo", "rations", "credits", "datachip"];
+// --fantasy: the fantasy world's ten items, from concept/fantasy/Targyak lap(.png / depth.png)
+const FANTASY = process.argv.includes("--fantasy");
+const SHEET = path.join(ROOT, FANTASY ? "concept/fantasy/Targyak lap.png" : "concept/gen/items/items.png");
+const DEPTH = path.join(ROOT, FANTASY ? "concept/fantasy/Targyak lap depth.png" : "concept/gen/items/items_depth.png");
+const WORK = path.join(ROOT, FANTASY ? "concept/fantasy/items-cut" : "concept/gen/items/cut");
+const ITEM_ORDER = FANTASY
+  ? ["potion_red", "potion_blue", "scroll", "purse", "sword", "skull", "coins", "dagger", "arrows", "gem"]
+  : ["scrap", "wiring", "circuit", "powercell", "servo", "medkit", "ammo", "rations", "credits", "datachip"];
 const COLS = 5;
 const ROWS = 2;
 const SIZE = "96";
@@ -77,6 +81,7 @@ const svg = (body: string, background?: string) =>
 async function main() {
   fs.mkdirSync(WORK, { recursive: true });
   const fromSheet = fs.existsSync(SHEET) && fs.existsSync(DEPTH);
+  if (FANTASY && !fromSheet) throw new Error("the fantasy sheet and its depth sheet aren't there");
   if (fromSheet) {
     const meta = await sharp(SHEET).metadata();
     const depthMeta = await sharp(DEPTH).metadata();
