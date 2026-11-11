@@ -13,6 +13,7 @@ import type { ActorWake } from "../game/types";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
+import { assetInWorld } from "../game/worlds";
 import { fetchDecalManifest } from "../render/decals";
 import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
@@ -293,7 +294,7 @@ function DecalPalette(p: { choice: string | null; onChoice: (choice: DecalChoice
   useEffect(() => {
     let live = true;
     fetchDecalManifest(import.meta.env.BASE_URL, "")
-      .then((manifest) => live && setNames(Object.keys(manifest)))
+      .then((manifest) => live && setNames(Object.keys(manifest).filter((id) => assetInWorld(id))))
       .catch(() => {});
     return () => {
       live = false;
@@ -526,7 +527,7 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            {Object.keys(ACTOR_TYPES).map((type) => (
+            {Object.keys(ACTOR_TYPES).filter((id) => assetInWorld(id)).map((type) => (
               <button
                 key={type}
                 type="button"
@@ -857,7 +858,7 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            {Object.keys(PROP_TYPES).map((name) => (
+            {Object.keys(PROP_TYPES).filter((id) => assetInWorld(id)).map((name) => (
               <button
                 key={name}
                 type="button"

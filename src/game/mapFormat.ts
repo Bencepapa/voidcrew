@@ -4,6 +4,7 @@ import { PROP_TYPES } from "./props";
 import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
 import type { Lock, Terminal, Trigger } from "./story";
 import { cleanRenderLook } from "./renderLook";
+import { worldOfMap } from "./worlds";
 import type { RenderLook } from "./renderLook";
 
 // Map files (src/maps/*.json): a character grid for the cells plus optional
@@ -287,6 +288,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     reliefDepth: file.reliefDepth,
     render: cleanRenderLook(file.render),
     name: file.name,
+    world: worldOfMap(id),
     width,
     height,
     cells,

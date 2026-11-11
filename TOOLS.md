@@ -484,3 +484,28 @@ it has seen the crew itself. Both follow the ship's robot stance.
 - **Recovery** (meta.ts `revivalBill`): back at the base the crew is whole
   again - the wounded heal for free, each downed crewmate is cloned for a
   medkit from the stash, else 40 credits (as far as there are any).
+
+## Worlds and packaging
+
+The engine runs more than one game. A **world** (`src/game/worlds.ts`) is a folder of maps
+(`src/maps/<world>/`), the assets named for it and a way of going round:
+
+- `scifi` (Void Crew): the ship loop - base, scan, derelict, back.
+- `fantasy` (Void Fantasy): open - it starts in its `startMap`; when the party falls it wakes again there.
+
+Which world opens: `?world=fantasy` in the URL, else the build's (`VITE_WORLD`), else the one played last
+(the debug panel's **World** switch). The map editor, its palettes (texture sets, props, actors, decals)
+and the map list follow the world of the map on screen; a new map goes into its world's folder.
+An asset belongs to the world its id says (`fantasy*` and the names in `FANTASY_ASSETS` are fantasy,
+the rest sci-fi; `SHARED_ASSETS` are for both) - the files themselves stay in `public/`.
+
+**Packaging a world for others:**
+
+```bash
+npm run pack -- --world fantasy
+```
+
+builds the game for that world only (its maps, no world picker) and writes `dist-fantasy/VoidFantasy/`
+(+ a `.zip`): the build in `game/`, `Start-Game.bat` (Windows: a tiny PowerShell web server, nothing to
+install), `start.sh` (macOS/Linux, python3) and a README. The package is a static game; the editor works
+in it but saves only by **Download** (the dev server's file save isn't there).

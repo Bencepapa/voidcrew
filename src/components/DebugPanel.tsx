@@ -5,6 +5,8 @@ import type { ShipMood } from "../game/variation";
 import type { ViewportSettings, ViewportStats, WallProfileId } from "./GameViewport";
 import { downloadMap } from "../editor/mapStore";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
+import { LOCKED_WORLD, WORLDS, switchWorld } from "../game/worlds";
+import type { WorldId } from "../game/worlds";
 import type { TextureSetKind } from "../render/textureSets";
 
 interface DebugPanelProps {
@@ -29,6 +31,8 @@ interface DebugPanelProps {
   // the map's own render values (see renderLook.ts): whether it has any,
   // writing the current ones into it, and removing them
   mapHasRender?: boolean;
+  // the world the map belongs to (switching reopens the game in another)
+  world?: WorldId;
   onSaveRender?: () => void;
   onClearRender?: () => void;
   // the map's default texture sets (MapFile.textures) and changing one
@@ -133,6 +137,7 @@ export function DebugPanel({
   moodOverride,
   onMood,
   mapHasRender,
+  world,
   onSaveRender,
   onClearRender,
   mapTextures,
@@ -231,6 +236,17 @@ export function DebugPanel({
       className={`w-full flex flex-col gap-1 border border-neutral-700 rounded-sm p-2 text-neutral-300 ${compact ? "bg-black/40" : "h-full bg-neutral-900/80 overflow-y-auto"}`}
     >
       <div className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide">Debug</div>
+      {world && !LOCKED_WORLD &&
+        select(
+          "World",
+          <select value={world} onChange={(e) => switchWorld(e.target.value as WorldId)} className={SELECT}>
+            {(Object.values(WORLDS) as { id: WorldId; name: string }[]).map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>,
+        )}
 
       {section(
         "Map attributes",

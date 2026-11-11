@@ -147,8 +147,23 @@ function mapFiles(): Plugin {
     apply: "serve",
     configureServer(server) {
       const dir = path.resolve(server.config.root, "src/maps");
+      // the file of a map: wherever it already is under src/maps/<world>/, else
+      // in the world's folder (a new map)
+      const fileOf = (id: string, world: string) => {
+        if (fs.existsSync(dir)) {
+          for (const sub of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (!sub.isDirectory()) continue;
+            const found = path.join(dir, sub.name, `${id}.json`);
+            if (fs.existsSync(found)) return found;
+          }
+        }
+        const folder = /^\w+$/.test(world) ? world : "scifi";
+        fs.mkdirSync(path.join(dir, folder), { recursive: true });
+        return path.join(dir, folder, `${id}.json`);
+      };
       server.middlewares.use(`${server.config.base}__voidcrew/map`, (req, res) => {
-        const id = new URL(req.url ?? "", "http://x").searchParams.get("id") ?? "";
+        const query = new URL(req.url ?? "", "http://x").searchParams;
+        const id = query.get("id") ?? "";
         if (req.method !== "POST" || !/^[\w-]+$/.test(id)) {
           res.statusCode = 400;
           res.end("POST with ?id=<map id>");
@@ -165,7 +180,7 @@ function mapFiles(): Plugin {
             res.end("expected JSON");
             return;
           }
-          const file = path.join(dir, `${id}.json`);
+          const file = fileOf(id, query.get("world") ?? "scifi");
           justSaved.set(path.normalize(file), Date.now());
           fs.writeFileSync(file, text);
           res.end(path.relative(server.config.root, file));
@@ -230,7 +245,8 @@ function propFiles(): Plugin {
 }
 
 export default defineConfig({
-  base: "/voidcrew/",
+  // (a packaged world is served from the root of its own server)
+  base: process.env.VOID_BASE ?? "/voidcrew/",
   plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles(), propFiles()],
   server: {
     port: 3000,

@@ -2,12 +2,21 @@ import { DIR_VECTOR, rightOf } from "./movement";
 import type { BridgeSpec, CellType, Direction, DoorSpec, GameMap, LadderSpec, LiftSpec, Vec2 } from "./types";
 import { parseMap } from "./mapFormat";
 import type { MapFile } from "./mapFormat";
+import { WORLDS, isWorldId, registerMapWorld, startWorld } from "./worlds";
 
-// every map in src/maps/, by id (its file name)
-const files = import.meta.glob<MapFile>("../maps/*.json", { eager: true, import: "default" });
+// every map in src/maps/<world>/, by id (its file name) - a build made for one
+// world (VITE_WORLD) takes only its own folder
+const files =
+  import.meta.env.VITE_WORLD === "fantasy"
+    ? import.meta.glob<MapFile>("../maps/fantasy/*.json", { eager: true, import: "default" })
+    : import.meta.env.VITE_WORLD === "scifi"
+      ? import.meta.glob<MapFile>("../maps/scifi/*.json", { eager: true, import: "default" })
+      : import.meta.glob<MapFile>("../maps/**/*.json", { eager: true, import: "default" });
 export const MAPS: Record<string, GameMap> = Object.fromEntries(
   Object.entries(files).map(([path, file]) => {
     const id = path.replace(/^.*\/(.+)\.json$/, "$1");
+    const folder = /\/maps\/([^/]+)\//.exec(path)?.[1];
+    registerMapWorld(id, isWorldId(folder) ? folder : "scifi");
     return [id, parseMap(id, file)];
   }),
 );
@@ -16,7 +25,7 @@ export const MAPS: Record<string, GameMap> = Object.fromEntries(
 // the deck the game starts on; ?map=<id> in the URL starts on another
 // (for testing a deck without riding the lifts there)
 const requestedMap = typeof location !== "undefined" ? new URLSearchParams(location.search).get("map") : null;
-export const START_MAP = (requestedMap && MAPS[requestedMap]) || MAPS["deck2-engineering"];
+export const START_MAP = (requestedMap && MAPS[requestedMap]) || MAPS[WORLDS[startWorld()].startMap] || Object.values(MAPS)[0];
 
 // the door spec of a door cell; unlisted door cells are standard doors
 // whose front faces along the passage

@@ -1,4 +1,6 @@
 import { MAPS } from "../game/map";
+import { registerMapWorld, worldOfMap } from "../game/worlds";
+import type { WorldId } from "../game/worlds";
 import { parseMap } from "../game/mapFormat";
 import type { MapFile } from "../game/mapFormat";
 import type { GameMap } from "../game/types";
@@ -10,7 +12,7 @@ import type { JsonLayout } from "./mapJson";
 // the game (and a lift ride back to the deck) sees it at once - with its
 // undo and redo history, saving to disk (dev server) and downloading.
 
-const RAW = import.meta.glob<string>("../maps/*.json", { eager: true, query: "?raw", import: "default" });
+const RAW = import.meta.glob<string>("../maps/**/*.json", { eager: true, query: "?raw", import: "default" });
 const idOf = (path: string) => path.replace(/^.*\/(.+)\.json$/, "$1");
 
 interface Entry {
@@ -132,7 +134,7 @@ export async function saveMap(id: string): Promise<string> {
   const e = entry(id);
   const text = mapText(id);
   if (!e || text === null) throw new Error(`no map "${id}"`);
-  const res = await fetch(`${import.meta.env.BASE_URL}__voidcrew/map?id=${encodeURIComponent(id)}`, {
+  const res = await fetch(`${import.meta.env.BASE_URL}__voidcrew/map?id=${encodeURIComponent(id)}&world=${worldOfMap(id)}`, {
     method: "POST",
     body: text,
   });
@@ -152,16 +154,20 @@ export function downloadMap(id: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// every map there is (the repo's, and any made in this session)
-export function mapIds(): string[] {
-  return Object.keys(MAPS).sort();
+// the maps of a world (the repo's, and any made in this session)
+export function mapIds(world?: WorldId): string[] {
+  return Object.keys(MAPS)
+    .filter((id) => !world || worldOfMap(id) === world)
+    .sort();
 }
 
 // A new map (made, or copied from another - `from` keeps that one's layout
 // of the file): its file not saved yet. Returns the deck, or why it can't be.
-export function createMap(id: string, file: MapFile, from?: string): { map: GameMap } | { error: string } {
+export function createMap(id: string, file: MapFile, from?: string, world?: WorldId): { map: GameMap } | { error: string } {
   if (!/^[\w-]+$/.test(id)) return { error: `"${id}" isn't a usable map id (letters, digits, - and _)` };
   if (MAPS[id]) return { error: `there's a map "${id}" already` };
+  // (a new map belongs to the world it was made in)
+  registerMapWorld(id, world ?? (from ? worldOfMap(from) : worldOfMap(Object.keys(MAPS)[0] ?? "")));
   let map: GameMap;
   try {
     map = parseMap(id, file);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FIRE_ACTOR_DAMAGE, FIRE_BURN_MS, FIRE_DAMAGE, fireCells } from "./fire";
+import { WORLDS } from "./worlds";
 import { MAPS, START_MAP, cellAt, doorAt, doorCrossed, floorHeight, liftAt, liftDoorOf } from "./map";
 import { DIR_VECTOR, behindOf, leftOf, rightOf, stepForward } from "./movement";
 import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
@@ -158,7 +159,7 @@ export function useGameState() {
     noclipRef.current = on;
   }, []);
   const [log, setLog] = useState<LogEntry[]>([
-    { id: logId++, text: `You board the USV Horizon, ${START_MAP.name}.` },
+    { id: logId++, text: WORLDS[START_MAP.world].loop === "open" ? `You enter ${START_MAP.name}.` : `You board the USV Horizon, ${START_MAP.name}.` },
   ]);
   const [openingDoor, setOpeningDoor] = useState<Vec2 | null>(null);
   // door cells whose panel is up, keyed "x,y" (see doorCellKey); doors stay
@@ -1435,6 +1436,18 @@ export function useGameState() {
     setRunStart(gameClock.now());
     setRunEnd(null);
   }, [haul]);
+  // An open world (see worlds.ts): the fallen party wakes again - the crew
+  // whole, the alarm quiet, what it carries still with it.
+  const respawn = useCallback(() => {
+    setWipedAt(null);
+    wipedRef.current = null;
+    alertRef.current = 0;
+    alertLevelRef.current = 0;
+    stanceRef.current = null;
+    alertShownRef.current = 0;
+    setAlertShown(0);
+    setCrew(initialCrew);
+  }, []);
   // standing on a way out says so
   const exitHere = (map.exits ?? []).find((e) => e.cell.x === pos.x && e.cell.y === pos.y);
   const exitName = exitHere ? (exitHere.name ?? "An airlock") : null;
@@ -1570,6 +1583,7 @@ export function useGameState() {
     crew,
     log,
     moveForward,
+    respawn,
     moveBackward,
     strafeLeft,
     strafeRight,

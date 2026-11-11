@@ -1,5 +1,6 @@
 import type { Lock, Terminal, Trigger } from "./story";
 import type { RenderLook } from "./renderLook";
+import type { WorldId } from "./worlds";
 
 export type Direction = "N" | "E" | "S" | "W";
 
@@ -23,6 +24,8 @@ export interface GameMap {
   height: number;
   cells: CellType[][];
   name: string;
+  // the world it belongs to (its folder under src/maps/, see worlds.ts)
+  world: WorldId;
   // where the player arrives
   start: { cell: Vec2; facing: Direction };
   // per cell, in wall heights (1 = one wall panel), multiples of 0.25: the

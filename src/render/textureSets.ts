@@ -3,6 +3,8 @@
 // this table (see EDITOR.md) - a set can't be named without being here, since
 // TextureSetId is the table's own keys.
 
+import { assetInWorld } from "../game/worlds";
+
 export type TextureSetKind = "wall" | "floor" | "ceiling" | "door" | "window" | "propFace";
 
 // the files of any texture set, listed or not (see textureFolder)
@@ -456,7 +458,9 @@ export type TextureSetId = keyof typeof TEXTURE_SETS;
 
 // the sets offered for one surface (the editor's palette)
 export function textureSetsOfKind(kind: TextureSetKind): TextureSetId[] {
+  // (only the current world's sets, and the shared ones)
   return (Object.keys(TEXTURE_SETS) as TextureSetId[]).filter((id) => {
+    if (!assetInWorld(id)) return false;
     const k = TEXTURE_SETS[id].kind;
     return Array.isArray(k) ? k.includes(kind) : k === kind;
   });

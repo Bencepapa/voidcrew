@@ -14,6 +14,7 @@ export function WipeScreen({
   lost,
   revival,
   onContinue,
+  wake,
 }: {
   // when it happened (performance.now())
   wipedAt: number;
@@ -21,6 +22,8 @@ export function WipeScreen({
   lost: number;
   revival: { down: number; medkits: number; credits: number; crew: number };
   onContinue: () => void;
+  // an open world (Void Fantasy): no base - the party wakes again where it began
+  wake?: boolean;
 }) {
   const [dark, setDark] = useState(false);
   const [message, setMessage] = useState(false);
@@ -39,17 +42,29 @@ export function WipeScreen({
       {message && (
         <div className="absolute inset-0 flex items-center justify-center p-4">
           <div className="w-[26rem] max-w-full border border-red-900/80 bg-neutral-950/95 p-4 text-[12px] text-neutral-300">
-            <div className="text-red-300 text-sm tracking-widest mb-2">SIGNAL LOST</div>
-            <p className="mb-2">
-              Weeks went by without a word from the crew. At the base they were written off - and their backup clones
-              woken from the tanks.
-            </p>
-            <p className="text-neutral-400 mb-1">
-              {lost ? `The haul (${lost} item${lost > 1 ? "s" : ""}) stays on the derelict.` : "Nothing was lost but the crew."}
-            </p>
-            <p className="text-neutral-400 mb-4">{revivalText(revival)}</p>
+            {wake ? (
+              <>
+                <div className="text-red-300 text-sm tracking-widest mb-2">THE DARK TAKES YOU</div>
+                <p className="mb-4">
+                  Cold, then nothing. You wake where it all began, hurt but whole - and whatever you carried is
+                  still with you.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="text-red-300 text-sm tracking-widest mb-2">SIGNAL LOST</div>
+                <p className="mb-2">
+                  Weeks went by without a word from the crew. At the base they were written off - and their backup
+                  clones woken from the tanks.
+                </p>
+                <p className="text-neutral-400 mb-1">
+                  {lost ? `The haul (${lost} item${lost > 1 ? "s" : ""}) stays on the derelict.` : "Nothing was lost but the crew."}
+                </p>
+                <p className="text-neutral-400 mb-4">{revivalText(revival)}</p>
+              </>
+            )}
             <button type="button" onClick={onContinue} className="w-full border border-red-800 text-red-200 py-1.5 hover:bg-red-900/20">
-              Back to base
+              {wake ? "Wake up" : "Back to base"}
             </button>
           </div>
         </div>

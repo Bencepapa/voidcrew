@@ -10,3 +10,4 @@ coverage/
 # AI texture-generation experiments/intermediates - see public/textures/ for
 # the actual assets used by the game
 concept/gen/
+dist-*/

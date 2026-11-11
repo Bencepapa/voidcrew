@@ -18,6 +18,7 @@ import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 import { generateLights, isSkyCeiling, lampColor, parseColor } from "../game/lights";
+import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
 import { PROP_TYPES, propPlacement, propHeight } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
@@ -5573,14 +5574,14 @@ export function GameViewport({
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
       <div ref={containerRef} className="absolute inset-0" />
-      <LoadingScreen loading={loading} inLift={!!ride} />
+      <LoadingScreen loading={loading} inLift={!!ride} title={WORLDS[map.world].loop === "ship" ? "USV HORIZON" : WORLDS[map.world].name.toUpperCase()} />
     </div>
   );
 }
 
 // Shown over the view while a map's scene loads: the deck's name and a
 // progress bar, fading out once it's all built.
-function LoadingScreen({ loading, inLift }: { loading: { title: string; progress: number } | null; inLift: boolean }) {
+function LoadingScreen({ loading, inLift, title }: { loading: { title: string; progress: number } | null; inLift: boolean; title: string }) {
   // keep the last title while fading out
   const [shown, setShown] = useState(loading);
   useEffect(() => {
@@ -5590,7 +5591,7 @@ function LoadingScreen({ loading, inLift }: { loading: { title: string; progress
     <div
       className={`absolute inset-0 bg-black flex flex-col items-center justify-center gap-3 font-mono transition-opacity duration-500 ${loading ? "opacity-100" : "opacity-0 pointer-events-none"}`}
     >
-      <div className="text-[10px] tracking-[0.3em] text-green-700">{inLift ? "LIFT IN TRANSIT" : "USV HORIZON"}</div>
+      <div className="text-[10px] tracking-[0.3em] text-green-700">{inLift ? "LIFT IN TRANSIT" : title}</div>
       <div className="text-sm tracking-[0.2em] text-green-400 uppercase">{shown?.title}</div>
       <div className="w-48 h-1 bg-green-950 overflow-hidden">
         <div className="h-full bg-green-500 transition-[width] duration-200" style={{ width: `${Math.round((shown?.progress ?? 1) * 100)}%` }} />

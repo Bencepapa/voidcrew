@@ -19,6 +19,7 @@ import {
   undo,
 } from "./editor/mapStore";
 import { MAPS, START_MAP } from "./game/map";
+import { WORLDS, setActiveWorld, startWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
 import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart } from "./editor/mapEdits";
 import { PROP_TYPES, flamePosition, propRetexturable } from "./game/props";
@@ -112,6 +113,7 @@ export default function App() {
     pushLog,
     crew,
     log,
+    respawn,
     moveForward,
     moveBackward,
     strafeLeft,
@@ -164,7 +166,8 @@ export default function App() {
   // (a deck to look at, a variation to see again) it starts aboard.
   const [phase, setPhase] = useState<"base" | "pick" | "run">(() => {
     const query = new URLSearchParams(location.search);
-    return query.has("map") || query.has("seed") ? "run" : "base";
+    // (an open world has no base: it starts in the world)
+    return query.has("map") || query.has("seed") || WORLDS[startWorld()].loop === "open" ? "run" : "base";
   });
   // the ship boarded (none: a deck opened straight from the URL)
   const [ship, setShip] = useState<ShipOffer | null>(null);
@@ -218,6 +221,8 @@ export default function App() {
   const aimRef = useRef(aim);
   aimRef.current = aim;
   const aimWeapon = aim ? (crewWeapon(crew[aim.crew].id) ?? null) : null;
+  // the editor's palettes follow the world of the map on screen
+  setActiveWorld(map.world);
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");
@@ -760,7 +765,7 @@ export default function App() {
     const name = prompt("Its name:", `Deck ${map.deck} - `)?.trim() || id;
     const size = prompt("Its size, width x height:", "16x10") ?? "";
     const [w, h] = size.split(/[x, ]+/).map(Number);
-    const result = createMap(id, blankMap(name, map.deck, w || 16, h || 10, mapFile(map.id) ?? undefined));
+    const result = createMap(id, blankMap(name, map.deck, w || 16, h || 10, mapFile(map.id) ?? undefined), undefined, map.world);
     if ("error" in result) pushLog(`Editor: ${result.error}`);
     else {
       openMap(result.map);
@@ -1450,7 +1455,7 @@ export default function App() {
   const overlays = (
     <>
       {haulOpen && !editMode && !runEnd && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
-      {!editMode && phase === "run" && !runEnd && <AlertMeter alert={alert} compact={compact} powerOn={powerOn} />}
+      {!editMode && phase === "run" && !runEnd && WORLDS[map.world].loop === "ship" && <AlertMeter alert={alert} compact={compact} powerOn={powerOn} />}
       {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
       {keypad && !editMode && (
         <KeypadPanel title={keypad.title} hack={keypad.hack} hacker={keypad.hacker} onCode={enterCode} onHack={hackKeypad} onClose={closeKeypad} />
@@ -1460,7 +1465,15 @@ export default function App() {
           wipedAt={wipedAt}
           lost={Object.values(haul).reduce((n, c) => n + c, 0)}
           revival={revival}
+          wake={WORLDS[map.world].loop === "open"}
           onContinue={() => {
+            if (WORLDS[map.world].loop === "open") {
+              // no base here: the party wakes again where the world begins
+              respawn();
+              enterMap(MAPS[WORLDS[map.world].startMap] ?? START_MAP);
+              pushLog("You wake again where it began.");
+              return;
+            }
             // the haul lost, the whole crew cloned, back to the base
             failRun();
             payRevival(down);
@@ -1548,7 +1561,7 @@ export default function App() {
           onDoorDeselect={() => setSelectedDoor(null)}
           mapId={map.id}
           mapSize={{ width: map.width, height: map.height }}
-          mapIds={mapIds()}
+          mapIds={mapIds(map.world)}
           onResize={resize}
           onOpenMap={(id) => MAPS[id] && openMap(MAPS[id])}
           onNewMap={newMap}
@@ -1699,6 +1712,7 @@ export default function App() {
                 moodOverride={moodOverride}
                 onMood={setMoodOverride}
                 mapHasRender={!!map.render}
+                world={map.world}
                 mapTextures={map.textures}
                 onMapTexture={changeMapTexture}
                 onSaveRender={() => saveRender()}
@@ -1734,7 +1748,7 @@ export default function App() {
           />
           <div className="text-[10px] text-neutral-500 px-1">
             <div>{map.name}</div>
-            <div>Deck {map.deck} &middot; Day 17</div>
+            <div>{WORLDS[map.world].loop === "ship" ? <>Deck {map.deck} &middot; Day 17</> : WORLDS[map.world].name}</div>
           </div>
           <div className="flex-1 min-h-0">
             <LogPanel log={log} />
@@ -1764,6 +1778,7 @@ export default function App() {
               moodOverride={moodOverride}
               onMood={setMoodOverride}
               mapHasRender={!!map.render}
+              world={map.world}
               mapTextures={map.textures}
               onMapTexture={changeMapTexture}
               onSaveRender={() => saveRender()}
