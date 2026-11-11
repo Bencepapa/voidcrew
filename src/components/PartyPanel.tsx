@@ -95,7 +95,7 @@ function WeaponButton({
         onClick={() => onUse(index)}
         disabled={!ready}
         className={`relative flex-1 min-w-0 overflow-hidden border text-left rounded-sm ${
-          compact ? "text-[8px] px-1 py-0.5" : "text-[10px] px-1.5 py-1"
+          compact ? "text-[10px] px-1 py-0.5" : "text-[10px] px-1.5 py-1"
         } ${aiming ? "border-amber-300 text-amber-200" : ready ? "border-emerald-500/70 text-emerald-200 hover:bg-emerald-900/30" : "border-neutral-700 text-neutral-500"}`}
       >
         <div className="absolute inset-y-0 left-0 bg-emerald-700/25" style={{ width: `${fill * 100}%` }} />
@@ -143,10 +143,10 @@ export function PartyPanel({
     return (
       <div className="grid grid-cols-4 gap-1">
         {crew.map((c, i) => (
-          <div key={c.id} className="border border-neutral-700/60 bg-black/30 px-1 py-0.5 flex gap-1">
+          <div key={c.id} className="border border-neutral-700/70 bg-black/80 px-1 py-0.5 flex gap-1">
             <Avatar mate={c} className="hidden landscape:block w-9 h-9 shrink-0 self-center" />
             <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-              <div className={`text-[9px] truncate ${c.hp > 0 ? "text-neutral-300" : "text-red-400"}`}>
+              <div className={`text-[11px] font-semibold truncate ${c.hp > 0 ? "text-neutral-200" : "text-red-400"}`}>
                 {i + 1}: {c.name}
               </div>
               <Bar value={c.hp} max={c.maxHp} color="#dc2626" />

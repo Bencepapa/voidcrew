@@ -1911,9 +1911,11 @@ export default function App() {
           {overlays}
         </div>
 
-        <div className="absolute top-2 left-2 w-28 flex flex-col gap-1 pointer-events-none">
+        <div className="absolute top-2 left-2 w-52 max-w-[48vw] flex flex-col gap-1 pointer-events-none">
+          <div className="w-28">
           <Minimap map={map} pos={pos} dir={dir} compact loot={editMode ? undefined : lootMarks} locked={lockedDoors} showRestricted={editMode} />
-          <div className="h-16">
+          </div>
+          <div className="h-36">
             <LogPanel log={log} compact />
           </div>
         </div>
