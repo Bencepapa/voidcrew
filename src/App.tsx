@@ -1930,7 +1930,7 @@ export default function App() {
 
         {/* the party at the bottom, the menu (action + debug) under it: scrolls when it is long */}
         <div className="absolute bottom-2 inset-x-2 max-h-[calc(100%-8.5rem)] overflow-y-auto flex flex-col gap-1 pointer-events-none landscape:max-h-none landscape:overflow-visible">
-          {!editMode && <PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />}
+          {!editMode && !menuOpen && <PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />}
           {menuOpen && (
             <div className="pointer-events-auto flex flex-col gap-1 landscape:fixed landscape:top-12 landscape:right-2 landscape:bottom-16 landscape:w-48 landscape:overflow-y-auto">
               {SHOW_ACTION_MENU && actionMenu}
