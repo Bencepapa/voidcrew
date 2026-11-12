@@ -4,13 +4,22 @@ import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
 import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
-import { loadGraphics } from "../render/graphics";
+import { effectiveViewDistance, loadGraphics } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, itemSpot } from "../game/items";
 import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
-import { bakeLightGrid, createLightGridUniforms, disposeLightGrid, setLightGrid, useLightGrid } from "../render/lightGrid";
+import {
+  bakeLightGrid,
+  createLightGridUniforms,
+  createLightReach,
+  disposeLightGrid,
+  POOL_DECAY,
+  POOL_DECAY_TAG,
+  setLightGrid,
+  useLightGrid,
+} from "../render/lightGrid";
 import type { LightGridMode } from "../render/lightGrid";
 import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween, liftDoorOf, windowPanels } from "../game/map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
@@ -84,6 +93,9 @@ export interface ViewportSettings {
   // lightGrid.ts)
   lightGridDensity: number;
   lightGridMode: LightGridMode;
+  // how much light the bake lets bounce round corners into the cells no
+  // light sees (see lightGrid.ts bounceLight; 0: none, they stay dark)
+  lightBounce: number;
   // what the smoke's puffs look like (see smoke.ts), and what they bump
   // into: the walls (and floors and ceilings), the props, the robots
   smokeStyle: SmokeStyle;
@@ -96,6 +108,7 @@ export interface ViewportSettings {
   smokeProps: boolean;
   smokeActors: boolean;
   // how far (cells) the view reaches: the fog, the lights and what's drawn
+  // (within the graphics setting's viewDistanceCap - see effectiveViewDistance)
   viewDistance: number;
   eyeHeight: number;
   wallHeight: number;
@@ -121,6 +134,7 @@ export interface ViewportSettings {
   wallDetail: number;
   pixelRatioCap: number;
   particleEvery: number;
+  viewDistanceCap: number;
   mapLightIntensity: number;
   // the sky's light on the cells under an open ceiling (see lights.ts SkyLight)
   skyLightIntensity: number;
@@ -238,6 +252,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   bakedLights: true,
   lightGridDensity: 3,
   lightGridMode: "directional",
+  lightBounce: 0.4,
   smokeStyle: "animated",
   shipAccent: "rolled",
   accentMinSat: 0.35,
@@ -573,6 +588,21 @@ const CULL_MAX_SIZE = 1.3;
 // fewer triangles, and at that distance, in the fog, it looks the same.
 const LOD_DISTANCE = 2.2;
 const LOD_FACTOR = 4;
+// Smooth relief resamples its height grid to the wall detail setting, so a
+// coarser grid alone wouldn't thin it out: its distant versions take fewer
+// cells instead - a half as many each way (a quarter of the triangles) past
+// LOD_DISTANCE, a quarter past SMOOTH_LODS' second distance - never below
+// SMOOTH_LOD_MIN_CELLS along a whole panel's long side.
+const SMOOTH_LODS: { distance: number; divisor: number }[] = [
+  { distance: LOD_DISTANCE, divisor: 2 },
+  { distance: 3.6, divisor: 4 },
+];
+const SMOOTH_LOD_MIN_CELLS = 8;
+// a surface's distant version, and from how far it's shown
+interface FarLevel {
+  geometry: THREE.BufferGeometry;
+  distance: number;
+}
 // a source behind the camera ranks as if this much further away
 const LIGHT_BEHIND_PENALTY = 0.35;
 // a source already in the pool keeps its slot until a rival ranks this
@@ -1498,7 +1528,7 @@ export function GameViewport({
   const sceneMap = sceneMapRef.current;
   const applyLightsRef = useRef<((next: GameMap) => void) | null>(null);
   const rebakeRef = useRef<(() => void) | null>(null);
-  useEffect(() => rebakeRef.current?.(), [settings.lightGridDensity, settings.lightGridMode]);
+  useEffect(() => rebakeRef.current?.(), [settings.lightGridDensity, settings.lightGridMode, settings.lightBounce]);
   // the map as it is now (lights included - the scene's may be older)
   const latestMapRef = useRef(map);
   latestMapRef.current = map;
@@ -1515,13 +1545,13 @@ export function GameViewport({
     const buildStart = performance.now();
 
     const scene = new THREE.Scene();
-    const fog = new THREE.Fog(0x000000, FOG_NEAR, settings.viewDistance - FOG_FAR_MARGIN);
+    const fog = new THREE.Fog(0x000000, FOG_NEAR, effectiveViewDistance(settings) - FOG_FAR_MARGIN);
     scene.fog = fog;
 
     // anything past the fog's end renders pure black anyway, so the far plane
     // sits just beyond it and frustum culling skips those walls entirely
     // (a big saving with relief walls' thousands of triangles each)
-    const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, settings.viewDistance + 0.5);
+    const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, effectiveViewDistance(settings) + 0.5);
 
     const cache = cacheRef.current;
     const renderer = cache.renderer ?? (cache.renderer = new THREE.WebGLRenderer({ antialias: true }));
@@ -1781,6 +1811,7 @@ export function GameViewport({
     const bakeOptions = (m: GameMap) => ({
       perCell: m.lightGridDensity ?? settingsRef.current.lightGridDensity,
       mode: settingsRef.current.lightGridMode,
+      bounce: settingsRef.current.lightBounce,
     });
     // the bake (and a coarser one for the ambient part, if the map asks)
     const bake = (m: GameMap) => {
@@ -1981,49 +2012,65 @@ export function GameViewport({
 
     let reliefStats: ReliefStats | null = null;
 
-    // A surface: its mesh - or, given a distant low-detail geometry (see
-    // LOD_FACTOR), a level-of-detail pair that switches to it past
-    // LOD_DISTANCE - placed like the slot; decals go on the detailed one.
+    // A wall panel, floor or ceiling tile faces one open cell - the one in
+    // front of it (a floor's or ceiling's own). Every sight line to its face
+    // ends in that cell, so it's culled with that cell (see applySight) -
+    // not with the wall cell behind it, whose other faces can be in view
+    // while this one is around a corner. And it's one-sided, backed by
+    // solid stuff: while the eye is behind its plane, none of it can show
+    // (see cullFacing).
+    const facingSurfaces: THREE.Object3D[] = [];
+    function markSurface(obj: THREE.Object3D) {
+      const n = new THREE.Vector3(0, 0, 1).applyQuaternion(obj.quaternion);
+      obj.userData.cullCell = cellKey(Math.round(obj.position.x + n.x * 0.5), Math.round(obj.position.z + n.z * 0.5));
+      obj.userData.facing = { n, d: n.dot(obj.position) };
+      facingSurfaces.push(obj);
+    }
+
+    // A surface: its mesh - or, given distant low-detail geometries (see
+    // LOD_FACTOR, SMOOTH_LODS), a level-of-detail set that switches to them
+    // with distance - placed like the slot; decals go on the detailed one.
     function placeSurface(
       slot: WallSlot,
       geo: THREE.BufferGeometry,
-      farGeo: THREE.BufferGeometry | null,
+      far: FarLevel[],
       mat: THREE.Material | THREE.Material[],
       orient: (obj: THREE.Object3D) => void,
     ) {
       const mesh = new THREE.Mesh(geo, mat);
       let obj: THREE.Object3D = mesh;
-      if (farGeo) {
+      if (far.length) {
         const lod = new THREE.LOD();
         lod.addLevel(mesh, 0);
-        lod.addLevel(new THREE.Mesh(farGeo, mat), LOD_DISTANCE);
+        for (const level of far) lod.addLevel(new THREE.Mesh(level.geometry, mat), level.distance);
         obj = lod;
       }
       obj.position.set(slot.x, slot.y, slot.z);
       orient(obj);
       group.add(obj);
       obj.updateMatrixWorld(true);
+      markSurface(obj);
       decals.registerSurface(slot.key, mesh);
       return obj;
     }
 
     function placeWalls(
       geo: THREE.BufferGeometry,
-      farGeo: THREE.BufferGeometry | null,
+      far: FarLevel[],
       mat: THREE.Material | THREE.Material[],
       slots: WallSlot[],
     ) {
-      for (const slot of slots) placeSurface(slot, geo, farGeo, mat, (o) => (o.rotation.y = slot.rotY));
+      for (const slot of slots) placeSurface(slot, geo, far, mat, (o) => (o.rotation.y = slot.rotY));
     }
 
     // wall-style geometry (facing +Z) laid flat, facing up
     function placeFloors(
       geo: THREE.BufferGeometry,
-      farGeo: THREE.BufferGeometry | null,
+      far: FarLevel[],
       mat: THREE.Material | THREE.Material[],
       slots: WallSlot[],
     ) {
-      for (const slot of slots) placeSurface(slot, geo, farGeo, mat, (o) => (o.rotation.x = -Math.PI / 2));
+      for (const slot of slots) placeSurface(slot, geo, far, mat, (o) => (o.rotation.x = -Math.PI / 2));
     }
 
     // ... and turned to face down from the ceiling; lit slots get the kit's
@@ -2069,11 +2116,11 @@ export function GameViewport({
       if (!kitIds.has(kit)) kitIds.set(kit, kitIds.size);
       return kitIds.get(kit)!;
     };
-    function placeCeilings(geo: THREE.BufferGeometry, farGeo: THREE.BufferGeometry | null, kit: WallKit, relief: boolean) {
+    function placeCeilings(geo: THREE.BufferGeometry, far: FarLevel[], kit: WallKit, relief: boolean) {
       for (const slot of kit.slots) {
         const color = litColors.get(`${slot.x},${slot.z}`);
         const cell = `${slot.x},${slot.z}`;
-        const obj = placeSurface(slot, geo, farGeo, ceilingMaterial(kit, relief, !!slot.lit, color, cell), (o) => (o.rotation.x = Math.PI / 2));
+        const obj = placeSurface(slot, geo, far, ceilingMaterial(kit, relief, !!slot.lit, color, cell), (o) => (o.rotation.x = Math.PI / 2));
         ceilingTiles.push({ cell: `${slot.x},${slot.z}`, obj, kit, relief });
       }
     }
@@ -2220,6 +2267,10 @@ export function GameViewport({
     // height maps by URL, each loaded once per scene
     const coarseGrids = new Map<string, Awaited<ReturnType<typeof loadWithRetry>>>();
 
+    // what each detailed relief panel was built from - for the props' distant
+    // versions (see addPropLods)
+    const reliefSources = new WeakMap<THREE.BufferGeometry, { kit: WallKit; shape: Parameters<typeof buildRelief>[1] }>();
+
     // builds a kit's relief geometry from its depth map and hooks up its AO
     // (a partial panel - `rows` - shares the whole panel's); resolves to null
     // if the scene was torn down meanwhile
@@ -2240,6 +2291,9 @@ export function GameViewport({
         coarse?: number;
         // a second version of a surface whose full one set the AO map
         lodOnly?: boolean;
+        // a smooth relief's distant version: this many times fewer cells each
+        // way (see SMOOTH_LODS) - the grid isn't made coarser for it then
+        smoothLod?: number;
       },
     ) {
       // built once for the same depth map, shape and relief settings (see
@@ -2263,7 +2317,11 @@ export function GameViewport({
             cache.grids.set(kit.depthUrl, gridPromise);
           }
           let grid = await gridPromise;
-          if (shape.coarse && shape.coarse > 1) {
+          // (a map with holes or cut-out levels is never built smooth - see
+          // ReliefOptions.smooth - so its distant version gets the coarser grid)
+          const smooth = settings.reliefMode === "smooth" && !grid.solid && !shape.holeLevels;
+          const smoothLod = smooth ? shape.smoothLod : undefined;
+          if (shape.coarse && shape.coarse > 1 && !smoothLod) {
             const coarseKey = `${kit.depthUrl}|${shape.coarse}`;
             let coarse = coarseGrids.get(coarseKey);
             if (!coarse) {
@@ -2280,6 +2338,7 @@ export function GameViewport({
             minIsland: settings.reliefMinIsland,
             smooth: settings.reliefMode === "smooth",
             smoothCells: settings.wallDetail,
+            smoothLod,
             aoRadius: settings.aoRadius,
             flushEdges: shape.flushEdges,
             holeBackZ: shape.holeBackZ,
@@ -2296,6 +2355,7 @@ export function GameViewport({
       }
       const relief = await built;
       if (disposed || !relief) return null;
+      if (!shape.lodOnly) reliefSources.set(relief.geometry, { kit, shape });
       if (shape.rows || shape.lodOnly) return relief;
       for (const mat of kitMaterials(kit)) {
         mat.aoMap = relief.aoMap;
@@ -2303,6 +2363,73 @@ export function GameViewport({
         mat.needsUpdate = true;
       }
       return relief;
+    }
+
+    // A surface's distant versions (after its full one, whose AO map they
+    // use): a stepped relief's from a grid LOD_FACTOR times coarser, a
+    // smooth one's with fewer cells (SMOOTH_LODS - no more levels than the
+    // wall detail setting leaves room for above SMOOTH_LOD_MIN_CELLS).
+    async function farReliefLevels(kit: WallKit, shape: Parameters<typeof buildRelief>[1]): Promise<FarLevel[]> {
+      const levels: { distance: number; smoothLod?: number }[] = [];
+      if (settings.reliefMode === "smooth") {
+        const most = Math.max(1, Math.floor(settings.wallDetail / SMOOTH_LOD_MIN_CELLS));
+        let last = 1;
+        for (const { distance, divisor } of SMOOTH_LODS) {
+          const d = Math.min(divisor, most);
+          if (d > last) levels.push({ distance, smoothLod: d });
+          last = Math.max(last, d);
+        }
+      } else {
+        levels.push({ distance: LOD_DISTANCE });
+      }
+      const out: FarLevel[] = [];
+      let previous: THREE.BufferGeometry | null = null;
+      for (const level of levels) {
+        const relief = await buildRelief(kit, { ...shape, coarse: LOD_FACTOR, lodOnly: true, smoothLod: level.smoothLod });
+        if (!relief) return [];
+        // (a kit that can't be smooth gets the coarse grid at every level:
+        // the same mesh - the first one does)
+        if (previous && relief.triangles >= previous.index!.count / 3) continue;
+        out.push({ geometry: relief.geometry, distance: level.distance });
+        previous = relief.geometry;
+        // decals painted on the detailed surface would sink into this one
+        // where it bridges hollows: they're pulled over it from its distance
+        decals.setFarPull([{ distance: level.distance, rise: relief.lodRise ?? 0 }]);
+      }
+      return out;
+    }
+
+    // A prop's relief faces get distant versions like the walls (a pillar or
+    // a crate is as finely built as a wall, several faces of it): each face
+    // becomes a level-of-detail set in the face's place, the same transform,
+    // the same materials (cloned with the prop, see LOD.copy).
+    async function addPropLods(root: THREE.Object3D) {
+      const faces: THREE.Mesh[] = [];
+      root.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh && reliefSources.has(mesh.geometry)) faces.push(mesh);
+      });
+      for (const mesh of faces) {
+        const source = reliefSources.get(mesh.geometry)!;
+        const far = await farReliefLevels(source.kit, source.shape);
+        const parent = mesh.parent;
+        if (!far.length || !parent) continue;
+        const lod = new THREE.LOD();
+        lod.position.copy(mesh.position);
+        lod.quaternion.copy(mesh.quaternion);
+        lod.scale.copy(mesh.scale);
+        // (in the face's place among its siblings: a box's lid is its last)
+        const index = parent.children.indexOf(mesh);
+        parent.remove(mesh);
+        mesh.position.set(0, 0, 0);
+        mesh.quaternion.identity();
+        mesh.scale.set(1, 1, 1);
+        lod.addLevel(mesh, 0);
+        for (const level of far) lod.addLevel(new THREE.Mesh(level.geometry, mesh.material), level.distance);
+        parent.add(lod);
+        parent.children.splice(parent.children.length - 1, 1);
+        parent.children.splice(index, 0, lod);
+      }
     }
 
     // a kit's wall panel geometry per variant, built once
@@ -2341,9 +2468,9 @@ export function GameViewport({
       return geo;
     }
     // ... and its distant, low-detail relief (none for flat walls)
-    const farWallGeometries = new Map<WallKit, Map<PanelVariant, Promise<THREE.BufferGeometry | null>>>();
-    function farWallGeometry(kit: WallKit, variant: PanelVariant): Promise<THREE.BufferGeometry | null> {
-      if (wallGeo) return Promise.resolve(null);
+    const farWallGeometries = new Map<WallKit, Map<PanelVariant, Promise<FarLevel[]>>>();
+    function farWallGeometry(kit: WallKit, variant: PanelVariant): Promise<FarLevel[]> {
+      if (wallGeo) return Promise.resolve([]);
       let byVariant = farWallGeometries.get(kit);
       if (!byVariant) {
         byVariant = new Map();
@@ -2353,7 +2480,7 @@ export function GameViewport({
       if (!geo) {
         const rows = variantRows(variant);
         const height = variantHeight(variant) * wallHeight;
-        geo = buildRelief(kit, { height, flushEdges: true, rows, coarse: LOD_FACTOR, lodOnly: true }).then((relief) => relief?.geometry ?? null);
+        geo = farReliefLevels(kit, { height, flushEdges: true, rows });
         byVariant.set(variant, geo);
       }
       return geo;
@@ -2449,13 +2576,13 @@ export function GameViewport({
         track(
           buildRelief(ceilingKit, { height: 1, flushEdges: false }).then(async (relief) => [
             relief,
-            relief && (await buildRelief(ceilingKit, { height: 1, flushEdges: false, coarse: LOD_FACTOR, lodOnly: true })),
+            relief ? await farReliefLevels(ceilingKit, { height: 1, flushEdges: false }) : [],
           ] as const),
         )
-          .then(([relief, far]) => relief && placeCeilings(relief.geometry, far?.geometry ?? null, ceilingKit, true))
+          .then(([relief, far]) => relief && placeCeilings(relief.geometry, far, ceilingKit, true))
           .catch((err) => console.error("Relief ceiling build failed:", err));
       } else {
-        placeCeilings(floorGeo, null, ceilingKit, false);
+        placeCeilings(floorGeo, [], ceilingKit, false);
       }
     }
 
@@ -2465,35 +2592,55 @@ export function GameViewport({
         track(
           buildRelief(floorKit, { height: 1, flushEdges: false, depth: floorDepth }).then(async (relief) => [
             relief,
-            relief && (await buildRelief(floorKit, { height: 1, flushEdges: false, depth: floorDepth, coarse: LOD_FACTOR, lodOnly: true })),
+            relief ? await farReliefLevels(floorKit, { height: 1, flushEdges: false, depth: floorDepth }) : [],
           ] as const),
         )
           .then(([relief, far]) => {
             if (!relief) return;
-            placeFloors(relief.geometry, far?.geometry ?? null, [floorKit.wallMat, floorKit.sideMat], floorKit.slots);
+            placeFloors(relief.geometry, far, [floorKit.wallMat, floorKit.sideMat], floorKit.slots);
             // keep the strips above the highest floor relief
             floorTop = Math.max(floorTop, relief.maxZ);
             for (const strip of floorStrips) strip.position.y = strip.userData.floorY + floorTop + 0.003;
           })
           .catch((err) => console.error("Relief floor build failed:", err));
       } else {
-        placeFloors(floorGeo, null, floorKit.wallMat, floorKit.slots);
+        placeFloors(floorGeo, [], floorKit.wallMat, floorKit.slots);
       }
     }
 
     // Doors are always relief (a frame needs its cut-out opening), whatever
     // the wall type. The frame is built first: the panel is sized to fit its
     // opening.
+    // A frame (and often a panel) has holes, so it's built stepped from the
+    // full height grid whatever the smooth wall detail - a door cost as much
+    // as several walls at any graphics setting. Its grid is made coarser
+    // with the setting instead (none at the highest: 64 cells), and it gets
+    // a distant version like the walls (a grid LOD_FACTOR times coarser
+    // still) - the opening stays crisp: a coarser cell is a hole when most
+    // of it is. (64: the highest wall detail setting)
+    const doorCoarse = Math.max(1, Math.round(64 / settings.wallDetail));
+    const doorFarCoarse = doorCoarse * LOD_FACTOR;
+    // a door part: its mesh, or the near/far pair when it has a far version
+    const doorPart = (geo: THREE.BufferGeometry, far: THREE.BufferGeometry | null, mat: THREE.Material[]) => {
+      const mesh = new THREE.Mesh(geo, mat);
+      if (!far) return mesh;
+      const lod = new THREE.LOD();
+      lod.addLevel(mesh, 0);
+      lod.addLevel(new THREE.Mesh(far, mat), LOD_DISTANCE);
+      return lod;
+    };
     if (doorCells.length) {
       track(async () => {
-        const frame = await buildRelief(frameKit, {
+        const frameShape = {
           height: wallHeight,
           flushEdges: false,
           // the opening's jambs reach back to the center plane, where they
           // meet the other half's
           holeBackZ: -DOOR_FRAME_HALF_DEPTH,
-        });
+        };
+        const frame = await buildRelief(frameKit, { ...frameShape, coarse: doorCoarse });
         if (!frame) return;
+        const frameFar = await buildRelief(frameKit, { ...frameShape, coarse: doorFarCoarse, lodOnly: true });
         const hole = frame.holeBounds ?? { minX: -0.35, maxX: 0.35, minY: -wallHeight / 2, maxY: wallHeight * 0.3 };
         const panelWidth = hole.maxX - hole.minX + 2 * DOOR_PANEL_OVERLAP;
         // from the floor up behind the frame's header - its foot just clear
@@ -2503,11 +2650,13 @@ export function GameViewport({
         const panelLift = reliefDepth / 2 + 0.005;
         const panelCenterX = (hole.minX + hole.maxX) / 2;
         // one panel geometry per door kind (each kit has its own depth map)
-        const panelGeos = new Map<DoorSpec["kind"], THREE.BufferGeometry>();
+        const panelGeos = new Map<DoorSpec["kind"], { near: THREE.BufferGeometry; far: THREE.BufferGeometry | null }>();
         for (const [kind, kit] of panelKits) {
-          const panel = await buildRelief(kit, { width: panelWidth, height: panelHeight - panelLift, flushEdges: false });
+          const panelShape = { width: panelWidth, height: panelHeight - panelLift, flushEdges: false };
+          const panel = await buildRelief(kit, { ...panelShape, coarse: doorCoarse });
           if (!panel) return;
-          panelGeos.set(kind, panel.geometry);
+          const far = await buildRelief(kit, { ...panelShape, coarse: doorFarCoarse, lodOnly: true });
+          panelGeos.set(kind, { near: panel.geometry, far: far?.geometry ?? null });
         }
 
         for (const cell of doorCells) {
@@ -2524,7 +2673,7 @@ export function GameViewport({
 
           // two halves back to back, each facing out of one side
           for (const side of [1, -1]) {
-            const frameHalf = new THREE.Mesh(frame.geometry, [frameKit.wallMat, frameKit.sideMat]);
+            const frameHalf = doorPart(frame.geometry, frameFar?.geometry ?? null, [frameKit.wallMat, frameKit.sideMat]);
             frameHalf.position.set(0, wallHeight / 2, side * DOOR_FRAME_HALF_DEPTH);
             frameHalf.rotation.y = side === 1 ? 0 : Math.PI;
             door.add(frameHalf);
@@ -2535,7 +2684,8 @@ export function GameViewport({
           if (disposed) return;
           const slider = new THREE.Group();
           for (const side of [1, -1]) {
-            const panelHalf = new THREE.Mesh(panelGeos.get(spec.kind)!, [front, kit.sideMat]);
+            const geos = panelGeos.get(spec.kind)!;
+            const panelHalf = doorPart(geos.near, geos.far, [front, kit.sideMat]);
             panelHalf.position.set(panelCenterX, panelLift + (panelHeight - panelLift) / 2, side * DOOR_PANEL_HALF_DEPTH);
             panelHalf.rotation.y = side === 1 ? 0 : Math.PI;
             slider.add(panelHalf);
@@ -3060,6 +3210,7 @@ export function GameViewport({
         const builds = new Map<string, Promise<THREE.Group | null>>();
         const template = perCell ? null : await buildPropTemplate(type);
         if (!template && !perCell) return;
+        if (template) await addPropLods(template);
         if (version !== propsVersion) return;
         for (const [index, spec] of (m.props ?? []).entries()) {
           if (spec.prop !== name || (spec.texture ?? "") !== texture) continue;
@@ -3075,12 +3226,16 @@ export function GameViewport({
             const key = `${h}|${setId}`;
             let built = builds.get(key);
             if (!built) {
-              built =
+              built = (
                 type.kind === "pillar"
                   ? buildPillar(type, h, setId)
                   : type.kind === "chamfer"
                     ? buildChamfer(type, wallKitFor(setId), h)
-                    : Promise.resolve(null);
+                    : Promise.resolve(null)
+              ).then(async (g) => {
+                if (g) await addPropLods(g);
+                return g;
+              });
               builds.set(key, built);
             }
             made = await built;
@@ -3790,12 +3945,59 @@ export function GameViewport({
     }
     placeFixtures();
 
-    const lightPool = Array.from({ length: LIGHT_POOL_SIZE }, () => {
-      const light = new THREE.PointLight(0xffffff, 0, 1, 2);
+    const lightPool = Array.from({ length: LIGHT_POOL_SIZE }, (_, slot) => {
+      // (its decay tags it as this slot's - see POOL_DECAY_TAG)
+      const light = new THREE.PointLight(0xffffff, 0, 1, POOL_DECAY + (slot + 1) * POOL_DECAY_TAG);
       scene.add(light);
-      // the source it serves (see poolSources), and how faded in
-      return { light, key: null as string | null, level: 0 };
+      // the source it serves (see poolSources), and how faded in; the reach
+      // its bits in the reach texture were set for
+      return { light, key: null as string | null, level: 0, reach: null as string | null };
     });
+    // The pool's lights don't shine through walls: each lights only the
+    // cells it can see (see lightGrid.ts, LightGridUniforms.reach) - worked
+    // out once per light, place and set of open doors
+    lightGrid.reach.value.dispose();
+    lightGrid.reach.value = createLightReach(map.width, map.height);
+    lightGrid.reachOn.value = 1;
+    const reachCache = new Map<string, string[]>();
+    const reachOf = (id: string, l: { x: number; z: number; range: number }, doors: ReadonlySet<string>) => {
+      let cells = reachCache.get(id);
+      if (!cells) {
+        // (flashes come and go, each a source of its own: let it not grow)
+        if (reachCache.size > 256) reachCache.clear();
+        cells = [...visibleCells(map, l.x, l.z, Math.ceil(l.range), (k) => doors.has(k))];
+        reachCache.set(id, cells);
+      }
+      return cells;
+    };
+    // the slots' bits redone whenever a slot's light (or its reach) changes
+    function updateLightReach(sources: Map<string, { x: number; z: number; range: number }>) {
+      // dev: __voidcrewNoReach = true in the console lets them through walls again, to compare
+      lightGrid.reachOn.value = import.meta.env.DEV && (window as { __voidcrewNoReach?: boolean }).__voidcrewNoReach ? 0 : 1;
+      const doors = openDoorsRef.current;
+      const doorsKey = [...doors].sort().join(";");
+      let changed = false;
+      const ids = lightPool.map((slot) => {
+        const l = slot.key ? sources.get(slot.key) : undefined;
+        const id = l ? `${slot.key}|${Math.round(l.x * 100)},${Math.round(l.z * 100)},${l.range}|${doorsKey}` : null;
+        if (id !== slot.reach) changed = true;
+        return id;
+      });
+      if (!changed) return;
+      const tex = lightGrid.reach.value;
+      const bits = tex.image.data as Uint8Array;
+      bits.fill(0);
+      lightPool.forEach((slot, k) => {
+        slot.reach = ids[k];
+        const l = slot.key ? sources.get(slot.key) : undefined;
+        if (!l || !ids[k]) return;
+        for (const key of reachOf(ids[k]!, l, doors)) {
+          const [x, y] = key.split(",").map(Number);
+          if (x >= 0 && y >= 0 && x < map.width && y < map.height) bits[y * map.width + x] |= 1 << k;
+        }
+      });
+      tex.needsUpdate = true;
+    }
     // the cells seen from the party's cell, redone when it changes cell or
     // a door opens or shuts
     // The cells seen from the party's cell (see visibility.ts) - from its
@@ -3838,6 +4040,7 @@ export function GameViewport({
     let culledCount = -1;
     function cellOf(obj: THREE.Object3D): string | null {
       let key = cullCells.get(obj);
+      if (key === undefined && obj.userData.cullCell) key = obj.userData.cullCell as string;
       if (key === undefined) {
         obj.updateMatrixWorld(true);
         cullBox.setFromObject(obj);
@@ -3851,6 +4054,33 @@ export function GameViewport({
       }
       return key;
     }
+    // A prop bigger than a cell (a tree's crown, a tall pillar) isn't left
+    // always drawn: it's seen while any cell under its footprint is (an
+    // object that isn't a prop, and has no footprint, still is).
+    const bigPropCells = new WeakMap<THREE.Object3D, string[] | null>();
+    function bigPropSeen(obj: THREE.Object3D): boolean {
+      let cells = bigPropCells.get(obj);
+      if (cells === undefined) {
+        cells = null;
+        if (obj.userData.prop) {
+          obj.updateMatrixWorld(true);
+          cullBox.setFromObject(obj);
+          if (!cullBox.isEmpty()) {
+            const x0 = Math.round(cullBox.min.x);
+            const x1 = Math.round(cullBox.max.x);
+            const z0 = Math.round(cullBox.min.z);
+            const z1 = Math.round(cullBox.max.z);
+            // (a runaway size - a sky-high thing - stays always drawn)
+            if (x1 - x0 <= 4 && z1 - z0 <= 4) {
+              cells = [];
+              for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) cells.push(cellKey(cx, cz));
+            }
+          }
+        }
+        bigPropCells.set(obj, cells);
+      }
+      return cells === null || cells.some((c) => sight.cells.has(c));
+    }
     // dev: __voidcrewNoCull = true in the console draws everything, to compare
     let cullingOff = false;
     function applySight(changed: boolean) {
@@ -3862,7 +4092,23 @@ export function GameViewport({
       for (const obj of group.children) {
         if (obj.userData.actor || obj.userData.item) continue;
         const key = cellOf(obj);
-        obj.visible = off || key === null || sight.cells.has(key);
+        const seen = off || (key === null ? bigPropSeen(obj) : sight.cells.has(key));
+        // (a surface's own pass decides, with its facing - every frame)
+        if (obj.userData.facing) obj.userData.inSight = seen;
+        else obj.visible = seen;
+      }
+      cullFacing();
+    }
+    // Surfaces seen from behind their plane are hidden - by more than a
+    // margin: the relief stands out of the plane (up to its depth), and its
+    // bumps could catch a grazing look from just behind it. Every frame (it
+    // turns with the eye, between cells too); ~a dot product a surface.
+    const FACING_MARGIN = 2 * Math.max(reliefDepth, floorDepth) + 0.02;
+    function cullFacing() {
+      const eye = camera.position;
+      for (const obj of facingSurfaces) {
+        const { n, d } = obj.userData.facing as { n: THREE.Vector3; d: number };
+        obj.visible = !!obj.userData.inSight && (cullingOff || n.dot(eye) - d > -FACING_MARGIN);
       }
     }
     let lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
@@ -4022,7 +4268,7 @@ export function GameViewport({
       intensityScale: number,
       dt: number,
     ) {
-      const range = settingsRef.current.viewDistance;
+      const range = effectiveViewDistance(settingsRef.current);
       const fadeEnd = range;
       const fadeStart = range - LIGHT_FADE_SPAN;
       applySight(updateSight(party, range));
@@ -4069,6 +4315,15 @@ export function GameViewport({
         const scale = l.flash ? 1 : intensityScale;
         slot.light.intensity = l.intensity * scale * slot.level * (1 - smoothstep(fadeStart, fadeEnd, target.dist));
       }
+      // (a slot fading out keeps the reach of the light it last had)
+      const placed = new Map<string, PoolSource>(sources.map((l) => [l.key, l]));
+      for (const slot of lightPool) {
+        if (slot.key && !placed.has(slot.key)) {
+          const p = slot.light.position;
+          placed.set(slot.key, { key: slot.key, x: p.x, y: p.y, z: p.z, color: 0, intensity: 0, range: slot.light.distance });
+        }
+      }
+      updateLightReach(placed);
     }
 
     // Actors are Doom-style sprites: an upright quad turned to face the
@@ -5470,10 +5725,10 @@ export function GameViewport({
       ambient.intensity = s.ambientIntensity;
       pointLight.intensity = s.headlamp ? s.pointLightIntensity * rideDip : 0;
       lightGrid.scale.value = s.bakedLights ? s.mapLightIntensity * rideDip : 0;
-      const fogFar = s.viewDistance - FOG_FAR_MARGIN;
+      const fogFar = effectiveViewDistance(s) - FOG_FAR_MARGIN;
       if (fog.far !== fogFar) {
         fog.far = fogFar;
-        camera.far = s.viewDistance + 0.5;
+        camera.far = effectiveViewDistance(s) + 0.5;
         camera.updateProjectionMatrix();
       }
       for (const kit of allKits()) {
@@ -5552,6 +5807,7 @@ export function GameViewport({
         s.mapLightIntensity * rideDip,
         dt,
       );
+      cullFacing();
       // free-standing lights' bulbs: shown while editing (to pick them),
       // in the game only where the light asks for it
       for (const obj of fixtures) {

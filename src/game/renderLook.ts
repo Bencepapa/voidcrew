@@ -14,6 +14,8 @@ export const RENDER_NUMBER_KEYS = [
   "wallHeight",
   "ambientIntensity",
   "mapLightIntensity",
+  // the baked light bounced round corners (see lightGrid.ts bounceLight)
+  "lightBounce",
   "accentRatio",
   // the sky's light on the cells under an open ceiling (strength; compass
   // degrees it comes from; degrees above the horizon)

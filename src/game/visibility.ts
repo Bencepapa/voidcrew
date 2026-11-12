@@ -82,17 +82,46 @@ export function visibleCells(
   const cy = Math.round(fromZ);
   const seen = new Set<string>([cellKey(cx, cy)]);
 
-  // whether the segment from the viewer to (tx, tz) crosses no opaque cell
-  // before reaching the target cell (tx, ty)
+  // Whether the segment from the viewer to (px, pz) crosses no opaque cell
+  // before reaching the target cell (tx, ty). It walks the exact cells the
+  // segment passes through (not points along it, which can skip the corner
+  // of a wall cell, or slip between two wall cells touching at a corner -
+  // the walls there meet, nothing shows through). Through exactly a corner
+  // it's blocked only when both cells beside it are opaque.
   const clear = (px: number, pz: number, tx: number, ty: number) => {
     const dx = px - fromX;
     const dz = pz - fromZ;
-    const steps = Math.ceil(Math.hypot(dx, dz) / STEP);
-    for (let i = 1; i < steps; i++) {
-      const x = Math.round(fromX + (dx * i) / steps);
-      const y = Math.round(fromZ + (dz * i) / steps);
+    let x = cx;
+    let y = cy;
+    const sx = dx > 0 ? 1 : -1;
+    const sy = dz > 0 ? 1 : -1;
+    // the segment's parameter (0..1) at the next column / row boundary, and
+    // per whole cell
+    const tdx = dx !== 0 ? Math.abs(1 / dx) : Infinity;
+    const tdy = dz !== 0 ? Math.abs(1 / dz) : Infinity;
+    let tx1 = dx !== 0 ? (x + sx * 0.5 - fromX) / dx : Infinity;
+    let ty1 = dz !== 0 ? (y + sy * 0.5 - fromZ) / dz : Infinity;
+    const blocked = (bx: number, by: number) => (bx !== cx || by !== cy) && opaque(bx, by);
+    for (let guard = 0; guard < 4 * (radius + 2); guard++) {
       if (x === tx && y === ty) return true;
-      if ((x !== cx || y !== cy) && opaque(x, y)) return false;
+      const t = Math.min(tx1, ty1);
+      if (t > 1) return true;
+      if (Math.abs(tx1 - ty1) < 1e-9) {
+        // through a corner
+        if (blocked(x + sx, y) && blocked(x, y + sy)) return false;
+        x += sx;
+        y += sy;
+        tx1 += tdx;
+        ty1 += tdy;
+      } else if (tx1 < ty1) {
+        x += sx;
+        tx1 += tdx;
+      } else {
+        y += sy;
+        ty1 += tdy;
+      }
+      if (x === tx && y === ty) return true;
+      if (blocked(x, y)) return false;
     }
     return true;
   };

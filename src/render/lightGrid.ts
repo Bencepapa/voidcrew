@@ -67,7 +67,9 @@ export function bakeLightGrid(
   map: GameMap,
   lights: LightSpec[],
   wallHeight: number,
-  options: { perCell?: number; mode?: LightGridMode } = {},
+  // bounce: how strong the light bounced round corners is (see bounceLight;
+  // 0: none - a room no light sees stays dark)
+  options: { perCell?: number; mode?: LightGridMode; bounce?: number } = {},
 ): LightGridData {
   const perCell = Math.max(1, Math.round(options.perCell ?? GRID_PER_CELL));
   const mode = options.mode ?? "cube";
@@ -191,6 +193,61 @@ export function bakeLightGrid(
     }
   }
 
+  // the light bounced round corners (see bounceLight), as ambient: on all
+  // six sides of the cube, or the directional grid's ambient part
+  const bounce = options.bounce ?? 0;
+  if (bounce > 0) {
+    const cellLight = bounceLight(map, lights);
+    const W = map.width;
+    const open = (x: number, z: number) => x >= 0 && z >= 0 && x < W && z < map.height && cellAt(map, x, z) !== "wall";
+    const targets = mode === "cube" ? faces : [faces[0]];
+    for (let k = 0; k < nz; k++) {
+      for (let i = 0; i < nx; i++) {
+        // Smooth from cell to cell (bilinear between the four nearest cell
+        // centres), but only over cells this sample's own one opens onto -
+        // never across a wall, nor diagonally round the end of one
+        const px = sx(i);
+        const pz = sz(k);
+        const ox = Math.round(px);
+        const oz = Math.round(pz);
+        if (!open(ox, oz)) continue;
+        const x0 = Math.floor(px);
+        const z0 = Math.floor(pz);
+        const fx = px - x0;
+        const fz = pz - z0;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let sum = 0;
+        for (const [cx, cz, w] of [
+          [x0, z0, (1 - fx) * (1 - fz)],
+          [x0 + 1, z0, fx * (1 - fz)],
+          [x0, z0 + 1, (1 - fx) * fz],
+          [x0 + 1, z0 + 1, fx * fz],
+        ]) {
+          if (!open(cx, cz)) continue;
+          if (cx !== ox && cz !== oz && !open(cx, oz) && !open(ox, cz)) continue;
+          const c = (cz * W + cx) * 3;
+          r += cellLight[c] * w;
+          g += cellLight[c + 1] * w;
+          b += cellLight[c + 2] * w;
+          sum += w;
+        }
+        if (sum <= 0) continue;
+        const s = (bounce * BOUNCE_SCALE) / sum;
+        for (let j = 0; j < ny; j++) {
+          const n = index(i, k, j);
+          if (!valid[n]) continue;
+          for (const f of targets) {
+            f[n * 3] += r * s;
+            f[n * 3 + 1] += g * s;
+            f[n * 3 + 2] += b * s;
+          }
+        }
+      }
+    }
+  }
+
   // directional: the main directions, normalized
   if (mainDir) {
     const dir = faces[2];
@@ -254,6 +311,72 @@ export function bakeLightGrid(
     faces,
     mode,
   };
+}
+
+// Bounced light: a lamp's light doesn't stop where its rays do - it spills
+// off the walls round the corner into the next room, dimmer with every cell
+// it travels. A cheap stand-in for that: from each light's cell, a flood
+// through the open cells (and doorways - the bake has the doors open), never
+// through a wall, losing BOUNCE_FALLOFF of its strength per cell, for up to
+// BOUNCE_STEPS cells. The sum per cell (RGB, row by row) - the bake spreads
+// it over the cell's samples as ambient light.
+// (an unsteady light's bounce is baked too, at its steady strength: the
+// flicker of light that has bounced about is barely there anyway)
+const BOUNCE_STEPS = 6;
+const BOUNCE_FALLOFF = 0.55;
+// how bright a lamp's bounce is in its own cell, at a bounce setting of 1
+// (a part of its strength - most of it is the direct light)
+const BOUNCE_SCALE = 0.12;
+const SKY_BOUNCE_SHARE = 0.25;
+
+function bounceLight(map: GameMap, lights: LightSpec[]): Float32Array {
+  const W = map.width;
+  const H = map.height;
+  const out = new Float32Array(W * H * 3);
+  const open = (x: number, z: number) => x >= 0 && z >= 0 && x < W && z < H && cellAt(map, x, z) !== "wall";
+  const seen = new Int32Array(W * H).fill(-1);
+  const color = new THREE.Color();
+  lights.forEach((light, li) => {
+    // its cell - or, for one sitting in a wall (a window's), the open cell
+    // beside it nearest to it
+    let sx = Math.round(light.x);
+    let sz = Math.round(light.z);
+    if (!open(sx, sz)) {
+      let best = Infinity;
+      let found: [number, number] | null = null;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const d = Math.hypot(sx + dx - light.x, sz + dz - light.z);
+        if (open(sx + dx, sz + dz) && d < best) [best, found] = [d, [sx + dx, sz + dz]];
+      }
+      if (!found) return;
+      [sx, sz] = found;
+    }
+    color.setHex(light.color);
+    let frontier = [sz * W + sx];
+    seen[sz * W + sx] = li;
+    // (the sky is one light per cell under it: their bounces overlap
+    // several times over, so each counts for less)
+    let strength = light.intensity * (light.kind === "sky" ? SKY_BOUNCE_SHARE : 1);
+    for (let step = 0; step <= BOUNCE_STEPS && frontier.length; step++) {
+      const next: number[] = [];
+      for (const c of frontier) {
+        out[c * 3] += color.r * strength;
+        out[c * 3 + 1] += color.g * strength;
+        out[c * 3 + 2] += color.b * strength;
+        const x = c % W;
+        const z = (c - x) / W;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const m = (z + dz) * W + x + dx;
+          if (!open(x + dx, z + dz) || seen[m] === li) continue;
+          seen[m] = li;
+          next.push(m);
+        }
+      }
+      frontier = next;
+      strength *= BOUNCE_FALLOFF;
+    }
+  });
+  return out;
 }
 
 // What else casts shadows in the bake: the props (but plants - they're
@@ -361,6 +484,39 @@ export interface LightGridUniforms {
   split: { value: number };
   min2: { value: THREE.Vector3 };
   size2: { value: THREE.Vector3 };
+  // The real lights' reach (see createLightReach): per map cell, a bit per
+  // pooled light that can see into it; a light tagged as pooled (see
+  // POOL_DECAY_TAG) lights a surface only in a cell whose bit it has.
+  // reachOn 0: no reach set, every light lights everything (as three.js does)
+  reach: { value: THREE.DataTexture };
+  reachOn: { value: number };
+}
+
+// Real lights (three.js PointLights) have no shadows - a shadow map per light
+// is too dear on a phone - so one would light the far side of a wall as well
+// as its own: a torch in the next room lights a dead end's back wall and
+// floor through it. Instead each pooled light carries a list of the cells it
+// can see (a sight test over the map grid, walls and shut doors blocking),
+// and lights nothing outside them. The shader needs to know which light is
+// which: a pooled light's decay is POOL_DECAY (three.js's usual 2) plus its
+// slot number plus one, times POOL_DECAY_TAG - too little to see in its
+// falloff (about 1% at most, at the far end of its range), and every other
+// light (decay exactly 2: the headlamp, the lift shaft's) is left alone.
+export const POOL_DECAY = 2;
+export const POOL_DECAY_TAG = 0.001;
+// how far out from a wall its cell is looked up: past the relief's bumps, so
+// a wall's face counts in the cell in front of it, not the wall's
+const REACH_PROBE = 0.15;
+
+// the texture a pool's reach is kept in: a byte per map cell, bit k for slot
+// k (up to 8 slots), row by row
+export function createLightReach(width: number, height: number): THREE.DataTexture {
+  const tex = new THREE.DataTexture(new Uint8Array(width * height), width, height, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
+  tex.unpackAlignment = 1;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 export function createLightGridUniforms(): LightGridUniforms {
@@ -380,6 +536,8 @@ export function createLightGridUniforms(): LightGridUniforms {
     split: { value: 0 },
     min2: { value: new THREE.Vector3() },
     size2: { value: new THREE.Vector3(1, 1, 1) },
+    reach: { value: createLightReach(1, 1) },
+    reachOn: { value: 0 },
   };
 }
 
@@ -421,7 +579,15 @@ export function setLightGrid(uniforms: LightGridUniforms, data: LightGridData, a
 
 export function disposeLightGrid(uniforms: LightGridUniforms) {
   for (const f of uniforms.faces) f.value.dispose();
+  uniforms.reach.value.dispose();
 }
+
+// three.js's point light loop, each light's contribution cut to its reach
+// (see LightGridUniforms.reach) - `lgReachBits` is the fragment's cell's
+const LIGHTS_BEGIN_REACHED = THREE.ShaderChunk.lights_fragment_begin.replace(
+  "getPointLightInfo( pointLight, geometryPosition, directLight );",
+  "getPointLightInfo( pointLight, geometryPosition, directLight );\n\t\tdirectLight.color *= lgReached( pointLight.decay, lgReachBits );",
+);
 
 // how strongly the grid's light shows in the reflections (see useLightGrid)
 const SHEEN = 0.9;
@@ -441,7 +607,7 @@ export function useLightGrid(material: THREE.Material, uniforms: LightGridUnifor
   const accent = material.userData.accent === true;
   // (and its glow too, unless it's a light's own colour)
   const accentGlow = accent && material.userData.accentGlow !== false;
-  material.customProgramCacheKey = () => `${previousKey}|light-grid${accent ? "" : "|no-accent"}${accentGlow ? "" : "|no-accent-glow"}`;
+  material.customProgramCacheKey = () => `${previousKey}|light-grid-reach${accent ? "" : "|no-accent"}${accentGlow ? "" : "|no-accent-glow"}`;
   material.onBeforeCompile = (shader, renderer) => {
     previous.call(material, shader, renderer);
     uniforms.faces.forEach((f, a) => (shader.uniforms[`uLgFace${a}`] = f));
@@ -452,6 +618,8 @@ export function useLightGrid(material: THREE.Material, uniforms: LightGridUnifor
     shader.uniforms.uLgSplit = uniforms.split;
     shader.uniforms.uLgMin2 = uniforms.min2;
     shader.uniforms.uLgSize2 = uniforms.size2;
+    shader.uniforms.uLgReach = uniforms.reach;
+    shader.uniforms.uLgReachOn = uniforms.reachOn;
     // the ship's accent color (see accent.ts)
     // (the set's own, if it has one - see ownAccentUniforms)
     Object.assign(shader.uniforms, material.userData.accentUniforms ?? ACCENT_UNIFORMS);
@@ -476,7 +644,16 @@ uniform float uLgMode;
 uniform float uLgSplit;
 uniform vec3 uLgMin2;
 uniform vec3 uLgSize2;
+uniform highp sampler2D uLgReach;
+uniform float uLgReachOn;
 ${ACCENT_GLSL}
+// whether a point light reaches this fragment's cell: a pooled one (tagged
+// by its decay) only if the cell's bit for its slot is set
+float lgReached(float decay, int bits) {
+  int slot = int(floor((decay - ${POOL_DECAY.toFixed(1)}) / ${POOL_DECAY_TAG} + 0.5)) - 1;
+  if (slot < 0 || slot > 7) return 1.0;
+  return float((bits >> slot) & 1);
+}
 #define LG_SHEEN ${SHEEN.toFixed(2)}
 // the light arriving at a grid point from direction d (an ambient cube)
 vec3 lgCube(vec3 d, vec3 uvw) {
@@ -493,7 +670,24 @@ vec3 lgCube(vec3 d, vec3 uvw) {
       )
       .replace(
         "#include <lights_fragment_begin>",
-        `#include <lights_fragment_begin>
+        `// the pooled lights reaching this fragment's cell (see LightGridUniforms.reach)
+int lgReachBits = 255;
+if (uLgReachOn > 0.5) {
+  // (the surface's own normal - not the normal map's, nor a relief bump's
+  // slant - snapped to its main axis: a floor looks up in its own cell even
+  // at the cell's edge, a wall straight out into the cell it faces)
+  vec3 lgFaceN = inverseTransformDirection(nonPerturbedNormal, viewMatrix);
+  vec3 lgFaceA = abs(lgFaceN);
+  vec3 lgProbe = lgFaceA.y >= max(lgFaceA.x, lgFaceA.z) ? vec3(0.0)
+    : lgFaceA.x >= lgFaceA.z ? vec3(sign(lgFaceN.x), 0.0, 0.0) : vec3(0.0, 0.0, sign(lgFaceN.z));
+  vec3 lgCellP = vLgWorld + lgProbe * ${REACH_PROBE.toFixed(2)};
+  ivec2 lgReachSize = textureSize(uLgReach, 0);
+  ivec2 lgCell = ivec2(floor(lgCellP.x + 0.5), floor(lgCellP.z + 0.5));
+  if (lgCell.x >= 0 && lgCell.y >= 0 && lgCell.x < lgReachSize.x && lgCell.y < lgReachSize.y) {
+    lgReachBits = int(texelFetch(uLgReach, lgCell, 0).r * 255.0 + 0.5);
+  }
+}
+${LIGHTS_BEGIN_REACHED}
 if (uLgScale > 0.0) {
   vec3 lgN = inverseTransformDirection(normal, viewMatrix);
   vec3 lgP = vLgWorld + lgN * 0.06;

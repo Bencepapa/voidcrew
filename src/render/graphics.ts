@@ -13,15 +13,27 @@ export interface Graphics {
   pixelRatioCap: number;
   // move the particles every this many frames (2: half the work, still smooth)
   particleEvery: number;
+  // the farthest the view reaches (cells), whatever the view distance setting
+  // asks: the fog closes in nearer and fewer cells are drawn (VIEW_DISTANCE_MAX:
+  // no limit)
+  viewDistanceCap: number;
 }
 
-export const GRAPHICS_KEYS: (keyof Graphics)[] = ["particleQuality", "wallDetail", "pixelRatioCap", "particleEvery"];
+// the view distance setting's top (see viewDistanceCap)
+export const VIEW_DISTANCE_MAX = 9;
+
+export const GRAPHICS_KEYS: (keyof Graphics)[] = ["particleQuality", "wallDetail", "pixelRatioCap", "particleEvery", "viewDistanceCap"];
 
 export const GRAPHICS_PRESETS: Record<string, Graphics> = {
-  Low: { particleQuality: 0.25, wallDetail: 16, pixelRatioCap: 1, particleEvery: 3 },
-  Medium: { particleQuality: 0.5, wallDetail: 32, pixelRatioCap: 1.5, particleEvery: 2 },
-  High: { particleQuality: 1, wallDetail: 64, pixelRatioCap: 2, particleEvery: 1 },
+  Low: { particleQuality: 0.25, wallDetail: 16, pixelRatioCap: 1, particleEvery: 3, viewDistanceCap: 5 },
+  Medium: { particleQuality: 0.5, wallDetail: 32, pixelRatioCap: 1.5, particleEvery: 2, viewDistanceCap: 6 },
+  High: { particleQuality: 1, wallDetail: 64, pixelRatioCap: 2, particleEvery: 1, viewDistanceCap: VIEW_DISTANCE_MAX },
 };
+
+// how far the view reaches: the view distance setting, within the device's cap
+export function effectiveViewDistance(s: { viewDistance: number; viewDistanceCap: number }): number {
+  return Math.min(s.viewDistance, s.viewDistanceCap);
+}
 
 const KEY = "voidcrew.graphics";
 
@@ -36,6 +48,11 @@ export function loadGraphics(): Graphics {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Graphics> | null;
     if (saved) for (const k of GRAPHICS_KEYS) if (typeof saved[k] === "number") base[k] = saved[k] as number;
+    // (saved before there was a cap: the one of the preset it was, if any)
+    if (saved && typeof saved.viewDistanceCap !== "number") {
+      const was = Object.values(GRAPHICS_PRESETS).find((p) => GRAPHICS_KEYS.every((k) => k === "viewDistanceCap" || p[k] === base[k]));
+      if (was) base.viewDistanceCap = was.viewDistanceCap;
+    }
   } catch {
     // (no storage, or a broken save: the device's own)
   }

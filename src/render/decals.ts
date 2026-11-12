@@ -22,6 +22,12 @@ const DECAL_DEPTH = 0.2;
 // (so the later one shows on top), up to this many steps.
 const DECAL_LAYERS = 64;
 const LAYER_UNITS = 3;
+// Pulling decals over the surfaces' distant versions (see pullUniforms): how
+// much nearer than a panel's middle one of its decal's vertices can be (half
+// a panel's diagonal, about), and a little extra pull on top of the measured
+// rise, for the depth buffer's own rounding
+const DECAL_PULL_LEAD = 0.75;
+const DECAL_PULL_MARGIN = 1.1;
 
 interface DecalManifestEntry {
   normal: boolean;
@@ -331,6 +337,37 @@ export class DecalLibrary {
     });
   }
 
+  // Far away, the surfaces under the decals swap to coarser versions (see
+  // reliefMesh's smoothLod) whose flat triangles bridge the relief's
+  // hollows - up to a few millimetres above the detailed surface a decal
+  // was cut from, and a polygon offset can't make up that much depth at a
+  // distance: patches of the decal vanish into the wall. So past each
+  // level's distance every decal vertex slides toward the eye along its own
+  // sight line by as far as that level rises (more at a slant, where the
+  // gap is deeper along the line): it lands on the same pixels, only nearer
+  // in depth. x, z: the levels' distances (world units, from the panel's
+  // middle as THREE.LOD measures it); y, w: their rise (0: none)
+  readonly pullUniforms = { uDecalPull: { value: new THREE.Vector4(0, 0, 0, 0) } };
+
+  // the surfaces' distant versions: from how far each shows, and how far it
+  // rises above the detailed surface (see ReliefResult.lodRise) - the worst
+  // per distance is kept, as more surfaces arrive
+  setFarPull(levels: { distance: number; rise: number }[]) {
+    for (const { distance, rise } of levels) {
+      if (rise > (this.farRise.get(distance) ?? 0)) this.farRise.set(distance, rise);
+    }
+    // the shader takes two steps: the nearest distance, then the farthest
+    // with the worst rise of all (a farther level never pulls less)
+    const sorted = [...this.farRise].sort((a, b) => a[0] - b[0]);
+    const v = this.pullUniforms.uDecalPull.value;
+    if (!sorted.length) return;
+    const worst = Math.max(...sorted.map(([, rise]) => rise));
+    const [d0, r0] = sorted[0];
+    const [d1] = sorted[sorted.length - 1];
+    v.set(d0, r0, d1, worst);
+  }
+  private farRise = new Map<number, number>();
+
   // a decal's material pulled forward as far as its place in the list says
   private layer(name: string, base: THREE.Material, index: number): THREE.Material {
     // (water is a shader of its own, all of it sharing one set of light uniforms)
@@ -342,10 +379,41 @@ export class DecalLibrary {
     if (!material) {
       material = std.clone();
       (material as THREE.MeshStandardMaterial).polygonOffsetUnits = std.polygonOffsetUnits - layer * LAYER_UNITS;
+      this.pullOverFarLevels(material);
       this.layered.set(key, material);
       this.disposables.push(material);
     }
     return material;
+  }
+
+  // (see pullUniforms)
+  private pullOverFarLevels(material: THREE.Material) {
+    const previous = material.onBeforeCompile;
+    const previousKey = material.customProgramCacheKey();
+    material.customProgramCacheKey = () => `${previousKey}|decal-pull`;
+    material.onBeforeCompile = (shader, renderer) => {
+      previous.call(material, shader, renderer);
+      Object.assign(shader.uniforms, this.pullUniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nuniform vec4 uDecalPull;")
+        .replace(
+          "#include <project_vertex>",
+          `#include <project_vertex>
+if (uDecalPull.y > 0.0) {
+  float pullDist = length(mvPosition.xyz);
+  // (a vertex is up to DECAL_PULL_LEAD nearer than its panel's middle, by
+  // which THREE.LOD switches: the pull starts that much early)
+  float pull = uDecalPull.y * smoothstep(uDecalPull.x - ${DECAL_PULL_LEAD.toFixed(2)}, uDecalPull.x, pullDist);
+  if (uDecalPull.w > uDecalPull.y) pull += (uDecalPull.w - uDecalPull.y) * smoothstep(uDecalPull.z - ${DECAL_PULL_LEAD.toFixed(2)}, uDecalPull.z, pullDist);
+  // the gap along the sight line: deeper the more slanted the view
+  float pullCos = abs(dot(normalize(transformedNormal), mvPosition.xyz / pullDist));
+  pull = pull * ${DECAL_PULL_MARGIN.toFixed(2)} / max(pullCos, 0.35);
+  mvPosition.xyz *= max(0.5, 1.0 - pull / pullDist);
+  gl_Position = projectionMatrix * mvPosition;
+}`,
+        );
+    };
+    material.needsUpdate = true;
   }
 
   // the water sheets made so far (one per decal, whatever floors it reaches)

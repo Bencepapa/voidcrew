@@ -57,6 +57,12 @@ export interface ReliefOptions {
   smooth?: boolean;
   // for a smooth one: how many cells along its long side (the graphics setting; default 64)
   smoothCells?: number;
+  // for a smooth one: a distant, low-detail version of the same surface -
+  // this many times fewer cells along each side. Its vertices are picked
+  // off the detailed one (heights worked out at smoothCells, then sampled),
+  // so the two agree on the base level, the eased edges and the panel's
+  // outline, and a far panel meets a near neighbor without a step.
+  smoothLod?: number;
 }
 
 export interface HoleBounds {
@@ -78,6 +84,12 @@ export interface ReliefResult {
   // extent of the central hole (e.g. a door frame's opening) in local units,
   // measured through the middle; null when the center isn't a hole
   holeBounds: HoleBounds | null;
+  // a distant version (smoothLod): how far its surface rises above the
+  // detailed one's anywhere (local units, toward the viewer) - a decal
+  // painted onto the detailed surface sinks into it that deep there, so
+  // decals are pulled toward the eye that much at its distance (see
+  // decals.ts, setFarPull); 0 for a detailed one
+  lodRise?: number;
 }
 
 // Relief geometry is built per height-map cell; larger maps are box-filtered
@@ -509,28 +521,61 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
     return top * (1 - ty) + bottom * ty;
   };
 
-  const nx = gw + 1;
-  const ny = gh + 1;
+  // the mesh's own cells: the height cells, or fewer for a distant version
+  // (smoothLod) - each of its vertices then sits on the detailed surface,
+  // `stepX` x `stepY` height cells apart
+  const lod = Math.max(1, opts.smoothLod ?? 1);
+  const mw = Math.max(1, Math.round(gw / lod));
+  const mh = Math.max(1, Math.round(gh / lod));
+  const stepX = gw / mw;
+  const stepY = gh / mh;
+  const nx = mw + 1;
+  const ny = mh + 1;
   const positions = new Float32Array(nx * ny * 3);
   const uvs = new Float32Array(nx * ny * 2);
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) {
       const k = j * nx + i;
-      positions[k * 3] = -opts.wallWidth / 2 + i * cellW;
-      positions[k * 3 + 1] = opts.wallHeight / 2 - j * cellH;
-      positions[k * 3 + 2] = sample(i, j);
-      uvs[k * 2] = (i + c0) / fullW;
-      uvs[k * 2 + 1] = 1 - (j + r0) / fullH;
+      positions[k * 3] = -opts.wallWidth / 2 + i * stepX * cellW;
+      positions[k * 3 + 1] = opts.wallHeight / 2 - j * stepY * cellH;
+      positions[k * 3 + 2] = sample(i * stepX, j * stepY);
+      uvs[k * 2] = (i * stepX + c0) / fullW;
+      uvs[k * 2 + 1] = 1 - (j * stepY + r0) / fullH;
     }
   }
   const indices: number[] = [];
-  for (let j = 0; j < gh; j++) {
-    for (let i = 0; i < gw; i++) {
+  for (let j = 0; j < mh; j++) {
+    for (let i = 0; i < mw; i++) {
       const a = j * nx + i;
       const b = a + 1;
       const c = a + nx;
       const d = c + 1;
       indices.push(a, c, d, a, d, b);
+    }
+  }
+  // A distant version's flat triangles cut across the detailed surface's
+  // hollows - how far they rise above it at worst (checked at the detailed
+  // mesh's own vertices: both are flat between them, the detailed mesh's
+  // triangles split the same way, so the gap peaks at one)
+  let lodRise = 0;
+  if (lod > 1) {
+    const at = (i: number, j: number) => positions[(j * nx + i) * 3 + 2];
+    for (let y = 0; y <= gh; y++) {
+      for (let x = 0; x <= gw; x++) {
+        const u = Math.min(mw - 1e-6, x / stepX);
+        const v = Math.min(mh - 1e-6, y / stepY);
+        const i = Math.floor(u);
+        const j = Math.floor(v);
+        const fu = u - i;
+        const fv = v - j;
+        const a = at(i, j);
+        const b = at(i + 1, j);
+        const c = at(i, j + 1);
+        const d = at(i + 1, j + 1);
+        // (the triangles a-c-d and a-d-b, as indexed below)
+        const coarse = fv >= fu ? a + fu * (d - c) + fv * (c - a) : a + fu * (b - a) + fv * (d - b);
+        lodRise = Math.max(lodRise, coarse - sample(x, y));
+      }
     }
   }
   const geometry = new THREE.BufferGeometry();
@@ -541,8 +586,12 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   geometry.computeVertexNormals();
   geometry.addGroup(0, indices.length, 0);
 
-  const aoMap = createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
-  return { geometry, aoMap, triangles: indices.length / 3, levelCount: 0, baked: false, maxZ, holeBounds: null };
+  // (a distant version uses its detailed one's AO map: none of its own)
+  const aoMap =
+    lod > 1
+      ? createAoTexture(new Float32Array([1]), 1, 1)
+      : createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
+  return { geometry, aoMap, triangles: indices.length / 3, levelCount: 0, baked: false, maxZ, holeBounds: null, lodRise };
 }
 
 // Horizon-based ambient occlusion over the relief's height field: for each

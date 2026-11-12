@@ -171,7 +171,7 @@ export function useGameState() {
   const [ride, setRide] = useState<LiftRide | null>(null);
 
   const pushLog = useCallback((text: string) => {
-    setLog((prev) => [...prev.slice(-7), { id: logId++, text }]);
+    setLog((prev) => [...prev.slice(-200), { id: logId++, text }]);
   }, []);
 
   // Lift doors close LIFT_DOOR_CLOSE_MS after the last passage: entering or

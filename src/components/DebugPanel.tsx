@@ -6,7 +6,7 @@ import type { ViewportSettings, ViewportStats, WallProfileId } from "./GameViewp
 import { downloadMap } from "../editor/mapStore";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { LOCKED_WORLD, WORLDS, switchWorld } from "../game/worlds";
-import { GRAPHICS_PRESETS, presetOf } from "../render/graphics";
+import { GRAPHICS_PRESETS, VIEW_DISTANCE_MAX, effectiveViewDistance, presetOf } from "../render/graphics";
 import type { WorldId } from "../game/worlds";
 import type { TextureSetKind } from "../render/textureSets";
 
@@ -368,6 +368,7 @@ export function DebugPanel({
                 </select>,
               )}
               {slider({ key: "lightGridDensity", label: "Baked samples per cell (unless the map sets it)", min: 2, max: 12, step: 1 })}
+              {slider({ key: "lightBounce", label: "Light bounce (0 = unlit rooms stay dark)", min: 0, max: 3, step: 0.05 })}
             </>
           )}
           {select(
@@ -431,7 +432,7 @@ export function DebugPanel({
         "Graphics",
         <>
           <div className="text-[10px] text-neutral-300">
-            For a weaker device: fewer particles, coarser walls, a lower resolution. Kept on this device. Some of these
+            For a weaker device: fewer particles, coarser walls, a lower resolution, a shorter view. Kept on this device. Some of these
             rebuild the scene.
           </div>
           {select(
@@ -477,9 +478,21 @@ export function DebugPanel({
               <option value={2}>2x (sharpest)</option>
             </select>,
           )}
-          {slider({ key: "viewDistance", label: "View distance (cells)", min: 5, max: 9, step: 0.5 })}
+          {select(
+            "View distance limit (fog closes in)",
+            <select value={settings.viewDistanceCap} onChange={(e) => set("viewDistanceCap", Number(e.target.value))} className={SELECT}>
+              <option value={5}>5 cells</option>
+              <option value={6}>6 cells</option>
+              <option value={7}>7 cells</option>
+              <option value={VIEW_DISTANCE_MAX}>none</option>
+            </select>,
+          )}
+          {slider({ key: "viewDistance", label: "View distance (cells)", min: 5, max: VIEW_DISTANCE_MAX, step: 0.5 })}
+          {effectiveViewDistance(settings) < settings.viewDistance && (
+            <div className="text-[10px] text-neutral-300">Limited to {effectiveViewDistance(settings)} by this device's setting above.</div>
+          )}
         </>,
-        "particles, wall polygons, resolution",
+        "particles, wall polygons, resolution, view distance",
       )}
 
       {section(
@@ -591,8 +604,47 @@ export function DebugPanel({
                 Relief triangles / wall: {stats.relief.trianglesPerWall.toLocaleString()} ({stats.relief.levelCount} levels)
               </span>
             )}
+            <button
+              type="button"
+              className={`${button} mt-1 self-start`}
+              onClick={() => {
+                const lines = [
+                  `Map: ${mapId}  Graphics: ${presetOf(settings)} (particles ${settings.particleQuality}, every ${settings.particleEvery}, wall cells ${settings.wallDetail}, pixel ratio cap ${settings.pixelRatioCap}, view distance ${settings.viewDistance})`,
+                  `Screen: ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}x`,
+                  `FPS: ${stats.fps.toFixed(0)} (${stats.frameMs.toFixed(1)} ms)`,
+                  `Rendered triangles: ${stats.renderedTriangles}`,
+                  `Draw calls: ${stats.drawCalls}`,
+                  `Cells in sight: ${stats.visibleCells}`,
+                  ...(stats.relief ? [`Relief triangles / wall: ${stats.relief.trianglesPerWall} (${stats.relief.levelCount} levels)`] : []),
+                ];
+                copyText(lines.join("\n"));
+              }}
+            >
+              Copy stats
+            </button>
           </div>,
         )}
     </div>
   );
+}
+
+// copy text to the clipboard - also over plain http (a phone on the LAN), where
+// navigator.clipboard isn't there: a hidden textarea and execCommand then
+function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {});
+    return;
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  try {
+    document.execCommand("copy");
+  } catch {
+    // (nothing to do)
+  }
+  area.remove();
 }
