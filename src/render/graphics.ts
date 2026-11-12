@@ -62,7 +62,7 @@ export const GRAPHICS_KEYS: (keyof Graphics)[] = [
 export const GRAPHICS_PRESETS: Record<string, Graphics> = {
   Low: { particleQuality: 0.25, wallDetail: 16, pixelRatioCap: 1, particleEvery: 3, viewDistanceCap: 5, lodScale: 1, antialias: 0, lightPool: 2, normalMaps: 0 },
   Medium: { particleQuality: 0.5, wallDetail: 32, pixelRatioCap: 1.25, particleEvery: 2, viewDistanceCap: 6, lodScale: 1, antialias: 0, lightPool: 4, normalMaps: 1 },
-  High: { particleQuality: 1, wallDetail: 64, pixelRatioCap: 2, particleEvery: 1, viewDistanceCap: VIEW_DISTANCE_HIGH, lodScale: 1, antialias: 1, lightPool: 8, normalMaps: 1 },
+  High: { particleQuality: 1, wallDetail: 64, pixelRatioCap: 1.5, particleEvery: 1, viewDistanceCap: VIEW_DISTANCE_HIGH, lodScale: 1, antialias: 1, lightPool: 8, normalMaps: 1 },
   Ultra: { particleQuality: 1, wallDetail: 64, pixelRatioCap: 2, particleEvery: 1, viewDistanceCap: VIEW_DISTANCE_MAX, lodScale: 3, antialias: 1, lightPool: 8, normalMaps: 1 },
 };
 
