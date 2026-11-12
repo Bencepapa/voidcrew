@@ -197,7 +197,7 @@ export default function App() {
   // bumped by every edit, undo, redo and save, to redraw the toolbar
   const [, setEdits] = useState(0);
   // the graphics choices belong to the device: kept in this browser
-  useEffect(() => saveGraphics(settings), [settings.particleQuality, settings.wallDetail, settings.pixelRatioCap, settings.particleEvery, settings.viewDistanceCap, settings.lodScale]);
+  useEffect(() => saveGraphics(settings), [settings.particleQuality, settings.wallDetail, settings.pixelRatioCap, settings.particleEvery, settings.viewDistanceCap, settings.lodScale, settings.antialias, settings.lightPool, settings.normalMaps]);
   const viewSettings = editMode ? { ...settings, noclip: true, headlamp: true } : settings;
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);

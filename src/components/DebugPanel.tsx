@@ -450,13 +450,11 @@ export function DebugPanel({
               value={presetOf(settings)}
               onChange={(e) => {
                 const preset = GRAPHICS_PRESETS[e.target.value];
-                // (Ultra is for seeing far: the view distance goes out to
-                // its limit; back from it, in to what the others allow)
-                const viewDistance =
-                  preset && preset.viewDistanceCap > VIEW_DISTANCE_HIGH
-                    ? preset.viewDistanceCap
-                    : Math.min(settings.viewDistance, VIEW_DISTANCE_HIGH);
-                if (preset) onChange({ ...settings, ...preset, viewDistance });
+                // (the view distance goes out to the preset's limit: Ultra
+                // is for seeing far, and High at 7 cells of its 9 left a
+                // lit hall 7 cells off in the dark; Low's and Medium's are
+                // their limits anyway)
+                if (preset) onChange({ ...settings, ...preset, viewDistance: preset.viewDistanceCap });
               }}
               className={SELECT}
             >
@@ -488,7 +486,10 @@ export function DebugPanel({
           {select(
             "Resolution (device pixels per pixel)",
             <select value={settings.pixelRatioCap} onChange={(e) => set("pixelRatioCap", Number(e.target.value))} className={SELECT}>
-              <option value={1}>1x (lowest)</option>
+              <option value={0.5}>0.5x (blurry, lightest)</option>
+              <option value={0.75}>0.75x (soft)</option>
+              <option value={1}>1x</option>
+              <option value={1.25}>1.25x</option>
               <option value={1.5}>1.5x</option>
               <option value={2}>2x (sharpest)</option>
             </select>,
@@ -511,6 +512,29 @@ export function DebugPanel({
               <option value={0}>full detail everywhere</option>
             </select>,
           )}
+          {select(
+            "Smoothed edges (antialiasing)",
+            <select value={settings.antialias} onChange={(e) => set("antialias", Number(e.target.value))} className={SELECT}>
+              <option value={0}>off</option>
+              <option value={1}>on</option>
+            </select>,
+          )}
+          {select(
+            "Real lights at once (torches, fires, flashes)",
+            <select value={settings.lightPool} onChange={(e) => set("lightPool", Number(e.target.value))} className={SELECT}>
+              <option value={2}>2 (lightest)</option>
+              <option value={4}>4</option>
+              <option value={6}>6</option>
+              <option value={8}>8 (all)</option>
+            </select>,
+          )}
+          {select(
+            "Surface normal maps (fine bumps)",
+            <select value={settings.normalMaps} onChange={(e) => set("normalMaps", Number(e.target.value))} className={SELECT}>
+              <option value={0}>off</option>
+              <option value={1}>on</option>
+            </select>,
+          )}
           {/* (past VIEW_DISTANCE_HIGH only when the limit above allows) */}
           {slider({
             key: "viewDistance",
@@ -523,7 +547,7 @@ export function DebugPanel({
             <div className="text-[10px] text-neutral-300">Limited to {effectiveViewDistance(settings)} by this device's setting above.</div>
           )}
         </>,
-        "particles, wall polygons, resolution, view distance",
+        "particles, wall polygons, resolution, view distance, lights, antialiasing",
       )}
 
       {section(
@@ -642,7 +666,7 @@ export function DebugPanel({
               className={`${button} mt-1 self-start`}
               onClick={() => {
                 const lines = [
-                  `Map: ${mapId}  Graphics: ${presetOf(settings)} (particles ${settings.particleQuality}, every ${settings.particleEvery}, wall cells ${settings.wallDetail}, LOD scale ${settings.lodScale}, pixel ratio cap ${settings.pixelRatioCap}, view distance ${settings.viewDistance})`,
+                  `Map: ${mapId}  Graphics: ${presetOf(settings)} (particles ${settings.particleQuality}, every ${settings.particleEvery}, wall cells ${settings.wallDetail}, LOD scale ${settings.lodScale}, pixel ratio cap ${settings.pixelRatioCap}, antialias ${settings.antialias}, lights ${settings.lightPool}, normal maps ${settings.normalMaps}, view distance ${settings.viewDistance})`,
                   `Screen: ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}x`,
                   `FPS: ${stats.fps.toFixed(0)} (${stats.frameMs.toFixed(1)} ms)`,
                   `Rendered triangles: ${stats.renderedTriangles}`,

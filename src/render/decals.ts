@@ -417,16 +417,63 @@ if (uDecalPull.y > 0.0) {
   }
 
   // the water sheets made so far (one per decal, whatever floors it reaches)
-  private sheets = new Set<number>();
+  private sheets = new Map<number, { hosts: THREE.Object3D[] }>();
   // every mesh put in the scene, to take out again (see reset)
   private meshes: THREE.Object3D[] = [];
 
   // show or hide every decal (the editor's layer toggle)
+  // (shown again, which of them are drawn is up to cull, next frame)
   setVisible(visible: boolean) {
     this.visibleNow = visible;
-    for (const mesh of this.meshes) mesh.visible = visible;
+    if (!visible) for (const mesh of this.meshes) mesh.visible = false;
   }
   private visibleNow = true;
+
+  // Each decal piece is drawn only while the surface it lies on is: a decal
+  // on a wall panel culled (its cell out of sight, or the eye behind its
+  // plane - the far side of the wall) costs nothing either, instead of
+  // its hundreds of relief-following triangles going down the pipeline to
+  // be hidden by the depth test. And a piece on a surface showing one of its
+  // distant versions (a THREE.LOD) is swapped for one cut from that version
+  // - a few dozen triangles instead of hundreds, and lying exactly on what's
+  // drawn there. Called every frame, after the surfaces' own culling.
+  cull(camera: THREE.Camera) {
+    for (const piece of this.pieces) {
+      const shown = this.visibleNow && piece.hosts.some((h) => h.visible);
+      piece.mesh.visible = shown;
+      if (!shown || !piece.lod) continue;
+      // (the renderer updates the LOD again while drawing: the same level,
+      // the camera hasn't moved since)
+      piece.lod.update(camera);
+      const level = piece.lod.getCurrentLevel();
+      let geometry = piece.levels[level];
+      if (geometry === undefined) {
+        geometry = this.cut(piece.projection, piece.lod.levels[level].object as THREE.Mesh);
+        piece.levels[level] = geometry;
+      }
+      if (geometry) piece.mesh.geometry = geometry;
+      else piece.mesh.visible = false;
+    }
+  }
+  // the decal pieces in the scene, each with the surface objects (the
+  // scene's own, under `parent`) whose culling it follows, and - on a
+  // surface with distant versions - its geometry per level of detail (null:
+  // the decal misses that level; undefined: not cut yet)
+  private pieces: {
+    mesh: THREE.Mesh;
+    hosts: THREE.Object3D[];
+    lod: THREE.LOD | null;
+    levels: (THREE.BufferGeometry | null | undefined)[];
+    projection: Projection;
+  }[] = [];
+
+  // the object a surface mesh is culled as: its ancestor right under the
+  // decals' parent (a LOD, a window's frame...), or the mesh itself
+  private hostOf(mesh: THREE.Object3D): THREE.Object3D {
+    let o = mesh;
+    while (o.parent && o.parent !== this.opts.parent) o = o.parent;
+    return o;
+  }
 
   // The map's decals changed (one put in, moved, taken out): all of them redone
   // on the surfaces already in the scene. Unchanged ones come out of the
@@ -434,6 +481,7 @@ if (uDecalPull.y > 0.0) {
   reset(specs: DecalSpec[]) {
     for (const mesh of this.meshes) this.opts.parent.remove(mesh);
     this.meshes = [];
+    this.pieces = [];
     this.projections.clear();
     this.built.length = 0;
     this.sheets.clear();
@@ -444,20 +492,51 @@ if (uDecalPull.y > 0.0) {
     if (p.water) {
       // Standing water is level: one flat sheet over the whole puddle, just
       // above the floor's highest bumps, instead of a skin that follows them
-      if (this.sheets.has(p.index)) return;
-      this.sheets.add(p.index);
+      // (the sheet shows while any of the floors under it does)
+      const existing = this.sheets.get(p.index);
+      if (existing) {
+        existing.hosts.push(this.hostOf(mesh));
+        return;
+      }
       const sheet = new THREE.Mesh(new THREE.PlaneGeometry(p.size.x, p.size.y), p.material);
       this.disposables.push(sheet.geometry);
       sheet.rotation.copy(p.orientation);
       const up = new THREE.Vector3(0, 0, 1).applyEuler(p.orientation);
       sheet.position.copy(p.position).addScaledVector(up, this.opts.waterLift ?? 0.02);
       sheet.userData.decalIndex = p.index;
+      sheet.userData.decalHost = true;
       sheet.visible = this.visibleNow;
       this.opts.parent.add(sheet);
       this.meshes.push(sheet);
+      const piece = { mesh: sheet, hosts: [this.hostOf(mesh)], lod: null, levels: [], projection: p };
+      this.pieces.push(piece);
+      this.sheets.set(p.index, piece);
       this.built.push({ decal: p.decal, key: p.key, triangles: 2 });
       return;
     }
+    const geometry = this.cut(p, mesh);
+    if (!geometry) return;
+    const triangles = geometry.getAttribute("position").count / 3;
+    const decal = new THREE.Mesh(geometry, p.material);
+    // an interactive decal: the viewport finds it by this when touched
+    if (p.action) decal.userData.action = p.action;
+    // the map editor picks it by this
+    decal.userData.decalIndex = p.index;
+    // (culled with its surface - see cull - not on its own by the viewport)
+    decal.userData.decalHost = true;
+    decal.visible = this.visibleNow;
+    this.opts.parent.add(decal);
+    this.meshes.push(decal);
+    // (the detailed surface is a LOD's level 0: its distant levels get
+    // their own cut of the decal as they're first shown)
+    const lod = mesh.parent instanceof THREE.LOD && mesh.parent.levels[0]?.object === mesh ? mesh.parent : null;
+    this.pieces.push({ mesh: decal, hosts: [this.hostOf(mesh)], lod, levels: [geometry], projection: p });
+    this.built.push({ decal: p.decal, key: p.key, triangles });
+  }
+
+  // the decal's geometry projected onto a surface mesh (shared through the
+  // geometry cache); null where it misses it
+  private cut(p: Projection, mesh: THREE.Mesh): THREE.BufferGeometry | null {
     mesh.updateWorldMatrix(true, false);
     const cache = this.opts.geometryCache;
     const key = cache
@@ -480,16 +559,6 @@ if (uDecalPull.y > 0.0) {
       if (cache) cache.set(key, geometry);
       else if (geometry) this.disposables.push(geometry);
     }
-    if (!geometry) return;
-    const triangles = geometry.getAttribute("position").count / 3;
-    const decal = new THREE.Mesh(geometry, p.material);
-    // an interactive decal: the viewport finds it by this when touched
-    if (p.action) decal.userData.action = p.action;
-    // the map editor picks it by this
-    decal.userData.decalIndex = p.index;
-    decal.visible = this.visibleNow;
-    this.opts.parent.add(decal);
-    this.meshes.push(decal);
-    this.built.push({ decal: p.decal, key: p.key, triangles });
+    return geometry;
   }
 }

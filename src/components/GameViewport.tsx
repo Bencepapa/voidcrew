@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
 import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
-import { VIEW_DISTANCE_HIGH, effectiveViewDistance, loadGraphics } from "../render/graphics";
+import { effectiveViewDistance, loadGraphics } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, itemSpot } from "../game/items";
@@ -140,6 +140,9 @@ export interface ViewportSettings {
   particleEvery: number;
   viewDistanceCap: number;
   lodScale: number;
+  antialias: number;
+  lightPool: number;
+  normalMaps: number;
   mapLightIntensity: number;
   // the sky's light on the cells under an open ceiling (see lights.ts SkyLight)
   skyLightIntensity: number;
@@ -290,7 +293,10 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   smokeWalls: true,
   smokeProps: true,
   smokeActors: true,
-  viewDistance: DEVICE_GRAPHICS.viewDistanceCap > VIEW_DISTANCE_HIGH ? DEVICE_GRAPHICS.viewDistanceCap : 7,
+  // (as far as the device's setting allows: High's 9 cells, not 7 - a lit
+  // hall 7 cells off was past the lights' fade and deep in the fog; Low's
+  // and Medium's caps are below 7 anyway)
+  viewDistance: DEVICE_GRAPHICS.viewDistanceCap,
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
@@ -572,6 +578,28 @@ const FOG_SPAN = 5;
 function fogNear(far: number): number {
   return Math.max(FOG_NEAR, far - FOG_SPAN);
 }
+// A dark fog is the dark, not a haze: what a lamp lights stands out of it
+// as far as it's drawn. So a lit pixel (by its brightness) isn't fogged
+// over the fog's whole span, only over its last LIT_FOG_SPAN cells - the
+// lights fade out over about as much (LIGHT_FADE_SPAN) - and an unlit one
+// as before. Without it a shorter view (High's 9 cells against Ultra's 14)
+// left a torch-lit hall 7 cells off nearly black, though drawn and lit:
+// the fog starts FOG_SPAN short of the view's end. A light fog (mist) is
+// left alone: it hides lit things too. (Every material's fog; a few
+// instructions a pixel.)
+const LIT_FOG_SPAN = 1.5;
+// (once: a hot reload runs this module again)
+if (!THREE.ShaderChunk.fog_fragment.includes("fogLit")) THREE.ShaderChunk.fog_fragment = THREE.ShaderChunk.fog_fragment.replace(
+  "gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );",
+  `#ifndef FOG_EXP2
+	{
+		const vec3 fogLuma = vec3( 0.3, 0.59, 0.11 );
+		float fogLit = smoothstep( 0.12, 0.4, dot( gl_FragColor.rgb, fogLuma ) ) * ( 1.0 - smoothstep( 0.03, 0.2, dot( fogColor, fogLuma ) ) );
+		fogFactor = mix( fogFactor, smoothstep( fogFar - ${LIT_FOG_SPAN.toFixed(2)}, fogFar, vFogDepth ), fogLit );
+	}
+	#endif
+	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );`,
+);
 
 // Map lights are served by a fixed pool of point lights reassigned to the
 // best sources every frame: three.js compiles the light count into its
@@ -583,6 +611,8 @@ function fogNear(far: number): number {
 // fades its light in and out instead of popping.
 // The sight (lights and culling) reaches the view distance setting; lights
 // fade out over its last LIGHT_FADE_SPAN cells.
+// (the most: the graphics setting can ask for fewer - Graphics.lightPool;
+// and no more than the reach texture has bits for, see lightGrid.ts)
 const LIGHT_POOL_SIZE = 8;
 const LIGHT_FADE_SPAN = 1.5;
 // where in the party's cell the sight is taken from (offsets from its center)
@@ -1270,6 +1300,9 @@ if (uPart >= 0 && onPart(vMapUv)) {
 // (`version`) and when the view goes.
 interface SceneCache {
   renderer: THREE.WebGLRenderer | null;
+  // whether the renderer was asked for antialiasing (fixed when it's made:
+  // a change of the setting makes a new one)
+  antialias: boolean;
   version: string;
   textures: Map<string, THREE.Texture>;
   decalTextures: Map<string, Promise<THREE.Texture>>;
@@ -1384,6 +1417,7 @@ export function GameViewport({
   // kept from one build of the scene to the next (see SceneCache)
   const cacheRef = useRef<SceneCache>({
     renderer: null,
+    antialias: false,
     version: "",
     textures: new Map(),
     decalTextures: new Map(),
@@ -1610,7 +1644,18 @@ export function GameViewport({
     const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, effectiveViewDistance(settings) + 0.5);
 
     const cache = cacheRef.current;
-    const renderer = cache.renderer ?? (cache.renderer = new THREE.WebGLRenderer({ antialias: true }));
+    // (antialiasing is the drawing buffer's, chosen when the context is
+    // made: the setting changed, the old renderer goes - its compiled
+    // shaders and uploads with it; the cached textures and geometry are
+    // uploaded again to the new one as they're drawn)
+    const antialias = settings.antialias > 0;
+    if (cache.renderer && cache.antialias !== antialias) {
+      cache.renderer.dispose();
+      cache.renderer.forceContextLoss();
+      cache.renderer = null;
+    }
+    cache.antialias = antialias;
+    const renderer = cache.renderer ?? (cache.renderer = new THREE.WebGLRenderer({ antialias }));
     // phones (touch screens) render at most 1.5 device pixels per CSS pixel:
     // their 3x screens cost 4x the pixels of 1.5x, for no pixel-art detail
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, settings.pixelRatioCap));
@@ -1719,9 +1764,12 @@ export function GameViewport({
         diffuse.magFilter = THREE.NearestFilter;
         normalMap.magFilter = THREE.NearestFilter;
       }
+      // (the lighter graphics settings go without: a texture read and the
+      // tangent frame worked out per pixel - see Graphics.normalMaps)
+      const surfaceNormals = settings.normalMaps > 0 ? normalMap : null;
       const wallMat = new THREE.MeshStandardMaterial({
         map: diffuse,
-        normalMap,
+        normalMap: surfaceNormals,
         // relief walls already carry the depth as real geometry
         displacementMap: isRelief || !displace ? null : depthMap,
         displacementScale: settings.displacementScale,
@@ -1762,7 +1810,7 @@ export function GameViewport({
         textures.push(emissiveMap);
         litMat = new THREE.MeshStandardMaterial({
           map: diffuse,
-          normalMap,
+          normalMap: surfaceNormals,
           roughness: settings.roughness,
           metalness: settings.metalness,
           emissive: lampColor(map),
@@ -4255,7 +4303,11 @@ export function GameViewport({
     }
     placeFixtures();
 
-    const lightPool = Array.from({ length: LIGHT_POOL_SIZE }, (_, slot) => {
+    // (the graphics setting's size, at most LIGHT_POOL_SIZE - fixed for the
+    // build: a new size is a new shader for every lit material, so it comes
+    // with a rebuild rather than mid-game)
+    const poolSize = Math.max(1, Math.min(LIGHT_POOL_SIZE, Math.round(settings.lightPool) || LIGHT_POOL_SIZE));
+    const lightPool = Array.from({ length: poolSize }, (_, slot) => {
       // (its decay tags it as this slot's - see POOL_DECAY_TAG)
       const light = new THREE.PointLight(0xffffff, 0, 1, POOL_DECAY + (slot + 1) * POOL_DECAY_TAG);
       scene.add(light);
@@ -4400,7 +4452,8 @@ export function GameViewport({
       culledCount = group.children.length;
       cullingOff = off;
       for (const obj of group.children) {
-        if (obj.userData.actor || obj.userData.item) continue;
+        // (a decal is culled with the surface it lies on - see cullFacing)
+        if (obj.userData.actor || obj.userData.item || obj.userData.decalHost) continue;
         // (the corner joins: each point's strip is in sight with any of the
         // cells round it; which are drawn is picked in cullFacing)
         if (obj.userData.joinStrips) {
@@ -4442,6 +4495,8 @@ export function GameViewport({
         joinFrustum.setFromProjectionMatrix(joinMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
         for (const strips of joinedStrips) strips.mesh.visible = strips.show((p) => p.inSight && joinFrustum.intersectsBox(p.box));
       }
+      // the decals with their surfaces, just decided (see DecalLibrary.cull)
+      decals.cull(camera);
     }
     let lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
     // bumped whenever objects are swapped in place (see objectsAlong)
@@ -4626,7 +4681,7 @@ export function GameViewport({
         .filter((c) => c.dist < fadeEnd && !c.behind && (!c.l.cell || litNear(c.l.cell, sight.cells)))
         .map((c) => ({ ...c, rank: current.has(c.l.key) && !c.l.flash ? c.rank * LIGHT_KEEP_BIAS : c.rank }))
         .sort((a, b) => a.rank - b.rank)
-        .slice(0, LIGHT_POOL_SIZE);
+        .slice(0, poolSize);
       const wanted = new Map(ranked.map((c) => [c.l.key, c]));
 
       // slots keep their source while it's wanted; freed slots fade out
@@ -6600,6 +6655,9 @@ export function GameViewport({
     settings.wallDetail,
     settings.lodScale,
     settings.pixelRatioCap,
+    settings.antialias,
+    settings.lightPool,
+    settings.normalMaps,
     settings.particleQuality,
     settings.floorReliefDepth,
     settings.skyLightIntensity,
