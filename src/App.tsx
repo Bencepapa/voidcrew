@@ -5,6 +5,7 @@ import { pickRender, renderDefaults } from "./game/renderLook";
 import { saveGraphics } from "./render/graphics";
 import type { AimFocus, AimFrame, EditDrag, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { EditorBar } from "./editor/EditorBar";
+import { SharedEditor, sharedConfigured } from "./editor/SharedEditor";
 import { PropEditor } from "./editor/PropEditor";
 import {
   applyEdit,
@@ -1898,6 +1899,7 @@ export default function App() {
       {editMode && <PropEditor />}
       {editMode && (
         <EditorBar
+          shared={sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}
           dock={compact ? null : editDock}
           tool={editTool}
           onTool={setEditTool}
