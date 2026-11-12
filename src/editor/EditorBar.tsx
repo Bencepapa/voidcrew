@@ -79,7 +79,7 @@ interface Props {
   propRotation: number;
   onPropRotate: () => void;
   // the Robot tool: the actor type a click puts in, and the selected actor
-  robotChoice: string;
+  robotChoice: string | null;
   onRobotChoice: (type: string) => void;
   actor: ActorInfo | null;
   onActorChange: (patch: { facing?: Direction; chance?: number; wake?: ActorWake } & Linked) => void;
@@ -413,7 +413,7 @@ const TOOL_HELP: Partial<Record<EditTool, string>> = {
   ladder: "click near a floor's edge (or a step's face): a ladder up that side · again: take it out",
   bridge: "click a floor: a bridge across it the way you face, at the ledges' height · again: take it out",
   door: "click a floor: a door there · click a door: pick it · right-click a door: back to floor",
-  robot: "click a floor: a robot there (facing you) · click a robot: pick it · Shift+click a floor: add it to the picked one's route · right-click: take it out",
+  robot: "pick a type, then click a floor: one there (facing you) · click a robot: pick it · Shift+click a floor: add it to the picked one's route · right-click: take it out",
   decal: "click a wall, floor or ceiling: the decal there · click a decal: pick it · right-click: take it off",
   prop: "click a floor (near a side or corner to push it there): put it in · click a prop: pick it · right-click: take it out",
   smoke: "click a wall, floor or anything: smoke from there (picked) · click its marker: pick it · right-click its marker: take it out",
@@ -565,6 +565,7 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
+            {!(p.robotChoice && assetInWorld(p.robotChoice)) && <span className="text-[10px] text-amber-200">pick a type to put in:</span>}
             {Object.keys(ACTOR_TYPES).filter((id) => assetInWorld(id)).map((type) => (
               <button
                 key={type}

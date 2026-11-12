@@ -76,6 +76,8 @@ export interface ReliefOptions {
   joinEdges?: number;
   // Keep neighboring floor tiles at the same height along all four edges.
   floorEdges?: boolean;
+  // Join a pillar block to its flat bevel rings at the nominal width.
+  flushRows?: boolean;
   // a stepped distant version (built from a coarser grid, with its own
   // levels): its detailed version's edge profile, to end on the same line
   edgeProfile?: EdgeSegment[];
@@ -259,7 +261,7 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   // x of a cell boundary at height z: a joined side edge lands on its
   // corner's mitre (see ReliefOptions.edgeModes)
   const modes = joined ? (opts.edgeModes ?? [0, 0]) : [0, 0];
-  const EX = (bx: number, z: number) => X(bx) + (bx === 0 ? -modes[0] * z : bx === gw ? modes[1] * z : 0);
+  const EX = (bx: number, z: number) => X(bx) + z * ((modes[0] + modes[1]) * bx / gw - modes[0]);
   // Per-cell key: its level, or HOLE for a transparent cell (or one on the
   // lowest `holeLevels`). Holes get no front face; the side faces around
   // them reach back to `holeBackZ`.
@@ -333,6 +335,11 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
     }
   }
 
+  if (opts.flushRows) {
+    for (const y of [0, gh - 1]) {
+      for (let x = 0; x < gw; x++) if (key[y * gw + x] !== HOLE) key[y * gw + x] = base;
+    }
+  }
   // outside the map counts as base level, so recesses touching the top/bottom
   // edge get a closing face - except next to a hole, which just stays open
   // (a door frame's opening runs out through the bottom edge). Joined edges
@@ -425,16 +432,16 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
       let y1 = y + 1;
       while (y1 < gh && levelAt(bx - 1, y1) === lL && levelAt(bx, y1) === lR) y1++;
 
-      const px = X(bx);
+      const pxL = EX(bx, zL), pxR = EX(bx, zR);
       const leftHigher = zL > zR;
       const u = U(leftHigher ? bx - 0.5 : bx + 0.5);
       const uLow = U(leftHigher ? bx + 0.5 : bx - 0.5);
       quad(
         [
-          [px, Y(y1), zL],
-          [px, Y(y1), zR],
-          [px, Y(y), zR],
-          [px, Y(y), zL],
+          [pxL, Y(y1), zL],
+          [pxR, Y(y1), zR],
+          [pxR, Y(y), zR],
+          [pxL, Y(y), zL],
         ],
         [leftHigher ? 1 : -1, 0, 0],
         [
@@ -625,6 +632,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
 
   // bilinear height at a continuous cell position (cell centers at +0.5)
   const sample = (fx: number, fy: number) => {
+    if (opts.flushRows && (fy <= 1e-6 || fy >= gh - 1e-6)) return 0;
     if (opts.floorEdges && (fx <= 1e-6 || fy <= 1e-6 || fx >= gw - 1e-6 || fy >= gh - 1e-6)) return 0;
     const x = Math.min(gw - 1, Math.max(0, fx - 0.5));
     const y = Math.min(gh - 1, Math.max(0, fy - 0.5));
@@ -693,7 +701,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
     const ids = rows.map((fy) => {
       const fx = i * stepX;
       const z = side >= 0 ? surfaceAt(side ? gw : 0, fy) : sample(fx, fy);
-      const shift = side === 0 ? -modes[0] * z : side === 1 ? modes[1] * z : 0;
+      const shift = (edgeZ?.(fy) ?? 0) * ((modes[0] + modes[1]) * fx / gw - modes[0]);
       pos.push(-opts.wallWidth / 2 + fx * cellW + shift, opts.wallHeight / 2 - fy * cellH, z);
       uv.push((fx + c0) / fullW, 1 - (fy + r0) / fullH);
       return pos.length / 3 - 1;

@@ -74,6 +74,18 @@ not two editors.
   - enemy – in the cell, facing away from the camera.
 - **Select, move, delete:** click a placed thing to select it (outlined, as
   the aiming highlight); Delete removes it, dragging moves it.
+- **Drag and drop** (each tool drags only its own kind; Ctrl+drag drags a
+  copy; one drag is one undo step): props, lights, robots and doors slide
+  over their floor (a ceiling lamp, a hung turret: their ceiling), by as
+  much as the pointer moves wherever they were grabbed; decals, items, smoke
+  and wall props go over the surfaces pointed at. A free-standing light
+  keeps its height (the wheel raises it); a ceiling lamp won't go into a
+  cell with a lamp already; a robot's route goes along if it still fits. A
+  door slides along its passage inside its cell (its offset, up to flush
+  with the edge); with Shift (Ctrl: a copy) it goes to another cell walled
+  on two opposite sides, keeping its settings. Ctrl+C / Ctrl+V copy and
+  paste the selected prop, decal, item, light or robot where the pointer is.
+  The Robot tool puts nothing in until a type is picked.
 - **Undo / redo:** Z / Y (and buttons); every edit is one step on a stack of
   map file snapshots.
 - **Save:** to disk through the dev server, or download (see above).

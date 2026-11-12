@@ -2441,6 +2441,7 @@ export function GameViewport({
         // the corners they land on (ReliefOptions.edgeModes)
         joinEdges?: number;
         floorEdges?: boolean;
+        flushRows?: boolean;
         edgeModes?: [number, number];
       },
     ) {
@@ -2510,6 +2511,7 @@ export function GameViewport({
             holeLevels: shape.holeLevels,
             joinEdges: shape.joinEdges,
             floorEdges: shape.floorEdges,
+            flushRows: shape.flushRows,
             edgeModes: shape.edgeModes,
             edgeProfile,
           });
@@ -3018,6 +3020,7 @@ export function GameViewport({
           const cut = await buildRelief(kit, {
             width: w,
             height: s1 - s0,
+            flushRows: true,
             flushEdges: false,
             depth: relief,
             coarse: PROP_COARSE,
@@ -3653,7 +3656,7 @@ export function GameViewport({
       fireEmitters = [];
       petalEmitters = [];
       return createSmoke(
-      (m.smokes ?? []).map((spec, index) => {
+      (m.smokes ?? []).flatMap((spec, index): SmokeEmitter[] => {
         const at = new THREE.Vector3(
           spec.cell.x + spec.pos[0],
           (floorHeight(map, spec.cell.x, spec.cell.y) + spec.pos[1]) * wallHeight,
@@ -3702,19 +3705,19 @@ export function GameViewport({
             color: new THREE.Color(parseColor(spec.color) ?? 0xf4a6c0),
             wind: blow ? [blow[0] * 0.1, blow[2] * 0.1] : [0, 0],
           });
-          return { ...emitter, density: 0 };
+          return [];
         }
-        if (!spec.fire) return emitter;
+        if (!spec.fire) return [emitter];
         // (its color tints the flames: none, as they burn)
         fireEmitters.push({ ...emitter, color: new THREE.Color(parseColor(spec.color) ?? 0xffffff) });
-        return {
+        return [{
           ...emitter,
           y: Math.min(emitter.ceiling - 0.1, emitter.y + FIRE_SMOKE_LIFT * wallHeight),
           blow: undefined,
           density: emitter.density * FIRE_SMOKE_DENSITY,
           size: emitter.size * FIRE_SMOKE_SIZE,
           color: new THREE.Color(FIRE_SMOKE_COLOR),
-        };
+        }];
       }),
       lightGrid,
       smokeWorld(m),
@@ -4055,8 +4058,8 @@ export function GameViewport({
     // a box whose UVs run in texels (TRIM_TEXELS per world unit) on every
     // face; one per size
     const trimBoxes = new Map<string, THREE.BoxGeometry>();
-    function trimBox(w: number, h: number, d: number): THREE.BoxGeometry {
-      const key = `${w.toFixed(4)},${h.toFixed(4)},${d.toFixed(4)}`;
+    function trimBox(w: number, h: number, d: number, uvScale = TRIM_TEXELS): THREE.BoxGeometry {
+      const key = `${w.toFixed(4)},${h.toFixed(4)},${d.toFixed(4)},${uvScale}`;
       let geo = trimBoxes.get(key);
       if (!geo) {
         geo = new THREE.BoxGeometry(w, h, d);
@@ -4073,7 +4076,7 @@ export function GameViewport({
         const uv = geo.getAttribute("uv");
         for (let i = 0; i < uv.count; i++) {
           const [su, sv] = spans[Math.floor(i / 4)];
-          uv.setXY(i, uv.getX(i) * su * TRIM_TEXELS, uv.getY(i) * sv * TRIM_TEXELS);
+          uv.setXY(i, uv.getX(i) * su * uvScale, uv.getY(i) * sv * uvScale);
         }
         trimBoxes.set(key, geo);
         geometries.push(geo);
@@ -4121,7 +4124,8 @@ export function GameViewport({
     // low hazard-striped kick plate along each edge. A grate deck has its
     // slots cut open, seen from both sides, resting on two slim stringers;
     // any other deck sits on a solid steel body. ---
-    const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.5, metalness: 0.6 });
+    const stoneBridge = map.world === "fantasy";
+    const bridgeMat = new THREE.MeshStandardMaterial(stoneBridge ? { map: primaryKit.wallMat.map, roughness: 1, metalness: 0 } : { color: 0x2a2d31, roughness: 0.5, metalness: 0.6 });
     // a see-through deck is seen from below as well
     const doubleSided = (src: THREE.MeshStandardMaterial) => {
       const mat = new THREE.MeshStandardMaterial({
@@ -4149,11 +4153,15 @@ export function GameViewport({
         bridgeGroup.add(mesh);
       };
       for (const side of [-1, 1]) {
-        const kick = new THREE.Mesh(trimBox(1, BRIDGE_KICK, LADDER_RAIL), hazardMat);
+        const kick = new THREE.Mesh(trimBox(1, BRIDGE_KICK, LADDER_RAIL, stoneBridge ? 1 : TRIM_TEXELS), stoneBridge ? bridgeMat : hazardMat);
         kick.position.set(0, BRIDGE_KICK / 2 - 0.01, side * (BRIDGE_WIDTH / 2));
         bridgeGroup.add(kick);
       }
       group.add(bridgeGroup);
+      if (stoneBridge) {
+        box(1, BRIDGE_THICKNESS, BRIDGE_WIDTH, 0, -BRIDGE_THICKNESS / 2, 0, bridgeMat);
+        continue;
+      }
 
       // the walking surface: the middle band of the floor tile, as wide as
       // the deck, so its texels stay square
@@ -5513,7 +5521,7 @@ export function GameViewport({
         // a bulb or a lamp panel; or a ceiling with its lamp in it (a lit
         // ceiling texture has no panel of its own to grab)
         const own = hit.light ?? (hit.kind === "ceiling" ? ownCeilingLight(latestMapRef.current, hit.cell) : -1);
-        index = own >= 0 ? own : undefined;
+        index = own >= 0 && latestMapRef.current.lights?.[own]?.pos ? own : undefined;
       } else if (kind === "door" && hit.door) {
         door = hit.door;
         index = -1;
@@ -5569,6 +5577,7 @@ export function GameViewport({
       const target = at ? { kind: "floor" as const, cell: { x: Math.round(at[0]), y: Math.round(at[1]) } } : editTargetAt(ndc);
       if (!target) return;
       const index = onEditDragRef.current?.({ kind: d.kind, index: d.index, copy: d.copy, first: d.first, id: d.id, at }, target);
+      if (index === false) return;
       d.first = false;
       if (typeof index === "number") d.index = index;
     };

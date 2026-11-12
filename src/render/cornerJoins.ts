@@ -399,7 +399,8 @@ function buildJoin(
   };
 
   // triangles per panel material: A's (with the level faces), B's
-  const buckets: { pos: number[]; nrm: number[]; uv: number[] }[] = [0, 1].map(() => ({ pos: [], nrm: [], uv: [] }));
+  const partsByMaterial = new Map<THREE.Material, JoinPart>();
+  const owners: THREE.Material[] = [];
   const tri = (bucket: number, v: [number, number, number, number, number][], n: THREE.Vector3) => {
     // wind counter-clockwise as seen from n
     const p0 = new THREE.Vector3(v[0][0], v[0][1], v[0][2]);
@@ -408,10 +409,15 @@ function buildJoin(
     const g = e1.cross(e2);
     if (g.lengthSq() < 1e-14) return;
     if (g.dot(n) < 0) v = [v[0], v[2], v[1]];
-    const b = buckets[bucket];
+    const mat = owners[bucket];
+    let b = partsByMaterial.get(mat);
+    if (!b) {
+      b = { material: mat, position: [], normal: [], uv: [] };
+      partsByMaterial.set(mat, b);
+    }
     for (const [x, y, z, u, vv] of v) {
-      b.pos.push(x, y, z);
-      b.nrm.push(n.x, n.y, n.z);
+      b.position.push(x, y, z);
+      b.normal.push(n.x, n.y, n.z);
       b.uv.push(u, vv);
     }
   };
@@ -498,8 +504,6 @@ function buildJoin(
   };
 
   let prev: { y: number; sec: Sec; v: number } | null = null;
-  let material: THREE.Material | null = null;
-  let materialB: THREE.Material | null = null;
   for (let i = 0; i < ys.length - 1; i++) {
     const top = ys[i];
     const bottom = ys[i + 1];
@@ -512,8 +516,8 @@ function buildJoin(
       prev = null;
       continue;
     }
-    material ??= panels[a.panel].material;
-    if (b) materialB ??= panels[b.panel].material;
+    owners[0] = panels[a.panel].material;
+    owners[1] = b ? panels[b.panel].material : owners[0];
     const sT = section(a.zTop, a.mode, b ? b.zTop : null, b ? b.mode : 0);
     const sB = section(a.zBottom, a.mode, b ? b.zBottom : null, b ? b.mode : 0);
     const vT: [number, number] = [a.vTop, b ? b.vTop : a.vTop];
@@ -528,21 +532,8 @@ function buildJoin(
   }
   if (prev) level(prev.y, prev.sec, null, prev.v);
 
-  const count = buckets.reduce((n, b) => n + b.pos.length / 3, 0);
-  if (!count || !material) return null;
-  const parts: JoinPart[] = [];
-  ([
-    [0, material],
-    [1, materialB ?? material],
-  ] as const).forEach(([bucket, mat]) => {
-    const b = buckets[bucket];
-    if (!b.pos.length) return;
-    const part = parts.find((q) => q.material === mat);
-    if (part) {
-      part.position.push(...b.pos);
-      part.normal.push(...b.nrm);
-      part.uv.push(...b.uv);
-    } else parts.push({ material: mat, position: b.pos, normal: b.nrm, uv: b.uv });
-  });
+  const parts = [...partsByMaterial.values()];
+  const count = parts.reduce((n, part) => n + part.position.length / 3, 0);
+  if (!count) return null;
   return { point: P.clone(), kind: kind ?? "lone", parts, triangles: count / 3 };
 }

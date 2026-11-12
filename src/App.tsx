@@ -3,7 +3,7 @@ import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
 import { saveGraphics } from "./render/graphics";
-import type { AimFocus, AimFrame, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
+import type { AimFocus, AimFrame, EditDrag, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { EditorBar } from "./editor/EditorBar";
 import { PropEditor } from "./editor/PropEditor";
 import {
@@ -20,15 +20,15 @@ import {
   undo,
 } from "./editor/mapStore";
 import { MAPS, START_MAP } from "./game/map";
-import { WORLDS, setActiveWorld, startWorld } from "./game/worlds";
+import { WORLDS, assetInWorld, setActiveWorld, startWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
 import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart } from "./editor/mapEdits";
-import { PROP_TYPES, flamePosition, propRetexturable } from "./game/props";
+import { PROP_TYPES, flamePosition, propPlacement, propRetexturable } from "./game/props";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
 import { ACTOR_TYPES } from "./game/actors";
-import { DOOR_EDGE_OFFSET, cellAt, ceilingHeight, doorAt, floorHeight } from "./game/map";
+import { DOOR_EDGE_OFFSET, cellAt, ceilingHeight, doorAt, doorFacingAt, floorHeight } from "./game/map";
 import type { Direction, MapLight, PropAnchor, PropSpec, Vec2 } from "./game/types";
 import { DIR_VECTOR, behindOf, rightOf } from "./game/movement";
 import { generateLights, ownCeilingLight } from "./game/lights";
@@ -154,8 +154,12 @@ export default function App() {
   const [selectedDoor, setSelectedDoor] = useState<Vec2 | null>(null);
   // the Robot tool: the actor type a click puts in, and the selected actor
   // (its index in the map's actors)
-  const [robotChoice, setRobotChoice] = useState(Object.keys(ACTOR_TYPES)[0]);
+  // (none at first: a click on a floor puts nothing in until one is picked -
+  // the first type of all may not even be of this world)
+  const [robotChoice, setRobotChoice] = useState<string | null>(null);
   const [selectedActor, setSelectedActor] = useState<number | null>(null);
+  // the Item tool's pick (its index in the map's items; its palette further down)
+  const [selectedItem, setSelectedItem] = useState<number | null>(null);
   // the deck variation played (see variation.ts): ?seed= in the URL, else
   // a new one; while editing there's none - everything shows
   const [seed, setSeed] = useState(() => Number(new URLSearchParams(location.search).get("seed")) || newSeed());
@@ -192,7 +196,7 @@ export default function App() {
   // bumped by every edit, undo, redo and save, to redraw the toolbar
   const [, setEdits] = useState(0);
   // the graphics choices belong to the device: kept in this browser
-  useEffect(() => saveGraphics(settings), [settings.particleQuality, settings.wallDetail, settings.pixelRatioCap, settings.particleEvery, settings.viewDistanceCap]);
+  useEffect(() => saveGraphics(settings), [settings.particleQuality, settings.wallDetail, settings.pixelRatioCap, settings.particleEvery, settings.viewDistanceCap, settings.lodScale]);
   const viewSettings = editMode ? { ...settings, noclip: true, headlamp: true } : settings;
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -321,84 +325,204 @@ export default function App() {
     if (PROP_TYPES[name]?.wall) return { x: cell.x, y: cell.y, at: anchorAt(dx, dz, true), offset: undefined };
     return { x: cell.x, y: cell.y, at: "center" as PropAnchor, offset: (dx || dz ? [clamp(dx), clamp(dz)] : undefined) as [number, number] | undefined };
   };
-  // dragging a prop (horizontally, on the floor) or a decal (on its surface); with
-  // Ctrl a copy is made at the start and that's what's dragged
+  // Dragging something in the view (see EditDrag): a prop (on the floor, or a
+  // wall prop along the walls), a decal (on its surface), an item, a smoke
+  // emitter, a light, a robot or a door. With Ctrl a copy is made at the
+  // start and that's what's dragged. A whole drag - the copy too - is one undo
+  // step (its edits share a merge key).
   const dragGrab = useRef<[number, number] | null>(null);
-  const onEditDrag = (drag: { kind: "prop" | "decal" | "item" | "smoke"; index: number; copy: boolean; first: boolean }, target: EditTarget) => {
+  const onEditDrag = (drag: EditDrag, target: EditTarget): number | boolean => {
     const file = mapFile(map.id);
     if (!file) return drag.index;
     let index = drag.index;
+    const step = `${drag.kind} drag ${drag.id}`;
     if (drag.first) dragGrab.current = null;
+    // the copy, made on the first step: the end of its list
+    type DragList = "items" | "smokes" | "props" | "decals" | "lights" | "actors";
+    let pendingCopy: DragList | undefined;
+    let applied = false;
+    const copyFirst = (list: DragList) => {
+      if (drag.first && drag.copy && file[list]?.[index]) pendingCopy = list;
+    };
+    const commit = (edit: Parameters<typeof applyEdit>[1]) => {
+      const result = applyEdit(map.id, (f) => {
+        if (pendingCopy) {
+          const list = pendingCopy;
+          const from = index;
+          const entries = f[list] as unknown[];
+          index = entries.push(structuredClone(entries[from])) - 1;
+          // (a torch's copy brings its own flame)
+          if (list === "props") {
+            const spec = f.props![from];
+            const at = flamePosition({ ...spec, cell: { x: spec.x, y: spec.y } } as PropSpec);
+            if (at) addSmoke(f, { x: spec.x, y: spec.y, pos: at, fire: true, decorative: true });
+          }
+        }
+        return edit(f);
+      }, step);
+      if ("error" in result) return false;
+      applied = true;
+      replaceMap(result.map);
+      return true;
+    };
+    const clamp = (v: number, reach = 0.45) => Math.round(Math.min(reach, Math.max(-reach, v)) * 100) / 100;
     if (drag.kind === "item") {
       // a loose item: where the pointer is on a floor or a prop's top
-      if (drag.first && drag.copy && file.items?.[index]) {
-        const count = file.items.length;
-        const from = index;
-        applyEdit(map.id, (f) => {
-          f.items!.push(structuredClone(f.items![from]));
-          return f;
-        });
-        index = count;
-      }
-      if (drag.first) setSelectedItem(index);
+      copyFirst("items");
       const point = target.point;
-      if (!point) return index;
-      const [dx, up, dz] = point.pos;
-      const clamp = (v: number) => Math.round(Math.min(0.45, Math.max(-0.45, v)) * 100) / 100;
-      const patch = { x: point.cell.x, y: point.cell.y, offset: [clamp(dx), clamp(dz)] as [number, number], elevation: up > 0.03 ? Math.round(up * 100) / 100 : undefined };
-      const result = applyEdit(map.id, (f) => updateItem(f, index, patch), `item ${index} drag`);
-      if (!("error" in result)) replaceMap(result.map);
+      if (point) {
+        const [dx, up, dz] = point.pos;
+        const patch = { x: point.cell.x, y: point.cell.y, offset: [clamp(dx), clamp(dz)] as [number, number], elevation: up > 0.03 ? Math.round(up * 100) / 100 : undefined };
+        commit((f) => updateItem(f, index, patch));
+      }
     } else if (drag.kind === "smoke") {
       // a particle emitter: just off the surface pointed at
-      if (drag.first) setSelectedSmoke(index);
+      copyFirst("smokes");
       const spot = target.spot;
-      if (!spot) return index;
-      const result = applyEdit(map.id, (f) => updateSmoke(f, index, { x: spot.cell.x, y: spot.cell.y, pos: spot.pos }), `smoke ${index} drag`);
-      if (!("error" in result)) replaceMap(result.map);
+      if (spot) commit((f) => updateSmoke(f, index, { x: spot.cell.x, y: spot.cell.y, pos: spot.pos }));
     } else if (drag.kind === "prop") {
-      if (drag.first && drag.copy && file.props?.[index]) {
-        const count = file.props.length;
-        const from = index;
-        applyEdit(map.id, (f) => {
-          f.props!.push(structuredClone(f.props![from]));
-          return f;
-        });
-        index = count;
-      }
-      if (drag.first) setSelectedProp(index);
+      copyFirst("props");
       const spec = mapFile(map.id)?.props?.[index];
-      const place = spec && propPlace(spec.prop, target);
-      if (!place) return index;
-      const result = applyEdit(map.id, (f) => updateProp(f, index, place), `prop ${index} drag`);
-      if (!("error" in result)) replaceMap(result.map);
-    } else {
-      if (drag.first && drag.copy && file.decals?.[index]) {
-        const count = file.decals.length;
-        const from = index;
-        applyEdit(map.id, (f) => {
-          f.decals!.push(structuredClone(f.decals![from]));
-          return f;
-        });
-        index = count;
+      if (!spec) return false;
+      let place: Partial<NonNullable<typeof file.props>[number]> | null = null;
+      if (drag.at) {
+        // on the floor: the cell the grabbed spot is over, nudged there (a
+        // chamfer keeps its corner, the rest go by the cell's middle)
+        const [wx, wz] = drag.at;
+        const cell = { x: Math.round(wx), y: Math.round(wz) };
+        if (cellAt(map, cell.x, cell.y) !== "floor") return false;
+        const chamfer = PROP_TYPES[spec.prop]?.kind === "chamfer";
+        const base = chamfer ? propPlacement({ ...spec, cell, at: spec.at ?? "center", offset: undefined } as PropSpec) : { x: cell.x, z: cell.y };
+        const ox = clamp(wx - base.x);
+        const oz = clamp(wz - base.z);
+        place = { x: cell.x, y: cell.y, at: chamfer ? spec.at : "center", offset: ox || oz ? [ox, oz] : undefined };
+      } else {
+        place = propPlace(spec.prop, target);
       }
-      if (drag.first) setSelectedDecal(index);
+      if (!place) return false;
+      const moved = place;
+      commit((f) => {
+        // (a torch's flame goes along)
+        const before = f.props![index];
+        const was = flamePosition({ ...before, cell: { x: before.x, y: before.y } } as PropSpec);
+        const found = was ? flameSmokeIndex(f, { x: before.x, y: before.y }, was) : -1;
+        updateProp(f, index, moved);
+        const after = f.props![index];
+        const now = flamePosition({ ...after, cell: { x: after.x, y: after.y } } as PropSpec);
+        if (found >= 0 && now && f.smokes) f.smokes[found] = { ...f.smokes[found], x: after.x, y: after.y, pos: now };
+        return f;
+      });
+    } else if (drag.kind === "light") {
+      copyFirst("lights");
+      const spec = mapFile(map.id)?.lights?.[index];
+      if (!spec || !drag.at) return false;
+      const [wx, wz] = drag.at;
+      const cell = { x: Math.round(wx), y: Math.round(wz) };
+      if (cellAt(map, cell.x, cell.y) === "wall") return false;
+      if (spec.pos) {
+        // a free-standing light: across its level, at the height it had over
+        // its floor
+        const pos: [number, number, number] = [clamp(wx - cell.x, 0.49), spec.pos[1], clamp(wz - cell.y, 0.49)];
+        commit((f) => updateLight(f, index, { x: cell.x, y: cell.y, pos }));
+      } else {
+        // a ceiling lamp: into another cell's ceiling - not one with a lamp of its own
+        const there = ownCeilingLight(map, cell);
+        if (there >= 0 && there !== index) return false;
+        commit((f) => updateLight(f, index, { x: cell.x, y: cell.y }));
+      }
+    } else if (drag.kind === "actor") {
+      copyFirst("actors");
+      const spec = mapFile(map.id)?.actors?.[index];
+      if (!spec || !drag.at) return false;
+      const cell = { x: Math.round(drag.at[0]), y: Math.round(drag.at[1]) };
+      if (cellAt(map, cell.x, cell.y) !== "floor" || (cell.x === spec.x && cell.y === spec.y)) return false;
+      // its facing stays; its route goes along with it if it still runs over
+      // floors there, else it starts from where it stands now
+      const dx = cell.x - spec.x;
+      const dy = cell.y - spec.y;
+      const route = spec.patrol?.map(([x, y]): [number, number] => [x + dx, y + dy]);
+      const fits = route?.every(([x, y]) => cellAt(map, x, y) === "floor");
+      const patrol = !spec.patrol?.length ? undefined : fits ? route : spec.patrol.map(([x, y], i): [number, number] => (i === 0 && x === spec.x && y === spec.y ? [cell.x, cell.y] : [x, y]));
+      commit((f) => updateActor(f, index, { x: cell.x, y: cell.y, patrol }));
+    } else if (drag.kind === "door") {
+      // a door, let go of in another cell (see doorFits): moved there with all
+      // its settings (copied, with Ctrl), facing along the passage there
+      if (!drag.drop || !drag.door) return false;
+      const from = drag.door;
+      if (drag.offset !== undefined) {
+        // slid inside its cell: where along its passage it stands
+        const spec = doorAt(map, from.x, from.y);
+        if ((spec.offset ?? 0) === drag.offset) return false;
+        const offset = drag.offset || undefined;
+        const result = applyEdit(map.id, (f) => updateDoor(f, from, { kind: spec.kind, facing: spec.facing }, { offset }), step);
+        if ("error" in result) {
+          pushLog(`Editor: ${result.error}`);
+          return false;
+        }
+        replaceMap(result.map);
+        setSelectedDoor(from);
+        setEdits((n) => n + 1);
+        return true;
+      }
+      const to = target.cell;
+      if (to.x === pos.x && to.y === pos.y) {
+        pushLog("Editor: can't put a door where the party stands.");
+        return false;
+      }
+      const spec = doorAt(map, from.x, from.y);
+      const entry = file.doors?.find((d) => d.x === from.x && d.y === from.y);
+      const facing = doorFacingAt(map, to, spec.facing);
+      const result = applyEdit(
+        map.id,
+        (f) => {
+          if (!drag.copy) toggleDoor(f, from);
+          toggleDoor(f, to);
+          // (a door with nothing set needs no entry - unless it turns)
+          if (entry || facing !== doorAt(map, to.x, to.y).facing) {
+            const settings: Record<string, unknown> = structuredClone(entry ?? { kind: spec.kind, facing });
+            delete settings.x;
+            delete settings.y;
+            updateDoor(f, to, { kind: spec.kind, facing }, { ...settings, facing });
+          }
+          return f;
+        },
+        step,
+      );
+      if ("error" in result) {
+        pushLog(`Editor: ${result.error}`);
+        return false;
+      }
+      replaceMap(result.map);
+      setSelectedDoor(to);
+      setEdits((n) => n + 1);
+      return true;
+    } else {
+      copyFirst("decals");
       const sp = target.surfacePoint;
       const spec = mapFile(map.id)?.decals?.[index];
-      if (!sp || !spec) return index;
+      if (!sp || !spec) return false;
       // (grabbed where it was: the point under the pointer keeps its place on the decal)
       if (!dragGrab.current) dragGrab.current = sp.surface === spec.surface && sp.cell.x === spec.x && sp.cell.y === spec.y ? [spec.px - sp.u, spec.py - sp.v] : [0, 0];
       const [gx, gy] = dragGrab.current;
       const patch = { x: sp.cell.x, y: sp.cell.y, surface: sp.surface, px: Math.round(sp.u + gx), py: Math.round(sp.v + gy) };
-      const result = applyEdit(map.id, (f) => updateDecal(f, index, patch), `decal ${index} drag`);
-      if (!("error" in result)) replaceMap(result.map);
+      commit((f) => updateDecal(f, index, patch));
     }
+    if (!applied) return false;
+    if (drag.first) ({ item: setSelectedItem, smoke: setSelectedSmoke, prop: setSelectedProp, light: setSelectedLight, actor: setSelectedActor, decal: setSelectedDecal })[drag.kind](index);
     setEdits((n) => n + 1);
     return index;
   };
   // the wheel (height, Ctrl: scale, Alt: turn) or Alt + drag on the selected prop or decal
   const onEditAdjust = (adjust: { what: "height" | "scale" | "rotate"; delta: number }) => {
     const round = (v: number) => Math.round(v * 100) / 100;
-    if (editTool === "item" && selectedItem !== null) {
+    if (editTool === "light" && selectedLight !== null) {
+      // a free-standing light: up or down over its floor
+      const spec = map.lights?.[selectedLight];
+      if (!spec?.pos || adjust.what !== "height") return;
+      const room = ceilingHeight(map, spec.x, spec.y) - floorHeight(map, spec.x, spec.y);
+      const pos: [number, number, number] = [spec.pos[0], round(Math.min(room - 0.02, Math.max(0.02, spec.pos[1] + adjust.delta))), spec.pos[2]];
+      changeLight({ pos });
+    } else if (editTool === "item" && selectedItem !== null) {
       const spec = map.items?.[selectedItem];
       if (spec && adjust.what === "height") changeItem({ elevation: round(Math.max(0, (spec.elevation ?? 0) + adjust.delta)) || undefined }, "wheel-height");
     } else if (editTool === "prop" && selectedProp !== null) {
@@ -416,10 +540,13 @@ export default function App() {
       } else if (adjust.what === "rotate") changeDecal({ rotation: (((spec.rotation ?? 0) + adjust.delta) % 360 + 360) % 360 || undefined }, "wheel-rotate");
     }
   };
-  // Ctrl+C / Ctrl+V on the selected prop or decal (pasted where the pointer is)
-  const clipboardRef = useRef<{ kind: "prop" | "decal"; spec: Record<string, unknown> } | null>(null);
+  // Ctrl+C / Ctrl+V on the selected prop, decal, item, light or robot (pasted
+  // where the pointer is; only with that thing's tool in hand)
+  type ClipKind = "prop" | "decal" | "item" | "light" | "actor";
+  const clipboardRef = useRef<{ kind: ClipKind; spec: Record<string, unknown> } | null>(null);
   useEffect(() => {
     if (!editMode) return;
+    const toolOf: Record<ClipKind, EditTool> = { prop: "prop", decal: "decal", item: "item", light: "light", actor: "robot" };
     function onKey(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const el = e.target as HTMLElement | null;
@@ -427,41 +554,57 @@ export default function App() {
       const key = e.key.toLowerCase();
       if (key === "c") {
         const file = mapFile(map.id);
-        if (editTool === "prop" && selectedProp !== null && file?.props?.[selectedProp]) {
-          clipboardRef.current = { kind: "prop", spec: structuredClone(file.props[selectedProp]) as unknown as Record<string, unknown> };
-          pushLog("Editor: prop copied (Ctrl+V pastes it where the pointer is).");
-        } else if (editTool === "decal" && selectedDecal !== null && file?.decals?.[selectedDecal]) {
-          clipboardRef.current = { kind: "decal", spec: structuredClone(file.decals[selectedDecal]) as unknown as Record<string, unknown> };
-          pushLog("Editor: decal copied (Ctrl+V pastes it where the pointer is).");
-        }
+        const copy = (kind: ClipKind, spec: unknown, what: string) => {
+          clipboardRef.current = { kind, spec: structuredClone(spec) as Record<string, unknown> };
+          pushLog(`Editor: ${what} copied (Ctrl+V pastes it where the pointer is).`);
+        };
+        if (editTool === "prop" && selectedProp !== null && file?.props?.[selectedProp]) copy("prop", file.props[selectedProp], "prop");
+        else if (editTool === "decal" && selectedDecal !== null && file?.decals?.[selectedDecal]) copy("decal", file.decals[selectedDecal], "decal");
+        else if (editTool === "item" && selectedItem !== null && file?.items?.[selectedItem]) copy("item", file.items[selectedItem], "item");
+        else if (editTool === "light" && selectedLight !== null && file?.lights?.[selectedLight]) copy("light", file.lights[selectedLight], "light");
+        else if (editTool === "robot" && selectedActor !== null && file?.actors?.[selectedActor]) copy("actor", file.actors[selectedActor], "robot");
       } else if (key === "v" && clipboardRef.current) {
         const clip = clipboardRef.current;
         const target = hoverTargetRef.current;
-        if (!target || (clip.kind === "prop" && editTool !== "prop") || (clip.kind === "decal" && editTool !== "decal")) return;
+        if (!target || toolOf[clip.kind] !== editTool) return;
         e.preventDefault();
+        // the copy at the end of its list, picked
+        const paste = <K extends "props" | "decals" | "items" | "lights" | "actors">(list: K, entry: Record<string, unknown>, select: (index: number) => void) => {
+          const count = (map[list] as unknown[] | undefined)?.length ?? 0;
+          // (a setting set to undefined is left out of the file)
+          for (const k of Object.keys(entry)) if (entry[k] === undefined) delete entry[k];
+          const result = applyEdit(map.id, (f) => {
+            ((f[list] ?? (f[list] = [] as never)) as unknown[]).push(entry);
+            return f;
+          });
+          if ("error" in result) pushLog(`Editor: ${result.error}`);
+          else {
+            replaceMap(result.map);
+            select(count);
+          }
+        };
+        const spec = structuredClone(clip.spec);
         if (clip.kind === "prop") {
-          const place = propPlace(clip.spec.prop as string, target);
-          if (!place) return;
-          const count = map.props?.length ?? 0;
-          const result = applyEdit(map.id, (f) => {
-            (f.props ?? (f.props = [])).push({ ...structuredClone(clip.spec), ...place } as NonNullable<typeof f.props>[number]);
-            return f;
-          });
-          if (!("error" in result)) {
-            replaceMap(result.map);
-            setSelectedProp(count);
-          }
-        } else if (target.surfacePoint) {
+          const place = propPlace(spec.prop as string, target);
+          if (place) paste("props", { ...spec, ...place }, setSelectedProp);
+        } else if (clip.kind === "decal") {
           const sp = target.surfacePoint;
-          const count = map.decals?.length ?? 0;
-          const result = applyEdit(map.id, (f) => {
-            (f.decals ?? (f.decals = [])).push({ ...structuredClone(clip.spec), x: sp.cell.x, y: sp.cell.y, surface: sp.surface, px: Math.round(sp.u), py: Math.round(sp.v) } as NonNullable<typeof f.decals>[number]);
-            return f;
-          });
-          if (!("error" in result)) {
-            replaceMap(result.map);
-            setSelectedDecal(count);
+          if (sp) paste("decals", { ...spec, x: sp.cell.x, y: sp.cell.y, surface: sp.surface, px: Math.round(sp.u), py: Math.round(sp.v) }, setSelectedDecal);
+        } else if (clip.kind === "item") {
+          const point = target.point;
+          if (point) {
+            const [dx, up, dz] = point.pos;
+            const clamp = (v: number) => Math.round(Math.min(0.45, Math.max(-0.45, v)) * 100) / 100;
+            paste("items", { ...spec, x: point.cell.x, y: point.cell.y, offset: [clamp(dx), clamp(dz)], elevation: up > 0.03 ? Math.round(up * 100) / 100 : undefined }, setSelectedItem);
           }
+        } else if (clip.kind === "light") {
+          // a free-standing light just off the surface pointed at; a ceiling
+          // lamp in the cell's ceiling (not one that has a lamp already)
+          if (spec.pos && target.spot) paste("lights", { ...spec, x: target.spot.cell.x, y: target.spot.cell.y, pos: target.spot.pos }, setSelectedLight);
+          else if (!spec.pos && target.kind !== "wall" && ownCeilingLight(map, target.cell) < 0) paste("lights", { ...spec, x: target.cell.x, y: target.cell.y }, setSelectedLight);
+        } else if (target.kind !== "wall") {
+          // a robot: in the floor pointed at, its route left behind
+          paste("actors", { ...spec, x: target.cell.x, y: target.cell.y, patrol: undefined }, setSelectedActor);
         }
         setEdits((n) => n + 1);
       }
@@ -469,7 +612,7 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode, editTool, selectedProp, selectedDecal, map]);
+  }, [editMode, editTool, selectedProp, selectedDecal, selectedItem, selectedLight, selectedActor, map]);
   // The map editor's edits: a click digs out the wall pointed at or fills in
   // the floor (the Fill tool, or the right button), paints the surface with
   // the set picked in the palette (the right button paints the map's own
@@ -571,8 +714,13 @@ export default function App() {
           const index = selectedActor;
           result = applyEdit(map.id, (file) => updateActor(file, index, { patrol: [...route, [cell.x, cell.y]] }));
         } else {
+          const choice = robotChoice && ACTOR_TYPES[robotChoice] && assetInWorld(robotChoice) ? robotChoice : null;
+          if (!choice) {
+            pushLog("Editor: pick an NPC type in the palette first.");
+            return;
+          }
           const count = map.actors?.length ?? 0;
-          result = applyEdit(map.id, (file) => addActor(file, { actor: robotChoice, x: cell.x, y: cell.y, facing: behindOf(dir) }));
+          result = applyEdit(map.id, (file) => addActor(file, { actor: choice, x: cell.x, y: cell.y, facing: behindOf(dir) }));
           setSelectedActor(count);
         }
       }
@@ -1198,10 +1346,8 @@ export default function App() {
   const [selectedExit, setSelectedExit] = useState<Vec2 | null>(null);
   const selectedExitSpec = selectedExit && (map.exits ?? []).find((e) => e.cell.x === selectedExit.x && e.cell.y === selectedExit.y);
   const selectedExitInfo = selectedExitSpec ? { name: selectedExitSpec.name ?? "" } : null;
-  // the Item tool: the palette's item, and the pick (its index in the
-  // map's items)
+  // the Item tool: the palette's item (the pick is further up)
   const [itemChoice, setItemChoice] = useState(Object.keys(ITEM_TYPES)[0]);
-  const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const selectedItemInfo: ItemInfo | null = (() => {
     const spec = selectedItem === null ? undefined : map.items?.[selectedItem];
     if (!spec) return null;
