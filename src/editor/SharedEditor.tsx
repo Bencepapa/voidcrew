@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useRef, useState } from "react";
 import { createMap, mapFile } from "./mapStore";
 import type { GameMap } from "../game/types";
 import type { MapFile } from "../game/mapFormat";
@@ -29,6 +29,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 async function textures(world: GameMap["world"]) {
+  const listed = new Set<string>();
   for (let offset = 0; ; offset += 100) {
     const files = await request<{ name: string }[]>("/storage/v1/object/list/void-textures", {
       method: "POST", body: JSON.stringify({ prefix: world, limit: 100, offset, sortBy: {column: "name", order: "asc"} }),
@@ -36,6 +37,7 @@ async function textures(world: GameMap["world"]) {
     for (const {name} of files) {
       if (!/^[a-z0-9-]+\.png$/.test(name)) continue;
       const id = world + "_shared_" + name.slice(0,-4);
+      listed.add(id);
       (TEXTURE_SETS as Record<string, TextureSetPaths>)[id] = {
         kind: ["floor","wall"], label: name.slice(37,-4) || "Shared texture",
         diffuse: project + "/storage/v1/object/public/void-textures/" + world + "/" + name,
@@ -44,12 +46,18 @@ async function textures(world: GameMap["world"]) {
     }
     if (files.length < 100) break;
   }
+  const registry: Record<string, TextureSetPaths> = TEXTURE_SETS;
+  for (const id of Object.keys(registry)) {
+    if (id.startsWith(world + "_shared_") && !listed.has(id)) delete registry[id];
+  }
 }
 
 export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m: GameMap) => void; changed: () => void}) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const picker = useRef<HTMLInputElement>(null);
+  const [upload, setUpload] = useState<File | null>(null);
   const [heads, setHeads] = useState<Head[]>([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -103,15 +111,20 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
           <p className="text-xs text-neutral-300">Publish this map or add its next revision.</p>
           <button className={button} onClick={()=>void run(()=>save(true))}>Save as new map</button>
           <p className="text-xs text-neutral-300">Create a separate map at v1. Further saves go to that copy.</p>
-          <label className="my-2 block">Add wall / floor PNG<input className="block file:mr-2 file:rounded file:border file:border-neutral-500 file:bg-neutral-800 file:px-3 file:py-1 file:text-white" type="file" accept="image/png" onChange={e=>{
-            const f=e.target.files?.[0]; if(!f) return; e.target.value="";
+          <label className="mt-2 block">Shared texture (PNG)<input ref={picker} className="block file:mr-2 file:rounded file:border file:border-neutral-500 file:bg-neutral-800 file:px-3 file:py-1 file:text-white" type="file" accept="image/png" onChange={e=>setUpload(e.target.files?.[0] ?? null)} /></label>
+          <p className="text-xs text-neutral-300">Upload adds one image to this world’s shared wall and floor palettes immediately. Save the map after painting it.</p>
+          <button className={button} disabled={!upload} onClick={()=>{
+            const f = upload;
+            if (!f) return;
             void run(async()=>{
               if(f.type!=="image/png" || f.size>8388608) throw new Error("Choose a PNG up to 8 MB");
               const name=crypto.randomUUID()+"-"+(f.name.slice(0,-4).toLowerCase().replace(/[^a-z0-9-]/g,"-") || "texture")+".png";
               await request("/storage/v1/object/void-textures/"+map.world+"/"+name,{method:"POST",headers:{"Content-Type":"image/png"},body:f});
-              await refresh(); setMessage("Texture added to the wall and floor palettes.");
+              setUpload(null);
+              if (picker.current) picker.current.value = "";
+              await refresh(); setMessage("Uploaded. Available in both palettes.");
             });
-          }}/></label>
+          }}>Upload to shared library</button>
           <strong className="mt-2">Latest save of each map</strong>
           <button className={button} onClick={()=>void run(refresh)}>Refresh list and textures</button>
           <p className="text-xs text-neutral-300">Check for other editors’ saves and uploaded textures.</p>
