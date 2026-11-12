@@ -46,7 +46,7 @@ async function textures(world: GameMap["world"]) {
     }
     if (files.length < 100) break;
   }
-  const registry: Record<string, TextureSetPaths> = TEXTURE_SETS;
+  const registry = TEXTURE_SETS as Record<string, TextureSetPaths>;
   for (const id of Object.keys(registry)) {
     if (id.startsWith(world + "_shared_") && !listed.has(id)) delete registry[id];
   }
