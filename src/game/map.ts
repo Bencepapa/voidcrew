@@ -36,6 +36,28 @@ export function doorAt(map: GameMap, x: number, y: number): DoorSpec {
   return { cell: { x, y }, kind: "standard", facing: northSouth ? "S" : "E" };
 }
 
+// Whether a door can stand in a cell (the editor moving one there): a floor
+// cell walled on two opposite sides and open across them - the passage the
+// door shuts, with walls for its frame to sit in. (`ignore`: the door being
+// moved, which counts as floor - it may only slide along its corridor.)
+export function doorFits(map: GameMap, cell: Vec2, ignore?: Vec2): boolean {
+  const kind = (x: number, y: number) => (ignore && x === ignore.x && y === ignore.y ? "floor" : cellAt(map, x, y));
+  if (kind(cell.x, cell.y) !== "floor") return false;
+  const wall = (x: number, y: number) => kind(x, y) === "wall";
+  const ns = wall(cell.x - 1, cell.y) && wall(cell.x + 1, cell.y) && !wall(cell.x, cell.y - 1) && !wall(cell.x, cell.y + 1);
+  const ew = wall(cell.x, cell.y - 1) && wall(cell.x, cell.y + 1) && !wall(cell.x - 1, cell.y) && !wall(cell.x + 1, cell.y);
+  return ns || ew;
+}
+
+// The way a door moved into `cell` faces: as it did, if that's still along
+// the passage there (so a door turned to face north keeps doing so), else
+// along the new passage as an unlisted door would (see doorAt).
+export function doorFacingAt(map: GameMap, cell: Vec2, was: Direction): Direction {
+  const northSouth = cellAt(map, cell.x, cell.y - 1) !== "wall" || cellAt(map, cell.x, cell.y + 1) !== "wall";
+  const wasNorthSouth = was === "N" || was === "S";
+  return northSouth === wasNorthSouth ? was : northSouth ? "S" : "E";
+}
+
 // how far a door goes from its cell's middle: its frame (0.08 deep) flush
 // with the cell's edge, in line with the walls on either side
 export const DOOR_EDGE_OFFSET = 0.42;

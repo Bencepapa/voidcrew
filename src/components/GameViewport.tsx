@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { prepareRaycasts } from "../render/bvh";
 import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
-import { effectiveViewDistance, loadGraphics } from "../render/graphics";
+import { VIEW_DISTANCE_HIGH, effectiveViewDistance, loadGraphics } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, itemSpot } from "../game/items";
@@ -21,13 +21,14 @@ import {
   useLightGrid,
 } from "../render/lightGrid";
 import type { LightGridMode } from "../render/lightGrid";
-import { bridgeAt, cellAt, ceilingHeight, doorAt, floorHeight, ladderBetween, liftDoorOf, windowPanels } from "../game/map";
+import { DOOR_EDGE_OFFSET, bridgeAt, cellAt, ceilingHeight, doorAt, doorFacingAt, doorFits, floorHeight, ladderBetween, liftDoorOf, windowPanels } from "../game/map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
-import type { Direction, DoorSpec, GameMap, Vec2 } from "../game/types";
-import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
-import { generateLights, isSkyCeiling, lampColor, parseColor } from "../game/lights";
+import type { Direction, DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
+import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type EdgeSegment } from "../render/reliefMesh";
+import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
+import { generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
 import { PROP_TYPES, propPlacement, propHeight } from "../game/props";
@@ -75,6 +76,9 @@ export interface ViewportSettings {
   // the map's decals (bullet holes, stencils...)
   decalsEnabled: boolean;
   wallProfile: WallProfileId;
+  // diagnostic toggle for the black backing behind walls and inside pillars
+  wallBacking: boolean;
+  backingInspect: boolean;
   geometryView: GeometryViewId;
   // combat: aim with the crosshair mini-game (else the hit chance is rolled)
   aimMiniGame: boolean;
@@ -135,12 +139,16 @@ export interface ViewportSettings {
   pixelRatioCap: number;
   particleEvery: number;
   viewDistanceCap: number;
+  lodScale: number;
   mapLightIntensity: number;
   // the sky's light on the cells under an open ceiling (see lights.ts SkyLight)
   skyLightIntensity: number;
   skyLightAzimuth: number;
   skyLightElevation: number;
   skyLightColor: string;
+  // what the distance fades to ("#rrggbb"; black: darkness - a lit hall far
+  // off still glows through it, see fogNear)
+  fogColor: string;
   roughness: number;
   metalness: number;
   normalStrength: number;
@@ -185,6 +193,25 @@ export interface AimFocus {
   // the picked body part: its pixels light up on the sprite
   part: BodyPart | null;
   phase: "pick" | "aim";
+}
+
+// The kinds of thing the editor drags, and one step of a drag: what (its
+// index in the map's list - a door by its cell), whether Ctrl copies it, the
+// drag's first step, the drag (one undo step each), and for those that slide
+// on a level (props on a floor, lights, robots, doors) where the spot they
+// were grabbed by is taken to (world x, z); `drop`: a door let go of.
+export type EditDragKind = "prop" | "decal" | "item" | "smoke" | "light" | "actor" | "door";
+export interface EditDrag {
+  kind: EditDragKind;
+  index: number;
+  door?: Vec2;
+  copy: boolean;
+  first: boolean;
+  id: number;
+  at?: [number, number];
+  drop?: boolean;
+  // a door slid inside its cell, let go of: where it stands there now
+  offset?: number;
 }
 
 // The map editor (see EDITOR.md): what the pointer is on - a wall to dig
@@ -234,6 +261,8 @@ export interface ViewportStats {
   relief: ReliefStats | null;
 }
 
+// this device's graphics choices (an Ultra one sees as far as it allows)
+const DEVICE_GRAPHICS = loadGraphics();
 export const DEFAULT_SETTINGS: ViewportSettings = {
   textureSet: "wall4",
   accentTextureSet: "wall5",
@@ -243,6 +272,8 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   gridMovement: true,
   decalsEnabled: true,
   wallProfile: "relief",
+  wallBacking: true,
+  backingInspect: false,
   geometryView: "textured",
   aimMiniGame: true,
   immortalCrew: false,
@@ -259,7 +290,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   smokeWalls: true,
   smokeProps: true,
   smokeActors: true,
-  viewDistance: 7,
+  viewDistance: DEVICE_GRAPHICS.viewDistanceCap > VIEW_DISTANCE_HIGH ? DEVICE_GRAPHICS.viewDistanceCap : 7,
   eyeHeight: 0.5,
   wallHeight: 1.0,
   cameraPullback: 0.3,
@@ -277,12 +308,13 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   reliefMode: "steps",
   floorReliefDepth: 0,
   floorNormalStrength: 0,
-  ...loadGraphics(),
+  ...DEVICE_GRAPHICS,
   mapLightIntensity: 1.6,
   skyLightIntensity: 0,
   skyLightAzimuth: 200,
   skyLightElevation: 40,
   skyLightColor: "#a8bcff",
+  fogColor: "#000000",
   roughness: 0.55,
   metalness: 0.45,
   normalStrength: 1,
@@ -531,6 +563,15 @@ const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
 const FOG_NEAR = 1.6;
 // (the fog ends this far short of the view distance)
 const FOG_FAR_MARGIN = 0.5;
+// The fog thickens over at most this many cells before its end: up to the
+// usual 7-cell view it starts at FOG_NEAR as ever, but a farther view moves
+// its start out with it - else a longer view only added more black, a lit
+// hall 8 cells off fogged as dark as one past the view (the fog, not the
+// lights' reach, was what hid it).
+const FOG_SPAN = 5;
+function fogNear(far: number): number {
+  return Math.max(FOG_NEAR, far - FOG_SPAN);
+}
 
 // Map lights are served by a fixed pool of point lights reassigned to the
 // best sources every frame: three.js compiles the light count into its
@@ -598,6 +639,12 @@ const SMOOTH_LODS: { distance: number; divisor: number }[] = [
   { distance: 3.6, divisor: 4 },
 ];
 const SMOOTH_LOD_MIN_CELLS = 8;
+// Relief wall panels run their relief right up to their side edges and are
+// joined to their neighbors by thin strips built from both edges (see
+// cornerJoins.ts) - stones meeting stones round a corner. Off: every panel
+// eases to the flat base along its sides instead, the old way (also from
+// the console, dev only: __voidcrewNoJoins = true, then rebuild the scene).
+const CORNER_JOINS = true;
 // a surface's distant version, and from how far it's shown
 interface FarLevel {
   geometry: THREE.BufferGeometry;
@@ -605,6 +652,9 @@ interface FarLevel {
 }
 // a source behind the camera ranks as if this much further away
 const LIGHT_BEHIND_PENALTY = 0.35;
+// a source this much (world units) past its own reach behind the camera
+// doesn't compete at all (see updateLightPool)
+const LIGHT_BEHIND_SLACK = 0.5;
 // a source already in the pool keeps its slot until a rival ranks this
 // much nearer (a fraction of its distance), so near-ties don't flicker
 const LIGHT_KEEP_BIAS = 0.85;
@@ -946,9 +996,10 @@ interface GameViewportProps {
   // the surface under the pointer whenever it changes - the editor's
   // texture palette follows it
   onEditHover?: (target: EditTarget | null) => void;
-  // The editor: a prop or decal dragged (see App). The first call may copy it
-  // (Ctrl held); it returns the index of what is being dragged from then on.
-  onEditDrag?: (drag: { kind: "prop" | "decal" | "item" | "smoke"; index: number; copy: boolean; first: boolean }, target: EditTarget) => number | void;
+  // The editor: something dragged (see App and EditDrag). The first call may
+  // copy it (Ctrl held); it returns the index of what is being dragged from
+  // then on - for a door dropped, whether the map took it.
+  onEditDrag?: (drag: EditDrag, target: EditTarget) => number | boolean | void;
   // The editor: the wheel (or Alt+drag) over the view raises, scales or turns the
   // selected prop or decal by a step
   onEditAdjust?: (adjust: { what: "height" | "scale" | "rotate"; delta: number }) => void;
@@ -1545,10 +1596,15 @@ export function GameViewport({
     const buildStart = performance.now();
 
     const scene = new THREE.Scene();
-    const fog = new THREE.Fog(0x000000, FOG_NEAR, effectiveViewDistance(settings) - FOG_FAR_MARGIN);
+    const fogStartFar = effectiveViewDistance(settings) - FOG_FAR_MARGIN;
+    const fog = new THREE.Fog(settings.fogColor, fogNear(fogStartFar), fogStartFar);
     scene.fog = fog;
+    // what's past the far plane (nothing drawn) is the fog's colour too
+    const fogBackground = new THREE.Color(settings.fogColor);
+    scene.background = fogBackground;
+    let fogColorNow = settings.fogColor;
 
-    // anything past the fog's end renders pure black anyway, so the far plane
+    // anything past the fog's end renders the fog's colour anyway, so the far plane
     // sits just beyond it and frustum culling skips those walls entirely
     // (a big saving with relief walls' thousands of triangles each)
     const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, effectiveViewDistance(settings) + 0.5);
@@ -1923,6 +1979,7 @@ export function GameViewport({
     // materials made beside the kits' (labeled door panels, see-through
     // bridge decks), kept in step with the material settings like theirs
     const ownMaterials: THREE.MeshStandardMaterial[] = [];
+    const inspectMaterialDefaults = new WeakMap<THREE.Material, { transparent: boolean; opacity: number; depthWrite: boolean }>();
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
     // the open sky: walls and ceilings of the "sky" set are panes that show the
@@ -1932,7 +1989,13 @@ export function GameViewport({
     // recess: a height map that doesn't tile exactly leaves slivers between
     // panels that would show what's behind the wall (the next room, the floor)
     const backingPositions: number[] = [];
-    const backingMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+    const backingPanels: { x: number; z: number; y: number; rotY: number; width: number; height: number; floorTop: boolean }[] = [];
+    const backingMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, vertexColors: true });
+    backingMat.visible = settings.wallBacking;
+    let backingColorSerial = 0;
+    // Stable during inspection: adjacent faces get widely separated hues.
+    const backingColor = () => new THREE.Color().setHSL((0.13 + backingColorSerial++ * 0.61803398875) % 1, 0.85, 0.55);
+    const backingColors: number[] = [];
     let skyMat: THREE.ShaderMaterial | null = null;
     const skySurface = () => {
       if (!skyMat) {
@@ -2060,7 +2123,58 @@ export function GameViewport({
       mat: THREE.Material | THREE.Material[],
       slots: WallSlot[],
     ) {
-      for (const slot of slots) placeSurface(slot, geo, far, mat, (o) => (o.rotation.y = slot.rotY));
+      for (const slot of slots) {
+        placeSurface(slot, geo, far, mat, (o) => (o.rotation.y = slot.rotY));
+        if (settings.wallProfile !== "relief") continue;
+        const height = variantHeight(slot.variant ?? "full") * wallHeight;
+        const bottom = -height / 2;
+        const nx = Math.sin(slot.rotY), nz = Math.cos(slot.rotY);
+        const cellX = Math.round(slot.x + nx * 0.5);
+        const cellZ = Math.round(slot.z + nz * 0.5);
+        // Only the panel touching the floor, never internal stacked seams.
+        if (Math.abs(slot.y + bottom - floorHeight(map, cellX, cellZ) * wallHeight) > 1e-5) continue;
+        const positions = geo.getAttribute("position"), uv = geo.getAttribute("uv");
+        const index = geo.index;
+        const out: number[] = [], tex: number[] = [];
+        // Follow the actual detailed edge, including its recessed mortar.
+        // The other edge overlaps the floor below its deepest relief. This
+        // closes the opening with wall texture instead of a black blocker.
+        const emit = (id: number, lower: boolean) => {
+          out.push(positions.getX(id), lower ? bottom - floorDepth - 0.02 : bottom, lower ? floorDepth + 0.02 : positions.getZ(id));
+          const rows = variantRows(slot.variant ?? "full");
+          const vScale = rows ? rows[1] - rows[0] : 1;
+          tex.push(uv.getX(id), uv.getY(id) - (lower ? ((floorDepth + 0.02) / height) * vScale : 0));
+        };
+        const frontGroups = geo.groups.length ? geo.groups.filter((g) => !g.materialIndex) : [{ start: 0, count: index?.count ?? positions.count }];
+        const seen = new Set<string>();
+        for (const g of frontGroups) for (let i = g.start; i < g.start + g.count; i += 3) {
+          const ids = [0, 1, 2].map((k) => index ? index.getX(i + k) : i + k);
+          for (let e = 0; e < 3; e++) {
+            let a = ids[e], b = ids[(e + 1) % 3];
+            if (Math.abs(positions.getY(a) - bottom) > 1e-5 || Math.abs(positions.getY(b) - bottom) > 1e-5) continue;
+            if (positions.getX(a) > positions.getX(b)) [a, b] = [b, a];
+            if (positions.getX(b) - positions.getX(a) < 1e-8) continue;
+            const key = `${positions.getX(a)},${positions.getZ(a)}|${positions.getX(b)},${positions.getZ(b)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            emit(a, false); emit(a, true); emit(b, true);
+            emit(a, false); emit(b, true); emit(b, false);
+          }
+        }
+        if (!out.length) continue;
+        const apron = new THREE.BufferGeometry();
+        apron.setAttribute("position", new THREE.Float32BufferAttribute(out, 3));
+        apron.setAttribute("uv", new THREE.Float32BufferAttribute(tex, 2));
+        apron.setAttribute("uv1", new THREE.Float32BufferAttribute(tex, 2));
+        apron.computeVertexNormals();
+        geometries.push(apron);
+        const skirt = new THREE.Mesh(apron, Array.isArray(mat) ? mat[0] : mat);
+        skirt.position.set(slot.x, slot.y, slot.z);
+        skirt.rotation.y = slot.rotY;
+        group.add(skirt);
+        skirt.updateMatrixWorld(true);
+        markSurface(skirt);
+      }
     }
 
     // wall-style geometry (facing +Z) laid flat, facing up
@@ -2206,19 +2320,13 @@ export function GameViewport({
             return;
           }
           if (settings.wallProfile === "relief") {
-            // (the quad's corners: along the wall, and up)
-            const back = reliefDepth + 0.004;
-            const cx = face.x + v.x * back;
-            const cz = face.z + v.y * back;
-            const tx = v.y * 0.5;
-            const tz = -v.x * 0.5;
             for (const span of spans) {
-              const y0 = span.bottom * wallHeight;
-              const y1 = span.top * wallHeight;
-              backingPositions.push(
-                cx - tx, y0, cz - tz, cx + tx, y0, cz + tz, cx + tx, y1, cz + tz,
-                cx - tx, y0, cz - tz, cx + tx, y1, cz + tz, cx - tx, y1, cz - tz,
-              );
+              backingPanels.push({
+                ...face, width: 1,
+                y: ((span.bottom + span.top) / 2) * wallHeight,
+                height: (span.top - span.bottom) * wallHeight,
+                floorTop: cellAt(map, nx, ny) !== "wall" && span.top === floorHeight(map, nx, ny),
+              });
             }
           }
           const kit = wallKitFor(faceSet as TextureSetId);
@@ -2242,9 +2350,44 @@ export function GameViewport({
     const kits = [...wallKits.values()];
     // standing water mirrors the open sky, when there is one
     decals.setWaterSky((skyMat as THREE.ShaderMaterial | null)?.uniforms.map.value ?? null);
+    // Split at every change in wall height before finding corners. A tall
+    // wall can have a straight neighbor below a step and a corner above it.
+    // Insetting whole panels leaves holes at every straight seam.
+    const backingCuts = [...new Set(backingPanels.flatMap((p) => [p.y - p.height / 2, p.y + p.height / 2]))].sort((a, b) => a - b);
+    const backingBands = backingPanels.flatMap((panel) => {
+      const bottom = panel.y - panel.height / 2;
+      const top = panel.y + panel.height / 2;
+      const cuts = backingCuts.filter((y) => y >= bottom - 1e-6 && y <= top + 1e-6);
+      const color = backingColor();
+      return cuts.slice(1).map((y, i) => ({ ...panel, y: (cuts[i] + y) / 2, height: y - cuts[i], bottom, top, color }));
+    });
+    const backingModes = edgeModes(backingBands);
+    backingBands.forEach((panel, i) => {
+      const back = reliefDepth + 0.02;
+      const nx = Math.sin(panel.rotY), nz = Math.cos(panel.rotY);
+      const tx = Math.cos(panel.rotY), tz = -Math.sin(panel.rotY);
+      const cx = panel.x - nx * back, cz = panel.z - nz * back;
+      const left = -panel.width / 2 + Math.max(0, backingModes[i][0]) * back;
+      const right = panel.width / 2 - Math.max(0, backingModes[i][1]) * back;
+      // Cover the recess of the lower floor instead of stopping above it.
+      // A riser's top stays below the upper floor's deepest recess; an
+      // ordinary wall still reaches its ceiling. Internal bands meet flush.
+      const y0 = panel.y - panel.height / 2 - (Math.abs(panel.y - panel.height / 2 - panel.bottom) < 1e-6 ? floorDepth + 0.02 : 0);
+      const y1 = Math.min(panel.y + panel.height / 2, panel.top - (panel.floorTop ? floorDepth + 0.02 : 0));
+      if (right <= left || y1 <= y0) return;
+      const lx = cx + tx * left, lz = cz + tz * left;
+      const rx = cx + tx * right, rz = cz + tz * right;
+      backingPositions.push(
+        lx, y0, lz, rx, y0, rz, rx, y1, rz,
+        lx, y0, lz, rx, y1, rz, lx, y1, lz,
+      );
+      const color = panel.color;
+      for (let v = 0; v < 6; v++) backingColors.push(color.r, color.g, color.b);
+    });
     if (backingPositions.length) {
       const backingGeo = new THREE.BufferGeometry();
       backingGeo.setAttribute("position", new THREE.Float32BufferAttribute(backingPositions, 3));
+      backingGeo.setAttribute("color", new THREE.Float32BufferAttribute(backingColors, 3));
       geometries.push(backingGeo);
       group.add(new THREE.Mesh(backingGeo, backingMat));
     }
@@ -2294,22 +2437,30 @@ export function GameViewport({
         // a smooth relief's distant version: this many times fewer cells each
         // way (see SMOOTH_LODS) - the grid isn't made coarser for it then
         smoothLod?: number;
+        // side edges left for corner joins (ReliefOptions.joinEdges), and
+        // the corners they land on (ReliefOptions.edgeModes)
+        joinEdges?: number;
+        edgeModes?: [number, number];
       },
     ) {
+      type Shape = typeof shape;
       // built once for the same depth map, shape and relief settings (see
       // SceneCache)
-      const key = [
-        kit.depthUrl,
-        JSON.stringify(shape),
-        reliefDepth,
-        settings.reliefLevels,
-        settings.reliefMinIsland,
-        settings.reliefMode,
-        settings.wallDetail,
-        settings.aoRadius,
-      ].join("|");
-      let built = cache.reliefs.get(key);
-      if (!built) {
+      const keyOf = (s: Shape) =>
+        [
+          kit.depthUrl,
+          JSON.stringify(s),
+          reliefDepth,
+          settings.reliefLevels,
+          settings.reliefMinIsland,
+          settings.reliefMode,
+          settings.wallDetail,
+          settings.aoRadius,
+        ].join("|");
+      const cached = (shape: Shape): Promise<ReturnType<typeof createReliefWallGeometry> | null> => {
+        const key = keyOf(shape);
+        let built = cache.reliefs.get(key);
+        if (built) return built;
         built = (async () => {
           let gridPromise = cache.grids.get(kit.depthUrl);
           if (!gridPromise) {
@@ -2321,6 +2472,7 @@ export function GameViewport({
           // ReliefOptions.smooth - so its distant version gets the coarser grid)
           const smooth = settings.reliefMode === "smooth" && !grid.solid && !shape.holeLevels;
           const smoothLod = smooth ? shape.smoothLod : undefined;
+          let edgeProfile: EdgeSegment[] | undefined;
           if (shape.coarse && shape.coarse > 1 && !smoothLod) {
             const coarseKey = `${kit.depthUrl}|${shape.coarse}`;
             let coarse = coarseGrids.get(coarseKey);
@@ -2329,6 +2481,16 @@ export function GameViewport({
               coarseGrids.set(coarseKey, coarse);
             }
             grid = coarse;
+            // a stepped distant version with joined edges ends on its
+            // detailed version's edge profile (its own levels differ), so the
+            // join strips fit both
+            if (shape.joinEdges) {
+              const detailed = { ...shape };
+              delete detailed.coarse;
+              delete detailed.lodOnly;
+              delete detailed.smoothLod;
+              edgeProfile = (await cached(detailed))?.edge;
+            }
           }
           const made = createReliefWallGeometry(grid, {
             wallWidth: shape.width ?? 1,
@@ -2345,6 +2507,9 @@ export function GameViewport({
             rows: shape.rows,
             cols: shape.cols,
             holeLevels: shape.holeLevels,
+            joinEdges: shape.joinEdges,
+            edgeModes: shape.edgeModes,
+            edgeProfile,
           });
           // a partial panel or a far version uses its full panel's AO map
           if (shape.rows || shape.lodOnly) made.aoMap.dispose();
@@ -2352,7 +2517,9 @@ export function GameViewport({
         })();
         cache.reliefs.set(key, built);
         built.catch(() => cache.reliefs.delete(key));
-      }
+        return built;
+      };
+      const built = cached(shape);
       const relief = await built;
       if (disposed || !relief) return null;
       if (!shape.lodOnly) reliefSources.set(relief.geometry, { kit, shape });
@@ -2365,22 +2532,28 @@ export function GameViewport({
       return relief;
     }
 
+    // how much farther than usual the distant versions take over (see
+    // Graphics.lodScale; 0: never)
+    const lodScale = settings.lodScale;
     // A surface's distant versions (after its full one, whose AO map they
     // use): a stepped relief's from a grid LOD_FACTOR times coarser, a
     // smooth one's with fewer cells (SMOOTH_LODS - no more levels than the
     // wall detail setting leaves room for above SMOOTH_LOD_MIN_CELLS).
+    // Their distances are the graphics setting's lodScale times the usual
+    // ones (0: no distant versions at all - nothing built for them either).
     async function farReliefLevels(kit: WallKit, shape: Parameters<typeof buildRelief>[1]): Promise<FarLevel[]> {
+      if (!lodScale) return [];
       const levels: { distance: number; smoothLod?: number }[] = [];
       if (settings.reliefMode === "smooth") {
         const most = Math.max(1, Math.floor(settings.wallDetail / SMOOTH_LOD_MIN_CELLS));
         let last = 1;
         for (const { distance, divisor } of SMOOTH_LODS) {
           const d = Math.min(divisor, most);
-          if (d > last) levels.push({ distance, smoothLod: d });
+          if (d > last) levels.push({ distance: distance * lodScale, smoothLod: d });
           last = Math.max(last, d);
         }
       } else {
-        levels.push({ distance: LOD_DISTANCE });
+        levels.push({ distance: LOD_DISTANCE * lodScale });
       }
       const out: FarLevel[] = [];
       let previous: THREE.BufferGeometry | null = null;
@@ -2432,15 +2605,34 @@ export function GameViewport({
       }
     }
 
-    // a kit's wall panel geometry per variant, built once
-    const wallGeometries = new Map<WallKit, Map<PanelVariant, Promise<THREE.BufferGeometry | null>>>();
-    function wallGeometry(kit: WallKit, variant: PanelVariant): Promise<THREE.BufferGeometry | null> {
+    // Wall panels' side edges: joined to their neighbors' (CORNER_JOINS) -
+    // a stepped relief's profile a step every this many cells (its distant
+    // version's grid is LOD_FACTOR times coarser, so both end on the same
+    // line) - or eased flush the old way.
+    const joinWalls =
+      CORNER_JOINS && !(import.meta.env.DEV && (window as { __voidcrewNoJoins?: boolean }).__voidcrewNoJoins);
+    const joinEdgeCells = (() => {
+      if (settings.reliefMode !== "smooth") return LOD_FACTOR;
+      const most = Math.max(1, Math.floor(settings.wallDetail / SMOOTH_LOD_MIN_CELLS));
+      return SMOOTH_LODS.reduce((d, level) => Math.max(d, Math.min(level.divisor, most)), 1);
+    })();
+    // (`modes`: the corners its edges were picked to land on - see edgeModes)
+    const wallShape = (height: number, rows: [number, number] | undefined, modes: [number, number] = [0, 0]) =>
+      joinWalls
+        ? { height, flushEdges: false, joinEdges: joinEdgeCells, rows, ...(modes[0] || modes[1] ? { edgeModes: modes } : {}) }
+        : { height, flushEdges: true, rows };
+    // each kit's panel edge profiles per variant, for the joins
+    const wallEdges = new Map<WallKit, Map<PanelVariant, EdgeSegment[]>>();
+
+    // a kit's wall panel geometry per variant (and corner modes), built once
+    const wallGeometries = new Map<WallKit, Map<string, Promise<THREE.BufferGeometry | null>>>();
+    function wallGeometry(kit: WallKit, variant: PanelVariant, modes: [number, number] = [0, 0]): Promise<THREE.BufferGeometry | null> {
       let byVariant = wallGeometries.get(kit);
       if (!byVariant) {
         byVariant = new Map();
         wallGeometries.set(kit, byVariant);
       }
-      let geo = byVariant.get(variant);
+      let geo = byVariant.get(`${variant}|${modes}`);
       if (!geo) {
         const rows = variantRows(variant);
         const height = variantHeight(variant) * wallHeight;
@@ -2449,54 +2641,121 @@ export function GameViewport({
           const band = rows ? createBandPlane(height, rows) : wallGeo;
           if (rows) geometries.push(band);
           geo = Promise.resolve(band);
-        } else if (!rows) {
-          geo = buildRelief(kit, { height, flushEdges: true }).then((relief) => {
-            if (!relief) return null;
-            if (kit === primaryKit) {
-              reliefStats = { trianglesPerWall: relief.triangles, levelCount: relief.levelCount, baked: relief.baked };
-            }
-            return relief.geometry;
-          });
         } else {
-          // after the whole panel, whose AO map the band borrows
-          geo = wallGeometry(kit, "full")
-            .then((full) => (full ? buildRelief(kit, { height, flushEdges: true, rows }) : null))
-            .then((relief) => relief?.geometry ?? null);
+          const keepEdge = (relief: Awaited<ReturnType<typeof buildRelief>>) => {
+            if (relief?.edge) {
+              if (!wallEdges.has(kit)) wallEdges.set(kit, new Map());
+              wallEdges.get(kit)!.set(variant, relief.edge);
+            }
+            return relief;
+          };
+          if (!rows) {
+            geo = buildRelief(kit, wallShape(height, undefined, modes)).then((relief) => {
+              if (!keepEdge(relief)) return null;
+              if (kit === primaryKit && !modes[0] && !modes[1]) {
+                reliefStats = { trianglesPerWall: relief!.triangles, levelCount: relief!.levelCount, baked: relief!.baked };
+              }
+              return relief!.geometry;
+            });
+          } else {
+            // after the whole panel, whose AO map the band borrows
+            geo = wallGeometry(kit, "full")
+              .then((full) => (full ? buildRelief(kit, wallShape(height, rows, modes)) : null))
+              .then((relief) => keepEdge(relief)?.geometry ?? null);
+          }
         }
-        byVariant.set(variant, geo);
+        byVariant.set(`${variant}|${modes}`, geo);
       }
       return geo;
     }
     // ... and its distant, low-detail relief (none for flat walls)
-    const farWallGeometries = new Map<WallKit, Map<PanelVariant, Promise<FarLevel[]>>>();
-    function farWallGeometry(kit: WallKit, variant: PanelVariant): Promise<FarLevel[]> {
+    const farWallGeometries = new Map<WallKit, Map<string, Promise<FarLevel[]>>>();
+    function farWallGeometry(kit: WallKit, variant: PanelVariant, modes: [number, number] = [0, 0]): Promise<FarLevel[]> {
       if (wallGeo) return Promise.resolve([]);
       let byVariant = farWallGeometries.get(kit);
       if (!byVariant) {
         byVariant = new Map();
         farWallGeometries.set(kit, byVariant);
       }
-      let geo = byVariant.get(variant);
+      let geo = byVariant.get(`${variant}|${modes}`);
       if (!geo) {
         const rows = variantRows(variant);
         const height = variantHeight(variant) * wallHeight;
-        geo = farReliefLevels(kit, { height, flushEdges: true, rows });
-        byVariant.set(variant, geo);
+        geo = farReliefLevels(kit, wallShape(height, rows, modes));
+        byVariant.set(`${variant}|${modes}`, geo);
       }
       return geo;
     }
 
+    const joinPanels: JoinPanel[] = [];
+    const wallsPlaced: Promise<unknown>[] = [];
+    const joinedStrips: JoinedStrips[] = [];
+    // Every wall panel's corner modes, from where the panels stand alone (so
+    // each corner's two faces are built to meet on their mitre)
+    const panelModes = new Map<WallSlot, [number, number]>();
+    if (joinWalls && !wallGeo) {
+      const all = kits.flatMap((kit) => kit.slots);
+      const modes = edgeModes(all.map((slot) => ({ ...slot, width: 1, height: variantHeight(slot.variant ?? "full") * wallHeight })));
+      all.forEach((slot, i) => panelModes.set(slot, modes[i]));
+    }
     for (const kit of kits) {
-      const byVariant = new Map<PanelVariant, WallSlot[]>();
+      const byForm = new Map<string, { variant: PanelVariant; modes: [number, number]; slots: WallSlot[] }>();
       for (const slot of kit.slots) {
         const variant = slot.variant ?? "full";
-        byVariant.set(variant, [...(byVariant.get(variant) ?? []), slot]);
+        const modes = panelModes.get(slot) ?? [0, 0];
+        const key = `${variant}|${modes}`;
+        if (!byForm.has(key)) byForm.set(key, { variant, modes, slots: [] });
+        byForm.get(key)!.slots.push(slot);
       }
-      for (const [variant, slots] of byVariant) {
-        track(Promise.all([wallGeometry(kit, variant), wallGeometry(kit, variant).then(() => farWallGeometry(kit, variant))]))
-          .then(([geo, far]) => geo && placeWalls(geo, far, wallGeo ? kit.wallMat : [kit.wallMat, kit.sideMat], slots))
+      for (const { variant, modes, slots } of byForm.values()) {
+        const placed = track(
+          Promise.all([wallGeometry(kit, variant, modes), wallGeometry(kit, variant, modes).then(() => farWallGeometry(kit, variant, modes))]),
+        )
+          .then(([geo, far]) => {
+            if (!geo) return;
+            placeWalls(geo, far, wallGeo ? kit.wallMat : [kit.wallMat, kit.sideMat], slots);
+            const edge = wallEdges.get(kit)?.get(variant);
+            if (!edge) return;
+            for (const slot of slots) {
+              joinPanels.push({
+                x: slot.x,
+                z: slot.z,
+                y: slot.y,
+                rotY: slot.rotY,
+                width: 1,
+                edge,
+                modes,
+                material: kit.wallMat,
+              });
+            }
+          })
           .catch((err) => console.error("Wall build failed:", err));
+        wallsPlaced.push(placed);
       }
+    }
+    // Once every wall panel is up: the strips joining their side edges
+    // (cornerJoins.ts), one merged mesh per material. A meeting point's strip
+    // is drawn while any of the (up to four) cells round it is in sight (see
+    // applySight) - not with its panels' facing: it turns round a corner,
+    // seen from either side.
+    if (joinWalls && !wallGeo) {
+      track(Promise.all(wallsPlaced))
+        .then(() => {
+          if (disposed) return;
+          const joins = buildCornerJoins(joinPanels);
+          let triangles = 0;
+          for (const strips of mergeCornerJoins(joins)) {
+            strips.mesh.userData.joinStrips = strips;
+            joinedStrips.push(strips);
+            geometries.push(strips.mesh.geometry);
+            group.add(strips.mesh);
+            triangles += strips.triangles;
+          }
+          // (drawn from the next sight pass on)
+          culledCount = -1;
+          if (import.meta.env.DEV) Object.assign(window, { __voidcrewJoins: { points: joins.length, triangles } });
+        })
+        .catch((err) => console.error("Corner joins failed:", err));
     }
 
     // every kit, for per-frame material updates and disposal (the props'
@@ -2626,7 +2885,7 @@ export function GameViewport({
       if (!far) return mesh;
       const lod = new THREE.LOD();
       lod.addLevel(mesh, 0);
-      lod.addLevel(new THREE.Mesh(far, mat), LOD_DISTANCE);
+      lod.addLevel(new THREE.Mesh(far, mat), LOD_DISTANCE * lodScale);
       return lod;
     };
     if (doorCells.length) {
@@ -2640,7 +2899,8 @@ export function GameViewport({
         };
         const frame = await buildRelief(frameKit, { ...frameShape, coarse: doorCoarse });
         if (!frame) return;
-        const frameFar = await buildRelief(frameKit, { ...frameShape, coarse: doorFarCoarse, lodOnly: true });
+        // (none when the graphics setting asks for no distant versions)
+        const frameFar = lodScale ? await buildRelief(frameKit, { ...frameShape, coarse: doorFarCoarse, lodOnly: true }) : null;
         const hole = frame.holeBounds ?? { minX: -0.35, maxX: 0.35, minY: -wallHeight / 2, maxY: wallHeight * 0.3 };
         const panelWidth = hole.maxX - hole.minX + 2 * DOOR_PANEL_OVERLAP;
         // from the floor up behind the frame's header - its foot just clear
@@ -2655,7 +2915,7 @@ export function GameViewport({
           const panelShape = { width: panelWidth, height: panelHeight - panelLift, flushEdges: false };
           const panel = await buildRelief(kit, { ...panelShape, coarse: doorCoarse });
           if (!panel) return;
-          const far = await buildRelief(kit, { ...panelShape, coarse: doorFarCoarse, lodOnly: true });
+          const far = lodScale ? await buildRelief(kit, { ...panelShape, coarse: doorFarCoarse, lodOnly: true }) : null;
           panelGeos.set(kind, { near: panel.geometry, far: far?.geometry ?? null });
         }
 
@@ -2750,6 +3010,9 @@ export function GameViewport({
         for (let s0 = y0; s0 < y1 - 1e-6; ) {
           const k = Math.floor(s0 / tile + 1e-6);
           const s1 = Math.min(y1, (k + 1) * tile);
+          // (its four faces meet at outer corners: built to land on the
+          // mitre - see ReliefOptions.edgeModes - the copies of one face meet
+          // vertex on vertex all the way round, no core showing between them)
           const cut = await buildRelief(kit, {
             width: w,
             height: s1 - s0,
@@ -2758,6 +3021,7 @@ export function GameViewport({
             coarse: PROP_COARSE,
             cols: [0.5 - w / 2, 0.5 + w / 2],
             rows: [1 - (s1 - k * tile) / tile, 1 - (s0 - k * tile) / tile],
+            ...(CORNER_JOINS ? { joinEdges: joinEdgeCells, edgeModes: [1, 1] as [number, number] } : {}),
           });
           if (!cut) return false;
           for (let i = 0; i < 4; i++) {
@@ -2818,6 +3082,12 @@ export function GameViewport({
       const coreMat = backingMat;
       const core = (w: number, y0: number, y1: number) => {
         const geo = new THREE.BoxGeometry(Math.max(0.02, w - inset), y1 - y0, Math.max(0.02, w - inset));
+        const colors: number[] = [];
+        for (let face = 0; face < 6; face++) {
+          const color = backingColor();
+          for (let v = 0; v < 4; v++) colors.push(color.r, color.g, color.b);
+        }
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
         geometries.push(geo);
         const mesh = new THREE.Mesh(geo, coreMat);
         mesh.position.set(0, (y0 + y1) / 2, 0);
@@ -3196,69 +3466,98 @@ export function GameViewport({
     const markedProps = new Set<number>();
     // (built again, in place, when the props change - see applyProps)
     let propsVersion = 0;
-    function buildProps(m: GameMap) {
-    const version = ++propsVersion;
-    // each type in each texture it wears
-    const propLooks = [...new Set((m.props ?? []).map((p) => `${p.prop}|${p.texture ?? ""}`))];
-    for (const look of propLooks) {
-      const [name, texture] = look.split("|");
+    // The models, built once per deck and cloned for each prop: a type in a
+    // texture, and a pillar or a chamfer per height and texture set too (see
+    // propBuildKey). A prop dragged in the editor gets its model from here at
+    // once instead of waiting for a new build at every step.
+    const propModels = new Map<string, Promise<THREE.Group | null>>();
+    // what a prop's model depends on: its type and texture, and for a pillar or
+    // a chamfer its height and the wall texture around it
+    function propBuildKey(m: GameMap, spec: PropSpec): string {
+      const texture = spec.texture ?? "";
+      const type = retextured(PROP_TYPES[spec.prop], texture || undefined);
+      if (type.kind !== "pillar" && type.kind !== "chamfer") return `${spec.prop}|${texture}`;
+      const h = propHeight(m, spec) * wallHeight;
+      // its own texture, else the wall texture painted in its cell or beside it, else the deck's
+      const near = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]
+        .map(([dx, dy]) => m.wallTextureAt?.(spec.cell.x + dx, spec.cell.y + dy))
+        .find((id) => isTextureSetId(id));
+      const own = texture || near;
+      const setId = isTextureSetId(own) ? own : primarySet;
+      return `${spec.prop}|${texture}|${h}|${setId}`;
+    }
+    function propModel(key: string): Promise<THREE.Group | null> {
+      let made = propModels.get(key);
+      if (made) return made;
+      const [name, texture, h, setId] = key.split("|");
+      const type = retextured(PROP_TYPES[name], texture || undefined);
+      const build =
+        type.kind === "pillar"
+          ? buildPillar(type, Number(h), setId)
+          : type.kind === "chamfer"
+            ? buildChamfer(type, wallKitFor(setId as TextureSetId), Number(h))
+            : buildPropTemplate(type);
+      made = build.then(async (g) => {
+        if (g) await addPropLods(g);
+        return g;
+      });
+      propModels.set(key, made);
+      return made;
+    }
+    // a prop's object where its spec puts it
+    function placeProp(obj: THREE.Object3D, spec: PropSpec) {
+      const type = PROP_TYPES[spec.prop];
+      const { x, z, yaw } = propPlacement(spec);
+      obj.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
+      obj.rotation.y = -yaw;
+      // (bigger or smaller: a pillar only wider - it still fills its room)
+      const scale = spec.scale ?? 1;
+      obj.scale.set(scale, type.kind === "pillar" ? 1 : scale, scale);
+    }
+    // the props as last applied (a build finishing late places its prop where
+    // the prop is by then, not where it was when the build began)
+    let propSpecs: PropSpec[] = map.props ?? [];
+    let propsMap = map;
+    // One prop's object, built (or cloned from the model) and put in the scene
+    // in place of the one it had, if any - which stays until then, so a prop
+    // being rebuilt (a pillar dragged into a taller room) never blinks out.
+    function buildProp(m: GameMap, index: number) {
+      const spec = m.props?.[index];
+      if (!spec) return;
+      const version = propsVersion;
+      const key = propBuildKey(m, spec);
       track(async () => {
-        const type = retextured(PROP_TYPES[name], texture || undefined);
-        // a pillar or a chamfer is built for each height it's needed at (a
-        // chamfer in its cell's wall texture)
-        const perCell = type.kind === "pillar" || type.kind === "chamfer";
-        const builds = new Map<string, Promise<THREE.Group | null>>();
-        const template = perCell ? null : await buildPropTemplate(type);
-        if (!template && !perCell) return;
-        if (template) await addPropLods(template);
-        if (version !== propsVersion) return;
-        for (const [index, spec] of (m.props ?? []).entries()) {
-          if (spec.prop !== name || (spec.texture ?? "") !== texture) continue;
-          let made = template;
-          if (perCell) {
-            const h = propHeight(m, spec) * wallHeight;
-            // its own texture, else the wall texture painted in its cell or beside it, else the deck's
-            const near = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]
-              .map(([dx, dy]) => m.wallTextureAt?.(spec.cell.x + dx, spec.cell.y + dy))
-              .find((id) => isTextureSetId(id));
-            const own = texture || near;
-            const setId = isTextureSetId(own) ? own : primarySet;
-            const key = `${h}|${setId}`;
-            let built = builds.get(key);
-            if (!built) {
-              built = (
-                type.kind === "pillar"
-                  ? buildPillar(type, h, setId)
-                  : type.kind === "chamfer"
-                    ? buildChamfer(type, wallKitFor(setId), h)
-                    : Promise.resolve(null)
-              ).then(async (g) => {
-                if (g) await addPropLods(g);
-                return g;
-              });
-              builds.set(key, built);
-            }
-            made = await built;
-          }
-          if (!made || version !== propsVersion) continue;
-          const { x, z, yaw } = propPlacement(spec);
-          const prop = made.clone();
-          prop.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
-          prop.rotation.y = -yaw;
-          // (bigger or smaller: a pillar only wider - it still fills its room)
-          const scale = spec.scale ?? 1;
-          if (scale !== 1) prop.scale.set(scale, type.kind === "pillar" ? 1 : scale, scale);
-          prop.userData.prop = true;
-          // the editor picks it by this (its index in the map's props)
-          prop.userData.propIndex = index;
-          prop.userData.propType = name;
-          if (type.kind === "billboard") billboardProps.push(prop);
-          propObjects.set(index, prop);
-          group.add(prop);
+        const made = await propModel(key);
+        if (!made || version !== propsVersion) return;
+        const now = propSpecs[index];
+        // (changed again meanwhile into something else: that build places it)
+        if (!now || propBuildKey(propsMap, now) !== key) return;
+        const prop = made.clone();
+        placeProp(prop, now);
+        prop.userData.prop = true;
+        // the editor picks it by this (its index in the map's props)
+        prop.userData.propIndex = index;
+        prop.userData.propType = now.prop;
+        prop.userData.propKey = key;
+        const old = propObjects.get(index);
+        if (old) {
+          group.remove(old);
+          const at = billboardProps.indexOf(old);
+          if (at >= 0) billboardProps.splice(at, 1);
+          markedProps.delete(index);
+          // (a hidden layer stays hidden)
+          prop.visible = old.visible;
         }
+        if (PROP_TYPES[now.prop].kind === "billboard") billboardProps.push(prop);
+        propObjects.set(index, prop);
+        group.add(prop);
         refreshPropWires();
       }).catch((err) => console.error("Prop build failed:", err));
     }
+    function buildProps(m: GameMap) {
+      propSpecs = m.props ?? [];
+      propsMap = m;
+      for (let index = 0; index < propSpecs.length; index++) buildProp(m, index);
     }
     buildProps(map);
     // the props gone from the scene (before they're built anew)
@@ -3269,29 +3568,30 @@ export function GameViewport({
       billboardProps.length = 0;
       markedProps.clear();
     }
-    // The map's props changed (the editor): the same props moved, turned, raised
-    // or scaled are just set again; more, fewer or others are built afresh (the
-    // models are cached, so it's quick).
+    // The map's props changed (the editor): a prop that's still the same model
+    // (moved, turned, raised, scaled - into another cell too) is just set
+    // again where it is now; one whose model changed (another type, texture,
+    // or a pillar in a room of another height) is built anew in its place; an
+    // added one is built. Only when props were taken out (the indices shift)
+    // are they all built afresh (the models are cached, so it's quick).
     function applyProps(next: GameMap, prev: GameMap) {
       const a = next.props ?? [];
       const b = prev.props ?? [];
-      const sameShape =
-        a.length === b.length &&
-        a.every((p, i) => p.prop === b[i].prop && (p.texture ?? "") === (b[i].texture ?? "") && p.cell.x === b[i].cell.x && p.cell.y === b[i].cell.y && propObjects.has(i));
-      if (!sameShape) {
+      if (a.length < b.length) {
         clearProps();
         buildProps(next);
         return;
       }
+      propSpecs = a;
+      propsMap = next;
       a.forEach((spec, i) => {
-        if (JSON.stringify(spec) === JSON.stringify(b[i])) return;
-        const obj = propObjects.get(i)!;
-        const type = PROP_TYPES[spec.prop];
-        const { x, z, yaw } = propPlacement(spec);
-        obj.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
-        obj.rotation.y = -yaw;
-        const scale = spec.scale ?? 1;
-        obj.scale.set(scale, type.kind === "pillar" ? 1 : scale, scale);
+        if (i < b.length && JSON.stringify(spec) === JSON.stringify(b[i])) return;
+        const obj = propObjects.get(i);
+        const key = propBuildKey(next, spec);
+        // (meanwhile the old one - or, still building, the new one once it's
+        // there - stands where the prop is now)
+        if (obj) placeProp(obj, spec);
+        if (obj?.userData.propKey !== key) buildProp(next, i);
       });
     }
 
@@ -4091,6 +4391,20 @@ export function GameViewport({
       cullingOff = off;
       for (const obj of group.children) {
         if (obj.userData.actor || obj.userData.item) continue;
+        // (the corner joins: each point's strip is in sight with any of the
+        // cells round it; which are drawn is picked in cullFacing)
+        if (obj.userData.joinStrips) {
+          for (const p of (obj.userData.joinStrips as JoinedStrips).points) {
+            const { x, y } = p.point;
+            p.inSight =
+              off ||
+              sight.cells.has(cellKey(Math.floor(x), Math.floor(y))) ||
+              sight.cells.has(cellKey(Math.ceil(x), Math.floor(y))) ||
+              sight.cells.has(cellKey(Math.floor(x), Math.ceil(y))) ||
+              sight.cells.has(cellKey(Math.ceil(x), Math.ceil(y)));
+          }
+          continue;
+        }
         const key = cellOf(obj);
         const seen = off || (key === null ? bigPropSeen(obj) : sight.cells.has(key));
         // (a surface's own pass decides, with its facing - every frame)
@@ -4104,11 +4418,19 @@ export function GameViewport({
     // bumps could catch a grazing look from just behind it. Every frame (it
     // turns with the eye, between cells too); ~a dot product a surface.
     const FACING_MARGIN = 2 * Math.max(reliefDepth, floorDepth) + 0.02;
+    const joinFrustum = new THREE.Frustum();
+    const joinMatrix = new THREE.Matrix4();
     function cullFacing() {
       const eye = camera.position;
       for (const obj of facingSurfaces) {
         const { n, d } = obj.userData.facing as { n: THREE.Vector3; d: number };
         obj.visible = !!obj.userData.inSight && (cullingOff || n.dot(eye) - d > -FACING_MARGIN);
+      }
+      // the corner joins' strips: those in sight and in view (one merged
+      // mesh can't be frustum-culled as a whole)
+      if (joinedStrips.length) {
+        joinFrustum.setFromProjectionMatrix(joinMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+        for (const strips of joinedStrips) strips.mesh.visible = strips.show((p) => p.inSight && joinFrustum.intersectsBox(p.box));
       }
     }
     let lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
@@ -4278,15 +4600,20 @@ export function GameViewport({
         const dx = l.x - cam.x;
         const dz = l.z - cam.z;
         const dist = Math.hypot(dx, l.y - cam.y, dz);
-        const ahead = (dx * cam.fwdX + dz * cam.fwdZ) / (Math.hypot(dx, dz) || 1);
+        const along = dx * cam.fwdX + dz * cam.fwdZ;
+        const ahead = along / (Math.hypot(dx, dz) || 1);
         // a flash first, whatever the rest
         const rank = l.flash ? -1 : dist + LIGHT_BEHIND_PENALTY * Math.max(0, -ahead) * dist;
-        return { dist, rank };
+        // (a light whose whole reach lies behind the eye lights nothing in
+        // view: its slot goes to one ahead instead - a lit hall down the
+        // corridor - with a little slack for the view tilting up or down)
+        const behind = along < -(l.range + LIGHT_BEHIND_SLACK);
+        return { dist, rank, behind };
       };
       const current = new Set(lightPool.map((slot) => slot.key));
       const ranked = sources
         .map((l) => ({ l, ...score(l) }))
-        .filter((c) => c.dist < fadeEnd && (!c.l.cell || litNear(c.l.cell, sight.cells)))
+        .filter((c) => c.dist < fadeEnd && !c.behind && (!c.l.cell || litNear(c.l.cell, sight.cells)))
         .map((c) => ({ ...c, rank: current.has(c.l.key) && !c.l.flash ? c.rank * LIGHT_KEEP_BIAS : c.rank }))
         .sort((a, b) => a.rank - b.rank)
         .slice(0, LIGHT_POOL_SIZE);
@@ -5056,19 +5383,159 @@ export function GameViewport({
     const raycaster = new THREE.Raycaster();
     raycaster.far = TOUCH_REACH + settings.cameraPullback;
     let press: { x: number; y: number; at: number } | null = null;
-    // a prop or decal grabbed in the editor: dragged along the surfaces it's moved over
-    let dragItem: { kind: "prop" | "decal" | "item" | "smoke"; index: number; copy: boolean; first: boolean; x: number; y: number; moved: boolean } | null = null;
+    // Something grabbed in the editor and dragged. Props, lights, robots and
+    // doors slide over the level they stand on (their floor; a ceiling lamp's
+    // or a hung robot's ceiling), their spot there kept where it was on the
+    // screen from the pointer (`grab`): moved by as much as the pointer moves,
+    // wherever on the thing it was grabbed (a pillar by its head as by its
+    // foot) - not put where the pointer meets whatever surface is under it,
+    // which is often the thing itself (a pillar's side put it back in its
+    // cell's middle every other step). (Not the point grabbed slid on its own
+    // level either: near eye height that level is seen edge on, and the
+    // slightest move threw the thing far off.)
+    // Decals, items, smoke and wall-hung props go over the surfaces pointed
+    // at, the dragged one itself looked through. A door slides along its
+    // passage inside its cell (its offset); with Shift or Ctrl (a copy) it's
+    // moved to another cell.
+    let dragItem: {
+      kind: EditDragKind;
+      index: number;
+      door?: Vec2;
+      copy: boolean;
+      first: boolean;
+      x: number;
+      y: number;
+      moved: boolean;
+      // (one undo step per drag)
+      id: number;
+      // the thing's spot (world x, z) and the level it slides on; null: it
+      // goes over surfaces
+      anchor: [number, number] | null;
+      planeY: number;
+      // from the pointer to the thing's spot on the screen (view coordinates)
+      grab: THREE.Vector2 | null;
+      // a door: where it's shown while dragged (moved into the map on release)
+      // and where it stood
+      doorTo?: Vec2;
+      doorAcross?: boolean;
+      doorOffset?: number;
+      doorHome?: { position: THREE.Vector3; rotation: number };
+    } | null = null;
+    let dragSerial = 0;
+    const dragPlane = new THREE.Plane();
+    const dragPoint = new THREE.Vector3();
+    // whether a hit is on the thing being dragged (looked through while it is)
+    function dragOwn(o: THREE.Object3D): boolean {
+      const d = dragItem;
+      if (!d) return false;
+      const u = o.userData;
+      switch (d.kind) {
+        case "prop":
+          return u.propIndex === d.index;
+        case "item":
+          return u.itemIndex === d.index;
+        case "smoke":
+          return u.smokeIndex === d.index;
+        case "light":
+          return u.mapLight === d.index;
+        case "actor":
+          return u.actorId === d.index;
+        case "door":
+          return !!u.doorCell && u.doorCell.x === d.door?.x && u.doorCell.y === d.door?.y;
+        default:
+          return false;
+      }
+    }
+    // the spot of the thing grabbed that the drag moves (world x, z) and the
+    // height of the level it slides on - null for the ones dragged over
+    // surfaces
+    function dragAnchor(kind: EditDragKind, index: number, door?: Vec2): [number, number, number] | null {
+      if (kind === "prop") {
+        const spec = latestMapRef.current.props?.[index];
+        const obj = propObjects.get(index);
+        return spec && obj && !PROP_TYPES[spec.prop]?.wall ? [obj.position.x, obj.position.z, floorY(spec.cell.x, spec.cell.y)] : null;
+      }
+      if (kind === "light") {
+        const l = mapLights.find((m) => m.source === index);
+        if (!l) return null;
+        const cx = Math.round(l.x);
+        const cz = Math.round(l.z);
+        return [l.x, l.z, l.kind === "ceiling" ? ceilingY(cx, cz) : floorY(cx, cz)];
+      }
+      if (kind === "actor") {
+        const actor = actorsRef.current.find((a) => a.id === index);
+        if (!actor) return null;
+        // (a turret, a camera: hung from the ceiling, above the eye)
+        const mesh = actorMeshes.get(index)?.mesh;
+        const hung = !!mesh && mesh.position.y > camera.position.y;
+        return [actor.cell.x, actor.cell.y, hung ? ceilingY(actor.cell.x, actor.cell.y) : floorY(actor.cell.x, actor.cell.y)];
+      }
+      if (kind === "door" && door) {
+        // (where it stands in its cell, not the cell's middle)
+        const obj = doorGroups.get(`${door.x},${door.y}`);
+        return [obj?.position.x ?? door.x, obj?.position.z ?? door.y, floorY(door.x, door.y)];
+      }
+      return null;
+    }
+    // where a point of the view meets a level (world height y), if it does
+    // within reach
+    function levelPoint(ndc: THREE.Vector2, y: number): THREE.Vector3 | null {
+      editRaycaster.setFromCamera(ndc, camera);
+      dragPlane.set(new THREE.Vector3(0, 1, 0), -y);
+      const p = editRaycaster.ray.intersectPlane(dragPlane, dragPoint);
+      return p && p.distanceTo(editRaycaster.ray.origin) <= EDIT_REACH ? p : null;
+    }
     const onPress = (e: PointerEvent) => {
       press = { x: e.clientX, y: e.clientY, at: performance.now() };
       dragItem = null;
-      if (editModeRef.current && e.button === 0) {
-        const tool = editToolRef.current;
-        if (tool === "prop" || tool === "decal" || tool === "item" || tool === "smoke") {
-          const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
-          const index = tool === "prop" ? hit?.prop : tool === "decal" ? hit?.decal : tool === "item" ? hit?.item : hit?.smoke;
-          if (index !== undefined) dragItem = { kind: tool, index, copy: e.ctrlKey || e.metaKey, first: true, x: e.clientX, y: e.clientY, moved: false };
-        }
+      if (!editModeRef.current || e.button !== 0) return;
+      const tool = editToolRef.current;
+      // each tool grabs only its own kind of thing
+      const kind: EditDragKind | null =
+        tool === "prop" || tool === "decal" || tool === "item" || tool === "smoke" || tool === "light" || tool === "door"
+          ? tool
+          : tool === "robot"
+            ? "actor"
+            : null;
+      if (!kind) return;
+      const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
+      if (!hit) return;
+      let index: number | undefined;
+      let door: Vec2 | undefined;
+      if (kind === "prop") index = hit.prop;
+      else if (kind === "decal") index = hit.decal;
+      else if (kind === "item") index = hit.item;
+      else if (kind === "smoke") index = hit.smoke;
+      else if (kind === "actor") index = hit.actor;
+      else if (kind === "light") {
+        // a bulb or a lamp panel; or a ceiling with its lamp in it (a lit
+        // ceiling texture has no panel of its own to grab)
+        const own = hit.light ?? (hit.kind === "ceiling" ? ownCeilingLight(latestMapRef.current, hit.cell) : -1);
+        index = own >= 0 ? own : undefined;
+      } else if (kind === "door" && hit.door) {
+        door = hit.door;
+        index = -1;
       }
+      if (index === undefined) return;
+      const anchor = dragAnchor(kind, index, door);
+      const spot = anchor && new THREE.Vector3(anchor[0], anchor[2], anchor[1]).project(camera);
+      const doorObj = door && doorGroups.get(`${door.x},${door.y}`);
+      dragItem = {
+        kind,
+        index,
+        door,
+        copy: e.ctrlKey || e.metaKey,
+        first: true,
+        x: e.clientX,
+        y: e.clientY,
+        moved: false,
+        id: ++dragSerial,
+        anchor: anchor && [anchor[0], anchor[1]],
+        planeY: anchor ? anchor[2] : 0,
+        doorAcross: e.shiftKey || e.ctrlKey || e.metaKey,
+        grab: spot && new THREE.Vector2(spot.x, spot.y).sub(viewNdc(e.clientX, e.clientY)),
+        doorHome: doorObj ? { position: doorObj.position.clone(), rotation: doorObj.rotation.y } : undefined,
+      };
     };
     // (heard on the window, in the capture phase: while a drag is on, the view
     // controls underneath mustn't turn the view too)
@@ -5083,18 +5550,67 @@ export function GameViewport({
         onEditAdjustRef.current?.({ what: "height", delta: -e.movementY * 0.004 });
         return;
       }
-      const target = editTargetAt(viewNdc(e.clientX, e.clientY));
+      const ndc = viewNdc(e.clientX, e.clientY);
+      // where the grabbed spot is taken to, on its level
+      let at: [number, number] | undefined;
+      if (d.anchor && d.grab) {
+        const p = levelPoint(ndc.clone().add(d.grab), d.planeY);
+        // (its spot taken over the horizon, or far off: nowhere to put it)
+        if (!p) return;
+        at = [p.x, p.z];
+      }
+      if (d.kind === "door") {
+        if (at && d.doorAcross) previewDoor(d, { x: Math.round(at[0]), y: Math.round(at[1]) });
+        else if (at) slideDoor(d, at);
+        return;
+      }
+      const target = at ? { kind: "floor" as const, cell: { x: Math.round(at[0]), y: Math.round(at[1]) } } : editTargetAt(ndc);
       if (!target) return;
-      const index = onEditDragRef.current?.({ kind: d.kind, index: d.index, copy: d.copy, first: d.first }, target);
+      const index = onEditDragRef.current?.({ kind: d.kind, index: d.index, copy: d.copy, first: d.first, id: d.id, at }, target);
       d.first = false;
       if (typeof index === "number") d.index = index;
     };
+    // A door dragged: shown where it'd go (a cell it fits in - see doorFits -
+    // facing along that passage) - the map takes it on release: it changes
+    // the deck's structure, a rebuild that's too slow for every step.
+    function previewDoor(d: NonNullable<typeof dragItem>, cell: Vec2) {
+      const from = d.door;
+      const obj = from && doorGroups.get(`${from.x},${from.y}`);
+      if (!from || !obj || !d.doorHome) return;
+      const m = latestMapRef.current;
+      const home = cell.x === from.x && cell.y === from.y;
+      if (!home && !doorFits(m, cell, d.copy ? undefined : from)) return;
+      d.doorTo = home ? undefined : cell;
+      const spec = doorAt(m, from.x, from.y);
+      const facing = home ? spec.facing : doorFacingAt(m, cell, spec.facing);
+      obj.position.set(cell.x, floorY(cell.x, cell.y), cell.y);
+      obj.rotation.y = FACING_ROTATION[facing];
+      obj.translateZ(spec.offset ?? 0);
+    }
+    // A door slid inside its cell: along its passage (the way it faces), up
+    // to flush with the cell's edge (see DoorSpec.offset) - shown as it goes,
+    // taken into the map on release (as a door moved to another cell).
+    function slideDoor(d: NonNullable<typeof dragItem>, at: [number, number]) {
+      const cell = d.door;
+      const obj = cell && doorGroups.get(`${cell.x},${cell.y}`);
+      if (!cell || !obj) return;
+      const spec = doorAt(latestMapRef.current, cell.x, cell.y);
+      const v = DIR_VECTOR[spec.facing];
+      const along = (at[0] - cell.x) * v.x + (at[1] - cell.y) * v.y;
+      const offset = Math.round(Math.max(-DOOR_EDGE_OFFSET, Math.min(DOOR_EDGE_OFFSET, along)) * 100) / 100;
+      d.doorOffset = offset;
+      obj.position.set(cell.x, floorY(cell.x, cell.y), cell.y);
+      obj.rotation.y = FACING_ROTATION[spec.facing];
+      obj.translateZ(offset);
+    }
     window.addEventListener("pointermove", onDragMove, true);
-    // the wheel over the view, while a prop or decal is selected: height, Ctrl: scale, Alt: turn
+    // the wheel over the view, while a prop, decal, item or free-standing
+    // light is selected: height, Ctrl: scale, Alt: turn
     const onWheel = (e: WheelEvent) => {
       if (!editModeRef.current || !onEditAdjustRef.current) return;
       const tool = editToolRef.current;
-      if (tool !== "prop" && tool !== "decal" && tool !== "item") return;
+      const pointLight = tool === "light" && selectedLightRef.current !== null && !!latestMapRef.current.lights?.[selectedLightRef.current]?.pos;
+      if (tool !== "prop" && tool !== "decal" && tool !== "item" && !pointLight) return;
       e.preventDefault();
       const dir = e.deltaY < 0 ? 1 : -1;
       if (e.ctrlKey || e.metaKey) onEditAdjustRef.current({ what: "scale", delta: dir * 0.05 });
@@ -5113,8 +5629,22 @@ export function GameViewport({
       const p = press;
       press = null;
       // a drag just ended: not a click
-      if (dragItem?.moved) {
+      const d = dragItem;
+      if (d?.moved) {
         dragItem = null;
+        // a door: into the map where it was shown, if it takes it there - else
+        // back where it stood (on success the deck is rebuilt around it)
+        if (d.kind === "door" && d.door) {
+          const drop = { kind: "door" as const, index: -1, door: d.door, copy: d.copy, first: true, id: d.id, drop: true };
+          const taken = d.doorAcross
+            ? d.doorTo && onEditDragRef.current?.(drop, { kind: "floor", cell: d.doorTo })
+            : d.doorOffset !== undefined && onEditDragRef.current?.({ ...drop, copy: false, offset: d.doorOffset }, { kind: "floor", cell: d.door });
+          const obj = doorGroups.get(`${d.door.x},${d.door.y}`);
+          if ((taken !== true || d.copy) && obj && d.doorHome) {
+            obj.position.copy(d.doorHome.position);
+            obj.rotation.y = d.doorHome.rotation;
+          }
+        }
         return;
       }
       dragItem = null;
@@ -5189,6 +5719,10 @@ export function GameViewport({
         v: Math.round(((frame.height / 2 - surfaceLocal.y) / frame.height) * SURFACE_PIXELS),
       };
     }
+    const ownedByDrag = (obj: THREE.Object3D) => {
+      for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (dragOwn(o)) return true;
+      return false;
+    };
     function editTargetAt(ndc: THREE.Vector2): EditTarget | null {
       editRaycaster.setFromCamera(ndc, camera);
       const lightTool = editToolRef.current === "light";
@@ -5201,7 +5735,10 @@ export function GameViewport({
             (lightTool || h.object.userData.mapLight === undefined) &&
             drawnChain(h.object) &&
             // (the loose items are see-through sprites, but the Item tool can point at them)
-            (!seeThrough(h.object) || (editToolRef.current === "item" && isItemObject(h.object))),
+            (!seeThrough(h.object) || (editToolRef.current === "item" && isItemObject(h.object))) &&
+            // (the thing being dragged is looked through: what's behind it is
+            // where it goes)
+            !(dragItem?.moved && ownedByDrag(h.object)),
         );
       const hit = hits[0];
       if (!hit?.face) return null;
@@ -5723,16 +6260,38 @@ export function GameViewport({
       for (const b of billboardProps) b.rotation.y = Math.atan2(camera.position.x - b.position.x, camera.position.z - b.position.z);
 
       ambient.intensity = s.ambientIntensity;
+      backingMat.visible = s.wallBacking || s.backingInspect;
+      backingMat.color.setHex(s.backingInspect ? 0xffffff : 0x000000);
+      if (backingMat.fog === s.backingInspect) {
+        backingMat.fog = !s.backingInspect;
+        backingMat.needsUpdate = true;
+      }
       pointLight.intensity = s.headlamp ? s.pointLightIntensity * rideDip : 0;
       lightGrid.scale.value = s.bakedLights ? s.mapLightIntensity * rideDip : 0;
       const fogFar = effectiveViewDistance(s) - FOG_FAR_MARGIN;
       if (fog.far !== fogFar) {
         fog.far = fogFar;
+        fog.near = fogNear(fogFar);
         camera.far = effectiveViewDistance(s) + 0.5;
         camera.updateProjectionMatrix();
       }
+      if (s.fogColor !== fogColorNow) {
+        fogColorNow = s.fogColor;
+        fog.color.set(s.fogColor);
+        fogBackground.set(s.fogColor);
+      }
       for (const kit of allKits()) {
         for (const mat of kitMaterials(kit)) {
+          const inspect = s.backingInspect && !kit.floor;
+          if (!inspectMaterialDefaults.has(mat)) inspectMaterialDefaults.set(mat, { transparent: mat.transparent, opacity: mat.opacity, depthWrite: mat.depthWrite });
+          const original = inspectMaterialDefaults.get(mat)!;
+          const transparent = inspect || original.transparent;
+          if (mat.transparent !== transparent) {
+            mat.transparent = transparent;
+            mat.needsUpdate = true;
+          }
+          mat.opacity = inspect ? 0.25 : original.opacity;
+          mat.depthWrite = inspect ? false : original.depthWrite;
           // (one with its own surface map keeps it)
           if (!mat.userData.surface) {
             mat.roughness = s.roughness;
@@ -5768,17 +6327,18 @@ export function GameViewport({
         own.uniforms.uAccentWidth.value = own.range / 360;
         own.uniforms.uAccentMinSat.value = s.accentMinSat;
       }
-      // a headlamp-like light orbiting the camera; the small radius keeps it
-      // well inside the side walls of the current cell - a light that slips
-      // behind a wall plane lights the back of its front faces and only the
-      // step sides of relief walls
+      // the headlamp: just above the eyes, where they are - it used to circle
+      // the camera (an early experiment), which read as a light wandering
+      // about the walls; at the eye it also never slips behind a wall plane
+      // (lighting the back of its front faces and only the step sides of
+      // relief walls)
       const camCell = { x: Math.round(camX), y: Math.round(camZ) };
       const ceilingHere = cellAt(map, camCell.x, camCell.y) === "wall" ? eyeY + 0.5 : ceilingY(camCell.x, camCell.y);
       pointLight.position.set(
-        camX + Math.cos(t * 0.5) * 0.15,
+        camX,
         // above the eyes, but never through the ceiling
         Math.min(eyeY - bobY + 0.3, ceilingHere - 0.08),
-        camZ + Math.sin(t * 0.5) * 0.15,
+        camZ,
       );
       updateActors(camX, camZ);
       updateLoot(camX, camZ, cam.y * wallHeight);
@@ -6027,6 +6587,7 @@ export function GameViewport({
     settings.reliefMinIsland,
     settings.reliefMode,
     settings.wallDetail,
+    settings.lodScale,
     settings.pixelRatioCap,
     settings.particleQuality,
     settings.floorReliefDepth,

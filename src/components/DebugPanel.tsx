@@ -6,7 +6,7 @@ import type { ViewportSettings, ViewportStats, WallProfileId } from "./GameViewp
 import { downloadMap } from "../editor/mapStore";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { LOCKED_WORLD, WORLDS, switchWorld } from "../game/worlds";
-import { GRAPHICS_PRESETS, VIEW_DISTANCE_MAX, effectiveViewDistance, presetOf } from "../render/graphics";
+import { GRAPHICS_PRESETS, VIEW_DISTANCE_HIGH, VIEW_DISTANCE_MAX, effectiveViewDistance, presetOf } from "../render/graphics";
 import type { WorldId } from "../game/worlds";
 import type { TextureSetKind } from "../render/textureSets";
 
@@ -291,6 +291,15 @@ export function DebugPanel({
           {MATERIAL_SLIDERS.map(slider)}
           {heading("Light")}
           {LIGHT_SLIDERS.map(slider)}
+          <label className="flex items-center justify-between gap-2 text-[11px]">
+            Distance fades to (fog colour) - saved with the map
+            <input
+              type="color"
+              value={settings.fogColor}
+              onChange={(e) => set("fogColor", e.target.value)}
+              className="w-8 h-6 bg-transparent border border-neutral-600"
+            />
+          </label>
           {heading("Sky light (under open ceilings)")}
           {select(
             "Time of day",
@@ -441,7 +450,13 @@ export function DebugPanel({
               value={presetOf(settings)}
               onChange={(e) => {
                 const preset = GRAPHICS_PRESETS[e.target.value];
-                if (preset) onChange({ ...settings, ...preset });
+                // (Ultra is for seeing far: the view distance goes out to
+                // its limit; back from it, in to what the others allow)
+                const viewDistance =
+                  preset && preset.viewDistanceCap > VIEW_DISTANCE_HIGH
+                    ? preset.viewDistanceCap
+                    : Math.min(settings.viewDistance, VIEW_DISTANCE_HIGH);
+                if (preset) onChange({ ...settings, ...preset, viewDistance });
               }}
               className={SELECT}
             >
@@ -484,10 +499,26 @@ export function DebugPanel({
               <option value={5}>5 cells</option>
               <option value={6}>6 cells</option>
               <option value={7}>7 cells</option>
-              <option value={VIEW_DISTANCE_MAX}>none</option>
+              <option value={VIEW_DISTANCE_HIGH}>{VIEW_DISTANCE_HIGH} cells</option>
+              <option value={VIEW_DISTANCE_MAX}>none ({VIEW_DISTANCE_MAX} cells)</option>
             </select>,
           )}
-          {slider({ key: "viewDistance", label: "View distance (cells)", min: 5, max: VIEW_DISTANCE_MAX, step: 0.5 })}
+          {select(
+            "Distant detail (walls, doors, props)",
+            <select value={settings.lodScale} onChange={(e) => set("lodScale", Number(e.target.value))} className={SELECT}>
+              <option value={1}>normal (coarser from 2 cells)</option>
+              <option value={3}>far (coarser from 7 cells)</option>
+              <option value={0}>full detail everywhere</option>
+            </select>,
+          )}
+          {/* (past VIEW_DISTANCE_HIGH only when the limit above allows) */}
+          {slider({
+            key: "viewDistance",
+            label: "View distance (cells)",
+            min: 5,
+            max: Math.max(VIEW_DISTANCE_HIGH, settings.viewDistanceCap),
+            step: 0.5,
+          })}
           {effectiveViewDistance(settings) < settings.viewDistance && (
             <div className="text-[10px] text-neutral-300">Limited to {effectiveViewDistance(settings)} by this device's setting above.</div>
           )}
@@ -548,6 +579,8 @@ export function DebugPanel({
           {check("aimMiniGame", "Aiming mini-game (off: chance roll)")}
           {check("immortalCrew", "Immortal crew (HP stops at 1)")}
           {check("noclip", "Noclip (walk through walls)")}
+          {check("wallBacking", "Black wall / pillar backing")}
+          {check("backingInspect", "Inspect backing: translucent walls + coloured panels")}
           {check("enemyScanner", "Scanner: enemy outlines (crew gear)")}
         </>,
       )}
@@ -609,7 +642,7 @@ export function DebugPanel({
               className={`${button} mt-1 self-start`}
               onClick={() => {
                 const lines = [
-                  `Map: ${mapId}  Graphics: ${presetOf(settings)} (particles ${settings.particleQuality}, every ${settings.particleEvery}, wall cells ${settings.wallDetail}, pixel ratio cap ${settings.pixelRatioCap}, view distance ${settings.viewDistance})`,
+                  `Map: ${mapId}  Graphics: ${presetOf(settings)} (particles ${settings.particleQuality}, every ${settings.particleEvery}, wall cells ${settings.wallDetail}, LOD scale ${settings.lodScale}, pixel ratio cap ${settings.pixelRatioCap}, view distance ${settings.viewDistance})`,
                   `Screen: ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}x`,
                   `FPS: ${stats.fps.toFixed(0)} (${stats.frameMs.toFixed(1)} ms)`,
                   `Rendered triangles: ${stats.renderedTriangles}`,

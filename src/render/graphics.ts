@@ -17,17 +17,26 @@ export interface Graphics {
   // asks: the fog closes in nearer and fewer cells are drawn (VIEW_DISTANCE_MAX:
   // no limit)
   viewDistanceCap: number;
+  // how far off walls, floors, doors and props keep their detailed mesh: their
+  // distant, coarser versions switch in this many times farther than usual
+  // (1: as tuned for the fog of a 7-cell view); 0: none built at all - the
+  // detailed mesh at every distance (more triangles drawn, less to build)
+  lodScale: number;
 }
 
-// the view distance setting's top (see viewDistanceCap)
-export const VIEW_DISTANCE_MAX = 9;
+// the view distance setting's top (see viewDistanceCap) - only Ultra goes
+// past VIEW_DISTANCE_HIGH, the most the other presets allow
+export const VIEW_DISTANCE_MAX = 14;
+export const VIEW_DISTANCE_HIGH = 9;
 
-export const GRAPHICS_KEYS: (keyof Graphics)[] = ["particleQuality", "wallDetail", "pixelRatioCap", "particleEvery", "viewDistanceCap"];
+export const GRAPHICS_KEYS: (keyof Graphics)[] = ["particleQuality", "wallDetail", "pixelRatioCap", "particleEvery", "viewDistanceCap", "lodScale"];
 
+// (Ultra is for a strong desktop graphics card: never a device's own default)
 export const GRAPHICS_PRESETS: Record<string, Graphics> = {
-  Low: { particleQuality: 0.25, wallDetail: 16, pixelRatioCap: 1, particleEvery: 3, viewDistanceCap: 5 },
-  Medium: { particleQuality: 0.5, wallDetail: 32, pixelRatioCap: 1.5, particleEvery: 2, viewDistanceCap: 6 },
-  High: { particleQuality: 1, wallDetail: 64, pixelRatioCap: 2, particleEvery: 1, viewDistanceCap: VIEW_DISTANCE_MAX },
+  Low: { particleQuality: 0.25, wallDetail: 16, pixelRatioCap: 1, particleEvery: 3, viewDistanceCap: 5, lodScale: 1 },
+  Medium: { particleQuality: 0.5, wallDetail: 32, pixelRatioCap: 1.5, particleEvery: 2, viewDistanceCap: 6, lodScale: 1 },
+  High: { particleQuality: 1, wallDetail: 64, pixelRatioCap: 2, particleEvery: 1, viewDistanceCap: VIEW_DISTANCE_HIGH, lodScale: 1 },
+  Ultra: { particleQuality: 1, wallDetail: 64, pixelRatioCap: 2, particleEvery: 1, viewDistanceCap: VIEW_DISTANCE_MAX, lodScale: 3 },
 };
 
 // how far the view reaches: the view distance setting, within the device's cap
@@ -48,10 +57,12 @@ export function loadGraphics(): Graphics {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Graphics> | null;
     if (saved) for (const k of GRAPHICS_KEYS) if (typeof saved[k] === "number") base[k] = saved[k] as number;
-    // (saved before there was a cap: the one of the preset it was, if any)
-    if (saved && typeof saved.viewDistanceCap !== "number") {
-      const was = Object.values(GRAPHICS_PRESETS).find((p) => GRAPHICS_KEYS.every((k) => k === "viewDistanceCap" || p[k] === base[k]));
-      if (was) base.viewDistanceCap = was.viewDistanceCap;
+    // (saved before a value existed - the view distance cap, the LOD scale:
+    // the ones of the preset the rest match, if any)
+    const missing = GRAPHICS_KEYS.filter((k) => saved && typeof saved[k] !== "number");
+    if (saved && missing.length) {
+      const was = Object.values(GRAPHICS_PRESETS).find((p) => GRAPHICS_KEYS.every((k) => missing.includes(k) || p[k] === base[k]));
+      if (was) for (const k of missing) base[k] = was[k];
     }
   } catch {
     // (no storage, or a broken save: the device's own)

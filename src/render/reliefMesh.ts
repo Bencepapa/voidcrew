@@ -63,6 +63,41 @@ export interface ReliefOptions {
   // so the two agree on the base level, the eased edges and the panel's
   // outline, and a far panel meets a near neighbor without a step.
   smoothLod?: number;
+  // Leave the left/right edges free for a corner join (see cornerJoins.ts)
+  // instead of forcing them to the base (flushEdges): the relief runs right
+  // up to both edges, and the edges themselves follow one profile shared by
+  // the two sides - the wrap-around seam between the map's first and last
+  // column, so a panel still meets a copy of itself next to it without a
+  // step. Every version of the panel ends on exactly the same line, so a
+  // neighbour or a join strip fits all of them: a smooth relief's profile
+  // has a vertex at every row of the detailed surface, kept along the edges
+  // of its distant versions too; a stepped one a step every whole multiple
+  // of `joinEdges` cells (the coarser grid's rows - see MAX_EDGE_BANDS).
+  joinEdges?: number;
+  // a stepped distant version (built from a coarser grid, with its own
+  // levels): its detailed version's edge profile, to end on the same line
+  edgeProfile?: EdgeSegment[];
+  // With joined edges: what each side edge (left, right) meets. 1: an outer
+  // corner, -1: an inner one, 0: anything else. At a corner the edge is
+  // pushed along the panel by its own height there (out past the corner
+  // where it stands out, back where it's recessed), so it lands on the
+  // mitre - where the other face, built the same way from the same profile,
+  // lands too: the two meet edge to edge, vertex on vertex, with nothing
+  // between them.
+  edgeModes?: [number, number];
+}
+
+// One straight piece of a panel's side edge profile (see joinEdges), in the
+// panel's local units: from (y0, z0) at the top to (y1, z1) at the bottom,
+// with the texture's v there. A stepped profile is level within a piece
+// (z0 = z1) and jumps between pieces.
+export interface EdgeSegment {
+  y0: number;
+  y1: number;
+  z0: number;
+  z1: number;
+  v0: number;
+  v1: number;
 }
 
 export interface HoleBounds {
@@ -90,11 +125,16 @@ export interface ReliefResult {
   // decals are pulled toward the eye that much at its distance (see
   // decals.ts, setFarPull); 0 for a detailed one
   lodRise?: number;
+  // the side edges' shared profile, top to bottom (only with joinEdges)
+  edge?: EdgeSegment[];
 }
 
 // Relief geometry is built per height-map cell; larger maps are box-filtered
 // down first so a 1024px photo texture doesn't produce a million quads.
 const MAX_GRID = 256;
+// a stepped relief's joined edge profile: at most this many steps down a
+// whole map's height (see joinEdges)
+const MAX_EDGE_BANDS = 16;
 
 export async function loadHeightGrid(url: string): Promise<HeightGrid> {
   // onload rather than img.decode(): decode() can stall while the page is
@@ -200,7 +240,9 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   // beveled profile uses with its taper.
   const cellW = opts.wallWidth / gw;
   const cellH = opts.wallHeight / gh;
-  const margin = opts.flushEdges === false ? 0 : Math.min(Math.floor(gw / 2), Math.ceil(maxAbsZ / cellW - 1e-6));
+  const joined = !!opts.joinEdges;
+  const margin =
+    opts.flushEdges === false || joined ? 0 : Math.min(Math.floor(gw / 2), Math.ceil(maxAbsZ / cellW - 1e-6));
   for (let y = 0; y < gh; y++) {
     for (let x = 0; x < margin; x++) {
       q[y * gw + x] = base;
@@ -212,6 +254,10 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   const Y = (y: number) => opts.wallHeight / 2 - y * cellH;
   const U = (x: number) => (x + c0) / fullW;
   const V = (y: number) => 1 - (y + r0) / fullH;
+  // x of a cell boundary at height z: a joined side edge lands on its
+  // corner's mitre (see ReliefOptions.edgeModes)
+  const modes = joined ? (opts.edgeModes ?? [0, 0]) : [0, 0];
+  const EX = (bx: number, z: number) => X(bx) + (bx === 0 ? -modes[0] * z : bx === gw ? modes[1] * z : 0);
   // Per-cell key: its level, or HOLE for a transparent cell (or one on the
   // lowest `holeLevels`). Holes get no front face; the side faces around
   // them reach back to `holeBackZ`.
@@ -220,12 +266,72 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   const holeLevels = opts.holeLevels ?? 0;
   for (let i = 0; i < key.length; i++) key[i] = (solid && !solid[i]) || q[i] < holeLevels ? HOLE : q[i];
   const holeBackZ = opts.holeBackZ ?? levelZ(0);
-  const zOf = (k: number) => (k === HOLE ? holeBackZ : levelZ(k));
+  // keys from levelCount up: the joined edge columns' own heights (below)
+  const extraZ: number[] = [];
+  const zOf = (k: number) => (k === HOLE ? holeBackZ : k >= levelCount ? extraZ[k - levelCount] : levelZ(k));
+
+  // Joined edges (see ReliefOptions.joinEdges): the first and last column
+  // take one shared height per band of rows - the two columns' average
+  // there - or, for a distant version, its detailed one's profile.
+  // As extra levels of their own, so the faces below treat them like any
+  // other level.
+  let edge: EdgeSegment[] | undefined;
+  if (joined) {
+    const keyFor = new Map<number, number>();
+    const edgeKey = (z: number) => {
+      let k = keyFor.get(z);
+      if (k === undefined) {
+        k = levelCount + extraZ.length;
+        extraZ.push(z);
+        keyFor.set(z, k);
+      }
+      return k;
+    };
+    const setRow = (y: number, z: number) => {
+      for (const x of [0, gw - 1]) if (key[y * gw + x] !== HOLE) key[y * gw + x] = edgeKey(z);
+    };
+    if (opts.edgeProfile) {
+      for (let y = 0; y < gh; y++) {
+        const cy = Y(y + 0.5);
+        const seg = opts.edgeProfile.find((s) => cy <= s.y0 && cy >= s.y1) ?? opts.edgeProfile[opts.edgeProfile.length - 1];
+        setRow(y, seg.z0);
+      }
+      edge = opts.edgeProfile;
+    } else {
+      // (a whole multiple of joinEdges cells, so the distant version's rows
+      // still line up - and no more than MAX_EDGE_BANDS over the whole map:
+      // a fine map would give hundreds, each a few more triangles in the
+      // join strips)
+      const step = opts.joinEdges! * Math.max(1, Math.ceil(fullH / opts.joinEdges! / MAX_EDGE_BANDS));
+      const bands = Math.max(1, Math.round(gh / step));
+      edge = [];
+      for (let b = 0; b < bands; b++) {
+        const y0 = Math.round((b * gh) / bands);
+        const y1 = Math.round(((b + 1) * gh) / bands);
+        let sum = 0;
+        let count = 0;
+        for (let y = y0; y < y1; y++) {
+          for (const x of [0, gw - 1]) {
+            const k = key[y * gw + x];
+            if (k === HOLE) continue;
+            sum += zOf(k);
+            count++;
+          }
+        }
+        const z = count ? sum / count : 0;
+        for (let y = y0; y < y1; y++) setRow(y, z);
+        edge.push({ y0: Y(y0), y1: Y(y1), z0: z, z1: z, v0: V(y0), v1: V(y1) });
+      }
+    }
+  }
+
   // outside the map counts as base level, so recesses touching the top/bottom
   // edge get a closing face - except next to a hole, which just stays open
-  // (a door frame's opening runs out through the bottom edge)
+  // (a door frame's opening runs out through the bottom edge). Joined edges
+  // stay open at the sides: the corner join closes them.
   const levelAt = (x: number, y: number) => {
     if (x >= 0 && y >= 0 && x < gw && y < gh) return key[y * gw + x];
+    if (joined && y >= 0 && y < gh) return key[y * gw + Math.min(gw - 1, Math.max(0, x))];
     const edge = key[Math.min(gh - 1, Math.max(0, y)) * gw + Math.min(gw - 1, Math.max(0, x))];
     return edge === HOLE ? HOLE : base;
   };
@@ -269,13 +375,13 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
 
       for (let yy = y; yy < y1; yy++) used.fill(1, yy * gw + x, yy * gw + x1);
 
-      const z = levelZ(l);
+      const z = zOf(l);
       quad(
         [
-          [X(x), Y(y1), z],
-          [X(x1), Y(y1), z],
-          [X(x1), Y(y), z],
-          [X(x), Y(y), z],
+          [EX(x, z), Y(y1), z],
+          [EX(x1, z), Y(y1), z],
+          [EX(x1, z), Y(y), z],
+          [EX(x, z), Y(y), z],
         ],
         [0, 0, 1],
         [
@@ -363,10 +469,10 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
       const vLow = V(upperHigher ? by + 0.5 : by - 0.5);
       quad(
         [
-          [X(x), py, zB],
-          [X(x1), py, zB],
-          [X(x1), py, zA],
-          [X(x), py, zA],
+          [EX(x, zB), py, zB],
+          [EX(x1, zB), py, zB],
+          [EX(x1, zA), py, zA],
+          [EX(x, zA), py, zA],
         ],
         [0, upperHigher ? -1 : 1, 0],
         [
@@ -439,6 +545,7 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
     baked,
     maxZ: levelZ(levelCount - 1),
     holeBounds,
+    edge,
   };
 }
 
@@ -495,8 +602,10 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
       if (Math.abs(z) > maxAbsZ) maxAbsZ = Math.abs(z);
     }
   }
-  // the margin the side edges ease over, as in the stepped build
-  const margin = opts.flushEdges === false ? 0 : Math.min(Math.floor(gw / 2), Math.ceil(maxAbsZ / cellW - 1e-6));
+  // the margin the side edges ease over, as in the stepped build (none when
+  // they're joined: see joinEdges)
+  const margin =
+    opts.flushEdges === false || opts.joinEdges ? 0 : Math.min(Math.floor(gw / 2), Math.ceil(maxAbsZ / cellW - 1e-6));
   if (margin > 0) {
     for (let y = 0; y < gh; y++) {
       for (let x = 0; x < gw; x++) {
@@ -521,6 +630,40 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
     return top * (1 - ty) + bottom * ty;
   };
 
+  // Joined edges (see ReliefOptions.joinEdges): both side edges follow the
+  // seam between the first and last column, at every row of the detailed
+  // surface - its stones and mortar run right up to a corner and meet the
+  // other face's there. A distant version keeps every one of those rows
+  // along its two edges (a fan of triangles over to its own coarser
+  // columns), so all versions of a panel end on the very same line and
+  // neighbours at different distances still meet vertex on vertex.
+  let edgeZ: ((fy: number) => number) | null = null;
+  let edge: EdgeSegment[] | undefined;
+  if (opts.joinEdges) {
+    const ez = new Float32Array(gh + 1);
+    for (let k = 0; k <= gh; k++) ez[k] = (sample(0, k) + sample(gw, k)) / 2;
+    edgeZ = (fy) => {
+      const t = Math.min(gh, Math.max(0, fy));
+      const k = Math.min(gh - 1, Math.floor(t));
+      return ez[k] + (ez[k + 1] - ez[k]) * (t - k);
+    };
+    edge = [];
+    for (let k = 0; k < gh; k++) {
+      edge.push({
+        y0: opts.wallHeight / 2 - k * cellH,
+        y1: opts.wallHeight / 2 - (k + 1) * cellH,
+        z0: ez[k],
+        z1: ez[k + 1],
+        v0: 1 - (k + r0) / fullH,
+        v1: 1 - (k + 1 + r0) / fullH,
+      });
+    }
+  }
+  // the detailed surface's height at a vertex position (cell corners)
+  const surfaceAt = (fx: number, fy: number) => (edgeZ && (fx <= 0 || fx >= gw) ? edgeZ(fy) : sample(fx, fy));
+  // (a joined edge lands on its corner's mitre: see ReliefOptions.edgeModes)
+  const modes = edgeZ ? (opts.edgeModes ?? [0, 0]) : [0, 0];
+
   // the mesh's own cells: the height cells, or fewer for a distant version
   // (smoothLod) - each of its vertices then sits on the detailed surface,
   // `stepX` x `stepY` height cells apart
@@ -529,43 +672,70 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   const mh = Math.max(1, Math.round(gh / lod));
   const stepX = gw / mw;
   const stepY = gh / mh;
-  const nx = mw + 1;
-  const ny = mh + 1;
-  const positions = new Float32Array(nx * ny * 3);
-  const uvs = new Float32Array(nx * ny * 2);
-  for (let j = 0; j < ny; j++) {
-    for (let i = 0; i < nx; i++) {
-      const k = j * nx + i;
-      positions[k * 3] = -opts.wallWidth / 2 + i * stepX * cellW;
-      positions[k * 3 + 1] = opts.wallHeight / 2 - j * stepY * cellH;
-      positions[k * 3 + 2] = sample(i * stepX, j * stepY);
-      uvs[k * 2] = (i * stepX + c0) / fullW;
-      uvs[k * 2 + 1] = 1 - (j * stepY + r0) / fullH;
-    }
-  }
+  const pos: number[] = [];
+  const uv: number[] = [];
+  // its columns of vertices, each with the rows they sit on (in height
+  // cells): the coarse rows, or every row along a joined edge
+  const fineRows = Array.from({ length: gh + 1 }, (_, j) => j);
+  const coarseRows = mh === gh ? fineRows : Array.from({ length: mh + 1 }, (_, j) => j * stepY);
+  const columns = Array.from({ length: mw + 1 }, (_, i) => {
+    const side = i === 0 ? 0 : i === mw ? 1 : -1;
+    const rows = edgeZ && side >= 0 ? fineRows : coarseRows;
+    const ids = rows.map((fy) => {
+      const fx = i * stepX;
+      const z = side >= 0 ? surfaceAt(side ? gw : 0, fy) : sample(fx, fy);
+      const shift = side === 0 ? -modes[0] * z : side === 1 ? modes[1] * z : 0;
+      pos.push(-opts.wallWidth / 2 + fx * cellW + shift, opts.wallHeight / 2 - fy * cellH, z);
+      uv.push((fx + c0) / fullW, 1 - (fy + r0) / fullH);
+      return pos.length / 3 - 1;
+    });
+    return { rows, ids };
+  });
   const indices: number[] = [];
-  for (let j = 0; j < mh; j++) {
-    for (let i = 0; i < mw; i++) {
-      const a = j * nx + i;
-      const b = a + 1;
-      const c = a + nx;
-      const d = c + 1;
-      indices.push(a, c, d, a, d, b);
+  for (let i = 0; i < mw; i++) {
+    const L = columns[i];
+    const R = columns[i + 1];
+    if (L.rows === R.rows) {
+      for (let j = 0; j < L.rows.length - 1; j++) {
+        const a = L.ids[j];
+        const b = R.ids[j];
+        const c = L.ids[j + 1];
+        const d = R.ids[j + 1];
+        indices.push(a, c, d, a, d, b);
+      }
+      continue;
+    }
+    // rows that don't line up (a joined edge next to coarse rows): walk
+    // down both, always stepping the one whose next row comes first
+    let p = 0;
+    let q = 0;
+    while (p < L.rows.length - 1 || q < R.rows.length - 1) {
+      if (q === R.rows.length - 1 || (p < L.rows.length - 1 && L.rows[p + 1] <= R.rows[q + 1])) {
+        indices.push(L.ids[p], L.ids[p + 1], R.ids[q]);
+        p++;
+      } else {
+        indices.push(L.ids[p], R.ids[q + 1], R.ids[q]);
+        q++;
+      }
     }
   }
+  const positions = new Float32Array(pos);
+  const uvs = new Float32Array(uv);
   // A distant version's flat triangles cut across the detailed surface's
   // hollows - how far they rise above it at worst (checked at the detailed
   // mesh's own vertices: both are flat between them, the detailed mesh's
-  // triangles split the same way, so the gap peaks at one)
+  // triangles split the same way, so the gap peaks at one; a joined edge's
+  // fans, on the detailed surface's own edge rows, are left out)
   let lodRise = 0;
   if (lod > 1) {
-    const at = (i: number, j: number) => positions[(j * nx + i) * 3 + 2];
+    const at = (i: number, j: number) => positions[columns[i].ids[Math.round(columns[i].rows === fineRows ? j * stepY : j)] * 3 + 2];
     for (let y = 0; y <= gh; y++) {
       for (let x = 0; x <= gw; x++) {
         const u = Math.min(mw - 1e-6, x / stepX);
         const v = Math.min(mh - 1e-6, y / stepY);
         const i = Math.floor(u);
         const j = Math.floor(v);
+        if (edgeZ && (i === 0 || i === mw - 1)) continue;
         const fu = u - i;
         const fv = v - j;
         const a = at(i, j);
@@ -574,7 +744,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
         const d = at(i + 1, j + 1);
         // (the triangles a-c-d and a-d-b, as indexed below)
         const coarse = fv >= fu ? a + fu * (d - c) + fv * (c - a) : a + fu * (b - a) + fv * (d - b);
-        lodRise = Math.max(lodRise, coarse - sample(x, y));
+        lodRise = Math.max(lodRise, coarse - surfaceAt(x, y));
       }
     }
   }
@@ -591,7 +761,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
     lod > 1
       ? createAoTexture(new Float32Array([1]), 1, 1)
       : createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
-  return { geometry, aoMap, triangles: indices.length / 3, levelCount: 0, baked: false, maxZ, holeBounds: null, lodRise };
+  return { geometry, aoMap, triangles: indices.length / 3, levelCount: 0, baked: false, maxZ, holeBounds: null, lodRise, edge };
 }
 
 // Horizon-based ambient occlusion over the relief's height field: for each
