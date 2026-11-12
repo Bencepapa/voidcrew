@@ -4,7 +4,7 @@ The Pages build can connect to a Supabase project for shared maps and PNG textur
 
 ## Set up a dedicated Free project
 
-1. Create a project at [Supabase Dashboard](https://supabase.com/dashboard). Run [shared-editor.sql](./shared-editor.sql) once in its SQL Editor.
+1. Create a project at [Supabase Dashboard](https://supabase.com/dashboard). Run [shared-editor.sql](./shared-editor.sql), then [shared-map-authors.sql](./shared-map-authors.sql) in its SQL Editor. For an existing trial, run only the latter to record the author and time of new saves.
 2. Under **Authentication → Users**, create and confirm two test accounts with passwords. Turn off public signups for this private trial. Grant editor access to those accounts by running the following SQL with their actual email addresses.
 
    ```sql

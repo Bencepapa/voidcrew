@@ -441,6 +441,7 @@ export function EditorBar(p: Props) {
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
     >
+      {p.shared && <div className="basis-full text-left">{p.shared}</div>}
       <button
         type="button"
         className={`${BUTTON} ${p.tool === "dig" || p.tool === "fill" ? active : idle}`}
@@ -520,7 +521,6 @@ export function EditorBar(p: Props) {
       <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDownload}>
         Download
       </button>
-      {p.shared}
       <span className="w-2" />
       <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExit} title="Tab">
         Exit editor

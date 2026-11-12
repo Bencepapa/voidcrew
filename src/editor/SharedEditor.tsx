@@ -7,8 +7,10 @@ import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 const project = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, "");
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 export const sharedConfigured = Boolean(project && key);
-interface Head { id: string; revision: number; title: string }
+interface Head { id: string; revision: number; title: string; saved_by?: string; saved_at?: string }
 let token = "";
+let signedInName = "";
+const button = "w-fit rounded border border-neutral-500 bg-neutral-800 px-3 py-2 text-left text-white hover:border-amber-400 hover:bg-neutral-700 focus-visible:outline-amber-400 disabled:opacity-50";
 const origins = new Map<string, Head>();
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -57,7 +59,8 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
   }
   async function refresh() {
     await textures(map.world);
-    setHeads(await request<Head[]>("/rest/v1/void_map_heads?world=eq." + map.world + "&order=title"));
+    const latest = await request<Head[]>("/rest/v1/void_map_heads?world=eq." + map.world + "&order=title,id");
+    setHeads(latest.sort((a, b) => (b.saved_at ?? "").localeCompare(a.saved_at ?? "")));
     changed();
   }
   async function save(copy: boolean) {
@@ -77,23 +80,30 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     if ("error" in result) throw new Error(result.error);
     origins.set(id, head); openMap(result.map); setOpen(false);
   }
-  return <><button type="button" onClick={() => {setOpen(true); if(token) void run(refresh);}}>Shared maps</button>
-    {open && <div role="dialog" aria-modal="true" aria-label="Shared maps" onKeyDown={e => e.stopPropagation()} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <fieldset disabled={busy} className="flex w-96 max-h-[85vh] overflow-auto flex-col gap-3 rounded bg-neutral-900 p-5 text-sm text-white">
-        <strong>Shared maps · {map.world}</strong>
+  return <><button className={button} type="button" onClick={() => {setOpen(true); if(token) void run(refresh);}}>Shared maps ({token ? signedInName : "Log In"})</button>
+    {open && <div role="dialog" aria-modal="true" aria-label="Shared maps" onKeyDown={e => { e.stopPropagation(); if (e.key === "Escape") setOpen(false); }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <section className="w-[min(30rem,94vw)] max-h-[85vh] overflow-auto rounded-lg border-2 border-neutral-500 bg-neutral-950 p-5 text-left text-sm text-white shadow-2xl">
+        <header className="mb-4 flex items-center justify-between border-b border-neutral-700 pb-3">
+          <strong>Shared maps · {map.world}</strong>
+          <button type="button" aria-label="Close shared maps" className={button} onClick={()=>setOpen(false)}>×</button>
+        </header>
+        <fieldset disabled={busy} className="flex min-w-0 flex-col items-start gap-2">
         {!token ? <form className="flex flex-col gap-2" onSubmit={e => {e.preventDefault(); void run(async () => {
-          const auth = await request<{access_token:string}>("/auth/v1/token?grant_type=password", {method:"POST",body:JSON.stringify({email,password})});
-          token = auth.access_token; setPassword("");
+          const auth = await request<{access_token:string; user: {email: string}}>("/auth/v1/token?grant_type=password", {method:"POST",body:JSON.stringify({email,password})});
+          token = auth.access_token; signedInName = auth.user.email.split("@")[0]; setPassword("");
           const membership = await request<unknown[]>("/rest/v1/void_editors?select=user_id");
           if (!membership.length) { token = ""; throw new Error("Editor access required"); }
           await refresh();
         });}}>
-          <input aria-label="Email" type="email" placeholder="Email" required value={email} onChange={e=>setEmail(e.target.value)}/>
-          <input aria-label="Password" type="password" placeholder="Password" required value={password} onChange={e=>setPassword(e.target.value)}/>
-          <button>Sign in</button></form> : <>
-          <button onClick={()=>void run(()=>save(false))}>Save {map.name}</button>
-          <button onClick={()=>void run(()=>save(true))}>Save as separate copy</button>
-          <label>Add wall / floor PNG<input type="file" accept="image/png" onChange={e=>{
+          <input className="rounded border border-neutral-500 bg-neutral-800 px-3 py-2" aria-label="Email" type="email" placeholder="Email" required value={email} onChange={e=>setEmail(e.target.value)}/>
+          <input className="rounded border border-neutral-500 bg-neutral-800 px-3 py-2" aria-label="Password" type="password" placeholder="Password" required value={password} onChange={e=>setPassword(e.target.value)}/>
+          <button className={button}>Log in</button></form> : <>
+          <strong>{map.name}</strong>
+          <button className={button} onClick={()=>void run(()=>save(false))}>Save shared map</button>
+          <p className="text-xs text-neutral-300">Publish this map or add its next revision.</p>
+          <button className={button} onClick={()=>void run(()=>save(true))}>Save as new map</button>
+          <p className="text-xs text-neutral-300">Create a separate map at v1. Further saves go to that copy.</p>
+          <label className="my-2 block">Add wall / floor PNG<input className="block file:mr-2 file:rounded file:border file:border-neutral-500 file:bg-neutral-800 file:px-3 file:py-1 file:text-white" type="file" accept="image/png" onChange={e=>{
             const f=e.target.files?.[0]; if(!f) return; e.target.value="";
             void run(async()=>{
               if(f.type!=="image/png" || f.size>8388608) throw new Error("Choose a PNG up to 8 MB");
@@ -102,11 +112,17 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
               await refresh(); setMessage("Texture added to the wall and floor palettes.");
             });
           }}/></label>
-          <button onClick={()=>void run(refresh)}>Refresh shared maps and textures</button>
-          {heads.map(h=><button key={h.id} onClick={()=>void run(()=>load(h))}>{h.title} · v{h.revision} · {h.id.slice(-8)}</button>)}
-          <button onClick={()=>{token="";setHeads([]);setMessage("");}}>Sign out</button>
+          <strong className="mt-2">Latest save of each map</strong>
+          <button className={button} onClick={()=>void run(refresh)}>Refresh list and textures</button>
+          <p className="text-xs text-neutral-300">Check for other editors’ saves and uploaded textures.</p>
+          {!busy && !heads.length && <p>No shared maps yet.</p>}
+          {heads.map(h=><button className={button + " w-full"} key={h.id} onClick={()=>void run(()=>load(h))}>
+            <strong>Open {h.title}</strong> · v{h.revision}
+            <span className="block text-xs text-neutral-300">{h.saved_by ?? "Author unrecorded"}{h.saved_at && " · " + new Date(h.saved_at).toLocaleString()} · {h.id.slice(-8)}</span>
+          </button>)}
+          <button className={button} onClick={()=>{token="";setHeads([]);setMessage("");}}>Sign out</button>
         </>}
-        <output>{busy ? "Working…" : message}</output><button onClick={()=>setOpen(false)}>Close</button>
-      </fieldset></div>}
+        <output aria-live="polite">{busy ? "Working…" : message}</output>
+      </fieldset></section></div>}
   </>;
 }
