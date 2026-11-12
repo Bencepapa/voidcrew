@@ -428,7 +428,10 @@ export function useGameState() {
     closeTimers.current.forEach((t) => clearTimeout(t));
     closeTimers.current.clear();
     prevPosRef.current = to.start.cell;
-    readyMapRef.current = null;
+    // (entering the map we are already on - an open world's party waking at its
+    // start - builds no new scene, so nothing would say "ready" again: it stays
+    // ready, or the party could never move after it)
+    if (to.id !== mapRef.current.id) readyMapRef.current = null;
     setMap(to);
     setPos(to.start.cell);
     setDir(to.start.facing);
