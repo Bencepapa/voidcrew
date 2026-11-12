@@ -2440,6 +2440,7 @@ export function GameViewport({
         // side edges left for corner joins (ReliefOptions.joinEdges), and
         // the corners they land on (ReliefOptions.edgeModes)
         joinEdges?: number;
+        floorEdges?: boolean;
         edgeModes?: [number, number];
       },
     ) {
@@ -2508,6 +2509,7 @@ export function GameViewport({
             cols: shape.cols,
             holeLevels: shape.holeLevels,
             joinEdges: shape.joinEdges,
+            floorEdges: shape.floorEdges,
             edgeModes: shape.edgeModes,
             edgeProfile,
           });
@@ -2849,9 +2851,9 @@ export function GameViewport({
     for (const floorKit of floorKits.values()) {
       if (isRelief) {
         track(
-          buildRelief(floorKit, { height: 1, flushEdges: false, depth: floorDepth }).then(async (relief) => [
+          buildRelief(floorKit, { height: 1, flushEdges: false, floorEdges: true, depth: floorDepth }).then(async (relief) => [
             relief,
-            relief ? await farReliefLevels(floorKit, { height: 1, flushEdges: false, depth: floorDepth }) : [],
+            relief ? await farReliefLevels(floorKit, { height: 1, flushEdges: false, floorEdges: true, depth: floorDepth }) : [],
           ] as const),
         )
           .then(([relief, far]) => {

@@ -74,6 +74,8 @@ export interface ReliefOptions {
   // of its distant versions too; a stepped one a step every whole multiple
   // of `joinEdges` cells (the coarser grid's rows - see MAX_EDGE_BANDS).
   joinEdges?: number;
+  // Keep neighboring floor tiles at the same height along all four edges.
+  floorEdges?: boolean;
   // a stepped distant version (built from a coarser grid, with its own
   // levels): its detailed version's edge profile, to end on the same line
   edgeProfile?: EdgeSegment[];
@@ -266,6 +268,12 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   const holeLevels = opts.holeLevels ?? 0;
   for (let i = 0; i < key.length; i++) key[i] = (solid && !solid[i]) || q[i] < holeLevels ? HOLE : q[i];
   const holeBackZ = opts.holeBackZ ?? levelZ(0);
+  if (opts.floorEdges) {
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+      const i = y * gw + x;
+      if ((x === 0 || y === 0 || x === gw - 1 || y === gh - 1) && key[i] !== HOLE) key[i] = base;
+    }
+  }
   // keys from levelCount up: the joined edge columns' own heights (below)
   const extraZ: number[] = [];
   const zOf = (k: number) => (k === HOLE ? holeBackZ : k >= levelCount ? extraZ[k - levelCount] : levelZ(k));
@@ -617,6 +625,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
 
   // bilinear height at a continuous cell position (cell centers at +0.5)
   const sample = (fx: number, fy: number) => {
+    if (opts.floorEdges && (fx <= 1e-6 || fy <= 1e-6 || fx >= gw - 1e-6 || fy >= gh - 1e-6)) return 0;
     const x = Math.min(gw - 1, Math.max(0, fx - 0.5));
     const y = Math.min(gh - 1, Math.max(0, fy - 0.5));
     const x0 = Math.floor(x);
