@@ -244,10 +244,54 @@ function propFiles(): Plugin {
   };
 }
 
+// The Asset Manager's per-texture tuning save (see src/render/textureTuning.ts):
+// POST __voidcrew/texture-tuning with the whole table writes
+// src/render/textureTuning.json. The game already shows it: that write
+// doesn't hot-reload it.
+function textureTuningFile(): Plugin {
+  const justSaved = new Map<string, number>();
+  return {
+    name: "voidcrew-texture-tuning",
+    apply: "serve",
+    configureServer(server) {
+      const file = path.resolve(server.config.root, "src/render/textureTuning.json");
+      server.middlewares.use(`${server.config.base}__voidcrew/texture-tuning`, (req, res) => {
+        if (req.method !== "POST") {
+          res.statusCode = 400;
+          res.end("POST with the tuning JSON");
+          return;
+        }
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk: Buffer) => chunks.push(chunk));
+        req.on("end", () => {
+          const text = Buffer.concat(chunks).toString();
+          try {
+            JSON.parse(text);
+          } catch {
+            res.statusCode = 400;
+            res.end("expected JSON");
+            return;
+          }
+          justSaved.set(path.normalize(file), Date.now());
+          fs.writeFileSync(file, text);
+          res.end(path.relative(server.config.root, file));
+        });
+      });
+    },
+    handleHotUpdate(ctx) {
+      const at = justSaved.get(path.normalize(ctx.file));
+      if (at !== undefined && Date.now() - at < 2000) {
+        justSaved.delete(path.normalize(ctx.file));
+        return [];
+      }
+    },
+  };
+}
+
 export default defineConfig({
   // (a packaged world is served from the root of its own server)
   base: process.env.VOID_BASE ?? "/voidcrew/",
-  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles(), propFiles()],
+  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles(), propFiles(), textureTuningFile()],
   server: {
     port: 3000,
     watch: {

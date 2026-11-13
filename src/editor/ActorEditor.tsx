@@ -1,3 +1,4 @@
+import { SheetViewport } from "./SheetViewport";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ACTOR_TYPES } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
@@ -33,7 +34,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 export function ActorEditor() {
   const names = Object.keys(ACTOR_TYPES);
-  const [name, setName] = useState(names[0]);
+  const [name, setName] = useState(() => { const id = new URLSearchParams(location.search).get("actor"); return id && names.includes(id) ? id : names[0]; });
   const type = ACTOR_TYPES[name];
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const cellW = image ? image.width / type.cols : 1;
@@ -276,10 +277,10 @@ export function ActorEditor() {
         <span className="text-green-400">{status}</span>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-start">
+      <div className="grid gap-4 items-start md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-1">
           <span className="text-neutral-500">Sheet (click a frame, or W/A/S/D)</span>
-          <canvas
+          <SheetViewport key={name} height="min(56vh, 32rem)"><canvas
             ref={sheetRef}
             width={cellW * type.cols * SHEET_ZOOM}
             height={cellH * type.rows * SHEET_ZOOM}
@@ -287,18 +288,18 @@ export function ActorEditor() {
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
               setSel({
-                col: Math.min(type.cols - 1, Math.floor((e.clientX - r.left) / (cellW * SHEET_ZOOM))),
-                row: Math.min(type.rows - 1, Math.floor((e.clientY - r.top) / (cellH * SHEET_ZOOM))),
+                col: Math.min(type.cols - 1, Math.floor((e.clientX - r.left) / r.width * type.cols)),
+                row: Math.min(type.rows - 1, Math.floor((e.clientY - r.top) / r.height * type.rows)),
               });
             }}
-          />
+          /></SheetViewport>
         </div>
 
         <div className="flex flex-col gap-1">
           <span className="text-neutral-500">
             Frame col {sel.col}, row {sel.row}: shift {dx}, {dy} px (arrow keys, Shift = 5)
           </span>
-          <canvas ref={frameRef} width={cellW * ZOOM} height={cellH * ZOOM} />
+          <canvas style={{maxHeight:"38vh",maxWidth:"100%",objectFit:"contain",alignSelf:"start"}} ref={frameRef} width={cellW * ZOOM} height={cellH * ZOOM} />
           <div className="flex flex-wrap items-center gap-2">
             <span>Ghost:</span>
             {(["none", "idle", "prev", "next"] as Ghost[]).map((g) => (
@@ -315,7 +316,7 @@ export function ActorEditor() {
 
         <div className="flex flex-col gap-1">
           <span className="text-neutral-500">Preview</span>
-          <canvas ref={previewRef} width={cellW * PREVIEW_ZOOM} height={cellH * PREVIEW_ZOOM} />
+          <canvas style={{maxHeight:"38vh",maxWidth:"100%",objectFit:"contain",alignSelf:"start"}} ref={previewRef} width={cellW * PREVIEW_ZOOM} height={cellH * PREVIEW_ZOOM} />
           <div className="flex flex-wrap items-center gap-2">
             {(
               [

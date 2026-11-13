@@ -566,8 +566,14 @@ export function DebugPanel({
               <option value="textured">textured</option>
               <option value="faces">faces only (colored by direction)</option>
               <option value="wireframe">wireframe</option>
+              <option value="normals">normal maps (what the sprites show instead of faces)</option>
+              <option value="depth">depth maps</option>
             </select>,
           )}
+          {check("showNormals", "Normal maps")}
+          {check("showMetal", "Metal / gloss")}
+          {check("showGlow", "Glow maps")}
+          {check("showAO", "Ambient occlusion")}
         </>,
       )}
 

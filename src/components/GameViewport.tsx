@@ -34,6 +34,7 @@ import type { LightSpec } from "../game/lights";
 import { PROP_TYPES, propPlacement, propHeight } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
+import { onTextureTuningSaved, textureTuning } from "../render/textureTuning";
 import type { ActorState, BodyPart } from "../game/actors";
 import { gameClock } from "../game/clock";
 import { weaponAccuracy } from "../game/combat";
@@ -59,7 +60,9 @@ export type { TextureSetId };
 export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 // debug: draw every surface with its textures, or just its polygons -
 // flat-shaded faces colored by their direction, or a wireframe
-export type GeometryViewId = "textured" | "faces" | "wireframe";
+// (or the normal maps / depth maps themselves, drawn as the surfaces' colour -
+// what the 2D sprites show instead of flat faces and wire)
+export type GeometryViewId = "textured" | "faces" | "wireframe" | "normals" | "depth";
 
 export interface ViewportSettings {
   textureSet: TextureSetId;
@@ -80,6 +83,13 @@ export interface ViewportSettings {
   wallBacking: boolean;
   backingInspect: boolean;
   geometryView: GeometryViewId;
+  // feature switches for looking at one thing at a time: the normal maps,
+  // the metal / roughness maps and metalness, the glow and emissive maps, the
+  // baked ambient occlusion
+  showNormals: boolean;
+  showMetal: boolean;
+  showGlow: boolean;
+  showAO: boolean;
   // combat: aim with the crosshair mini-game (else the hit chance is rolled)
   aimMiniGame: boolean;
   // testing: hits still take HP, but never below 1
@@ -278,6 +288,10 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   wallBacking: true,
   backingInspect: false,
   geometryView: "textured",
+  showNormals: true,
+  showMetal: true,
+  showGlow: true,
+  showAO: true,
   aimMiniGame: true,
   immortalCrew: false,
   noclip: false,
@@ -533,6 +547,8 @@ interface WallSlot {
 // materials and, in relief mode, its own geometry (built from that set's
 // depth map).
 interface WallKit {
+  // its texture folder: the key of its tuning (see textureTuning.ts)
+  id: string;
   depthUrl: string;
   // see TextureSetPaths
   grateLevels?: number;
@@ -1160,7 +1176,8 @@ function climbPose(from: CamTarget, to: CamTarget, elapsed: number, moveMs: numb
 // shared by every scene, never disposed (see GeometryViewId)
 const GEOMETRY_VIEW_MATERIALS: Partial<Record<GeometryViewId, THREE.Material>> = {};
 function geometryViewMaterial(view: GeometryViewId): THREE.Material | null {
-  if (view === "textured") return null;
+  // (the map views swap the materials' maps instead: see applyMaterialViews)
+  if (view === "textured" || view === "normals" || view === "depth") return null;
   GEOMETRY_VIEW_MATERIALS[view] ??=
     view === "faces"
       ? new THREE.MeshNormalMaterial({ flatShading: true, side: THREE.DoubleSide })
@@ -1460,6 +1477,8 @@ export function GameViewport({
     hot.on(TEXTURE_CHANGED_EVENT, onChange);
     return () => hot.off(TEXTURE_CHANGED_EVENT, onChange);
   }, []);
+  // a saved per-texture tuning (Asset Manager): the relief meshes rebuilt
+  useEffect(() => onTextureTuningSaved(() => setTextureVersion((v) => v + 1)), []);
   // the prop editor (see propEditState): its boxes drawn over the edited
   // type's props at once; the props rebuilt once its edits settle
   const propWiresRef = useRef<(() => void) | null>(null);
@@ -1752,6 +1771,17 @@ export function GameViewport({
     // surfaces do, props don't)
     // the texture sets with an accent of their own (see TextureSetFiles.accent)
     const ownAccents: { hue: number; range: number; uniforms: AccentUniforms }[] = [];
+    // The maps the debug normal / depth views draw, by material: the 2D
+    // sprites' (marked below, their strength and shine kept in userData -
+    // clones copy those) and the wall kits'. A material without a depth map
+    // shows mid-grey in the depth view.
+    const viewMaps = new WeakMap<THREE.Material, { normal?: THREE.Texture; depth?: THREE.Texture }>();
+    function markSprite(mat: THREE.MeshStandardMaterial, normalStrength: number, normalMap: THREE.Texture, depth?: THREE.Texture) {
+      mat.userData.sprite = true;
+      mat.userData.normalBase = normalStrength;
+      mat.userData.metalBase = mat.metalness;
+      viewMaps.set(mat, { normal: normalMap, depth });
+    }
     function createWallKit(setId: string, displace = true, accent = true): WallKit {
       const paths: TextureSetFiles = isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
       const diffuse = kitTexture(paths.diffuse + bust);
@@ -1792,6 +1822,7 @@ export function GameViewport({
         wallMat.emissiveMap = glowMap;
         wallMat.emissive.setHex(0xffffff);
         wallMat.emissiveIntensity = SURFACE_GLOW;
+        wallMat.userData.glow = true;
         textures.push(glowMap);
       }
 
@@ -1824,6 +1855,7 @@ export function GameViewport({
       if (accentUniforms) ownAccents.push({ hue: paths.accent!.hue, range: paths.accent!.range ?? 30, uniforms: accentUniforms });
       for (const mat of [wallMat, sideMat, litMat]) {
         if (!mat) continue;
+        viewMaps.set(mat, { normal: normalMap, depth: depthMap });
         mat.userData.accent = accent;
         if (accentUniforms) mat.userData.accentUniforms = accentUniforms;
         if (surfaceMap) {
@@ -1835,7 +1867,7 @@ export function GameViewport({
       // (a lamp's panel shines in its lamp's own colour: its trim takes the
       // livery, its light doesn't)
       if (litMat) litMat.userData.accentGlow = false;
-      return { depthUrl: paths.depth + bust, grateLevels: paths.grateLevels, wallMat, sideMat, litMat, textures, slots: [] };
+      return { id: setId, depthUrl: paths.depth + bust, grateLevels: paths.grateLevels, wallMat, sideMat, litMat, textures, slots: [] };
     }
 
     // most walls use the main texture set; a stable, position-based share of
@@ -2028,6 +2060,63 @@ export function GameViewport({
     // bridge decks), kept in step with the material settings like theirs
     const ownMaterials: THREE.MeshStandardMaterial[] = [];
     const inspectMaterialDefaults = new WeakMap<THREE.Material, { transparent: boolean; opacity: number; depthWrite: boolean }>();
+    // The debug normal / depth views draw a material's own map as its colour
+    // (unlit: black base, the map as its emissive); the feature switches for
+    // the sprites' normal maps and metalness (the wall kits' are set every
+    // frame with the other sliders). Run when they change, and now and then
+    // while one is on (sprites come and go).
+    const flatNormal = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1);
+    flatNormal.needsUpdate = true;
+    const midGrey = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
+    midGrey.needsUpdate = true;
+    const mapViewSaved = new WeakMap<
+      THREE.MeshStandardMaterial,
+      { color: THREE.Color; emissive: THREE.Color; emissiveIntensity: number; emissiveMap: THREE.Texture | null }
+    >();
+    let materialViewApplied = "";
+    let materialViewTick = 0;
+    function applyMaterialViews(s: ViewportSettings) {
+      const mapView = s.geometryView === "normals" || s.geometryView === "depth";
+      const active = mapView || !s.showNormals || !s.showMetal;
+      if (!active && materialViewApplied === "") return;
+      const key = `${s.geometryView}|${s.showNormals}|${s.showMetal}`;
+      materialViewTick++;
+      if (key === materialViewApplied && materialViewTick % 45 !== 0) return;
+      materialViewApplied = active ? key : "";
+      scene.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          const mat = m as THREE.MeshStandardMaterial;
+          if (!mat.isMeshStandardMaterial) continue;
+          if (mat.userData.sprite) {
+            const n = s.showNormals ? (mat.userData.normalBase as number) : 0;
+            mat.normalScale.set(n, n);
+            mat.metalness = s.showMetal ? (mat.userData.metalBase as number) : 0;
+          }
+          const saved = mapViewSaved.get(mat);
+          if (mapView) {
+            if (!saved) mapViewSaved.set(mat, { color: mat.color.clone(), emissive: mat.emissive.clone(), emissiveIntensity: mat.emissiveIntensity, emissiveMap: mat.emissiveMap });
+            const maps = viewMaps.get(mat);
+            const tex = s.geometryView === "normals" ? (maps?.normal ?? mat.normalMap ?? flatNormal) : (maps?.depth ?? midGrey);
+            if (mat.emissiveMap !== tex) {
+              mat.emissiveMap = tex;
+              mat.needsUpdate = true;
+            }
+            mat.color.setHex(0x000000);
+            mat.emissive.setHex(0xffffff);
+            mat.emissiveIntensity = 1;
+          } else if (saved) {
+            mat.color.copy(saved.color);
+            mat.emissive.copy(saved.emissive);
+            mat.emissiveIntensity = saved.emissiveIntensity;
+            mat.emissiveMap = saved.emissiveMap;
+            mat.needsUpdate = true;
+            mapViewSaved.delete(mat);
+          }
+        }
+      });
+    }
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
     // the open sky: walls and ceilings of the "sky" set are panes that show the
@@ -2501,6 +2590,7 @@ export function GameViewport({
           kit.depthUrl,
           JSON.stringify(s),
           reliefDepth,
+          textureTuning(kit.id)?.relief ?? 1,
           settings.reliefLevels,
           settings.reliefMinIsland,
           settings.reliefMode,
@@ -2545,7 +2635,8 @@ export function GameViewport({
           const made = createReliefWallGeometry(grid, {
             wallWidth: shape.width ?? 1,
             wallHeight: shape.height,
-            depth: shape.depth ?? reliefDepth,
+            // (the texture's own relief tuning on top)
+            depth: (shape.depth ?? reliefDepth) * (textureTuning(kit.id)?.relief ?? 1),
             levels: settings.reliefLevels,
             minIsland: settings.reliefMinIsland,
             smooth: settings.reliefMode === "smooth",
@@ -3248,9 +3339,18 @@ export function GameViewport({
         const normalMap = kitTexture(base + "normal.png" + bust);
         diffuse.colorSpace = THREE.SRGBColorSpace;
         for (const tex of [diffuse, normalMap]) tex.magFilter = THREE.NearestFilter;
-        const mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap, alphaTest: 0.5, roughness: 0.85, metalness: 0.02, side: THREE.DoubleSide });
-        const normal = settingsRef.current.normalStrength * (type.normal ?? 1);
+        const tune = textureTuning(type.texture);
+        const mat = new THREE.MeshStandardMaterial({
+          map: diffuse,
+          normalMap,
+          alphaTest: 0.5,
+          roughness: Math.min(1, 0.85 * (tune?.rough ?? 1)),
+          metalness: Math.min(1, 0.02 * (tune?.metal ?? 1)),
+          side: THREE.DoubleSide,
+        });
+        const normal = settingsRef.current.normalStrength * (type.normal ?? 1) * (tune?.normal ?? 1);
         mat.normalScale.set(normal, normal);
+        markSprite(mat, normal, normalMap);
         useLightGrid(mat, lightGrid);
         billboardMaterials.push(mat);
         const h = height * wallHeight;
@@ -3502,6 +3602,7 @@ export function GameViewport({
           metalness: settingsRef.current.metalness,
         });
         mat.userData.normal = kit.normal;
+        mat.userData.tuneId = kit.id;
         const normal = settingsRef.current.normalStrength * (kit.normal ?? 1);
         mat.normalScale.set(normal, normal);
         addDirectLightOcclusion(mat, cavity);
@@ -4833,6 +4934,7 @@ export function GameViewport({
         // (its sheet's own normal strength - set in the actor editor)
         const normal = actorOffsets(type.sheet)?.normal ?? 1;
         mat.normalScale.set(normal, normal);
+        markSprite(mat, normal, normalMap);
         actorMaterials.set(typeName, mat);
       }
       return mat;
@@ -6346,7 +6448,9 @@ export function GameViewport({
         fog.color.set(s.fogColor);
         fogBackground.set(s.fogColor);
       }
+      const mapViewOn = s.geometryView === "normals" || s.geometryView === "depth";
       for (const kit of allKits()) {
+        const tune = textureTuning(kit.id);
         for (const mat of kitMaterials(kit)) {
           const inspect = s.backingInspect && !kit.floor;
           if (!inspectMaterialDefaults.has(mat)) inspectMaterialDefaults.set(mat, { transparent: mat.transparent, opacity: mat.opacity, depthWrite: mat.depthWrite });
@@ -6358,23 +6462,28 @@ export function GameViewport({
           }
           mat.opacity = inspect ? 0.25 : original.opacity;
           mat.depthWrite = inspect ? false : original.depthWrite;
-          // (one with its own surface map keeps it)
+          // (one with its own surface map keeps it; a set's own tuning
+          // scales the viewer's values)
           if (!mat.userData.surface) {
-            mat.roughness = s.roughness;
-            mat.metalness = s.metalness;
+            mat.roughness = Math.min(1, s.roughness * (tune?.rough ?? 1));
+            mat.metalness = s.showMetal ? Math.min(1, s.metalness * (tune?.metal ?? 1)) : 0;
+          } else {
+            mat.metalness = s.showMetal ? 1 : 0;
           }
-          mat.aoMapIntensity = s.aoIntensity;
+          mat.aoMapIntensity = s.showAO ? s.aoIntensity : 0;
         }
         const strength = kit.floor && s.floorNormalStrength > 0 ? s.floorNormalStrength : s.normalStrength;
-        const normal = strength * (kit.normal ?? 1);
+        const normal = s.showNormals ? strength * (kit.normal ?? 1) * (tune?.normal ?? 1) : 0;
         kit.wallMat.normalScale.set(normal, normal);
         kit.litMat?.normalScale.set(normal, normal);
+        if (kit.wallMat.userData.glow && !mapViewOn) kit.wallMat.emissiveIntensity = s.showGlow ? SURFACE_GLOW : 0;
       }
       for (const mat of ownMaterials) {
-        mat.roughness = s.roughness;
-        mat.metalness = s.metalness;
-        mat.aoMapIntensity = s.aoIntensity;
-        const normal = s.normalStrength * (mat.userData.normal ?? 1);
+        const tune = mat.userData.tuneId ? textureTuning(mat.userData.tuneId as string) : undefined;
+        mat.roughness = Math.min(1, s.roughness * (tune?.rough ?? 1));
+        mat.metalness = s.showMetal ? Math.min(1, s.metalness * (tune?.metal ?? 1)) : 0;
+        mat.aoMapIntensity = s.showAO ? s.aoIntensity : 0;
+        const normal = s.showNormals ? s.normalStrength * (mat.userData.normal ?? 1) * (tune?.normal ?? 1) : 0;
         mat.normalScale.set(normal, normal);
       }
       cavity.value = s.aoDirect;
@@ -6475,6 +6584,7 @@ export function GameViewport({
         }
         hiddenApplied = hidden.size > 0;
       }
+      applyMaterialViews(s);
       scene.overrideMaterial = geometryViewMaterial(s.geometryView);
       renderer.render(scene, camera);
 

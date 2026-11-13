@@ -1,5 +1,5 @@
 ﻿import { useRef, useState } from "react";
-import { createMap, mapFile } from "./mapStore";
+import { createMap, hasUnsavedEdits, mapFile } from "./mapStore";
 import type { GameMap } from "../game/types";
 import type { MapFile } from "../game/mapFormat";
 import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
@@ -61,7 +61,18 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
   const [heads, setHeads] = useState<Head[]>([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  async function run(fn: () => Promise<void>) {
+  const originKey = (id: string) => JSON.stringify([project, map.world, id]);
+  function origin(id: string): Head | undefined {
+    const key = originKey(id);
+    try { return origins.get(key) ?? JSON.parse(localStorage.getItem("voidcrew:shared:" + key) ?? "null"); }
+    catch { return origins.get(key); }
+  }
+  function remember(id: string, head: Head) {
+    const key = originKey(id);
+    origins.set(key, head);
+    try { localStorage.setItem("voidcrew:shared:" + key, JSON.stringify(head)); } catch { /* Session cache remains available. */ }
+  }
+  async function run(fn: () => Promise<unknown>) {
     setBusy(true); setMessage("");
     try { await fn(); } catch (error) { setMessage(String(error)); } finally { setBusy(false); }
   }
@@ -70,14 +81,15 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     const latest = await request<Head[]>("/rest/v1/void_map_heads?world=eq." + map.world + "&order=title,id");
     setHeads(latest.sort((a, b) => (b.saved_at ?? "").localeCompare(a.saved_at ?? "")));
     changed();
+    return latest;
   }
   async function save(copy: boolean) {
     const body = mapFile(map.id);
     if (!body) throw new Error("Map file unavailable");
-    const previous = copy ? undefined : origins.get(map.id);
+    const previous = copy ? undefined : origin(map.id);
     const head = { id: previous?.id ?? (copy ? "copy-" + crypto.randomUUID() : map.id), title: map.name, revision: (previous?.revision ?? 0) + 1 };
     await request("/rest/v1/void_maps", {method: "POST", body: JSON.stringify({...head, world: map.world, body})});
-    origins.set(map.id, head);
+    remember(map.id, head);
     await refresh(); setMessage("Saved version " + head.revision);
   }
   async function load(head: Head) {
@@ -86,7 +98,7 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     const id = "shared-" + crypto.randomUUID();
     const result = createMap(id, rows[0].body, undefined, map.world);
     if ("error" in result) throw new Error(result.error);
-    origins.set(id, head); openMap(result.map); setOpen(false);
+    remember(id, head); openMap(result.map); setOpen(false);
   }
   return <><button className={button} type="button" onClick={() => {setOpen(true); if(token) void run(refresh);}}>Shared maps ({token ? signedInName : "Log In"})</button>
     {open && <div role="dialog" aria-modal="true" aria-label="Shared maps" onKeyDown={e => { e.stopPropagation(); if (e.key === "Escape") setOpen(false); }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
@@ -101,7 +113,16 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
           token = auth.access_token; signedInName = auth.user.email.split("@")[0]; setPassword("");
           const membership = await request<unknown[]>("/rest/v1/void_editors?select=user_id");
           if (!membership.length) { token = ""; throw new Error("Editor access required"); }
-          await refresh();
+          const latest = await refresh();
+          const current = origin(map.id);
+          const head = latest.find(h => h.id === (current?.id ?? map.id)) ?? latest[0];
+          if (head && (head.id !== current?.id || head.revision !== current?.revision)) {
+            if (!hasUnsavedEdits(map.id) || window.confirm("Open the latest shared revision? Your edited map will remain in the local map list.")) {
+              await load(head);
+            } else {
+              setMessage("Local edits kept. Open the latest shared revision below or save your edits as a new map.");
+            }
+          }
         });}}>
           <input className="rounded border border-neutral-500 bg-neutral-800 px-3 py-2" aria-label="Email" type="email" placeholder="Email" required value={email} onChange={e=>setEmail(e.target.value)}/>
           <input className="rounded border border-neutral-500 bg-neutral-800 px-3 py-2" aria-label="Password" type="password" placeholder="Password" required value={password} onChange={e=>setPassword(e.target.value)}/>

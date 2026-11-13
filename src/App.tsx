@@ -6,6 +6,7 @@ import { saveGraphics } from "./render/graphics";
 import type { AimFocus, AimFrame, EditDrag, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { EditorBar } from "./editor/EditorBar";
 import { SharedEditor, sharedConfigured } from "./editor/SharedEditor";
+import { AssetManager } from "./editor/AssetManager";
 import { PropEditor } from "./editor/PropEditor";
 import {
   applyEdit,
@@ -1023,6 +1024,7 @@ export default function App() {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Tab" && !aimRef.current) {
         e.preventDefault();
+        if (e.repeat) return;
         setEditMode((on) => !on);
         return;
       }
@@ -1899,7 +1901,7 @@ export default function App() {
       {editMode && <PropEditor />}
       {editMode && (
         <EditorBar
-          shared={sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}
+          shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>}
           dock={compact ? null : editDock}
           tool={editTool}
           onTool={setEditTool}

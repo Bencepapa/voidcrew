@@ -1,3 +1,4 @@
+import { SheetViewport } from "./SheetViewport";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { PROP_TYPES, propEditable, type PropEdit, type PropFace, type PropPart, type PropType } from "../game/props";
 import { propEdit } from "./propEditState";
@@ -516,7 +517,7 @@ export function PropEditor() {
 
   return (
     <div
-      className="absolute top-2 left-2 bottom-2 z-40 w-[560px] overflow-y-auto bg-neutral-950/92 border border-neutral-700 rounded-sm p-2 text-[11px] text-neutral-200 font-mono"
+      className="absolute top-2 left-2 bottom-2 z-40 w-[min(560px,96%)] overflow-y-auto bg-neutral-950/92 border border-neutral-700 rounded-sm p-2 text-[11px] text-neutral-200 font-mono"
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
@@ -550,7 +551,7 @@ export function PropEditor() {
         view === "front" ? (
           <div key={view} className="mb-1">
             <div className="text-neutral-400">front (x →, y ↑)</div>
-            <canvas
+            <SheetViewport key={name} height={view==="front" ? "min(24vh, 13rem)" : "min(17vh, 10rem)"}><canvas
               ref={(c) => {
                 canvases.current[view] = c;
               }}
@@ -559,15 +560,15 @@ export function PropEditor() {
               onPointerUp={onUp}
               className="block max-w-full"
               style={{ imageRendering: "pixelated" }}
-            />
+            /></SheetViewport>
           </div>
         ) : null,
       )}
-      <div className="flex gap-2 mb-2">
+      <div className="grid grid-cols-2 gap-2 mb-2">
         {(["side", "top"] as const).map((view) => (
           <div key={view}>
             <div className="text-neutral-400">{view === "side" ? "side (front ← z, y ↑)" : "top (x →, front ↓)"}</div>
-            <canvas
+            <SheetViewport key={name} height="min(17vh, 10rem)"><canvas
               ref={(c) => {
                 canvases.current[view] = c;
               }}
@@ -576,7 +577,7 @@ export function PropEditor() {
               onPointerUp={onUp}
               className="block max-w-full"
               style={{ imageRendering: "pixelated" }}
-            />
+            /></SheetViewport>
           </div>
         ))}
       </div>

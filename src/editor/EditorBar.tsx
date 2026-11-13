@@ -439,7 +439,11 @@ export function EditorBar(p: Props) {
       className={docked ? "flex flex-wrap gap-1 font-mono" : `absolute ${p.compact ? "bottom-2" : "top-2"} inset-x-2 z-20 flex flex-wrap justify-center gap-1 font-mono`}
       // the view underneath mustn't take these as peeks or steps
       onPointerDown={(e) => e.stopPropagation()}
-      onPointerUp={(e) => e.stopPropagation()}
+      onPointerUp={(e) => {
+        // Portalled dialogs bubble through this React parent too. Their
+        // OrbitControls must receive pointerup on the native document.
+        if (e.currentTarget.contains(e.target as Node)) e.stopPropagation();
+      }}
     >
       {p.shared && <div className="basis-full text-left">{p.shared}</div>}
       <button

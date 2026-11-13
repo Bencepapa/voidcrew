@@ -220,11 +220,9 @@ export function variantOf(map: GameMap, seed: number, mood: ShipMood = moodOf(se
   };
   (map.doors ?? []).forEach((d, i) => !kept.has(doors[i]) && open(d.cell.x, d.cell.y));
   (map.chanceWalls ?? []).forEach((w, i) => kept.has(walls[i]) && open(w.cell.x, w.cell.y));
-  // (what's left out is structure - but lights, smoke and robots can change
-  // in place)
-  const structural = ["props", "decals", "items", "doors", "chanceWalls"].some(
-    (k) => !same(out[k as keyof typeof out], map[k as keyof typeof out]),
-  );
+  // The viewport updates props, decals and items in place. Only openings
+  // change the deck geometry when switching between the run and editor.
+  const structural = cells !== map.cells;
   return {
     ...map,
     ...out,
