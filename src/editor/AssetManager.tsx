@@ -406,11 +406,34 @@ export function AssetManager() {
         }
       }
       if(prop?.kind==="views") {
-        const mats=["side","top","front"].map(view=>assetMaterial(prop.views+"_"+view,{roughness:1,alphaTest:.4}));
+        const mats=["side","top","front"].map(view=>assetMaterial(prop.views+"_"+view,{roughness:1,alphaTest:.4,side:THREE.DoubleSide}));
         const [w,h,d]=prop.size;
         for(const part of prop.parts) {
           const min=new THREE.Vector3(...part.min), max=new THREE.Vector3(...part.max);
           const size=max.clone().sub(min), center=max.clone().add(min).multiplyScalar(.5);
+          if(part.shape==="cylinder"){
+            // an upright round part filling its box: its front and back quarters from the front view, its ends from the side view, its top from the top view
+            const rx=size.x/2, rz=size.z/2, N=24;
+            const front={p:[] as number[],u:[] as number[]}, ends={p:[] as number[],u:[] as number[]}, cap={p:[] as number[],u:[] as number[]};
+            const at=(a:number):[number,number]=>[center.x+rx*Math.sin(a),center.z+rz*Math.cos(a)];
+            const uvFront=(x:number,y:number)=>[.5+x/w,y/h], uvSide=(z:number,y:number)=>[.5-z/d,y/h], uvTop=(x:number,z:number)=>[.5+x/w,.5-z/d];
+            for(let k=0;k<N;k++){
+              const a0=k/N*Math.PI*2, a1=(k+1)/N*Math.PI*2, mid=(a0+a1)/2;
+              const [x0,z0]=at(a0), [x1,z1]=at(a1);
+              const round=Math.abs(Math.cos(mid))>=Math.abs(Math.sin(mid)) ? front : ends;
+              const uvOf=(x:number,z:number,y:number)=>round===front ? uvFront(x,y) : uvSide(z,y);
+              for(const [x,y,z] of [[x0,min.y,z0],[x1,min.y,z1],[x1,max.y,z1],[x0,min.y,z0],[x1,max.y,z1],[x0,max.y,z0]]){round.p.push(x,y,z);round.u.push(...uvOf(x,z,y));}
+              for(const [x,z] of [[center.x,center.z],[x1,z1],[x0,z0]]){cap.p.push(x,max.y,z);cap.u.push(...uvTop(x,z));}
+            }
+            for(const [bufs,material] of [[front,mats[2]],[ends,mats[0]],[cap,mats[1]]] as const){
+              const geo=keep(new THREE.BufferGeometry());
+              geo.setAttribute("position",new THREE.Float32BufferAttribute(bufs.p,3));
+              geo.setAttribute("uv",new THREE.Float32BufferAttribute(bufs.u,2));
+              geo.computeVertexNormals();
+              object.add(new THREE.Mesh(geo,material));
+            }
+            continue;
+          }
           const geo=keep(new THREE.BoxGeometry(size.x,size.y,size.z)), pos=geo.attributes.position, uv=geo.attributes.uv;
           for(let i=0;i<pos.count;i++){
             const x=pos.getX(i)+center.x,y=pos.getY(i)+center.y,z=pos.getZ(i)+center.z;
