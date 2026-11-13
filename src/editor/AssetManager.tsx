@@ -406,7 +406,7 @@ export function AssetManager() {
         }
       }
       if(prop?.kind==="views") {
-        const mats=["side","top","front"].map(view=>assetMaterial(prop.views+"_"+view,{roughness:1}));
+        const mats=["side","top","front"].map(view=>assetMaterial(prop.views+"_"+view,{roughness:1,alphaTest:.4}));
         const [w,h,d]=prop.size;
         for(const part of prop.parts) {
           const min=new THREE.Vector3(...part.min), max=new THREE.Vector3(...part.max);
