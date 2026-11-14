@@ -107,5 +107,6 @@ export const appHu = {
   "app.defaultRender": "Szerkesztő: minden megjelenítési érték alapérték – nincs mit menteni (a Törlés eltávolítja a pálya értékeit).",
   "app.mapCreated": "Szerkesztő: {id} létrehozva – mentsd el a megőrzéshez.",
   "app.mapCopied": "Szerkesztő: {source} másolva {id} néven.",
-  "app.wakeAgain": "Újra ott ébredsz, ahol minden elkezdődött."
+  "app.wakeAgain": "Újra ott ébredsz, ahol minden elkezdődött.",
+  "app.topdownPlaced": "A csapat a(z) {x},{y} cellára került: a felülnézet közepére.",
 } as const satisfies Record<string, string>;

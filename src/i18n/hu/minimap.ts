@@ -20,7 +20,7 @@ export const minimapHu = {
   "minimap.problem.noStart": "A pályának nincs kezdőpontja.",
   "minimap.problem.startWall": "A kezdőpont falban van.",
   "minimap.problem.noExit": "A pályának nincs kilépése.",
-  "minimap.problem.unreachable": "A cella nem érhető el a kezdőpontból.",
+  "minimap.problem.unreachable": "{count} cella nem érhető el a kezdőpontból.",
   "minimap.problem.objectWall": "Falban álló elem: {kind}.",
   "minimap.problem.missingLink": "Ismeretlen {relation} hivatkozás: {id}.",
   "minimap.problem.duplicateLight": "Több plafonfény van egy cellában.",

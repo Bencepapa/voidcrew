@@ -28,7 +28,8 @@ import { MAPS, START_MAP } from "./game/map";
 import { WORLDS, assetInWorld, setActiveWorld, startWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
 import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
-import { PROP_TYPES, flamePosition, propPlacement, propRetexturable } from "./game/props";
+import { PROP_TYPES, flamePosition, propBlocks, propPlacement, propRetexturable } from "./game/props";
+import { MIN_HEADROOM } from "./game/heights";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
@@ -341,7 +342,36 @@ export default function App() {
   // start and that's what's dragged. A whole drag - the copy too - is one undo
   // step (its edits share a merge key).
   const dragGrab = useRef<[number, number] | null>(null);
+  // The top-down view left: the party stands in the cell at the middle of what it looked at -
+  // if that is not walkable (a wall, a barrel, a cell too low), the nearest one that is; the thing
+  // last worked on, when it is near the middle (within 6 cells), counts as the middle.
+  const lastTouched = useRef<Vec2 | null>(null);
+  const placePartyAt = (center: Vec2) => {
+    const walkable = (c: Vec2) =>
+      c.x >= 0 && c.y >= 0 && c.x < map.width && c.y < map.height && cellAt(map, c.x, c.y) !== "wall" && !propBlocks(map, c) && ceilingHeight(map, c.x, c.y) - floorHeight(map, c.x, c.y) >= MIN_HEADROOM;
+    const touched = lastTouched.current;
+    const wanted = touched && Math.max(Math.abs(touched.x - center.x), Math.abs(touched.y - center.y)) <= 6 ? touched : center;
+    let best: Vec2 | null = null;
+    let bestDistance = Infinity;
+    for (let dy = -8; dy <= 8; dy++) {
+      for (let dx = -8; dx <= 8; dx++) {
+        const c = { x: wanted.x + dx, y: wanted.y + dy };
+        if (!walkable(c)) continue;
+        // (nearest the wanted cell; among equals, the one nearest the middle of the view)
+        const d = Math.hypot(dx, dy) + 0.01 * Math.hypot(c.x - center.x, c.y - center.y);
+        if (d < bestDistance) {
+          bestDistance = d;
+          best = c;
+        }
+      }
+    }
+    if (!best) return;
+    syncPose(best, dir, floorHeight(map, best.x, best.y));
+    pushLog(t("app.topdownPlaced", { x: best.x, y: best.y }), "editor");
+  };
   const onEditDrag = (drag: EditDrag, target: EditTarget): number | boolean => {
+    // (what was last worked on: where the top-down view puts the party when it is left)
+    if (target.cell) lastTouched.current = { x: target.cell.x, y: target.cell.y };
     const file = mapFile(map.id);
     if (!file) return drag.index;
     let index = drag.index;
@@ -629,6 +659,7 @@ export default function App() {
   // texture back), or toggles the cell's ceiling light.
   const onEdit = (target: EditTarget, alt: boolean, shift = false) => {
     let result: ReturnType<typeof applyEdit> | null = null;
+    if (!(["dig", "fill", "height", "texture"] as EditTool[]).includes(editTool) && target.cell) lastTouched.current = { x: target.cell.x, y: target.cell.y };
     if (editTool === "texture") {
       // a wall's texture set is the open cell its face is seen from
       const cell = target.kind === "wall" ? target.from : target.cell;
@@ -1855,6 +1886,7 @@ export default function App() {
 
   const viewport = (
     <GameViewport
+      onTopdownExit={placePartyAt}
       map={map}
       pos={pos}
       dir={dir}

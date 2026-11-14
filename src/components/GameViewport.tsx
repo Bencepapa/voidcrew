@@ -1035,6 +1035,8 @@ interface GameViewportProps {
   // the map editor is on: the cell under the pointer is highlighted, and a
   // click or tap edits it (`alt`: the right button)
   editMode?: boolean;
+  // the top-down view was left: the cell at the middle of what it looked at (the party goes there)
+  onTopdownExit?: (cell: Vec2) => void;
   // the editor's layers hidden from the view ("robot" for the NPCs, "smoke" for the
   // particles, "prop", "decal", "item") - drawing only, the map still has them
   hiddenLayers?: ReadonlySet<string>;
@@ -1422,6 +1424,7 @@ export function GameViewport({
   partyCoverRef,
   onTouch,
   editMode,
+  onTopdownExit,
   hiddenLayers,
   editTool,
   onEdit,
@@ -1536,6 +1539,8 @@ export function GameViewport({
   onTouchRef.current = onTouch;
   const hiddenLayersRef = useRef<ReadonlySet<string>>(hiddenLayers ?? new Set());
   hiddenLayersRef.current = hiddenLayers ?? hiddenLayersRef.current;
+  const onTopdownExitRef = useRef(onTopdownExit);
+  onTopdownExitRef.current = onTopdownExit;
   const editModeRef = useRef(!!editMode);
   editModeRef.current = !!editMode;
   const onEditRef = useRef(onEdit);
@@ -4630,9 +4635,12 @@ export function GameViewport({
       if (on) {
         topdown.fresh = true;
         buildCaps();
-      } else if (topCaps) {
-        scene.remove(topCaps);
-        topCaps = null;
+      } else {
+        if (topCaps) {
+          scene.remove(topCaps);
+          topCaps = null;
+        }
+        onTopdownExitRef.current?.({ x: Math.round(topdown.x), y: Math.round(topdown.z) });
       }
       for (const obj of group.children) if (obj.userData.skyCeiling) obj.traverse((o) => o.layers.set(on ? 1 : 0));
       // (every surface is judged again: all in sight up here, back to the party's own sight down there)

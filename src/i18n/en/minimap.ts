@@ -20,7 +20,7 @@ export const minimapEn = {
   "minimap.problem.noStart": "Map has no start.",
   "minimap.problem.startWall": "Start is inside a wall.",
   "minimap.problem.noExit": "Map has no exit.",
-  "minimap.problem.unreachable": "Cell cannot be reached from the start.",
+  "minimap.problem.unreachable": "{count} cells cannot be reached from the start.",
   "minimap.problem.objectWall": "{kind} stands inside a wall.",
   "minimap.problem.missingLink": "Unknown {relation} link: {id}.",
   "minimap.problem.duplicateLight": "Multiple ceiling lights in one cell.",

@@ -107,5 +107,6 @@ export const appEn = {
   "app.defaultRender": "Editor: the render values are all the defaults - nothing to save (Clear removes the map's).",
   "app.mapCreated": "Editor: made {id} - save it to keep it.",
   "app.mapCopied": "Editor: copied {source} as {id}.",
-  "app.wakeAgain": "You wake again where it began."
+  "app.wakeAgain": "You wake again where it began.",
+  "app.topdownPlaced": "Party moved to {x},{y}: the middle of the top-down view.",
 } as const satisfies Record<string, string>;

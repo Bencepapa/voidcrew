@@ -37,8 +37,29 @@ export function validateMap(map: GameMap): Problem[] {
         if (step.kind !== "blocked") enqueue(to, step.y);
       }
     }
-    for (let y = 0; y < map.height; y++) for (let x = 0; x < map.width; x++) {
-      if (open({ x, y }) && !reached.has(`${x},${y}`)) add("unreachable", { x, y });
+    // A cell with a blocking prop (a barrel, a tree) is closed on purpose: not reported. The
+    // cells that cannot be reached - the area behind it, say - are, a region a problem.
+    const closed = new Set((map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.blocks).map((p) => `${p.cell.x},${p.cell.y}`));
+    const stray = (x: number, y: number) => open({ x, y }) && !reached.has(`${x},${y}`) && !closed.has(`${x},${y}`);
+    const seen = new Set<string>();
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        if (!stray(x, y) || seen.has(`${x},${y}`)) continue;
+        let count = 0;
+        const flood: Vec2[] = [{ x, y }];
+        seen.add(`${x},${y}`);
+        for (let i = 0; i < flood.length; i++) {
+          count++;
+          for (const v of Object.values(DIR_VECTOR)) {
+            const n = { x: flood[i].x + v.x, y: flood[i].y + v.y };
+            if (stray(n.x, n.y) && !seen.has(`${n.x},${n.y}`)) {
+              seen.add(`${n.x},${n.y}`);
+              flood.push(n);
+            }
+          }
+        }
+        add("unreachable", { x, y }, { count });
+      }
     }
   }
 
@@ -89,7 +110,7 @@ export function validateMap(map: GameMap): Problem[] {
 import type { MapFile } from "../game/mapFormat";
 
 type PlacedKind = "prop" | "npc" | "item" | "light" | "smoke" | "exit" | "ladder" | "bridge" | "door" | "chanceWall" | "decal" | "restricted" | "start" | "patrol";
-type Placed = { kind: PlacedKind; index: number; cell: Vec2; point?: Vec2; data: Record<string, unknown>; field: string };
+type Placed = { kind: PlacedKind; index: number; cell: Vec2; point?: Vec2; reach?: { x: number; z: number }; data: Record<string, unknown>; field: string };
 const fields = { props: "prop", actors: "npc", items: "item", lights: "light", smokes: "smoke", exits: "exit", ladders: "ladder", bridges: "bridge", doors: "door", chanceWalls: "chanceWall", decals: "decal", restricted: "restricted" } as const;
 const gameplay = new Set<PlacedKind>(["npc", "item", "exit", "ladder", "bridge", "door", "start", "patrol"]);
 
@@ -102,11 +123,13 @@ function placedFile(file: MapFile): Placed[] {
       const cell = { x: Number(data.x), y: Number(data.y) };
       const offset = (data.offset ?? data.pos) as number[] | undefined;
       let point = offset ? { x: cell.x + (offset[0] ?? 0), y: cell.y + (offset[offset.length === 3 ? 2 : 1] ?? 0) } : undefined;
+      let reach: Placed["reach"];
       if (kind==="prop" && PROP_TYPES[String(data.prop)]) {
         const at=propPlacement({...data,cell,at:data.at ?? "center"} as unknown as PropSpec);
         point={x:at.x,y:at.z};
+        reach={x:at.reachX,z:at.reachZ};
       }
-      records.push({ kind, index, field, cell, point, data });
+      records.push({ kind, index, field, cell, point, reach, data });
       if (kind === "npc") (data.patrol as [number, number][] | undefined)?.forEach(([x,y], patrolIndex) =>
         records.push({ kind: "patrol", index, field, cell: { x,y }, data: { patrolIndex } }));
     });
@@ -128,8 +151,36 @@ function placedMap(map: GameMap): Placed[] {
   return placedFile(file as unknown as MapFile);
 }
 
+// What is buried in the wall: a thing whose spot is in a wall cell - a prop only when its whole
+// footprint is (a pillar sunk half into a wall for the geometry is on purpose; a prop hung on
+// a wall is meant to be at it).
+function buried(p: Placed, wall: (cell: Vec2) => boolean): boolean {
+  if (p.kind === "chanceWall") return false;
+  if (p.kind === "prop") {
+    if (PROP_TYPES[String(p.data.prop)]?.wall) return false;
+    if (!p.point || !p.reach) return wall(p.cell);
+    const x0 = Math.round(p.point.x - p.reach.x + 1e-6);
+    const x1 = Math.round(p.point.x + p.reach.x - 1e-6);
+    const y0 = Math.round(p.point.y - p.reach.z + 1e-6);
+    const y1 = Math.round(p.point.y + p.reach.z - 1e-6);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (!wall({ x, y })) return false;
+    return true;
+  }
+  if (wall(p.cell)) return true;
+  if (!p.point) return false;
+  // a spot on or just inside a wall's face (a vent, a lamp at the wall) is not buried: a little
+  // way in, all round it
+  const x0 = Math.round(p.point.x - POINT_DEPTH);
+  const x1 = Math.round(p.point.x + POINT_DEPTH);
+  const y0 = Math.round(p.point.y - POINT_DEPTH);
+  const y1 = Math.round(p.point.y + POINT_DEPTH);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (!wall({ x, y })) return false;
+  return true;
+}
+const POINT_DEPTH = 0.1;
+
 function inWallProblems(records: Placed[], wall: (cell: Vec2) => boolean): Problem[] {
-  return records.filter(p => p.kind !== "chanceWall" && (wall(p.cell) || (p.point && wall({ x: Math.round(p.point.x), y: Math.round(p.point.y) })))).map(p => ({
+  return records.filter(p => buried(p, wall)).map(p => ({
     code: "inWall." + p.kind, key: "minimap.problem.inWall", severity: gameplay.has(p.kind) ? "error" : "warning",
     cell: p.cell, params: { kind: p.kind, index: p.index + 1, name: String(p.data.prop ?? p.data.item ?? p.data.type ?? p.data.decal ?? "") },
   }));
@@ -178,7 +229,7 @@ export function removeInWall(file: MapFile): MapFile {
   const wall = fileWall(file);
   const records = placedFile(file);
   for (const field of Object.keys(fields) as (keyof typeof fields)[]) {
-    const bad = new Set(records.filter(p=>p.field===field && p.kind!=="patrol" && p.kind!=="chanceWall" && (wall(p.cell) || (p.point && wall({x:Math.round(p.point.x),y:Math.round(p.point.y)})))).map(p=>p.index));
+    const bad = new Set(records.filter(p=>p.field===field && p.kind!=="patrol" && buried(p, wall)).map(p=>p.index));
     const entries = next[field];
     if (entries) (next as unknown as Record<string, unknown>)[field] = entries.filter((_,i)=>!bad.has(i));
   }

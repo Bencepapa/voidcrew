@@ -95,3 +95,26 @@
 .theme-fantasy input[type="range"] {
   accent-color: #8a5a14;
 }
+
+/* The dropdown lists (the browser draws them): dark with light text in both worlds - the
+   selects' own gold-on-dark text was gold on a light list, hard to read. */
+select,
+option,
+optgroup {
+  color-scheme: dark;
+}
+option,
+optgroup {
+  background-color: #1b1b1b;
+  color: #e8e8e8;
+}
+.theme-fantasy option,
+.theme-fantasy optgroup {
+  background-color: #1c140c;
+  color: #f0e2b6;
+}
+option:checked,
+option:hover {
+  background-color: #5a4220;
+  color: #fff3cf;
+}
