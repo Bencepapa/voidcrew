@@ -35,6 +35,7 @@ import { PROP_TYPES, propPlacement, propHeight } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
 import { onTextureTuningSaved, textureTuning } from "../render/textureTuning";
+import { buildEditPreview, changedCells } from "../render/editPreview";
 import type { ActorState, BodyPart } from "../game/actors";
 import { gameClock } from "../game/clock";
 import { weaponAccuracy } from "../game/combat";
@@ -581,6 +582,8 @@ function wallVariantRoll(x: number, z: number): number {
 
 // custom HMR event sent by the texture hot-reload plugin in vite.config.ts
 const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
+// how long the editor leaves the quick flat preview of its structural edits before the scene's full build
+const EDIT_SETTLE_MS = 5000;
 
 const FOG_NEAR = 1.6;
 // (the fog ends this far short of the view distance)
@@ -1625,11 +1628,32 @@ export function GameViewport({
   // The map the scene is built from. A new version of it that differs only
   // in its lights, smoke or robots (the editor's tools for them) keeps the
   // scene: those are redone in place instead of rebuilding every wall.
+  // While editing, a change to the cells (a dig, a fill, heights, textures) doesn't
+  // rebuild it at once: the scene shows a quick flat preview of them (see
+  // applyStructure) and is rebuilt after EDIT_SETTLE_MS without another
+  // structural edit (`settleTick`).
   const sceneMapRef = useRef(map);
-  if (sceneMapRef.current.id !== map.id || !map.structureKey || sceneMapRef.current.structureKey !== map.structureKey) {
-    sceneMapRef.current = map;
+  const [settleTick, setSettleTick] = useState(0);
+  const settledTickRef = useRef(0);
+  const previewableRef = useRef<{ map: GameMap; ok: boolean }>({ map, ok: false });
+  if (sceneMapRef.current.id !== map.id || !map.structureKey || sceneMapRef.current.structureKey !== map.structureKey || settledTickRef.current !== settleTick) {
+    let quick = false;
+    if (editMode && settledTickRef.current === settleTick && sceneMapRef.current.id === map.id && map.structureKey) {
+      // (worked out once for each new map)
+      if (previewableRef.current.map !== map) previewableRef.current = { map, ok: changedCells(sceneMapRef.current, map) !== null };
+      quick = previewableRef.current.ok;
+    }
+    if (!quick) {
+      sceneMapRef.current = map;
+      settledTickRef.current = settleTick;
+    }
   }
   const sceneMap = sceneMapRef.current;
+  useEffect(() => {
+    if (!editMode || map.structureKey === sceneMap.structureKey) return;
+    const timer = setTimeout(() => setSettleTick((n) => n + 1), EDIT_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [map, sceneMap, editMode]);
   const applyLightsRef = useRef<((next: GameMap) => void) | null>(null);
   const rebakeRef = useRef<(() => void) | null>(null);
   useEffect(() => rebakeRef.current?.(), [settings.lightGridDensity, settings.lightGridMode, settings.lightBounce]);
@@ -1895,11 +1919,11 @@ export function GameViewport({
     }
     // floor kits are created on demand, one per floor texture actually used
     const floorKits = new Map<TextureSetId, WallKit>();
-    function floorKitAt(x: number, y: number): WallKit | null {
+    function floorKitAt(x: number, y: number, m: GameMap = map): WallKit | null {
       const choice = settings.floorTextureSet;
       if (choice === "none") return null;
-      const fromMap = map.floorAt?.(x, y);
-      const deckFloor = isTextureSetId(map.textures?.floor) ? map.textures.floor : DEFAULT_FLOOR;
+      const fromMap = m.floorAt?.(x, y);
+      const deckFloor = isTextureSetId(m.textures?.floor) ? m.textures.floor : DEFAULT_FLOOR;
       const setId = choice !== "map" ? choice : isTextureSetId(fromMap) ? fromMap : deckFloor;
       let kit = floorKits.get(setId);
       if (!kit) {
@@ -1913,10 +1937,10 @@ export function GameViewport({
     // ceiling kits by texture set: the chosen one, or the map's for a cell
     // (a lift cabin's own), created on demand; none for a plain ceiling
     const ceilingKits = new Map<TextureSetId, WallKit>();
-    function ceilingKitAt(x: number, y: number): WallKit | null {
+    function ceilingKitAt(x: number, y: number, m: GameMap = map): WallKit | null {
       if (settings.ceilingTextureSet === "none") return null;
-      const fromMap = map.ceilingTextureAt?.(x, y);
-      const deckCeiling = isTextureSetId(map.textures?.ceiling) ? map.textures.ceiling : undefined;
+      const fromMap = m.ceilingTextureAt?.(x, y);
+      const deckCeiling = isTextureSetId(m.textures?.ceiling) ? m.textures.ceiling : undefined;
       const setId = isTextureSetId(fromMap) ? fromMap : (deckCeiling ?? settings.ceilingTextureSet);
       let kit = ceilingKits.get(setId);
       if (!kit) {
@@ -1943,9 +1967,12 @@ export function GameViewport({
     // the static lights, baked (see lightGrid.ts) - every lit material reads
     // it once the scene is built
     const lightGrid = createLightGridUniforms();
+    // the map as edited since the scene was built (see applyStructure): what the quick preview of an edit shows
+    let liveMap = map;
     // the map's own density, else the settings'
     const bakeOptions = (m: GameMap) => ({
-      perCell: m.lightGridDensity ?? settingsRef.current.lightGridDensity,
+      // (a rough bake while the quick preview of an edit shows - see applyStructure)
+      perCell: liveMap !== map ? 1 : (m.lightGridDensity ?? settingsRef.current.lightGridDensity),
       mode: settingsRef.current.lightGridMode,
       bounce: settingsRef.current.lightBounce,
     });
@@ -1953,7 +1980,7 @@ export function GameViewport({
     const bake = (m: GameMap) => {
       const options = bakeOptions(m);
       const ambient =
-        options.mode === "directional" && m.lightGridAmbient && m.lightGridAmbient !== options.perCell
+        options.mode === "directional" && liveMap === map && m.lightGridAmbient && m.lightGridAmbient !== options.perCell
           ? bakeLightGrid(m, mapLights, wallHeight, { ...options, perCell: m.lightGridAmbient })
           : undefined;
       setLightGrid(lightGrid, bakeLightGrid(m, mapLights, wallHeight, options), ambient);
@@ -2190,8 +2217,12 @@ export function GameViewport({
     // decals land on surface panels as they get placed (relief ones arrive
     // asynchronously)
     // world heights of a walkable cell's floor and ceiling
-    const floorY = (x: number, y: number) => floorHeight(map, x, y) * wallHeight;
-    const ceilingY = (x: number, y: number) => ceilingHeight(map, x, y) * wallHeight;
+    // (`liveMap`: the map as edited since - what the quick preview shows, and
+    // what sight, picking and heights go by - see applyStructure)
+    // the black backing behind the relief walls (one mesh; left off while a quick preview shows)
+    let backingObject: THREE.Object3D | null = null;
+    const floorY = (x: number, y: number) => floorHeight(liveMap, x, y) * wallHeight;
+    const ceilingY = (x: number, y: number) => ceilingHeight(liveMap, x, y) * wallHeight;
 
     const decals = new DecalLibrary({
       baseUrl: import.meta.env.BASE_URL,
@@ -2223,6 +2254,8 @@ export function GameViewport({
     function markSurface(obj: THREE.Object3D) {
       const n = new THREE.Vector3(0, 0, 1).applyQuaternion(obj.quaternion);
       obj.userData.cullCell = cellKey(Math.round(obj.position.x + n.x * 0.5), Math.round(obj.position.z + n.z * 0.5));
+      // (and the cell behind its plane - see applyStructure)
+      obj.userData.backCell = cellKey(Math.round(obj.position.x - n.x * 0.5), Math.round(obj.position.z - n.z * 0.5));
       obj.userData.facing = { n, d: n.dot(obj.position) };
       facingSurfaces.push(obj);
     }
@@ -2526,7 +2559,8 @@ export function GameViewport({
       backingGeo.setAttribute("position", new THREE.Float32BufferAttribute(backingPositions, 3));
       backingGeo.setAttribute("color", new THREE.Float32BufferAttribute(backingColors, 3));
       geometries.push(backingGeo);
-      group.add(new THREE.Mesh(backingGeo, backingMat));
+      backingObject = new THREE.Mesh(backingGeo, backingMat);
+      group.add(backingObject);
     }
 
     // floor glow fixtures, lifted above the floor relief once it's built
@@ -4428,7 +4462,7 @@ export function GameViewport({
       if (!cells) {
         // (flashes come and go, each a source of its own: let it not grow)
         if (reachCache.size > 256) reachCache.clear();
-        cells = [...visibleCells(map, l.x, l.z, Math.ceil(l.range), (k) => doors.has(k))];
+        cells = [...visibleCells(liveMap, l.x, l.z, Math.ceil(l.range), (k) => doors.has(k))];
         reachCache.set(id, cells);
       }
       return cells;
@@ -4477,14 +4511,14 @@ export function GameViewport({
       if (key === sight.key) return false;
       const cells = new Set<string>();
       for (const [ox, oz] of SIGHT_POINTS) {
-        for (const c of visibleCells(map, cx + ox, cz + oz, Math.round(range), (k) => doors.has(k))) cells.add(c);
+        for (const c of visibleCells(liveMap, cx + ox, cz + oz, Math.round(range), (k) => doors.has(k))) cells.add(c);
       }
       // a door cell seen shut: the walls on its sides still show around the
       // door (their panels may count as the wall cells beyond, which the
       // shut door hides from the sight lines)
       for (const c of [...cells]) {
         const [x, y] = c.split(",").map(Number);
-        if (cellAt(map, x, y) !== "door") continue;
+        if (cellAt(liveMap, x, y) !== "door") continue;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) cells.add(cellKey(x + dx, y + dy));
       }
       sight = { key, cells };
@@ -4632,7 +4666,93 @@ export function GameViewport({
     // the scene draws them from the game's state.
     let applied = map;
     const lightsOf = (m: GameMap) => JSON.stringify([m.lights, m.lightGridDensity, m.lightGridAmbient]);
+    // A structural edit (cells dug, filled, raised, repainted) while editing: the
+    // scene isn't rebuilt at once (the walls' relief, the lights' bake...), it
+    // shows a quick flat preview of what changed (see editPreview.ts) - the old
+    // surfaces on the changed cells are taken off the camera's layer, flat
+    // quads put in their place - and the light grid is baked roughly again.
+    // The whole scene is rebuilt a few seconds after the last such edit (see
+    // EDIT_SETTLE_MS), which drops all of this.
+    let previewObjects: THREE.Object3D[] = [];
+    let previewGeometries: THREE.BufferGeometry[] = [];
+    let previewKey = map.structureKey;
+    // (layer 1: not drawn, not picked - what a camera on layer 0 doesn't see)
+    const setLayer = (obj: THREE.Object3D, layer: number) => obj.traverse((o) => o.layers.set(layer));
+    function clearPreview() {
+      for (const obj of previewObjects) {
+        group.remove(obj);
+        const i = facingSurfaces.indexOf(obj);
+        if (i >= 0) facingSurfaces.splice(i, 1);
+      }
+      for (const geo of previewGeometries) geo.dispose();
+      previewObjects = [];
+      previewGeometries = [];
+    }
+    function applyStructure(next: GameMap) {
+      clearPreview();
+      const changed = changedCells(map, next);
+      // (a map the quick look can't show never gets here - see the viewport's render)
+      if (!changed) return;
+      const edited = changed.size > 0;
+      for (const obj of facingSurfaces) {
+        const back = obj.userData.backCell as string | undefined;
+        const hide = edited && (changed.has(obj.userData.cullCell as string) || (back !== undefined && changed.has(back)));
+        if (!!obj.userData.editHidden !== hide) {
+          obj.userData.editHidden = hide;
+          setLayer(obj, hide ? 1 : 0);
+        }
+      }
+      // (the black backing and the corner joins are merged meshes: none of their pieces can be left out)
+      if (backingObject) setLayer(backingObject, edited ? 1 : 0);
+      for (const strips of joinedStrips) setLayer(strips.mesh, edited ? 1 : 0);
+      if (edited) {
+        const lit = (m: THREE.Material) => {
+          useLightGrid(m, lightGrid);
+          return m;
+        };
+        const built = buildEditPreview(next, changed, wallHeight, {
+          floor: (x, y) => lit(floorKitAt(x, y, next)?.wallMat ?? floorMat),
+          ceiling: (x, y) => {
+            if ((next.ceilingTextureAt?.(x, y) ?? next.textures?.ceiling) === "sky") return skySurface();
+            return lit(ceilingKitAt(x, y, next)?.wallMat ?? ceilMat);
+          },
+          wall: (x, y, side) => {
+            const v = DIR_VECTOR[side];
+            const override = next.wallTextureAt?.(x, y);
+            const faceSet: string = isTextureSetId(override)
+              ? override
+              : accentKit && wallVariantRoll(x + v.x * 0.5, y + v.y * 0.5) < settings.accentRatio
+                ? accentSet
+                : primarySet;
+            if (faceSet === "sky") return skySurface();
+            return lit(wallKitFor(faceSet as TextureSetId).wallMat);
+          },
+        });
+        for (const mesh of built.objects) {
+          group.add(mesh);
+          mesh.updateMatrixWorld(true);
+          markSurface(mesh);
+        }
+        previewObjects = built.objects;
+        previewGeometries = built.geometries;
+      }
+      liveMap = edited ? next : map;
+      // (what is in sight, and what each light reaches, follow the new cells)
+      sight = { key: "", cells: sight.cells };
+      culledCount = -1;
+      sceneVersion++;
+      // the light grid, roughly: the full bake comes with the rebuild
+      bakeSoon(next, 120);
+      // dev: what the quick preview holds (flat quads drawn, old surfaces taken off)
+      if (import.meta.env.DEV) {
+        Object.assign(window, { __voidcrewPreview: { changed: changed.size, quads: previewObjects.length, hidden: facingSurfaces.filter((o) => o.userData.editHidden).length } });
+      }
+    }
     applyLightsRef.current = (next: GameMap) => {
+      if (next.structureKey !== previewKey) {
+        previewKey = next.structureKey;
+        applyStructure(next);
+      }
       if (lightsOf(next) !== lightsOf(applied)) applyLights(next);
       if (JSON.stringify(next.smokes) !== JSON.stringify(applied.smokes)) {
         applySmoke(next);
@@ -5965,11 +6085,11 @@ export function GameViewport({
       const spotCell = { x: Math.round(sx0), y: Math.round(sz0) };
       const round2 = (v: number) => Math.round(v * 100) / 100;
       const spot: EditTarget["spot"] =
-        cellAt(map, spotCell.x, spotCell.y) === "wall"
+        cellAt(liveMap, spotCell.x, spotCell.y) === "wall"
           ? undefined
           : {
               cell: spotCell,
-              pos: [round2(sx0 - spotCell.x), round2(sy0 / wallHeight - floorHeight(map, spotCell.x, spotCell.y)), round2(sz0 - spotCell.y)],
+              pos: [round2(sx0 - spotCell.x), round2(sy0 / wallHeight - floorHeight(liveMap, spotCell.x, spotCell.y)), round2(sz0 - spotCell.y)],
             };
       const flat = Math.abs(editNormal.y) >= Math.max(Math.abs(editNormal.x), Math.abs(editNormal.z));
       if (!flat) {
@@ -5977,14 +6097,14 @@ export function GameViewport({
         const sx = Math.abs(editNormal.x) > Math.abs(editNormal.z) ? Math.sign(editNormal.x) : 0;
         const sz = sx ? 0 : Math.sign(editNormal.z);
         const behind = { x: Math.round(p.x - sx * 0.05), y: Math.round(p.z - sz * 0.05) };
-        if (cellAt(map, behind.x, behind.y) === "wall") {
+        if (cellAt(liveMap, behind.x, behind.y) === "wall") {
           const from = { x: behind.x + sx, y: behind.y + sz };
           const side: Direction = sx > 0 ? "W" : sx < 0 ? "E" : sz > 0 ? "N" : "S";
           return { kind: "wall", cell: behind, from, spot, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(from, side, p) };
         }
       }
       const cell = { x: Math.round(p.x), y: Math.round(p.z) };
-      if (cellAt(map, cell.x, cell.y) === "wall") return null;
+      if (cellAt(liveMap, cell.x, cell.y) === "wall") return null;
       // floor or ceiling by which the hit is nearer to (a relief's step
       // sides face sideways, so the normal can't tell)
       const nearCeiling = ceilingY(cell.x, cell.y) - p.y < p.y - floorY(cell.x, cell.y);

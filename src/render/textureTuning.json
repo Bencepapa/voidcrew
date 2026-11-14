@@ -2,5 +2,39 @@
   "fantasywall1": {
     "rough": 1.65,
     "metal": 0.05
+  },
+  "fantasyfloor1": {
+    "normal": 0.3,
+    "relief": 0.45,
+    "rough": 1.45,
+    "metal": 0.45
+  },
+  "fantasyforest1": {
+    "normal": 0,
+    "relief": 0.35,
+    "rough": 1.2,
+    "metal": 0
+  },
+  "fantasyearth1": {
+    "normal": 0.85,
+    "relief": 0.45,
+    "rough": 1.55,
+    "metal": 0.25
+  },
+  "fantasytree1": {
+    "normal": 3,
+    "relief": 0.5,
+    "rough": 2,
+    "metal": 0
+  },
+  "fantasytree2": {
+    "relief": 0.3,
+    "metal": 0
+  },
+  "fantasy_bokor_kerek": {
+    "normal": 0.8,
+    "relief": 0.85,
+    "rough": 0.8,
+    "metal": 0.35
   }
 }

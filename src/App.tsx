@@ -24,7 +24,7 @@ import {
 import { MAPS, START_MAP } from "./game/map";
 import { WORLDS, assetInWorld, setActiveWorld, startWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
-import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart } from "./editor/mapEdits";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
 import { PROP_TYPES, flamePosition, propPlacement, propRetexturable } from "./game/props";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
@@ -34,7 +34,7 @@ import { DOOR_EDGE_OFFSET, cellAt, ceilingHeight, doorAt, doorFacingAt, floorHei
 import type { Direction, MapLight, PropAnchor, PropSpec, Vec2 } from "./game/types";
 import { DIR_VECTOR, behindOf, rightOf } from "./game/movement";
 import { generateLights, ownCeilingLight } from "./game/lights";
-import type { EditSurface, EditTool, TextureLayer } from "./editor/mapEdits";
+import type { EditSurface, EditTool, Rect, TextureLayer } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
 import { bankHaul, crewWeapon, failRun, getMeta, payRevival, revivalBill, switchWeapon, useMeta } from "./game/meta";
@@ -950,6 +950,60 @@ export default function App() {
     }
     onEdit({ kind: miniSurface, cell }, alt);
   };
+  // The zoomed minimap (editing, wide screens): a big one fills the left side
+  // and a dragged block of cells is a selection - dig, fill, raise or lower
+  // the floor or ceiling, or paint the surfaces, all of its cells in one
+  // undo step. The 3D view stays on the right, drawing the changes quickly
+  // (see GameViewport's applyStructure) and fully a few seconds later.
+  const [miniZoom, setMiniZoom] = useState(false);
+  const [miniSel, setMiniSel] = useState<Rect | null>(null);
+  const zoomed = editMode && miniZoom && !compact;
+  const editArea = (what: string, change: (file: NonNullable<ReturnType<typeof mapFile>>, cells: Vec2[]) => NonNullable<ReturnType<typeof mapFile>>) => {
+    if (!miniSel) return;
+    const cells = rectCells(miniSel).filter((c) => c.x < map.width && c.y < map.height);
+    const result = applyEdit(map.id, (file) => change(file, cells));
+    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    else {
+      replaceMap(result.map);
+      pushLog(`Editor: ${what} - ${cells.length} cells.`);
+    }
+    setEdits((n) => n + 1);
+  };
+  const openCells = (cells: Vec2[]) => cells.filter((c) => cellAt(map, c.x, c.y) !== "wall");
+  const areaDig = () => editArea("dug out", (file, cells) => digCells(file, cells));
+  const areaFill = () =>
+    editArea("filled in", (file, cells) =>
+      fillCells(
+        file,
+        // (not under the party, nor the deck's start)
+        cells.filter((c) => !(c.x === pos.x && c.y === pos.y) && !(c.x === map.start.cell.x && c.y === map.start.cell.y)),
+      ),
+    );
+  const areaHeight = (which: "floor" | "ceiling", step: number) =>
+    editArea(`${which} ${step > 0 ? "raised" : "lowered"}`, (file, cells) => {
+      for (const c of openCells(cells)) {
+        const floor = floorHeight(map, c.x, c.y);
+        const value = Math.round(((which === "floor" ? floor : ceilingHeight(map, c.x, c.y)) + step) * 100) / 100;
+        // (a floor of 0 and a ceiling one panel above its floor are the defaults: no need to write them)
+        setHeight(file, which, c, which === "floor" ? (value === 0 ? null : value) : value === floor + 1 ? null : value);
+      }
+      return file;
+    });
+  const areaPaint = (surface: EditSurface) =>
+    editArea(`${surface} painted`, (file, cells) => {
+      const layer: TextureLayer = surface === "wall" ? "wallTexture" : surface === "floor" ? "floorTexture" : "ceilingTexture";
+      for (const c of openCells(cells)) paintTexture(file, layer, c, paint[surface]);
+      return file;
+    });
+  // Escape lets go of the selection
+  useEffect(() => {
+    if (!miniSel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMiniSel(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [miniSel]);
   // "Clear all": everything of the current tool's layer off the map (one undo step)
   const clearLayer = (tool: EditTool) => {
     const layers: Partial<Record<EditTool, { key: keyof NonNullable<ReturnType<typeof mapFile>>; label: string }>> = {
@@ -2113,7 +2167,8 @@ export default function App() {
   return (
     <div className="h-screen w-screen flex flex-col p-2 gap-2 font-sans">
       <div className="flex-1 flex gap-2 min-h-0">
-        <div className="w-56 flex flex-col gap-2">
+        <div className={`${zoomed ? "w-[40vw]" : "w-56"} flex flex-col gap-2 min-h-0`}>
+          <div className={zoomed ? "flex-1 min-h-0" : ""}>
           <Minimap
             map={map}
             pos={pos}
@@ -2128,17 +2183,62 @@ export default function App() {
                     surface: miniSurface,
                     onSurface: setMiniSurface,
                     onCell: onMinimapCell,
+                    zoomed,
+                    onZoom: () => {
+                      setMiniZoom((z) => !z);
+                      setMiniSel(null);
+                    },
+                    selection: zoomed ? miniSel : null,
+                    onSelect: zoomed ? setMiniSel : undefined,
                   }
                 : undefined
             }
           />
-          <div className="text-[10px] text-neutral-500 px-1">
-            <div>{map.name}</div>
-            <div>{WORLDS[map.world].loop === "ship" ? <>Deck {map.deck} &middot; Day 17</> : WORLDS[map.world].name}</div>
           </div>
-          <div className="flex-1 min-h-0">
-            <LogPanel log={log} />
-          </div>
+          {zoomed ? (
+            <div className="shrink-0 border border-green-800 bg-black/60 p-2 text-[10px] font-mono text-neutral-200 flex flex-wrap items-center gap-1">
+              {miniSel ? (
+                (() => {
+                  const btn = "border border-neutral-600 rounded-sm px-2 py-0.5 hover:bg-neutral-800";
+                  return (
+                    <>
+                      <span className="text-amber-200">
+                        Block {miniSel.x1 - miniSel.x0 + 1} x {miniSel.y1 - miniSel.y0 + 1}:
+                      </span>
+                      <button className={btn} onClick={areaDig} title="Every wall cell in the block dug out (heights and textures from the cell beside it)">Dig out</button>
+                      <button className={btn} onClick={areaFill} title="Every open cell in the block filled in as wall - what stands in them goes (not the party's or the start's cell)">Fill in</button>
+                      <span className="text-neutral-400">Floor</span>
+                      <button className={btn} onClick={() => areaHeight("floor", 0.25)} title="Raise the floors a quarter panel">▲</button>
+                      <button className={btn} onClick={() => areaHeight("floor", -0.25)} title="Lower the floors a quarter panel">▼</button>
+                      <span className="text-neutral-400">Ceiling</span>
+                      <button className={btn} onClick={() => areaHeight("ceiling", 0.25)} title="Raise the ceilings a quarter panel">▲</button>
+                      <button className={btn} onClick={() => areaHeight("ceiling", -0.25)} title="Lower the ceilings a quarter panel">▼</button>
+                      <span className="text-neutral-400">Paint</span>
+                      {(["floor", "wall", "ceiling"] as const).map((s) => (
+                        <button key={s} className={btn} onClick={() => areaPaint(s)} title={`Paint the ${s}s with the set picked in the palette (${paint[s] ?? "none picked: the map's own"})`}>
+                          {s === "wall" ? "walls" : `${s}s`}
+                          <span className="text-neutral-500"> {paint[s] ?? "own"}</span>
+                        </button>
+                      ))}
+                      <button className={`${btn} ml-auto`} onClick={() => setMiniSel(null)} title="Let go of the block (Esc)">✕</button>
+                    </>
+                  );
+                })()
+              ) : (
+                <span className="text-neutral-400">Drag on the map to select a block of cells: dig it out, fill it in, raise or lower it, paint it. A plain click edits one cell, as before.</span>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="text-[10px] text-neutral-500 px-1">
+                <div>{map.name}</div>
+                <div>{WORLDS[map.world].loop === "ship" ? <>Deck {map.deck} &middot; Day 17</> : WORLDS[map.world].name}</div>
+              </div>
+              <div className="flex-1 min-h-0">
+                <LogPanel log={log} />
+              </div>
+            </>
+          )}
         </div>
 
         <div className="relative flex-1 min-w-0" {...viewInput}>
@@ -2147,7 +2247,7 @@ export default function App() {
           {overlays}
         </div>
 
-        <div className={`${editMode ? "w-80" : "w-56"} flex flex-col gap-2 min-h-0`}>
+        <div className={`${zoomed ? "w-72" : editMode ? "w-80" : "w-56"} flex flex-col gap-2 min-h-0`}>
           {SHOW_ACTION_MENU && actionMenu}
           {/* the map editor's tools dock here while editing (see EditorBar) */}
           {editMode && <div ref={setEditDock} className="flex flex-col gap-1 shrink-0 max-h-[55%] overflow-y-auto" />}

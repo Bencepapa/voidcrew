@@ -543,3 +543,59 @@ export function removeSmoke(file: MapFile, index: number): MapFile {
   if (file.smokes && !file.smokes.length) delete file.smokes;
   return file;
 }
+
+// ---- areas: what the zoomed minimap's selection does to all its cells at once
+
+// a block of cells, corners included
+export interface Rect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export function rectCells(rect: Rect): Vec2[] {
+  const cells: Vec2[] = [];
+  for (let y = rect.y0; y <= rect.y1; y++) for (let x = rect.x0; x <= rect.x1; x++) cells.push({ x, y });
+  return cells;
+}
+
+const PLACED_LISTS = ["doors", "exits", "smokes", "items", "chanceWalls", "ladders", "bridges", "lights", "props", "actors", "decals"] as const;
+
+// Takes everything placed in the given cells off the map: props, robots,
+// items, lights, doors, ladders... (what would be left standing inside a wall).
+export function clearCells(file: MapFile, cells: Vec2[]): MapFile {
+  const has = new Set(cells.map((c) => `${c.x},${c.y}`));
+  const f = file as unknown as Record<string, { x: number; y: number }[] | undefined>;
+  for (const key of PLACED_LISTS) {
+    const list = f[key];
+    if (!list) continue;
+    const kept = list.filter((e) => !has.has(`${e.x},${e.y}`));
+    if (kept.length === list.length) continue;
+    if (kept.length) f[key] = kept;
+    else delete f[key];
+  }
+  if (file.restricted) file.restricted = file.restricted.filter(([x, y]) => !has.has(`${x},${y}`));
+  return file;
+}
+
+// Digs every wall cell of the list out: each like an open cell beside it (or a
+// cell dug just before - a new room takes its first cell's heights and
+// textures from its neighbour), or the map's defaults if it has none.
+export function digCells(file: MapFile, cells: Vec2[]): MapFile {
+  const open = (x: number, y: number) => (file.layout[y]?.[x] ?? "W") !== "W";
+  for (const cell of cells) {
+    if (open(cell.x, cell.y)) continue;
+    const from = NEIGHBOURS.map((n) => ({ x: cell.x + n.dx, y: cell.y + n.dy })).find((c) => open(c.x, c.y)) ?? cell;
+    dig(file, cell, from);
+  }
+  return file;
+}
+
+// Fills every open cell of the list in as wall, taking what stands in it with it.
+export function fillCells(file: MapFile, cells: Vec2[]): MapFile {
+  const open = cells.filter((c) => (file.layout[c.y]?.[c.x] ?? "W") !== "W");
+  clearCells(file, open);
+  for (const cell of open) fill(file, cell);
+  return file;
+}

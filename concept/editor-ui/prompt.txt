@@ -1,0 +1,33 @@
+You are a senior UI/UX designer for tools and games. Design a compact, minimal in-game LEVEL EDITOR UI for our engine and deliver it as a downloadable PDF design document with mockups. The working folder is concept/editor-ui/ of the repo C:\dev\js\voidcrew. Write ONLY inside this folder (put results in out/). Do not edit any source code, do not start dev servers.
+
+## The product
+"voidcrew" is a first-person grid dungeon-crawler engine (React + three.js) with two worlds: "Void Crew" (sci-fi ship decks) and "Void Fantasy" (dungeon, default). It has an in-game map editor that works inside the running 3D view (Tab toggles it): dig/fill walls, raise floors/ceilings, paint textures, and place props, decals, items, NPCs, lights, particle emitters, doors, ladders, bridges, exits, start, restricted cells, chance walls. Placed things have inspectable settings (chance, links, light colour/intensity/range, door lock, NPC wake-up alert level, smoke blow direction...).
+
+## What you get (look at all of it)
+Screenshots of the CURRENT UI (shots/):
+- 1-game-ui.jpg  the game UI (dark brown + gold, parchment-like, retro monospace in places).
+- 2-editor-prop-tool.jpg  the current editor: a 4-row grid of tool buttons on the right, the DEBUG accordion below it, minimap + event log on the left. Cluttered, mixed-function.
+- 3-editor-zoomed-minimap.jpg  the new "Build" mode: big 2D minimap on the left (drag = block selection, block bar underneath), 3D view on the right.
+- 4-asset-manager.jpg  our asset manager dialog (collapsible asset list and properties panels, view modes Textured/Faces/Wireframe/Normals/Depth).
+Earlier AI mockups (gemini/): gemini-layout.jpg, gemini-global-grab.jpg, gemini-before.jpg. They were a first plan; the owner found the TOP BAR too heavy.
+Our written plan with the functional decisions: plan-v2.md (READ IT FULLY; it is in Hungarian; keep its functional decisions: tool vs asset separation, Select tool + Alt global grab, per-kind outlines and handles instead of a 3-axis gizmo, inspector per kind, status bar with message line, asset tree with search and eye toggles, Build vs Decorate modes).
+Our REAL assets for use in mockups (absolute paths, read-only):
+- Textures (walls/floors/ceilings/props): C:\dev\js\voidcrew\public\textures\<name>\diffuse.png (e.g. fantasywall1, fantasyfloor1, fantasyearth1, fantasygate1, fantasytorch1, crate1, floor1, wall1, ...; list the folder).
+- NPC sprite sheets: C:\dev\js\voidcrew\public\actors\<name>\diffuse.png (goblin1, skeleton1, mage1, ogre1, robot1...; sheets: use the first cell/idle only, crop with CSS).
+- Decals: C:\dev\js\voidcrew\public\decals\<name>\diffuse.png (list the folder).
+- Party portraits and game UI textures: look under C:\dev\js\voidcrew\public (and concept/ for earlier concept art).
+Use real asset thumbnails in the mockups (asset tree/palette, inspector previews).
+
+## Direction from the owner (important)
+1. The top bar does NOT have to be an opaque panel. Prefer a few familiar 3D-editor ICONS floating over the 3D view, arranged LEFT and RIGHT (tool icons on one side, view/file icons on the other), semi-transparent, appearing on hover/focus or kept very light. Think Blender / Unity / Godot / Unreal viewport overlays: small icon buttons with tooltips, active state highlighted.
+2. The editor does NOT have to follow the game UI. Make it minimalist and compact: tiny paddings, small type, the 3D view gets the maximum screen. You may keep a subtle echo of our palette (dark brown #1a120a, gold #c9a24a, parchment yellow) for accents and the selection colour, but neutral dark glass panels are fine. Decide and justify.
+3. Panels (asset tree, inspector) should be collapsible/auto-hiding and semi-transparent where they overlap the 3D view; Build mode keeps a big minimap on the left, 3D view on the right.
+4. Consistent selection language: one outline colour per element category, the same on the 3D view, the 2D minimap, and the asset tree. Per-kind handles (see plan-v2.md section 8) - only 3D props get a (single ring) yaw rotation handle.
+5. Desktop first (1440x860 and 1024x768), then tablet/phone landscape + portrait notes (bottom toolbar, inspector as bottom sheet, tree as drawer, no modifier keys: a Select button and long-press replace Alt).
+
+## Deliverables (in out/)
+1. out/editor-ui-design.pdf - a 8-12 page design document IN HUNGARIAN (UI labels stay English). Pages: summary and principles; toolbar alternatives (design 3 options: A floating icon clusters left/right, B one slim translucent strip, C minimal strip + radial/quick menu on right click; recommend one and say why); the recommended full layout in Decorate mode (prop selected: outline, handles, compact inspector, collapsed tree); Build mode with big minimap; Global-grab/Select state; asset tree + search + eye toggles (with our real thumbnails); inspector variants for 3 kinds (prop, light, NPC) with real field names from plan-v2.md; the icon set (draw simple consistent SVG line icons with names: select, dig/fill, height, paint, place, door, ladder, bridge, undo/redo, save, view modes, layers/eye, debug, help...); outline + handle diagrams per element kind; status bar; compact/mobile layout; sizes/colours/typography spec (px, opacities, font) and an implementation order tied to plan-v2.md.
+2. out/mockups/*.png - each mockup as a separate PNG at 1440x860 (and 1024x768 where asked) plus the HTML/CSS/SVG sources (out/src/). Build mockups as HTML/CSS/SVG that composite the real screenshots from shots/ as the 3D backdrop (the 3D view crop of shots/2 or shots/1 is fine, upscale with CSS) and our real asset images. Render PNGs and the PDF with headless Chrome, e.g.: "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new --disable-gpu --hide-scrollbars --window-size=1440,860 --screenshot=out\mockups\name.png file:///C:/dev/js/voidcrew/concept/editor-ui/out/src/name.html and --print-to-pdf=... --no-pdf-header-footer for the PDF. Use an A4 landscape layout for the PDF. Check your rendered PNGs by opening them and fix overlaps/cropping before finishing.
+3. Keep the text tight; every page must have a mockup or diagram. Mark anything you invented that the engine cannot do today.
+
+When done, print the paths of the PDF and the PNGs.

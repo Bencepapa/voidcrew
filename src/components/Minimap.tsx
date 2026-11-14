@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { ceilingHeight, doorAt, floorHeight, windowPanels } from "../game/map";
 import { MIN_HEADROOM } from "../game/heights";
 import type { Direction, GameMap, Vec2 } from "../game/types";
+import type { Rect } from "../editor/mapEdits";
 
 interface MinimapProps {
   map: GameMap;
@@ -26,6 +27,12 @@ interface MinimapProps {
     surface: "floor" | "ceiling";
     onSurface: (surface: "floor" | "ceiling") => void;
     onCell: (cell: Vec2, alt: boolean) => void;
+    // the zoomed minimap fills its space (the editor makes room for it) and
+    // takes a dragged block of cells as a selection
+    zoomed?: boolean;
+    onZoom?: () => void;
+    selection?: Rect | null;
+    onSelect?: (rect: Rect | null) => void;
   };
 }
 
@@ -68,6 +75,9 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
 
   // turn the arrow the short way round: keep a running angle
   const angleRef = useRef(FACING_DEGREES[dir]);
+  // a drag across the editing minimap: where it started, and whether it went on to be a block
+  const dragRef = useRef<{ from: Vec2; moved: boolean } | null>(null);
+  const justDragged = useRef(false);
   const target = FACING_DEGREES[dir];
   const delta = ((((target - angleRef.current) % 360) + 540) % 360) - 180;
   angleRef.current += delta;
@@ -197,19 +207,62 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
     // the whole map, at one scale: bounds drawn, clickable
     const W = map.width;
     const H = map.height;
-    const click = (e: React.MouseEvent<SVGSVGElement>, alt: boolean) => {
-      const svg = e.currentTarget;
-      const ctm = svg.getScreenCTM();
-      if (!ctm) return;
+    // the cell under the pointer (clamp: the nearest one, outside the map)
+    const cellOf = (e: React.MouseEvent<SVGSVGElement>, clamp = false): Vec2 | null => {
+      const ctm = e.currentTarget.getScreenCTM();
+      if (!ctm) return null;
       const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
       const x = Math.floor(p.x);
       const y = Math.floor(p.y);
-      if (x < 0 || y < 0 || x >= W || y >= H) return;
+      if (clamp) return { x: Math.min(W - 1, Math.max(0, x)), y: Math.min(H - 1, Math.max(0, y)) };
+      return x < 0 || y < 0 || x >= W || y >= H ? null : { x, y };
+    };
+    const click = (e: React.MouseEvent<SVGSVGElement>, alt: boolean) => {
+      // (the click that ends a drag is not an edit of its own)
+      if (justDragged.current) {
+        justDragged.current = false;
+        e.preventDefault();
+        return;
+      }
+      const cell = cellOf(e);
+      if (!cell) return;
       e.preventDefault();
-      edit.onCell({ x, y }, alt);
+      edit.onCell(cell, alt);
+    };
+    const blockOf = (a: Vec2, b: Vec2): Rect => ({ x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) });
+    const dragStart = (e: React.PointerEvent<SVGSVGElement>) => {
+      if (!edit.onSelect || e.button !== 0) return;
+      const from = cellOf(e);
+      if (!from) return;
+      dragRef.current = { from, moved: false };
+      // (so the drag goes on past the map's edge)
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* a pointer the browser doesn't know: the drag still works inside the map */
+      }
+    };
+    const dragMove = (e: React.PointerEvent<SVGSVGElement>) => {
+      const drag = dragRef.current;
+      if (!drag || !edit.onSelect) return;
+      const to = cellOf(e, true);
+      if (!to) return;
+      if (!drag.moved && to.x === drag.from.x && to.y === drag.from.y) return;
+      drag.moved = true;
+      edit.onSelect(blockOf(drag.from, to));
+    };
+    const dragEnd = (e: React.PointerEvent<SVGSVGElement>) => {
+      const drag = dragRef.current;
+      dragRef.current = null;
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* (nothing held) */
+      }
+      if (drag?.moved) justDragged.current = true;
     };
     return (
-      <div className="border border-green-800 bg-black/60 p-2 flex flex-col gap-1" onPointerDown={(e) => e.stopPropagation()}>
+      <div className={`border border-green-800 bg-black/60 p-2 flex flex-col gap-1 ${edit.zoomed ? "h-full min-h-0" : ""}`} onPointerDown={(e) => e.stopPropagation()}>
         <div className="text-[10px] font-mono text-neutral-300">
           Click: <span className="text-amber-200">{edit.verb}</span>{" "}
           <span className={edit.surface === "floor" ? "text-emerald-300 font-semibold" : "text-sky-300 font-semibold"}>
@@ -229,16 +282,32 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
             </button>
           ))}
           <span className="text-neutral-500 ml-auto">
+            {edit.selection ? `${edit.selection.x1 - edit.selection.x0 + 1} x ${edit.selection.y1 - edit.selection.y0 + 1} of ` : ""}
             {W} x {H}
           </span>
+          {edit.onZoom && (
+            <button
+              type="button"
+              onClick={edit.onZoom}
+              className="border border-neutral-600 rounded-sm px-2 py-0.5 text-neutral-200 hover:bg-neutral-800"
+              title={edit.zoomed ? "Back to the small minimap" : "A big minimap on the left, to build rooms on: drag to select a block of cells"}
+              aria-label={edit.zoomed ? "Shrink the minimap" : "Enlarge the minimap"}
+            >
+              {edit.zoomed ? "⤡" : "⤢"}
+            </button>
+          )}
         </div>
         <svg
           viewBox={`-0.5 -0.5 ${W + 1} ${H + 1}`}
-          className="block w-full cursor-crosshair"
-          style={{ aspectRatio: `${W + 1} / ${H + 1}` }}
+          className={`block w-full cursor-crosshair touch-none ${edit.zoomed ? "min-h-0 flex-1" : ""}`}
+          style={edit.zoomed ? undefined : { aspectRatio: `${W + 1} / ${H + 1}` }}
           aria-label={`Map: ${map.name}`}
           onClick={(e) => click(e, false)}
           onContextMenu={(e) => click(e, true)}
+          onPointerDown={dragStart}
+          onPointerMove={dragMove}
+          onPointerUp={dragEnd}
+          onPointerCancel={dragEnd}
         >
         {paper && (
           <defs>
@@ -256,6 +325,19 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           {bridges}
           {ladders}
           {windows}
+          {edit.selection && (
+            <rect
+              x={edit.selection.x0}
+              y={edit.selection.y0}
+              width={edit.selection.x1 - edit.selection.x0 + 1}
+              height={edit.selection.y1 - edit.selection.y0 + 1}
+              fill="rgba(255, 255, 255, 0.22)"
+              stroke="#ffffff"
+              strokeWidth={0.12}
+              strokeDasharray="0.4 0.25"
+              pointerEvents="none"
+            />
+          )}
           <rect x={0} y={0} width={W} height={H} fill="none" stroke={edit.surface === "floor" ? "#4ade80" : "#38bdf8"} strokeWidth={0.1} strokeDasharray="0.5 0.3" />
           {/* the deck's start: a flag-like marker, pointing the way the party faces there */}
           <g transform={`translate(${map.start.cell.x + 0.5} ${map.start.cell.y + 0.5}) rotate(${FACING_DEGREES[map.start.facing]})`}>

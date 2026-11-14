@@ -102,6 +102,30 @@ not two editors.
   direction, and closes the view.
 - Pan and zoom with the mouse or pinch.
 
+### The zoomed minimap (built)
+
+- **⤢ next to the Floor / Ceiling toggle** (edit mode, wide screens) makes the
+  minimap big: it fills the left 40% of the screen and the 3D view stays on
+  the right. ⤡ shrinks it again.
+- **Drag** across it to select a block of cells (Esc or ✕ lets go); a plain
+  click still edits one cell. The bar under the map works on the whole block
+  in one undo step: **Dig out** (each wall cell like the open cell beside it),
+  **Fill in** (what stands in the cells goes with them; never the party's cell
+  or the start), **Floor / Ceiling ▲ ▼** (a quarter panel), **Paint** floors /
+  walls / ceilings with the palette's picks (none picked: the map's own).
+- **Quick feedback:** a dig, fill, height or texture edit doesn't rebuild the
+  3D scene. `GameViewport` draws the changed cells as flat textured quads
+  (`src/render/editPreview.ts`: floors, ceilings, wall faces, step faces and
+  headers), takes the old surfaces on those cells off the camera's layer,
+  leaves out the black backing and the corner joins, and bakes the light grid
+  roughly (one sample a cell). After 5 seconds (`EDIT_SETTLE_MS`) without
+  another such edit the whole scene is rebuilt - relief, textures, the full
+  light bake. Edits the quick look can't draw (doors, ladders, bridges,
+  windows, chance walls, a resized map) rebuild at once, as they always did.
+- Not done: the final rebuild runs on the main thread (a worker would mean
+  moving the relief and light bake out of the render code), and props, decals
+  and items on changed cells stay as they were until it.
+
 ## Structure tools
 
 - **Height:** a click raises the floor or ceiling pointed at by 0.25, the
