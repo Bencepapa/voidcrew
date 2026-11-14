@@ -2,8 +2,10 @@ import * as THREE from "three";
 import { useLightGrid, type LightGridUniforms } from "./lightGrid";
 import { softTexture, type SpriteEmitter } from "./spriteCloud";
 
+// The fog lies at the height of the floor its emitter stands on (e.floor) over its whole area, whatever
+// the floor does under it (steps, pits): it is a layer, not a skin.
 export function createGroundFog(emitters: SpriteEmitter[], quality: number, light: LightGridUniforms,
-  floorAt: (x:number,z:number)=>number, openAt:(x:number,z:number)=>boolean) {
+  openAt:(x:number,z:number)=>boolean) {
   const mesh = new THREE.Group();
   const texture = softTexture();
   const geometry = new THREE.PlaneGeometry(1, 1);
@@ -38,7 +40,7 @@ export function createGroundFog(emitters: SpriteEmitter[], quality: number, ligh
             openAt(cellX+dx,cellZ+dz) ? 1 : Math.max(0,.5 - (x-cellX)*dx - (z-cellZ)*dz)));
           const fade = Math.max(0, 1 - seed.radius * seed.radius) * wallFade;
           const h = e.height ?? .6;
-          dummy.position.set(x, floorAt(cellX,cellZ) + h*(.3+.12*Math.sin(time*.2+seed.phase)), z);
+          dummy.position.set(x, e.floor + h*(.3+.12*Math.sin(time*.2+seed.phase)), z);
           dummy.quaternion.copy(camera.quaternion);
           const width = Math.min(2.4,e.spread) * e.size * Math.sqrt(fade);
           dummy.scale.set(width, h * (1+.2*Math.sin(time*.13+seed.phase)), 1);

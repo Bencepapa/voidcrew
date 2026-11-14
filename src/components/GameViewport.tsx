@@ -3907,6 +3907,9 @@ export function GameViewport({
     const smokeMarkerGeo = new THREE.OctahedronGeometry(0.04);
     geometries.push(smokeMarkerGeo);
     const smokeMarkerMat = new THREE.MeshBasicMaterial({ color: 0xb8c4cc, wireframe: true });
+    // a ground fog's area while editing: a flat ring and a faint disc of its spread's radius on the floor under the emitter
+    const fogRingMat = new THREE.MeshBasicMaterial({ color: 0x9fd4ff, transparent: true, opacity: 0.85, depthTest: false, side: THREE.DoubleSide, fog: false });
+    const fogDiscMat = new THREE.MeshBasicMaterial({ color: 0x9fd4ff, transparent: true, opacity: 0.1, depthTest: false, depthWrite: false, side: THREE.DoubleSide, fog: false });
     // (and a line from it the way it blows)
     const smokeBlowGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]);
     geometries.push(smokeBlowGeo);
@@ -3957,6 +3960,21 @@ export function GameViewport({
           cell: cellKey(spec.cell.x, spec.cell.y),
         };
         const effect = spec.effect ?? (spec.petals ? "motes" : spec.fire ? "fire" : "smoke");
+        if (effect === "groundfog") {
+          // (not pickable: a click on it is a click on the floor under it)
+          const r = Math.max(0.25, spec.spread ?? 3);
+          const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.01, r - 0.05), r, 96), fogRingMat);
+          const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 64), fogDiscMat);
+          for (const shape of [ring, disc]) {
+            shape.rotation.x = -Math.PI / 2;
+            shape.position.y = emitter.floor - at.y + 0.04;
+            shape.renderOrder = 9;
+            shape.raycast = () => {};
+            shape.userData.fogShape = true;
+            geometries.push(shape.geometry);
+            marker.add(shape);
+          }
+        }
         if (effect === "mist") return [{ ...emitter, standing: true, blow: undefined }];
         if (["motes", "petals", "groundfog", "fireflies"].includes(effect)) {
           // falling petals: their own little system, no smoke from here
@@ -4026,14 +4044,19 @@ export function GameViewport({
     let petals = createPetals(petalEmitters, settings.particleQuality);
     scene.add(petals.mesh);
     let motes = createMotes(moteEmitters, settings.particleQuality);
-    let mist = createGroundFog(mistEmitters, settings.particleQuality, lightGrid, floorY, (x,z)=>cellAt(latestMapRef.current,x,z)!=="wall" && cellAt(latestMapRef.current,x,z)!==undefined);
+    let mist = createGroundFog(mistEmitters, settings.particleQuality, lightGrid, (x,z)=>cellAt(latestMapRef.current,x,z)!=="wall" && cellAt(latestMapRef.current,x,z)!==undefined);
     let flies = createFireflies(flyEmitters, settings.particleQuality);
     const weather = createWeather(settings.particleQuality);
     let weatherMap = map;
     scene.add(motes.mesh, mist.mesh, flies.mesh, weather.mesh);
     // the editor changed only the smoke: made anew, the rest stays built
     function applySmoke(next: GameMap) {
-      for (const marker of smokeMarkers.values()) group.remove(marker);
+      for (const marker of smokeMarkers.values()) {
+        group.remove(marker);
+        marker.traverse((o) => {
+          if (o.userData.fogShape) (o as THREE.Mesh).geometry.dispose();
+        });
+      }
       smokeMarkers.clear();
       scene.remove(smoke.mesh, fire.mesh, petals.mesh, motes.mesh, mist.mesh, flies.mesh);
       motes.dispose(); mist.dispose(); flies.dispose();
@@ -4047,7 +4070,7 @@ export function GameViewport({
       petals = createPetals(petalEmitters, settings.particleQuality);
       scene.add(petals.mesh);
       motes = createMotes(moteEmitters, settings.particleQuality);
-      mist = createGroundFog(mistEmitters, settings.particleQuality, lightGrid, floorY, (x,z)=>cellAt(latestMapRef.current,x,z)!=="wall" && cellAt(latestMapRef.current,x,z)!==undefined);
+      mist = createGroundFog(mistEmitters, settings.particleQuality, lightGrid, (x,z)=>cellAt(latestMapRef.current,x,z)!=="wall" && cellAt(latestMapRef.current,x,z)!==undefined);
       flies = createFireflies(flyEmitters, settings.particleQuality);
       scene.add(motes.mesh, mist.mesh, flies.mesh);
       weatherMap = next;
@@ -7169,6 +7192,8 @@ export function GameViewport({
       smoke.dispose();
       fire.dispose();
       smokeMarkerMat.dispose();
+      fogRingMat.dispose();
+      fogDiscMat.dispose();
       smokeBlowMat.dispose();
       backingMat.dispose();
       for (const mat of billboardMaterials) mat.dispose();
