@@ -5852,6 +5852,10 @@ export function GameViewport({
       // goes over surfaces
       anchor: [number, number] | null;
       planeY: number;
+      // how the level follows the floor (or ceiling) it is over: its height above it, so the
+      // plane the pointer is taken to stays at the thing's height when it moves to a cell of
+      // another height; null: it does not follow
+      level: { base: "floor" | "ceiling"; offset: number } | null;
       // from the pointer to the thing's spot on the screen (view coordinates)
       grab: THREE.Vector2 | null;
       // a door: where it's shown while dragged (moved into the map on release)
@@ -5973,6 +5977,15 @@ export function GameViewport({
         id: ++dragSerial,
         anchor: anchor && [anchor[0], anchor[1]],
         planeY: anchor ? anchor[2] : 0,
+        level: anchor
+          ? (() => {
+              const cx = Math.round(anchor[0]);
+              const cz = Math.round(anchor[1]);
+              // (a ceiling lamp, a hung turret: its level is the ceiling's)
+              const hung = ceilingY(cx, cz) - anchor[2] < anchor[2] - floorY(cx, cz);
+              return hung ? { base: "ceiling" as const, offset: anchor[2] - ceilingY(cx, cz) } : { base: "floor" as const, offset: anchor[2] - floorY(cx, cz) };
+            })()
+          : null,
         doorAcross: e.shiftKey || e.ctrlKey || e.metaKey,
         grab: spot && new THREE.Vector2(spot.x, spot.y).sub(viewNdc(e.clientX, e.clientY)),
         doorHome: doorObj ? { position: doorObj.position.clone(), rotation: doorObj.rotation.y } : undefined,
@@ -5995,7 +6008,19 @@ export function GameViewport({
       // where the grabbed spot is taken to, on its level
       let at: [number, number] | undefined;
       if (d.anchor && d.grab) {
-        const p = levelPoint(ndc.clone().add(d.grab), d.planeY);
+        const grabbed = ndc.clone().add(d.grab);
+        let p = levelPoint(grabbed, d.planeY);
+        // The level moves with the floor under the spot: over a cell of another height the
+        // thing is higher or lower, and the pointer's ray must meet THAT height (a few steps
+        // settle it: the cell it lands in may change with the height).
+        for (let i = 0; p && d.level && i < 4; i++) {
+          const cx = Math.round(p.x);
+          const cz = Math.round(p.z);
+          const y = (d.level.base === "ceiling" ? ceilingY(cx, cz) : floorY(cx, cz)) + d.level.offset;
+          if (Math.abs(y - d.planeY) < 1e-4) break;
+          d.planeY = y;
+          p = levelPoint(grabbed, d.planeY);
+        }
         // (its spot taken over the horizon, or far off: nowhere to put it)
         if (!p) return;
         at = [p.x, p.z];
