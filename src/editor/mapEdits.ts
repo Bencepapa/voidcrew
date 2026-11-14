@@ -534,6 +534,7 @@ export function updateSmoke(file: MapFile, index: number, patch: Partial<SmokeEn
   if (!smoke) return file;
   const next = { ...smoke, ...patch } as Record<string, unknown>;
   for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  if ("effect" in patch) { delete next.fire; delete next.petals; }
   file.smokes![index] = next as SmokeEntry;
   return file;
 }

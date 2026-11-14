@@ -1,0 +1,92 @@
+src\maps\fantasy\fantasy.json: 51 problems
+  warning noExit: Map has no exit.
+  warning unreachable (10,1): Cell cannot be reached from the start.
+  warning unreachable (10,2): Cell cannot be reached from the start.
+  warning unreachable (12,4): Cell cannot be reached from the start.
+  warning unreachable (14,4): Cell cannot be reached from the start.
+  warning unreachable (14,5): Cell cannot be reached from the start.
+  warning unreachable (8,7): Cell cannot be reached from the start.
+  warning unreachable (9,7): Cell cannot be reached from the start.
+  warning unreachable (7,8): Cell cannot be reached from the start.
+  warning unreachable (8,8): Cell cannot be reached from the start.
+  warning unreachable (9,8): Cell cannot be reached from the start.
+  warning unreachable (8,9): Cell cannot be reached from the start.
+  warning unreachable (9,9): Cell cannot be reached from the start.
+  warning unreachable (7,13): Cell cannot be reached from the start.
+  warning unreachable (9,13): Cell cannot be reached from the start.
+  warning unreachable (10,13): Cell cannot be reached from the start.
+  warning unreachable (15,13): Cell cannot be reached from the start.
+  warning unreachable (4,14): Cell cannot be reached from the start.
+  warning missingKey (0,15): Door key has no source on this map: 5542.
+  warning duplicate (2,11): decal entries 9, 17 occupy the same position.
+  warning duplicate (2,11): decal entries 10, 12 occupy the same position.
+  warning duplicate (2,11): decal entries 11, 18 occupy the same position.
+  warning duplicate (2,11): decal entries 14, 15, 16 occupy the same position.
+  warning duplicate (2,10): decal entries 25, 26 occupy the same position.
+  warning duplicate (3,8): decal entries 32, 33 occupy the same position.
+  warning duplicate (3,7): decal entries 36, 37 occupy the same position.
+  warning duplicate (3,8): decal entries 38, 39, 41 occupy the same position.
+  warning duplicate (12,11): decal entries 48, 49 occupy the same position.
+  warning duplicate (12,9): decal entries 52, 53 occupy the same position.
+  warning duplicate (12,8): decal entries 57, 58 occupy the same position.
+  warning duplicate (12,11): decal entries 62, 63, 65 occupy the same position.
+  warning duplicate (12,12): decal entries 68, 69, 70, 71 occupy the same position.
+  warning duplicate (12,12): decal entries 72, 73 occupy the same position.
+  warning duplicate (12,12): decal entries 74, 75, 76, 77, 78, 79 occupy the same position.
+  warning duplicate (12,12): decal entries 80, 81, 82, 83 occupy the same position.
+  warning duplicate (12,12): decal entries 84, 85 occupy the same position.
+  warning duplicate (8,12): decal entries 86, 88, 90, 92 occupy the same position.
+  warning duplicate (8,12): decal entries 87, 89, 91 occupy the same position.
+  warning duplicate (8,12): decal entries 93, 94, 95 occupy the same position.
+  warning duplicate (8,12): decal entries 96, 97, 98 occupy the same position.
+  warning duplicate (8,12): decal entries 101, 102, 103 occupy the same position.
+  warning duplicate (9,12): decal entries 107, 109 occupy the same position.
+  warning duplicate (9,12): decal entries 108, 113 occupy the same position.
+  warning duplicate (9,12): decal entries 111, 112 occupy the same position.
+  warning duplicate (10,13): decal entries 116, 117, 118 occupy the same position.
+  warning duplicate (10,13): decal entries 119, 120 occupy the same position.
+  warning duplicate (5,13): decal entries 122, 123 occupy the same position.
+  warning duplicate (12,14): decal entries 144, 145 occupy the same position.
+  warning duplicate (10,15): decal entries 147, 148 occupy the same position.
+  warning duplicate (9,15): decal entries 149, 150 occupy the same position.
+  warning duplicate (7,15): decal entries 152, 153 occupy the same position.
+src\maps\scifi\deck0-crew.json: 20 problems
+  warning noExit: Map has no exit.
+  warning unreachable (4,1): Cell cannot be reached from the start.
+  warning unreachable (8,1): Cell cannot be reached from the start.
+  warning unreachable (10,1): Cell cannot be reached from the start.
+  warning unreachable (12,1): Cell cannot be reached from the start.
+  warning unreachable (14,1): Cell cannot be reached from the start.
+  warning unreachable (4,2): Cell cannot be reached from the start.
+  warning unreachable (6,2): Cell cannot be reached from the start.
+  warning unreachable (7,2): Cell cannot be reached from the start.
+  warning unreachable (7,5): Cell cannot be reached from the start.
+  warning unreachable (7,6): Cell cannot be reached from the start.
+  warning unreachable (10,6): Cell cannot be reached from the start.
+  warning unreachable (12,6): Cell cannot be reached from the start.
+  warning unreachable (4,7): Cell cannot be reached from the start.
+  warning unreachable (8,7): Cell cannot be reached from the start.
+  warning unreachable (14,7): Cell cannot be reached from the start.
+  warning missingSurface (4,7): prop has no supporting surface (N).
+  warning missingSurface (6,2): prop has no supporting surface (N).
+  warning missingSurface (6,6): prop has no supporting surface (W).
+  warning duplicate (13,3): decal entries 13, 14 occupy the same position.
+src\maps\scifi\deck1-medical.json: 11 problems
+  warning noExit: Map has no exit.
+  warning unreachable (1,3): Cell cannot be reached from the start.
+  warning unreachable (2,3): Cell cannot be reached from the start.
+  warning unreachable (4,3): Cell cannot be reached from the start.
+  warning unreachable (5,3): Cell cannot be reached from the start.
+  warning unreachable (8,4): Cell cannot be reached from the start.
+  warning unreachable (2,5): Cell cannot be reached from the start.
+  warning unreachable (4,5): Cell cannot be reached from the start.
+  warning missingSurface (8,3): decal has no supporting surface (E).
+  warning duplicate (3,2): decal entries 7, 8 occupy the same position.
+  warning duplicate (5,5): decal entries 9, 10 occupy the same position.
+src\maps\scifi\deck2-engineering.json: 5 problems
+  warning inWall.smoke (9,1): smoke #3  is inside a wall.
+  warning inWall.smoke (3,3): smoke #6  is inside a wall.
+  warning inWall.smoke (3,3): smoke #7  is inside a wall.
+  warning inWall.smoke (5,1): smoke #8  is inside a wall.
+  warning inWall.smoke (1,5): smoke #10  is inside a wall.
+Total: 87 problems

@@ -1,3 +1,6 @@
+import { EffectFields } from "./EffectFields";
+import { WeatherFields } from "./WeatherFields";
+import type { SmokeSpec, Weather } from "../game/types";
 import { t, formatNumber, type Key } from "../i18n";
 // The map editor's toolbar, over the top of the game view while editing
 // (see EDITOR.md): what a click or tap does - dig a wall out, fill a floor
@@ -26,6 +29,7 @@ import { ACTOR_TYPES } from "../game/actors";
 import { ITEM_TYPES } from "../game/items";
 
 export interface MapLook {
+  weather?: Weather;
   lightGridDensity?: number;
   lightGridAmbient?: number;
   reliefDepth?: number;
@@ -55,6 +59,7 @@ interface Props {
   // an element to draw the toolbar into (the right column) instead of over
   // the top of the view
   dock?: HTMLElement | null;
+  toolbarDock?: HTMLElement | null;
   tool: EditTool;
   onTool: (tool: EditTool) => void;
   // the Texture tool: the surface the pointer is on (its row is marked),
@@ -125,6 +130,11 @@ interface Props {
   smoke: SmokeInfo | null;
   onSmokeChange: (
     patch: {
+      effect?: SmokeSpec["effect"];
+      mistStyle?: SmokeSpec["mistStyle"];
+      sprite?: string;
+      spread?: number;
+      height?: number;
       density?: number;
       size?: number;
       color?: string;
@@ -230,6 +240,11 @@ function smokeBlow(blow: { speed: number; yaw: number; pitch: number }) {
 
 // the selected smoke emitter as the panel shows it
 export interface SmokeInfo {
+  effect?: SmokeSpec["effect"];
+  mistStyle?: SmokeSpec["mistStyle"];
+  sprite?: string;
+  spread?: number;
+  effectHeight?: number;
   density: number;
   size: number;
   color: string;
@@ -447,23 +462,21 @@ const WAKE_LABELS: Record<ActorWake["mode"], Record<number, Key>> = {
     "3": "editorBar.wake.arrive.3"
   }
 };
+export function editorToolLabel(tool: EditTool): string {
+  if(tool==="dig" || tool==="fill")return t("editorBar.digFill");
+  if(tool==="height")return t("editorBar.height");
+  if(tool==="texture")return t("editorBar.texture");
+  if(tool==="light")return t("editorBar.light");
+  const item=MORE_TOOLS.find(item=>item.tool===tool);
+  return item ? t(item.label) : tool;
+}
 const idle = "border-neutral-600 bg-black/60 text-neutral-200 hover:bg-neutral-800";
 const active = "border-amber-400 bg-amber-400/20 text-amber-200";
 
 export function EditorBar(p: Props) {
   const docked = !!p.dock;
-  const bar = (
-    <div
-      className={docked ? "flex flex-wrap gap-1 font-mono" : `absolute ${p.compact ? "bottom-2" : "top-2"} inset-x-2 z-20 flex flex-wrap justify-center gap-1 font-mono`}
-      // the view underneath mustn't take these as peeks or steps
-      onPointerDown={(e) => e.stopPropagation()}
-      onPointerUp={(e) => {
-        // Portalled dialogs bubble through this React parent too. Their
-        // OrbitControls must receive pointerup on the native document.
-        if (e.currentTarget.contains(e.target as Node)) e.stopPropagation();
-      }}
-    >
-      {p.shared && <div className="basis-full text-left">{p.shared}</div>}
+  const toolbar = <div className="flex flex-wrap items-center gap-1 font-mono" onPointerDown={e=>e.stopPropagation()}>
+      {p.shared && <div className="flex flex-wrap gap-1 text-left">{p.shared}</div>}
       <button
         type="button"
         className={`${BUTTON} ${p.tool === "dig" || p.tool === "fill" ? active : idle}`}
@@ -527,6 +540,19 @@ export function EditorBar(p: Props) {
       <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDownload}>{t("editorBar.download")}</button>
       <span className="w-2" />
       <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExit} title="Tab">{t("editorBar.exitEditor")}</button>
+  </div>;
+  const bar = (
+    <div
+      className={docked ? "flex flex-wrap gap-1 font-mono" : `absolute ${p.compact ? "bottom-2" : "top-2"} inset-x-2 z-20 flex flex-wrap justify-center gap-1 font-mono`}
+      // the view underneath mustn't take these as peeks or steps
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => {
+        // Portalled dialogs bubble through this React parent too. Their
+        // OrbitControls must receive pointerup on the native document.
+        if (e.currentTarget.contains(e.target as Node)) e.stopPropagation();
+      }}
+    >
+      {!p.toolbarDock && toolbar}
       {p.tool === "texture" && (
         <>
           <span className="basis-full" />
@@ -732,6 +758,7 @@ export function EditorBar(p: Props) {
             ))}
             <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onNewMap}>{t("editorBar.newMap")}</button>
             <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSaveMapAs}>{t("editorBar.saveAs")}</button>
+            <WeatherFields value={p.mapLook.weather} onChange={weather=>p.onMapLook({weather})}/>
             <label className="flex items-center gap-1" title={t("editorBar.fewSofterLightSpillsToTheCells")}>
               {t("editorBar.bakedLight")}<select
                 value={p.mapLook.lightGridDensity ?? ""}
@@ -908,14 +935,8 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
-            <span className="text-amber-200">{p.smoke.fire ? t("editorBar.fire") : t("editorBar.smoke")}</span>
-            <label className="flex items-center gap-1" title={t("editorBar.aFireFlamesDarkSmokeOffThem")}>
-              <input type="checkbox" checked={p.smoke.fire} onChange={(e) => p.onSmokeChange({ fire: e.target.checked || undefined })} />
-              {t("editorBar.fire140")}</label>
-            <label className="flex items-center gap-1" title={t("editorBar.fallingPetalsInsteadOfSmokeColorIs")}>
-              <input type="checkbox" checked={p.smoke.petals} onChange={(e) => p.onSmokeChange({ petals: e.target.checked || undefined })} />
-              {t("editorBar.petals")}</label>
-            {p.smoke.fire && (
+            <EffectFields value={{...p.smoke,height:p.smoke.effectHeight}} onChange={p.onSmokeChange}/>
+            {p.smoke.effect==="fire" && (
               <label className="flex items-center gap-1" title={t("editorBar.onlyDecorationATorchTheFlamesAnd")}>
                 <input type="checkbox" checked={p.smoke.decorative} onChange={(e) => p.onSmokeChange({ decorative: e.target.checked || undefined })} />
                 {t("editorBar.decoration")}</label>
@@ -1095,5 +1116,5 @@ export function EditorBar(p: Props) {
       )}
     </div>
   );
-  return p.dock ? createPortal(bar, p.dock) : bar;
+  return <>{p.toolbarDock && createPortal(toolbar,p.toolbarDock)}{p.dock ? createPortal(bar, p.dock) : bar}</>;
 }

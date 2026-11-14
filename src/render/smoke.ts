@@ -10,6 +10,7 @@ import type { LightGridUniforms } from "./lightGrid";
 // light, thin in the dark, shading from one to the other across a puff.
 
 export interface SmokeEmitter {
+  standing?: boolean;
   // where it comes out (world units)
   x: number;
   y: number;
@@ -288,7 +289,7 @@ export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, w
     const push = 0.8 + Math.random() * 0.4;
     const stray = () => (Math.random() - 0.5) * 2 * speed * BLOW_SPREAD;
     // (flames: from all over their patch)
-    const spread = fire ? FIRE_SPREAD * e.size : 0.05;
+    const spread = e.standing ? e.size : fire ? FIRE_SPREAD * e.size : 0.05;
     return {
       jx: bx * push + stray(),
       jy: by * push + stray(),
@@ -297,10 +298,10 @@ export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, w
       y: e.y,
       z: e.z + (Math.random() - 0.5) * spread,
       vx: (Math.random() - 0.5) * (fire ? 0.12 : 0.05),
-      vy: between(fire ? FIRE_RISE : RISE),
+      vy: e.standing ? 0 : between(fire ? FIRE_RISE : RISE),
       vz: (Math.random() - 0.5) * (fire ? 0.12 : 0.05),
       age,
-      life: between(fire ? FIRE_LIFE : LIFE),
+      life: e.standing ? 25 + Math.random() * 15 : between(fire ? FIRE_LIFE : LIFE),
       turn: Math.random() * Math.PI * 2,
       spin: (Math.random() - 0.5) * 0.5,
       shape: Math.random(),
@@ -598,7 +599,7 @@ void main() {
         }
         // under the ceiling it stops rising and spreads
         const room = ceiling - 0.06 - p.y;
-        if (room < 0.12) {
+        if (!e.standing && room < 0.12) {
           p.vy *= Math.max(0, 1 - 5 * dt);
           p.vx *= 1 + 0.6 * dt;
           p.vz *= 1 + 0.6 * dt;
@@ -607,6 +608,7 @@ void main() {
         // what it would run into - unless it's in something already (let
         // out of a wall or a prop it was put in)
         const free = !inside(p.x, p.y, p.z);
+        if (e.standing) { p.vx = Math.sin(p.age * 0.1 + p.shape * 9) * 0.008; p.vz = Math.cos(p.age * 0.1 + p.shape * 9) * 0.008; }
         const nx = p.x + (p.vx + p.jx) * dt;
         if (free && inside(nx, p.y, p.z)) {
           p.vx *= -BOUNCE;
@@ -698,8 +700,9 @@ void main() {
           }
           width *= PAINTED_SCALE;
         }
+        if (e.standing) width = e.size * (0.8 + 0.3 * Math.sin(t * Math.PI));
         centers.setXYZ(n, p.x, p.y, p.z);
-        params.setXYZW(n, width, Math.min(1, (fire ? FIRE_OPACITY : OPACITY) * (few ? FEW_OPACITY : 1)) * fade, turn, tile);
+        params.setXYZW(n, width, Math.min(1, (e.standing ? 0.1 : fire ? FIRE_OPACITY : OPACITY) * (few ? FEW_OPACITY : 1)) * fade, turn, tile);
         // (a flame's color by its age, tinted by its fire's)
         const c = fire ? tintFlame(fireColor(t, flame), e.color) : e.color;
         colors.setXYZ(n, c.r * p.shade, c.g * p.shade, c.b * p.shade);

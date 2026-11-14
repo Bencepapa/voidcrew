@@ -1,10 +1,14 @@
 import { t } from "../i18n";
-import { useRef } from "react";
+import { useId, useState, useRef } from "react";
 import type { ReactElement } from "react";
 import { ceilingHeight, doorAt, floorHeight, windowPanels } from "../game/map";
 import { MIN_HEADROOM } from "../game/heights";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 import type { Rect } from "../editor/mapEdits";
+
+import { TEXTURE_SETS, isTextureSetId } from "../render/textureSets";
+import { CATEGORY_COLORS, type Category } from "../editor/categoryColors";
+import { PROP_TYPES } from "../game/props";
 
 interface MinimapProps {
   map: GameMap;
@@ -25,6 +29,10 @@ interface MinimapProps {
   edit?: {
     // what a click does now, in words ("Raise the", "Paint the"...): the tool's
     verb: string;
+    // Optional: categories hidden by the editor layer controls.
+    hiddenCategories?: ReadonlySet<string>;
+    // Optional: select a placed object by its array index; alt means right-click.
+    onMarker?: (category: string, index: number, alt: boolean) => void;
     surface: "floor" | "ceiling";
     onSurface: (surface: "floor" | "ceiling") => void;
     onCell: (cell: Vec2, alt: boolean) => void;
@@ -63,6 +71,17 @@ const BIG_LOOT_COLOR = "#ffd84a";
 // doors, ladders (yellow) and windows (blue) on their cell's side, bridges
 // as a band along their axis, and the party as an arrow turning smoothly.
 export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, edit }: MinimapProps) {
+  const uid = useId().replace(/:/g, "");
+  const [textures, setTextures] = useState(true);
+  const textured = !edit || textures;
+  const patterns = new Map<string, string>();
+  const textureFill = (x: number, y: number) => {
+    const local = map.floorAt?.(x, y);
+    const id = isTextureSetId(local) ? local : isTextureSetId(map.textures?.floor) ? map.textures.floor : "floor1";
+    if (!patterns.has(id)) patterns.set(id, `${uid}-floor-${id}`);
+    return `url(#${patterns.get(id)})`;
+  };
+  const visible = (category: Category) => !edit?.hiddenCategories?.has(category);
   const radius = compact ? RADIUS_COMPACT : RADIUS;
   const span = radius * 2 + 1;
 
@@ -70,7 +89,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
   // hatched in ink, the doors thick bars across their cells
   const paper = map.world === "fantasy";
   const INK = "#c9a24a";
-  const hatchId = `hatch-${compact ? "c" : "m"}`;
+  const hatchId = `${uid}-hatch`;
   const hatchedWalls: ReactElement[] = [];
   const doorBars: ReactElement[] = [];
 
@@ -114,6 +133,11 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         if (edit) cells.push(<rect key={`c${x},${y}`} x={x + 0.04} y={y + 0.04} width={0.92} height={0.92} fill="#171a17" />);
         continue;
       }
+      if (textured) {
+        cells.push(<rect key={`texture${x},${y}`} x={x} y={y} width={1} height={1} fill={textureFill(x, y)} />);
+        const h = edit?.surface === "ceiling" ? ceilingHeight(map, x, y) - 1 : floorHeight(map, x, y);
+        cells.push(<rect key={`tint${x},${y}`} x={x} y={y} width={1} height={1} fill={h >= 0 ? "white" : "black"} opacity={Math.min(0.65, Math.abs(h) * 0.3)} />);
+      }
       // too low for the party (a duct the cleaning drones use): as good as
       // a wall to it
       if (ceilingHeight(map, x, y) - floorHeight(map, x, y) < MIN_HEADROOM - 1e-6) continue;
@@ -121,7 +145,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         // a thick bar across the doorway (a locked one in red ink), on the room's yellow
         const facing = doorAt(map, x, y).facing;
         const horizontal = facing === "N" || facing === "S";
-        cells.push(<rect key={`c${x},${y}`} x={x} y={y} width={1} height={1} fill={floor(x, y)} />);
+        cells.push(<rect key={`c${x},${y}`} x={x} y={y} width={1} height={1} fill={textured ? "transparent" : floor(x, y)} />);
         doorBars.push(
           <rect
             key={`d${x},${y}`}
@@ -144,25 +168,53 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           width={paper ? 1 : 0.92}
           height={paper ? 1 : 0.92}
           fill={
-            cell === "door" ? (locked?.includes(`${x},${y}`) ? LOCKED_COLOR : DOOR_COLOR) : edit?.surface === "ceiling" ? ceilingShade(x, y) : floor(x, y)
+            textured && cell !== "door" ? "transparent" : cell === "door" && visible("door") ? (locked?.includes(`${x},${y}`) ? LOCKED_COLOR : DOOR_COLOR) : edit?.surface === "ceiling" ? ceilingShade(x, y) : floor(x, y)
           }
         />,
       );
     }
   }
-  const restricted = showRestricted
+  const textureDefs = <defs>{[...patterns].map(([id, pattern]) => <pattern key={id} id={pattern} width={1} height={1} patternUnits="userSpaceOnUse"><image href={TEXTURE_SETS[id as keyof typeof TEXTURE_SETS].diffuse} width={1} height={1} preserveAspectRatio="none" style={{ imageRendering: "pixelated" }} /></pattern>)}</defs>;
+  const markers: ReactElement[] = [];
+  const marker = (category: Category, index: number, cell: Vec2, dx = 0, dy = 0, facing?: Direction) => {
+    if (!edit || edit.hiddenCategories?.has(category)) return;
+    const color = CATEGORY_COLORS[category];
+    const activate = (e: React.MouseEvent<SVGGElement>, alt: boolean) => {
+      if (!edit.onMarker) return;
+      e.preventDefault(); e.stopPropagation();
+      if (justDragged.current) { justDragged.current = false; return; }
+      edit.onMarker(category, index, alt);
+    };
+    markers.push(<g key={`${category}-${index}`} transform={`translate(${cell.x + 0.5 + dx} ${cell.y + 0.5 + dy})`} pointerEvents={edit.onMarker ? "auto" : "none"} onClick={e => activate(e, false)} onContextMenu={e => activate(e, true)}>
+      <circle r={0.27} fill="transparent" />
+      <g fill={color} stroke="#151515" strokeWidth={0.045}>
+        {category === "prop" ? <rect x={-0.14} y={-0.14} width={0.28} height={0.28} /> : category === "decal" ? <path d="M -0.15 0 L 0.15 0" stroke={color} strokeWidth={0.1} /> : category === "item" || category === "exit" || category === "chanceWall" ? <path d="M 0 -0.19 L 0.17 0 L 0 0.19 L -0.17 0 Z" /> : <circle r={0.13} />}
+        {facing && <path transform={`rotate(${FACING_DEGREES[facing]})`} d="M 0 0 L 0 -0.3" stroke={color} strokeWidth={0.08} />}
+      </g>
+    </g>);
+  };
+  const anchor = (side: string): [number, number] => [side.includes("E") ? 0.38 : side.includes("W") ? -0.38 : 0, side.includes("S") ? 0.38 : side.includes("N") ? -0.38 : 0];
+  map.props?.forEach((p, i) => { const a = PROP_TYPES[p.prop]?.wall ? anchor(p.at) : [0, 0]; marker("prop", i, p.cell, a[0] + (p.offset?.[0] ?? 0), a[1] + (p.offset?.[1] ?? 0)); });
+  map.decals?.forEach((d, i) => { const a = anchor(d.surface); marker("decal", i, d.cell, a[0], a[1]); });
+  map.actors?.forEach((a, i) => marker("npc", i, a.cell, 0, 0, a.facing));
+  map.items?.forEach((a, i) => marker("item", i, a.cell, a.offset?.[0] ?? 0.2, a.offset?.[1] ?? 0.2));
+  map.lights?.forEach((a, i) => marker("light", i, a, a.pos?.[0] ?? 0, a.pos?.[2] ?? 0));
+  map.smokes?.forEach((a, i) => marker("smoke", i, a.cell, a.pos[0], a.pos[2]));
+  map.exits?.forEach((a, i) => marker("exit", i, a.cell));
+  map.chanceWalls?.forEach((a, i) => marker("chanceWall", i, a.cell));
+  const restricted = showRestricted && visible("restricted")
     ? (map.restricted ?? []).map((c) => (
         <rect key={`r${c.x},${c.y}`} x={c.x + 0.04} y={c.y + 0.04} width={0.92} height={0.92} fill="rgba(220, 40, 40, 0.45)" />
       ))
     : [];
-  const bridges = (map.bridges ?? []).map((b) => (
+  const bridges = (visible("bridge") ? map.bridges ?? [] : []).map((b) => (
     <rect
       key={`b${b.cell.x},${b.cell.y}`}
       x={b.cell.x + (b.axis === "EW" ? 0 : 0.3)}
       y={b.cell.y + (b.axis === "EW" ? 0.3 : 0)}
       width={b.axis === "EW" ? 1 : 0.4}
       height={b.axis === "EW" ? 0.4 : 1}
-      fill={BRIDGE_COLOR}
+      fill={edit ? CATEGORY_COLORS.bridge : BRIDGE_COLOR}
     />
   ));
   const edge = (key: string, cell: Vec2, side: Direction, color: string) => {
@@ -180,7 +232,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
       />
     );
   };
-  const ladders = (map.ladders ?? []).map((l) => edge(`l${l.cell.x},${l.cell.y},${l.wall}`, l.cell, l.wall, LADDER_COLOR));
+  const ladders = (visible("ladder") ? map.ladders ?? [] : []).map((l) => edge(`l${l.cell.x},${l.cell.y},${l.wall}`, l.cell, l.wall, edit ? CATEGORY_COLORS.ladder : LADDER_COLOR));
   const windows = windowPanels(map).map((p) => edge(`w${p.cell.x},${p.cell.y},${p.wall}`, p.cell, p.wall, WINDOW_COLOR));
   // loot: a dot for a little, a glowing diamond for a lot (one mark a cell,
   // the bigger)
@@ -236,12 +288,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
       const from = cellOf(e);
       if (!from) return;
       dragRef.current = { from, moved: false };
-      // (so the drag goes on past the map's edge)
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        /* a pointer the browser doesn't know: the drag still works inside the map */
-      }
+
     };
     const dragMove = (e: React.PointerEvent<SVGSVGElement>) => {
       const drag = dragRef.current;
@@ -249,6 +296,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
       const to = cellOf(e, true);
       if (!to) return;
       if (!drag.moved && to.x === drag.from.x && to.y === drag.from.y) return;
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* Pointer already released. */ }
       drag.moved = true;
       edit.onSelect(blockOf(drag.from, to));
     };
@@ -282,6 +330,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
               {s === "floor" ? t("minimap.floor") : t("minimap.ceiling")}
             </button>
           ))}
+          <button type="button" aria-pressed={textures} onClick={() => setTextures(v => !v)} className="border border-neutral-600 rounded-sm px-2 py-0.5 text-neutral-200">{t("minimap.textures")}</button>
           <span className="text-neutral-500 ml-auto">{edit.selection ? t("minimap.selectionSize", { w: edit.selection.x1 - edit.selection.x0 + 1, h: edit.selection.y1 - edit.selection.y0 + 1, width: W, height: H }) : t("minimap.mapSize", { width: W, height: H })}</span>
           {edit.onZoom && (
             <button
@@ -307,6 +356,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           onPointerUp={dragEnd}
           onPointerCancel={dragEnd}
         >
+        {textureDefs}
         {paper && (
           <defs>
             <pattern id={hatchId} width={0.34} height={0.34} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -318,11 +368,12 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           {paper && <rect x={-0.5} y={-0.5} width={W + 1} height={H + 1} fill="#1c140c" />}
           {cells}
           {hatchedWalls}
-          {doorBars}
+          {visible("door") && doorBars}
           {restricted}
           {bridges}
           {ladders}
           {windows}
+          {markers}
           {edit.selection && (
             <rect
               x={edit.selection.x0}
@@ -338,10 +389,10 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           )}
           <rect x={0} y={0} width={W} height={H} fill="none" stroke={edit.surface === "floor" ? "#4ade80" : "#38bdf8"} strokeWidth={0.1} strokeDasharray="0.5 0.3" />
           {/* the deck's start: a flag-like marker, pointing the way the party faces there */}
-          <g transform={`translate(${map.start.cell.x + 0.5} ${map.start.cell.y + 0.5}) rotate(${FACING_DEGREES[map.start.facing]})`}>
-            <circle r={0.46} fill="none" stroke="#38bdf8" strokeWidth={0.1} />
-            <polygon points="0,-0.36 0.2,0.1 -0.2,0.1" fill="#38bdf8" />
-          </g>
+          {visible("start") && <g transform={`translate(${map.start.cell.x + 0.5} ${map.start.cell.y + 0.5}) rotate(${FACING_DEGREES[map.start.facing]})`}>
+            <circle r={0.46} fill="none" stroke={CATEGORY_COLORS.start} strokeWidth={0.1} />
+            <polygon points="0,-0.36 0.2,0.1 -0.2,0.1" fill={CATEGORY_COLORS.start} />
+          </g>}
           <g transform={`translate(${pos.x + 0.5} ${pos.y + 0.5}) rotate(${FACING_DEGREES[dir]})`}>
             <polygon points="0,-0.42 0.34,0.34 0,0.16 -0.34,0.34" fill={paper ? "#9c1f18" : PLAYER_COLOR} stroke={paper ? "#3a0d0a" : "#062b12"} strokeWidth={0.07} strokeLinejoin="round" />
           </g>
@@ -361,6 +412,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         aria-label={t("minimap.mapName", { name: map.name })}
       >
         {/* the map, slid so the player's cell sits in the middle */}
+        {textureDefs}
         {paper && (
           <defs>
             <pattern id={hatchId} width={0.34} height={0.34} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -377,7 +429,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         >
           {cells}
           {hatchedWalls}
-          {doorBars}
+          {visible("door") && doorBars}
           {restricted}
           {bridges}
           {ladders}

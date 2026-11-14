@@ -1,0 +1,23 @@
+export const effectsEn = {
+  "effects.groundfog": "Ground fog",
+  "effects.spread": "Area radius",
+  "effects.height": "Height",
+  "effects.density": "Density",
+  "effects.effect": "Effect",
+  "effects.smoke": "Smoke",
+  "effects.fire": "Fire",
+  "effects.mist": "Mist",
+  "effects.motes": "Motes",
+  "effects.petals": "Petals",
+  "effects.fireflies": "Fireflies",
+  "effects.style": "Mist style",
+  "effects.standing": "Standing mist",
+  "effects.ground": "Ground fog",
+  "effects.sprite": "Sprite",
+  "effects.weather": "Weather",
+  "effects.none": "None",
+  "effects.rain": "Rain",
+  "effects.snow": "Snow",
+  "effects.intensity": "Intensity",
+  "effects.indoors": "Indoors"
+} as const;

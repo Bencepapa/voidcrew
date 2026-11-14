@@ -1,3 +1,7 @@
+import { editorShellEn } from "./en/editorShell";
+import { editorShellHu } from "./hu/editorShell";
+import { effectsEn } from "./en/effects";
+import { effectsHu } from "./hu/effects";
 // The interface's language: English or Hungarian (EDITOR_UI_PLAN.md, section
 // 15). Strings live in src/i18n/en/<area>.ts and hu/<area>.ts, one pair of
 // files per area of the UI; English is the source of the keys, and a key the
@@ -24,8 +28,8 @@ import { debugHu } from "./hu/debug";
 import { editorBarHu } from "./hu/editorBar";
 import { minimapHu } from "./hu/minimap";
 
-const en = { ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...minimapEn };
-const hu: Partial<Record<Key, string>> = { ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...minimapHu };
+const en = { ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...minimapEn };
+const hu: Partial<Record<Key, string>> = { ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...minimapHu };
 
 export type Key = keyof typeof en;
 export type Lang = "en" | "hu";

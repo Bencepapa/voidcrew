@@ -1,0 +1,23 @@
+export const effectsHu = {
+  "effects.groundfog": "Talajköd",
+  "effects.spread": "Terület sugara",
+  "effects.height": "Magasság",
+  "effects.density": "Sűrűség",
+  "effects.effect": "Effekt",
+  "effects.smoke": "Füst",
+  "effects.fire": "Tűz",
+  "effects.mist": "Köd",
+  "effects.motes": "Fénypor",
+  "effects.petals": "Szirmok",
+  "effects.fireflies": "Szentjánosbogarak",
+  "effects.style": "Köd t?pusa",
+  "effects.standing": "Álló köd",
+  "effects.ground": "Talajköd",
+  "effects.sprite": "Kép",
+  "effects.weather": "Időjárás",
+  "effects.none": "Nincs",
+  "effects.rain": "Eső",
+  "effects.snow": "Hó",
+  "effects.intensity": "Erősség",
+  "effects.indoors": "Beltérben"
+} as const;

@@ -1,3 +1,8 @@
+import { createWeather } from "../render/weather";
+import { createGroundFog } from "../render/groundFog";
+import { createFireflies } from "../render/fireflies";
+import { createMotes } from "../render/motes";
+import type { SpriteEmitter } from "../render/spriteCloud";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
@@ -3848,10 +3853,11 @@ export function GameViewport({
     // the fires' flames (see fire.ts), made with the smoke: each a fire
     // emitter here and dark smoke rising off it among the smoke's
     let fireEmitters: SmokeEmitter[] = [];
-    let petalEmitters: PetalEmitter[] = [];
+    let petalEmitters: SpriteEmitter[] = [];
+    let moteEmitters: PetalEmitter[] = [], mistEmitters: SpriteEmitter[] = [], flyEmitters: SpriteEmitter[] = [];
     const buildSmoke = (m: GameMap) => {
       fireEmitters = [];
-      petalEmitters = [];
+      petalEmitters = []; moteEmitters = []; mistEmitters = []; flyEmitters = [];
       return createSmoke(
       (m.smokes ?? []).flatMap((spec, index): SmokeEmitter[] => {
         const at = new THREE.Vector3(
@@ -3889,22 +3895,26 @@ export function GameViewport({
           color: new THREE.Color(parseColor(spec.color) ?? SMOKE_COLOR),
           cell: cellKey(spec.cell.x, spec.cell.y),
         };
-        if (spec.petals) {
+        const effect = spec.effect ?? (spec.petals ? "motes" : spec.fire ? "fire" : "smoke");
+        if (effect === "mist") return [{ ...emitter, standing: true, blow: undefined }];
+        if (["motes", "petals", "groundfog", "fireflies"].includes(effect)) {
           // falling petals: their own little system, no smoke from here
-          petalEmitters.push({
+          const list = effect === "motes" ? moteEmitters : effect === "groundfog" ? mistEmitters : effect === "fireflies" ? flyEmitters : petalEmitters;
+          (list as SpriteEmitter[]).push({
+            sprite: spec.sprite, height: (spec.height ?? .6) * wallHeight,
             x: emitter.x,
             y: emitter.y,
             z: emitter.z,
             floor: emitter.floor,
-            spread: 0.9,
+            spread: effect === "groundfog" ? spec.spread ?? 3 : .9,
             density: emitter.density,
             size: emitter.size,
-            color: new THREE.Color(parseColor(spec.color) ?? 0xf4a6c0),
+            color: new THREE.Color(parseColor(spec.color) ?? (effect === "fireflies" ? 0xd9ef78 : effect === "groundfog" ? 0xb4b8bc : effect === "petals" ? 0xffffff : 0xf4a6c0)),
             wind: blow ? [blow[0] * 0.1, blow[2] * 0.1] : [0, 0],
           });
           return [];
         }
-        if (!spec.fire) return [emitter];
+        if (effect !== "fire") return [emitter];
         // (its color tints the flames: none, as they burn)
         fireEmitters.push({ ...emitter, color: new THREE.Color(parseColor(spec.color) ?? 0xffffff) });
         return [{
@@ -3954,11 +3964,18 @@ export function GameViewport({
     scene.add(fire.mesh);
     let petals = createPetals(petalEmitters, settings.particleQuality);
     scene.add(petals.mesh);
+    let motes = createMotes(moteEmitters, settings.particleQuality);
+    let mist = createGroundFog(mistEmitters, settings.particleQuality, lightGrid, floorY, (x,z)=>cellAt(latestMapRef.current,x,z)!=="wall" && cellAt(latestMapRef.current,x,z)!==undefined);
+    let flies = createFireflies(flyEmitters, settings.particleQuality);
+    const weather = createWeather(settings.particleQuality);
+    let weatherMap = map;
+    scene.add(motes.mesh, mist.mesh, flies.mesh, weather.mesh);
     // the editor changed only the smoke: made anew, the rest stays built
     function applySmoke(next: GameMap) {
       for (const marker of smokeMarkers.values()) group.remove(marker);
       smokeMarkers.clear();
-      scene.remove(smoke.mesh, fire.mesh, petals.mesh);
+      scene.remove(smoke.mesh, fire.mesh, petals.mesh, motes.mesh, mist.mesh, flies.mesh);
+      motes.dispose(); mist.dispose(); flies.dispose();
       smoke.dispose();
       fire.dispose();
       petals.dispose();
@@ -3968,6 +3985,11 @@ export function GameViewport({
       scene.add(fire.mesh);
       petals = createPetals(petalEmitters, settings.particleQuality);
       scene.add(petals.mesh);
+      motes = createMotes(moteEmitters, settings.particleQuality);
+      mist = createGroundFog(mistEmitters, settings.particleQuality, lightGrid, floorY, (x,z)=>cellAt(latestMapRef.current,x,z)!=="wall" && cellAt(latestMapRef.current,x,z)!==undefined);
+      flies = createFireflies(flyEmitters, settings.particleQuality);
+      scene.add(motes.mesh, mist.mesh, flies.mesh);
+      weatherMap = next;
     }
 
     // ---- exits: a glowing plate on the floor of each way off the ship ----
@@ -4823,6 +4845,7 @@ export function GameViewport({
       }
     }
     applyLightsRef.current = (next: GameMap) => {
+      weatherMap = next;
       if (next.structureKey !== previewKey) {
         previewKey = next.structureKey;
         applyStructure(next);
@@ -6817,12 +6840,18 @@ export function GameViewport({
       const smokePhysics = { walls: s.smokeWalls, props: s.smokeProps, actors: s.smokeActors ? smokeBodies : null };
       // (with a lighter setting the particles are moved every 2nd or 3rd frame, by that many frames' time)
       particleFrame++;
+      weather.update(gameDt, t, camera, weatherMap.weather, (x, z) => {
+        const cell = cellAt(weatherMap,x,z);
+        const open = (weatherMap.ceilingTextureAt?.(x,z) ?? weatherMap.textures?.ceiling) === "sky";
+        return { floor:floorY(x,z), ceiling:open ? Infinity : ceilingY(x,z), valid:cell!==undefined && cell!=="wall", open };
+      });
       const every = Math.max(1, Math.round(s.particleEvery));
       if (every === 1 || particleFrame % every === 0) {
         const pdt = gameDt * every;
         smoke.update(pdt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
         fire.update(pdt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
-        petals.update(pdt, t);
+        petals.update(pdt, t, camera);
+        motes.update(pdt, t); mist.update(pdt, t, camera); flies.update(pdt, t, camera);
       }
       for (const marker of smokeMarkers.values()) marker.visible = editModeRef.current;
       // the exits' plates throb
@@ -6864,6 +6893,7 @@ export function GameViewport({
         smoke.mesh.visible = smokeShown;
         fire.mesh.visible = smokeShown;
         petals.mesh.visible = smokeShown;
+        motes.mesh.visible = mist.mesh.visible = flies.mesh.visible = weather.mesh.visible = smokeShown;
         const propsHidden = hidden.has("prop");
         for (const obj of propObjects.values()) obj.visible = !propsHidden;
         // (shown again: the culling pass decides afresh which are in sight)
@@ -7039,8 +7069,10 @@ export function GameViewport({
       disposeLightGrid(lightGrid);
       exitMat.map?.dispose();
       exitMat.dispose();
-      scene.remove(smoke.mesh, fire.mesh, petals.mesh);
+      scene.remove(smoke.mesh, fire.mesh, petals.mesh, motes.mesh, mist.mesh, flies.mesh);
+      motes.dispose(); mist.dispose(); flies.dispose();
       petals.dispose();
+      weather.dispose();
       smoke.dispose();
       fire.dispose();
       smokeMarkerMat.dispose();

@@ -1,10 +1,13 @@
+import { ProblemsPanel } from "./editor/ProblemsPanel";
+import { validateMap, removeInWall, removeDuplicates } from "./editor/validate";
+import { EditorStatusBar } from "./editor/EditorStatusBar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
 import { saveGraphics } from "./render/graphics";
 import type { AimFocus, AimFrame, EditDrag, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
-import { EditorBar } from "./editor/EditorBar";
+import { EditorBar, editorToolLabel } from "./editor/EditorBar";
 import { SharedEditor, sharedConfigured } from "./editor/SharedEditor";
 import { AssetManager } from "./editor/AssetManager";
 import { PropEditor } from "./editor/PropEditor";
@@ -138,6 +141,8 @@ export default function App() {
   const [editMode, setEditMode] = useState(false);
   const [editTool, setEditTool] = useState<EditTool>("dig");
   // where the editor toolbar docks (the right column), when there is one
+  const [toolbarDock, setToolbarDock] = useState<HTMLElement | null>(null);
+  const [editorDebug, setEditorDebug] = useState(false);
   const [editDock, setEditDock] = useState<HTMLElement | null>(null);
   // the Light tool: the selected hand-placed light (its index in the map's
   // lights), and what a plain click places - a ceiling lamp, or (as a
@@ -960,6 +965,13 @@ export default function App() {
   // (see GameViewport's applyStructure) and fully a few seconds later.
   const [miniZoom, setMiniZoom] = useState(false);
   const [miniSel, setMiniSel] = useState<Rect | null>(null);
+  const problems = useMemo(()=>editMode ? validateMap(map) : [],[editMode,map]);
+  const repairProblems = (code:"inWall"|"duplicate") => {
+    const result=applyEdit(map.id,code==="inWall"?removeInWall:removeDuplicates);
+    if("error" in result)pushLog(t("app.editorError",{error:result.error}),"error");
+    else replaceMap(result.map);
+    setEdits(n=>n+1);
+  };
   const zoomed = editMode && miniZoom && !compact;
   const editArea = (message: Key, change: (file: NonNullable<ReturnType<typeof mapFile>>, cells: Vec2[]) => NonNullable<ReturnType<typeof mapFile>>) => {
     if (!miniSel) return;
@@ -1328,6 +1340,11 @@ export default function App() {
   const selectedSmokeSpec = selectedSmoke === null ? undefined : map.smokes?.[selectedSmoke];
   const selectedSmokeInfo: SmokeInfo | null = selectedSmokeSpec
     ? {
+        effect: selectedSmokeSpec.effect,
+        mistStyle: selectedSmokeSpec.mistStyle,
+        sprite: selectedSmokeSpec.sprite,
+        spread: selectedSmokeSpec.spread,
+        effectHeight: selectedSmokeSpec.height,
         density: selectedSmokeSpec.density ?? 1,
         size: selectedSmokeSpec.size ?? 1,
         color: selectedSmokeSpec.color ?? "#b4b8bc",
@@ -1959,7 +1976,8 @@ export default function App() {
       {editMode && (
         <EditorBar
           shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>}
-          dock={compact ? null : editDock}
+          dock={editDock}
+          toolbarDock={toolbarDock}
           tool={editTool}
           onTool={setEditTool}
           surface={editSurface}
@@ -2002,7 +2020,7 @@ export default function App() {
           onOpenMap={(id) => MAPS[id] && openMap(MAPS[id])}
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
-          mapLook={{ lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures }}
+          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures }}
           onMapLook={changeMapLook}
           decalChoice={decalChoice?.name ?? null}
           onDecalChoice={setDecalChoice}
@@ -2106,7 +2124,7 @@ export default function App() {
     <ActionMenu onUse={use} onInventory={toggleHaul} compact={compact} />
   );
 
-  if (compact) {
+  if (compact && !editMode) {
     // The game fills the screen; panels float on top with translucent
     // backgrounds. The left column and party strip ignore pointer events so
     // swipes on them still reach the viewport.
@@ -2168,9 +2186,18 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col p-2 gap-2 font-sans">
+    <div className="relative h-[100dvh] w-screen flex flex-col p-2 gap-2 overflow-hidden bg-neutral-950 font-sans">
+      {editMode && <header className="shrink-0 border border-neutral-700 bg-neutral-900 p-2 text-neutral-200">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <label className="text-xs">{t("editorShell.view")} <select className="border border-neutral-600 bg-neutral-800 p-1" value={settings.geometryView} onChange={e=>setSettings({...settings,geometryView:e.target.value as ViewportSettings["geometryView"]})}>
+            {(["textured","faces","wireframe","normals","depth"] as const).map(mode=><option key={mode} value={mode}>{t(`editorShell.${mode}`)}</option>)}
+          </select></label>
+          <button className="ml-auto rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setEditorDebug(!editorDebug)} aria-expanded={editorDebug}>{t("editorShell.debug")}</button>
+        </div>
+        <div ref={setToolbarDock} className="max-h-[25vh] overflow-auto"/>
+      </header>}
       <div className="flex-1 flex gap-2 min-h-0">
-        <div className={`${zoomed ? "w-[40vw]" : "w-56"} flex flex-col gap-2 min-h-0`}>
+        <div className={`${zoomed ? "w-[40vw]" : editMode ? "w-40 xl:w-56" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0 ${editMode ? "max-md:hidden" : ""}`}>
           <div className={zoomed ? "flex-1 min-h-0" : ""}>
           <Minimap
             map={map}
@@ -2182,6 +2209,17 @@ export default function App() {
             edit={
               editMode
                 ? {
+                    hiddenCategories: hiddenLayers,
+                    onMarker: (category,index) => {
+                      switch(category){
+                        case "prop":setEditTool("prop");setSelectedProp(index);break;
+                        case "npc":setEditTool("robot");setSelectedActor(index);break;
+                        case "item":setEditTool("item");setSelectedItem(index);break;
+                        case "smoke":setEditTool("smoke");setSelectedSmoke(index);break;
+                        case "light":setEditTool("light");setSelectedLight(index);break;
+                        case "decal":setEditTool("decal");setSelectedDecal(index);break;
+                      }
+                    },
                     verb: editTool === "height" ? t("app.raiseVerb") : editTool === "texture" ? t("app.paintVerb") : editTool === "dig" || editTool === "fill" ? t("app.digVerb") : t("app.editVerb"),
                     surface: miniSurface,
                     onSurface: setMiniSurface,
@@ -2237,9 +2275,9 @@ export default function App() {
                 <div>{map.name}</div>
                 <div>{WORLDS[map.world].loop === "ship" ? <>{t("app.deckDay", { deck: map.deck })}</> : WORLDS[map.world].name}</div>
               </div>
-              <div className="flex-1 min-h-0">
+              {!editMode && <div className="flex-1 min-h-0">
                 <LogPanel log={log} />
-              </div>
+              </div>}
             </>
           )}
         </div>
@@ -2250,11 +2288,14 @@ export default function App() {
           {overlays}
         </div>
 
-        <div className={`${zoomed ? "w-72" : editMode ? "w-80" : "w-56"} flex flex-col gap-2 min-h-0`}>
+        <div className={`${editMode ? "w-64 xl:w-80 max-md:w-44" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0`}>
           {SHOW_ACTION_MENU && actionMenu}
           {/* the map editor's tools dock here while editing (see EditorBar) */}
-          {editMode && <div ref={setEditDock} className="flex flex-col gap-1 shrink-0 max-h-[55%] overflow-y-auto" />}
-          <div className="flex-1 min-h-0">
+          {editMode && <section className="flex min-h-0 flex-1 flex-col rounded border border-neutral-700 bg-neutral-900 p-2 text-neutral-200"><strong className="mb-2 text-xs">{t("editorShell.properties")}</strong><div ref={setEditDock} className="min-h-0 flex-1 overflow-auto"/>
+              <details className="mt-2 shrink-0 text-xs"><summary className="cursor-pointer">{t("minimap.problems",{count:problems.length})}</summary><ProblemsPanel problems={problems} onFix={repairProblems} onGoto={cell=>{setMiniZoom(true);setMiniSel({x0:cell.x,y0:cell.y,x1:cell.x,y1:cell.y});}}/></details>
+            </section>}
+          {(!editMode || editorDebug) && <div className={editMode ? "absolute right-2 top-2 bottom-2 z-50 w-[min(26rem,96vw)] overflow-auto border border-neutral-500 bg-neutral-950 p-2 shadow-xl" : "flex-1 min-h-0"}>
+            {editMode && <button className="mb-2 w-full rounded border border-neutral-600 px-2 py-1 text-neutral-200" onClick={()=>setEditorDebug(false)}>{t("editorShell.closeDebug")} ×</button>}
             <DebugPanel
               settings={settings}
               onChange={setSettings}
@@ -2273,10 +2314,11 @@ export default function App() {
               onSaveRender={() => saveRender()}
               onClearRender={() => saveRender(true)}
             />
-          </div>
+          </div>}
         </div>
       </div>
 
+      {editMode && <EditorStatusBar log={log} mapName={map.name} unsaved={hasUnsavedEdits(map.id)} tool={editorToolLabel(editTool)}/>}
       {!editMode && (
         <div className="flex gap-2 items-end">
           {grid && (

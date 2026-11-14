@@ -102,6 +102,7 @@ export interface GameMap {
   // the deck's story (see story.ts): its terminals by id, and its triggers
   terminals?: Record<string, Terminal>;
   triggers?: Trigger[];
+  weather?: Weather;
   smokes?: SmokeSpec[];
   actors?: ActorSpec[];
 }
@@ -204,7 +205,14 @@ export interface PropSpec extends Linked {
 
 // A smoke emitter (see render/smoke.ts): a leaking pipe, a smouldering
 // console - puffs rising from a point, lit by the light around them.
+export type AmbientEffect = "smoke" | "fire" | "mist" | "groundfog" | "motes" | "petals" | "fireflies";
+export interface Weather { type: "rain" | "snow"; intensity?: number; wind?: [number, number]; indoors?: boolean }
 export interface SmokeSpec extends Linked {
+  effect?: AmbientEffect;
+  mistStyle?: "standing" | "ground";
+  spread?: number;
+  height?: number;
+  sprite?: string;
   cell: Vec2;
   // from the cell's center and its floor: across, up (wall heights), along
   pos: [number, number, number];

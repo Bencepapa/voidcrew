@@ -1,0 +1,201 @@
+import type { GameMap, Vec2, Linked, Direction } from "../game/types";
+import { cellAt, floorHeight, ceilingHeight } from "../game/map";
+import { passage, jumpDown } from "../game/heights";
+import { DIR_VECTOR } from "../game/movement";
+import { PROP_TYPES, propPlacement } from "../game/props";
+import { itemSpot } from "../game/items";
+import type { PropSpec } from "../game/types";
+
+export type Problem = { severity: "error" | "warning"; code: string; cell?: Vec2; key: string; params?: Record<string, string | number> };
+
+// Structural validation: doors are assumed open; story progression and random
+// variations are not simulated. A reachability state includes bridge height.
+export function validateMap(map: GameMap): Problem[] {
+  const out: Problem[] = [];
+  const add = (code: string, cell?: Vec2, params?: Problem["params"], severity: Problem["severity"] = "warning") => out.push({ severity, code, cell, key: `minimap.problem.${code}`, params });
+  const open = (c: Vec2) => cellAt(map, c.x, c.y) !== "wall";
+  if (!map.start?.cell) add("noStart", undefined, undefined, "error");
+
+  if (!map.exits?.length) add("noExit");
+
+  const reached = new Set<string>();
+  const states = new Set<string>();
+  const queue: { cell: Vec2; height: number }[] = [];
+  const enqueue = (cell: Vec2, height: number) => {
+    const key = `${cell.x},${cell.y},${height}`;
+    if (states.has(key)) return;
+    states.add(key); reached.add(`${cell.x},${cell.y}`); queue.push({ cell, height });
+  };
+  if (map.start?.cell && open(map.start.cell)) {
+    enqueue(map.start.cell, floorHeight(map, map.start.cell.x, map.start.cell.y));
+    for (let i = 0; i < queue.length; i++) {
+      const { cell, height } = queue[i];
+      if (jumpDown(map, cell, height) !== null) enqueue(cell, floorHeight(map, cell.x, cell.y));
+      for (const dir of Object.keys(DIR_VECTOR) as Direction[]) {
+        const v = DIR_VECTOR[dir], to = { x: cell.x + v.x, y: cell.y + v.y };
+        const step = passage(map, cell, height, to, dir);
+        if (step.kind !== "blocked") enqueue(to, step.y);
+      }
+    }
+    for (let y = 0; y < map.height; y++) for (let x = 0; x < map.width; x++) {
+      if (open({ x, y }) && !reached.has(`${x},${y}`)) add("unreachable", { x, y });
+    }
+  }
+
+  const groups: { kind: string; entries: (Linked & { cell: Vec2 })[] }[] = [
+    { kind: "prop", entries: map.props ?? [] }, { kind: "npc", entries: map.actors ?? [] },
+    { kind: "item", entries: map.items ?? [] }, { kind: "smoke", entries: map.smokes ?? [] },
+    { kind: "light", entries: (map.lights ?? []).map(l => ({ ...l, cell: { x: l.x, y: l.y } })) },
+    { kind: "decal", entries: map.decals ?? [] }, { kind: "door", entries: map.doors ?? [] },
+    { kind: "chanceWall", entries: map.chanceWalls ?? [] },
+  ];
+  const ids = new Set(groups.flatMap(g => g.entries.flatMap(e => e.id ? [e.id] : [])));
+  for (const g of groups) for (const e of g.entries) {
+
+    for (const relation of ["with", "without"] as const) if (e[relation] && !ids.has(e[relation]!)) add("missingLink", e.cell, { id: e[relation]!, relation });
+  }
+  // A wall face exists at solid neighbours or a floor/ceiling height change.
+  const surfaceExists = (c: Vec2, surface: string) => {
+    if (!open(c)) return false;
+    if (surface === "floor" || surface === "ceiling") return Number.isFinite(surface === "floor" ? floorHeight(map, c.x, c.y) : ceilingHeight(map, c.x, c.y));
+    const v = DIR_VECTOR[surface as Direction];
+    if (!v) return false;
+    const x = c.x + v.x, y = c.y + v.y;
+    return cellAt(map, x, y) === "wall" || floorHeight(map, x, y) > floorHeight(map, c.x, c.y) || ceilingHeight(map, x, y) < ceilingHeight(map, c.x, c.y);
+  };
+  for (const d of map.decals ?? []) if (!surfaceExists(d.cell, d.surface)) add("missingSurface", d.cell, { kind: "decal", surface: d.surface });
+  for (const p of map.props ?? []) if (PROP_TYPES[p.prop]?.wall && ![...p.at].some(s => surfaceExists(p.cell, s))) add("missingSurface", p.cell, { kind: "prop", surface: p.at });
+
+  const terminals = map.terminals ?? {};
+  const active = new Set((map.decals ?? []).flatMap(d => d.action?.startsWith("terminal:") ? [d.action.slice(9)] : []));
+  const actions = (map.triggers ?? []).flatMap(t => t.do);
+  // Follow terminal show actions as well as directly placed terminal decals.
+  for (const a of actions) if (a.startsWith("show:")) active.add(a.slice(5));
+  const visited = new Set<string>();
+  for (const id of active) {
+    if (visited.has(id)) continue;
+    visited.add(id);
+    if (!terminals[id]) { add("missingTerminal", undefined, { id }); continue; }
+    for (const a of terminals[id].do ?? []) { actions.push(a); if (a.startsWith("show:")) active.add(a.slice(5)); }
+  }
+  const keys = new Set([...(map.items ?? []).flatMap(i => i.sets ? [i.sets] : []), ...actions.flatMap(a => a.startsWith("set:") ? [a.slice(4).trim()] : [])]);
+  const codes = [...active].some(id => terminals[id]?.codes);
+  for (const d of map.doors ?? []) {
+    if (d.lock?.key && !keys.has(d.lock.key)) add("missingKey", d.cell, { id: d.lock.key });
+    if (d.lock?.code && !codes) add("missingCode", d.cell);
+  }
+  return [...out, ...placementProblems(placedMap(map), c => !open(c))];
+}
+import type { MapFile } from "../game/mapFormat";
+
+type PlacedKind = "prop" | "npc" | "item" | "light" | "smoke" | "exit" | "ladder" | "bridge" | "door" | "chanceWall" | "decal" | "restricted" | "start" | "patrol";
+type Placed = { kind: PlacedKind; index: number; cell: Vec2; point?: Vec2; data: Record<string, unknown>; field: string };
+const fields = { props: "prop", actors: "npc", items: "item", lights: "light", smokes: "smoke", exits: "exit", ladders: "ladder", bridges: "bridge", doors: "door", chanceWalls: "chanceWall", decals: "decal", restricted: "restricted" } as const;
+const gameplay = new Set<PlacedKind>(["npc", "item", "exit", "ladder", "bridge", "door", "start", "patrol"]);
+
+function placedFile(file: MapFile): Placed[] {
+  const records: Placed[] = [];
+  for (const [field, kind] of Object.entries(fields)) {
+    const entries = file[field as keyof typeof fields] ?? [];
+    entries.forEach((entry, index) => {
+      const data = (Array.isArray(entry) ? { x: entry[0], y: entry[1] } : entry) as unknown as Record<string, unknown>;
+      const cell = { x: Number(data.x), y: Number(data.y) };
+      const offset = (data.offset ?? data.pos) as number[] | undefined;
+      let point = offset ? { x: cell.x + (offset[0] ?? 0), y: cell.y + (offset[offset.length === 3 ? 2 : 1] ?? 0) } : undefined;
+      if (kind==="prop" && PROP_TYPES[String(data.prop)]) {
+        const at=propPlacement({...data,cell,at:data.at ?? "center"} as unknown as PropSpec);
+        point={x:at.x,y:at.z};
+      }
+      records.push({ kind, index, field, cell, point, data });
+      if (kind === "npc") (data.patrol as [number, number][] | undefined)?.forEach(([x,y], patrolIndex) =>
+        records.push({ kind: "patrol", index, field, cell: { x,y }, data: { patrolIndex } }));
+    });
+  }
+  if (file.start) records.push({ kind: "start", index: 0, field: "start", cell: file.start, data: { ...file.start } });
+  return records;
+}
+
+function placedMap(map: GameMap): Placed[] {
+  const file: Record<string, unknown> = {};
+  for (const field of Object.keys(fields)) {
+    file[field] = (map[field as keyof typeof fields] ?? []).map((e: unknown) => {
+      const record = e as Record<string, unknown>;
+      const cell = (record.cell ?? record) as Vec2;
+      return { ...record, x: cell.x, y: cell.y, ...(field==="decals" ? {px:record.x,py:record.y} : {}), patrol: (record.patrol as Vec2[] | undefined)?.map(c => [c.x,c.y]) };
+    });
+  }
+  file.start = map.start ? { ...map.start.cell, facing: map.start.facing } : undefined;
+  return placedFile(file as unknown as MapFile);
+}
+
+function inWallProblems(records: Placed[], wall: (cell: Vec2) => boolean): Problem[] {
+  return records.filter(p => p.kind !== "chanceWall" && (wall(p.cell) || (p.point && wall({ x: Math.round(p.point.x), y: Math.round(p.point.y) })))).map(p => ({
+    code: "inWall." + p.kind, key: "minimap.problem.inWall", severity: gameplay.has(p.kind) ? "error" : "warning",
+    cell: p.cell, params: { kind: p.kind, index: p.index + 1, name: String(p.data.prop ?? p.data.item ?? p.data.type ?? p.data.decal ?? "") },
+  }));
+}
+
+// Approximate positions for grouping, while retaining all meaningful payload fields
+// in the safe repair below. Coincident objects with different contents are never deleted.
+function canonical(value: unknown): string {
+  if (typeof value === "number") return String(Math.round(value * 10000) / 10000);
+  if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+  if (value && typeof value === "object") return "{" + Object.entries(value).filter(([,v])=>v !== undefined).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>JSON.stringify(k)+":"+canonical(v)).join(",") + "}";
+  return JSON.stringify(value) ?? "";
+}
+function duplicateGroups(records: Placed[]): Placed[][] {
+  const groups = new Map<string, Placed[]>();
+  for (const p of records) {
+    if (p.kind === "start" || p.kind === "patrol") continue;
+    const d = p.data;
+    const detail = p.kind === "prop" ? [d.prop, d.at ?? "center", d.offset ?? [0,0], d.elevation ?? 0, d.rotation ?? 0]
+      : p.kind === "decal" ? [d.decal,d.surface,d.px,d.py,d.rotation ?? 0,d.scale ?? 1]
+      : p.kind === "item" ? [d.item,itemSpot(d.offset as [number,number] | undefined,p.index),d.elevation ?? 0]
+      : p.kind === "light" || p.kind === "smoke" ? [d.pos ?? null]
+      : p.kind === "ladder" ? [d.wall] : p.kind === "bridge" ? [d.height,d.axis] : [];
+    const key = canonical([p.kind,p.cell.x,p.cell.y,detail]);
+    groups.set(key, [...(groups.get(key) ?? []),p]);
+  }
+  return [...groups.values()].filter(group=>group.length>1);
+}
+function placementProblems(records: Placed[], wall: (cell: Vec2) => boolean): Problem[] {
+  return [...inWallProblems(records,wall),...duplicateGroups(records).map(group=>({
+    code:"duplicate",key:"minimap.problem.duplicate",severity:gameplay.has(group[0].kind) ? "error" as const : "warning" as const,
+    cell:group[0].cell,params:{kind:group[0].kind,indexes:group.map(p=>p.index+1).join(", ")}
+  }))];
+}
+const fileWall = (file: MapFile) => (cell: Vec2) => {
+  const character=file.layout[cell.y]?.[cell.x];
+  return character === undefined || character === "W" || !!file.chanceWalls?.some(w=>w.x===cell.x && w.y===cell.y);
+};
+
+// Works even on files rejected by parseMap, so stale objects can be diagnosed.
+export function validateMapFilePlacements(file: MapFile): Problem[] {
+  return placementProblems(placedFile(file),fileWall(file));
+}
+export function removeInWall(file: MapFile): MapFile {
+  const next = structuredClone(file);
+  const wall = fileWall(file);
+  const records = placedFile(file);
+  for (const field of Object.keys(fields) as (keyof typeof fields)[]) {
+    const bad = new Set(records.filter(p=>p.field===field && p.kind!=="patrol" && p.kind!=="chanceWall" && (wall(p.cell) || (p.point && wall({x:Math.round(p.point.x),y:Math.round(p.point.y)})))).map(p=>p.index));
+    const entries = next[field];
+    if (entries) (next as unknown as Record<string, unknown>)[field] = entries.filter((_,i)=>!bad.has(i));
+  }
+  next.actors?.forEach(a=>{if(a.patrol)a.patrol=a.patrol.filter(([x,y])=>!wall({x,y}));});
+  // A start is mandatory and cannot safely be deleted or relocated automatically.
+  return next;
+}
+export function removeDuplicates(file: MapFile): MapFile {
+  const next = structuredClone(file);
+  for (const field of Object.keys(fields) as (keyof typeof fields)[]) {
+    const seen = new Set<string>();
+    const entries = next[field];
+    if(entries)(next as unknown as Record<string,unknown>)[field]=entries.filter(entry=>{
+      const key=canonical(entry);
+      if(seen.has(key))return false;
+      seen.add(key);return true;
+    });
+  }
+  return next;
+}

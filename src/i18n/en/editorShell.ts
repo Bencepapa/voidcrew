@@ -1,0 +1,16 @@
+export const editorShellEn = {
+  "editorShell.debug": "Debug",
+  "editorShell.closeDebug": "Close Debug",
+  "editorShell.properties": "Tool settings",
+  "editorShell.history": "Message history",
+  "editorShell.shortcuts": "Tab · Exit   Ctrl+S · Save   Z/Y · Undo/Redo   O · Top view",
+  "editorShell.ready": "Ready",
+  "editorShell.unsaved": "Unsaved changes",
+  "editorShell.saved": "Saved",
+  "editorShell.view": "View",
+  "editorShell.textured": "Textured",
+  "editorShell.faces": "Faces",
+  "editorShell.wireframe": "Wireframe",
+  "editorShell.normals": "Normals",
+  "editorShell.depth": "Depth",
+};

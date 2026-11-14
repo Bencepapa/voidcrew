@@ -93,7 +93,13 @@ export interface MapFile {
   // the cells where the crew mustn't be (see GameMap.restricted)
   restricted?: [number, number][];
   // smoke emitters (see SmokeSpec)
+  weather?: GameMap["weather"];
   smokes?: {
+    effect?: import("./types").AmbientEffect;
+    mistStyle?: "standing" | "ground";
+    spread?: number;
+    height?: number;
+    sprite?: string;
     x: number;
     y: number;
     pos: [number, number, number];
@@ -324,6 +330,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       lightGridDensity: undefined,
       lightGridAmbient: undefined,
       smokes: undefined,
+      weather: undefined,
       actors: undefined,
       terminals: undefined,
       triggers: undefined,
@@ -359,6 +366,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       if (cells[e.y]?.[e.x] !== "floor") throw new Error(`exit at ${e.x},${e.y} isn't in a floor cell`);
       return { cell: { x: e.x, y: e.y }, name: e.name };
     }),
+    weather: file.weather ? { ...file.weather, intensity: Math.max(0, Math.min(2, file.weather.intensity ?? 1)) } : undefined,
     smokes: (file.smokes ?? []).map((s) => {
       if (cells[s.y]?.[s.x] === undefined || cells[s.y][s.x] === "wall") throw new Error(`smoke at ${s.x},${s.y} isn't in a walkable cell`);
       return {
@@ -368,8 +376,12 @@ export function parseMap(id: string, file: MapFile): GameMap {
         size: s.size,
         color: s.color,
         blow: s.blow,
-        fire: s.fire,
-        petals: s.petals,
+        effect: s.effect === "mist" && s.mistStyle === "ground" ? "groundfog" : s.effect ?? (s.petals ? "motes" : s.fire ? "fire" : "smoke"),
+        spread: s.spread === undefined ? undefined : Math.max(.25, Math.min(12, s.spread)),
+        height: s.height === undefined ? undefined : Math.max(.05, Math.min(2, s.height)),
+        mistStyle: s.mistStyle,
+        sprite: s.sprite,
+        fire: s.effect ? s.effect === "fire" : s.fire,
         decorative: s.decorative,
         chance: s.chance,
         id: s.id,
