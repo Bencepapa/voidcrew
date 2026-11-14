@@ -63,8 +63,6 @@ const BRIDGE_COLOR = "rgba(120, 190, 130, 0.85)";
 const DOOR_COLOR = "#5a2626";
 const PLAYER_COLOR = "#7dffa8";
 const LOCKED_COLOR = "#a8741a";
-const LOOT_COLOR = "#e9c46a";
-const BIG_LOOT_COLOR = "#ffd84a";
 
 // A window onto the map around the player (who stays in its middle, the
 // map sliding past), drawn as SVG in cell units: floors shaded by height,
@@ -72,8 +70,9 @@ const BIG_LOOT_COLOR = "#ffd84a";
 // as a band along their axis, and the party as an arrow turning smoothly.
 export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, edit }: MinimapProps) {
   const uid = useId().replace(/:/g, "");
-  const [textures, setTextures] = useState(true);
-  const textured = !edit || textures;
+  // (the plain minimap stays the flat chart; textures are for the enlarged one, when textures are being set)
+  const [textures, setTextures] = useState(false);
+  const textured = !!edit?.zoomed && textures;
   const patterns = new Map<string, string>();
   const textureFill = (x: number, y: number) => {
     const local = map.floorAt?.(x, y);
@@ -245,14 +244,15 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
     m.big ? (
       <polygon
         key={`loot${m.x},${m.y}`}
-        points={`${m.x + 0.5},${m.y + 0.22} ${m.x + 0.78},${m.y + 0.5} ${m.x + 0.5},${m.y + 0.78} ${m.x + 0.22},${m.y + 0.5}`}
-        fill={BIG_LOOT_COLOR}
-        stroke="#5a3d00"
-        strokeWidth={0.05}
-        style={{ filter: "drop-shadow(0 0 0.15px #ffd84a)" }}
+        points={`${m.x + 0.5},${m.y + 0.16} ${m.x + 0.84},${m.y + 0.5} ${m.x + 0.5},${m.y + 0.84} ${m.x + 0.16},${m.y + 0.5}`}
+        fill="#ffffff"
+        stroke="#000000"
+        strokeWidth={0.1}
+        strokeLinejoin="round"
+        paintOrder="stroke"
       />
     ) : (
-      <circle key={`loot${m.x},${m.y}`} cx={m.x + 0.5} cy={m.y + 0.5} r={0.12} fill={LOOT_COLOR} />
+      <circle key={`loot${m.x},${m.y}`} cx={m.x + 0.5} cy={m.y + 0.5} r={0.17} fill="#ffffff" stroke="#000000" strokeWidth={0.09} />
     ),
   );
 
@@ -330,7 +330,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
               {s === "floor" ? t("minimap.floor") : t("minimap.ceiling")}
             </button>
           ))}
-          <button type="button" aria-pressed={textures} onClick={() => setTextures(v => !v)} className="border border-neutral-600 rounded-sm px-2 py-0.5 text-neutral-200">{t("minimap.textures")}</button>
+          {edit.zoomed && <button type="button" aria-pressed={textures} onClick={() => setTextures(v => !v)} className={`border rounded-sm px-2 py-0.5 ${textures ? "border-amber-400 bg-amber-400/20 text-amber-200" : "border-neutral-600 text-neutral-200"}`}>{t("minimap.textures")}</button>}
           <span className="text-neutral-500 ml-auto">{edit.selection ? t("minimap.selectionSize", { w: edit.selection.x1 - edit.selection.x0 + 1, h: edit.selection.y1 - edit.selection.y0 + 1, width: W, height: H }) : t("minimap.mapSize", { width: W, height: H })}</span>
           {edit.onZoom && (
             <button
@@ -360,8 +360,8 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         {paper && (
           <defs>
             <pattern id={hatchId} width={0.34} height={0.34} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <rect width={0.34} height={0.34} fill="#241a0f" />
-              <line x1={0} y1={0} x2={0} y2={0.34} stroke="#5a4220" strokeWidth={0.09} />
+              <rect width={0.34} height={0.34} fill="#150e07" />
+              <line x1={0} y1={0} x2={0} y2={0.34} stroke="#a47c34" strokeWidth={0.15} />
             </pattern>
           </defs>
         )}
@@ -416,8 +416,8 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         {paper && (
           <defs>
             <pattern id={hatchId} width={0.34} height={0.34} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <rect width={0.34} height={0.34} fill="#241a0f" />
-              <line x1={0} y1={0} x2={0} y2={0.34} stroke="#5a4220" strokeWidth={0.09} />
+              <rect width={0.34} height={0.34} fill="#150e07" />
+              <line x1={0} y1={0} x2={0} y2={0.34} stroke="#a47c34" strokeWidth={0.15} />
             </pattern>
           </defs>
         )}
