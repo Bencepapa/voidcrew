@@ -1,3 +1,4 @@
+import { t, type Key } from "../i18n";
 import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -17,6 +18,48 @@ import { fetchDecalManifest } from "../render/decals";
 import { propEdit } from "./propEditState";
 import { textureFolder } from "../render/textureSets";
 import { saveTextureTuning, setTextureTuning, textureTuning, type TextureTuning } from "../render/textureTuning";
+const displayKeys: Record<string,
+  Key> = {
+  "All": "assetManager.all",
+  "scifi": "assetManager.scifi",
+  "fantasy": "assetManager.fantasy",
+  "Textures": "assetManager.textures",
+  "Props": "assetManager.props",
+  "NPCs": "assetManager.npcs",
+  "Items": "assetManager.items",
+  "wall": "assetManager.wallFilter",
+  "floor": "assetManager.floorFilter",
+  "ceiling": "assetManager.ceilingFilter",
+  "3D": "assetManager.threeD",
+  "billboard": "assetManager.billboard",
+  "decal": "assetManager.decal",
+  "Wall": "assetManager.wall",
+  "Floor": "assetManager.floor",
+  "Ceiling": "assetManager.ceiling",
+  "Single": "assetManager.single",
+  "Pair": "assetManager.pair",
+  "Block": "assetManager.block",
+  "Auto": "assetManager.auto",
+  "On": "assetManager.on",
+  "Off": "assetManager.off",
+  "Empty": "assetManager.emptyRoom",
+  "Gray": "assetManager.gray",
+  "3×3": "assetManager.room3",
+  "5×5": "assetManager.room5",
+  "Selected texture": "assetManager.selectedTexture",
+  "textured": "assetManager.textured",
+  "faces": "assetManager.faces",
+  "wireframe": "assetManager.wireframe",
+  "normals": "assetManager.normals",
+  "depth": "assetManager.depth",
+  "diffuse": "assetManager.diffuse",
+  "normal": "assetManager.normal",
+  "glow": "assetManager.glow",
+  "emissive": "assetManager.emissive",
+  "gloss": "assetManager.gloss",
+  "metal": "assetManager.metal"
+};
+const display = (value: string) => t(displayKeys[value]);
 const catalog = TEXTURE_SETS as Record<string, TextureSetPaths>;
 // the texture folder a prop shows (also the key of its tuning)
 function propTexture(id: string) {
@@ -28,11 +71,11 @@ function propImage(id: string) {
   return (catalog[tex] ?? textureFolder(tex)).diffuse;
 }
 // what the tuning sliders change (see textureTuning.ts); every one a multiplier of the game's own value
-const TUNING: { key: keyof TextureTuning; label: string; max: number; hint: string }[] = [
-  { key: "normal", label: "Normal map force", max: 3, hint: "how strongly the normal map bends the light" },
-  { key: "relief", label: "Relief depth", max: 3, hint: "walls, floors and ceilings: the height map's real depth (rebuilds the geometry in the game)" },
-  { key: "rough", label: "Roughness", max: 2, hint: "lower is shinier" },
-  { key: "metal", label: "Metalness", max: 3, hint: "not for a texture with its own surface map" },
+const TUNING: { key: keyof TextureTuning; label: Key; max: number; hint: Key }[] = [
+  { key: "normal", label: "assetManager.normalForce", max: 3, hint: "assetManager.normalHint" },
+  { key: "relief", label: "assetManager.reliefDepth", max: 3, hint: "assetManager.reliefHint" },
+  { key: "rough", label: "assetManager.roughness", max: 2, hint: "assetManager.roughHint" },
+  { key: "metal", label: "assetManager.metalness", max: 3, hint: "assetManager.metalHint" },
 ];
 
 
@@ -49,7 +92,7 @@ export function AssetManager() {
   const [pose, setPose] = useState(-1);
   const [placement, setPlacement] = useState("Auto");
   const [decals,setDecals] = useState<Awaited<ReturnType<typeof fetchDecalManifest>>>({});
-  useEffect(()=>{if(open) fetchDecalManifest(import.meta.env.BASE_URL,"").then(setDecals).catch(()=>setError("Could not load decals."));},[open]);
+  useEffect(()=>{if(open) fetchDecalManifest(import.meta.env.BASE_URL,"").then(setDecals).catch(()=>setError(t("assetManager.loadDecals")));},[open]);
   const entries = sample==="material" ? Object.entries(catalog).filter(([,v])=>[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:[v.kind].flat() as string[]}))
     : sample==="actor" ? Object.entries(ACTOR_TYPES).map(([key,v])=>({key,label:v.name,img:import.meta.env.BASE_URL+"actors/"+v.sheet+"/diffuse.png",groups:[] as string[]}))
     : sample==="item" ? Object.entries(ITEM_TYPES).map(([key,v])=>({key,label:v.name,img:textureFolder("item_"+key).diffuse,groups:[] as string[]}))
@@ -90,8 +133,8 @@ export function AssetManager() {
       }
       if(active)setGroups(result);
     }
-    if(sample==="material")try {setEdits(JSON.parse(localStorage.getItem("asset-preview:"+id) || "{}"));} catch {setError("Could not read saved preview maps.");}
-    read().catch(()=>{if(active)setError("Could not read asset maps.");});
+    if(sample==="material")try {setEdits(JSON.parse(localStorage.getItem("asset-preview:"+id) || "{}"));} catch {setError(t("assetManager.readPreview"));}
+    read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
   },[open,id,sample,primary,prop,decals]);
   function edit(channel: Channel, url?: string) {
@@ -99,7 +142,7 @@ export function AssetManager() {
     try {
       localStorage.setItem("asset-preview:" + id, JSON.stringify(next));
       setEdits(next);
-    } catch { setError("Browser storage is full. Try a smaller image."); }
+    } catch { setError(t("assetManager.storageFull")); }
   }
   const [keyLight, setKeyLight] = useState(true);
   const [rimLight, setRimLight] = useState(true);
@@ -121,8 +164,8 @@ export function AssetManager() {
     setSaveNote("");
   }
   async function saveTune() {
-    try { setSaveNote("Saved to " + await saveTextureTuning()); }
-    catch { setSaveNote("Could not save (only the dev server can write the file)."); }
+    try { setSaveNote(t("assetManager.saved", { path: await saveTextureTuning() })); }
+    catch { setSaveNote(t("assetManager.saveError")); }
   }
   const lights = useRef({ keyLight, rimLight, turn });
   lights.current = { keyLight, rimLight, turn };
@@ -156,7 +199,7 @@ export function AssetManager() {
     const controls = new OrbitControls(camera,renderer.domElement);
     const canvas = renderer.domElement;
     canvas.tabIndex = 0;
-    canvas.setAttribute("aria-label","3D preview. Use WASD to move.");
+    canvas.setAttribute("aria-label",t("assetManager.canvasHint"));
     const keys = new Set<string>();
     let walked = false;
     const orbitSubject = (event: PointerEvent) => {
@@ -202,9 +245,9 @@ export function AssetManager() {
     const object=new THREE.Group(); scene.add(object);
     const loader=new THREE.TextureLoader();
     const texture=(url:string, color=true) => {
-      const t=keep(loader.load(url,undefined,undefined,()=>{if(!disposed)setError("Could not load "+url);}));
-      if(color)t.colorSpace=THREE.SRGBColorSpace;
-      t.magFilter=THREE.NearestFilter; return t;
+      const loaded=keep(loader.load(url,undefined,undefined,()=>{if(!disposed)setError(t("assetManager.loadError", { url }));}));
+      if(color)loaded.colorSpace=THREE.SRGBColorSpace;
+      loaded.magFilter=THREE.NearestFilter; return loaded;
     };
     const n = background==="5×5" ? 5 : 3;
     const half = n/2;
@@ -297,7 +340,7 @@ export function AssetManager() {
           : layout === "Pair" ? [[-.5,0,0],[.5,0,0]] : [[0,0,0]];
         for(const [x,z,angle] of faces) {const face=new THREE.Mesh(geo,mat); face.position.set(x,.5,z); face.rotation.y=angle;
           if(orientation!=="Wall"){face.rotation.set(orientation==="Floor"?-Math.PI/2:Math.PI/2,0,0);face.position.set(x,orientation==="Floor"?.02:.98,0);} object.add(face);}
-      }).catch(()=>{if(!disposed)setError("Could not load the height map.");});
+      }).catch(()=>{if(!disposed)setError(t("assetManager.heightError"));});
     } else if(sample==="actor") {
       const actor=ACTOR_TYPES[id];
       const mat=assetMaterial(primary,{alphaTest:.5,side:THREE.DoubleSide});
@@ -345,7 +388,7 @@ export function AssetManager() {
           }
         }
       }
-      void projectSamples().catch(()=>{if(!disposed)setError("Could not load the decal preview.");});
+      void projectSamples().catch(()=>{if(!disposed)setError(t("assetManager.decalError"));});
     } else {
       const prop=sample==="prop" ? PROP_TYPES[id] : undefined;
       const onWall=!!prop && (placement==="Wall" || (placement==="Auto" && prop.wall));
@@ -381,7 +424,7 @@ export function AssetManager() {
             if(disposed)return;
             const result=createReliefWallGeometry(grid,{wallWidth:height*grid.width/grid.height,wallHeight:height,depth:depthScale*.025*(tuneRef.current?.relief ?? 1),levels:5,minIsland:2,aoRadius:2,flushEdges:false});
             mesh.geometry=keep(result.geometry);mat.aoMap=keep(result.aoMap);mat.needsUpdate=true;
-          }).catch(()=>{if(!disposed)setError("Could not load the item height map.");});
+          }).catch(()=>{if(!disposed)setError(t("assetManager.itemHeightError"));});
         }
         if(prop?.kind==="billboard")animate=()=>{mesh.rotation.y=Math.atan2(camera.position.x,camera.position.z)-object.rotation.y;};
         if(prop?.kind==="cross" || prop?.kind==="panel"){
@@ -402,7 +445,7 @@ export function AssetManager() {
                 object.add(face);
               }
             }
-          }).catch(()=>{if(!disposed)setError("Could not load the prop height map.");});
+          }).catch(()=>{if(!disposed)setError(t("assetManager.propHeightError"));});
         }
       }
       if(prop?.kind==="views") {
@@ -487,64 +530,64 @@ export function AssetManager() {
     };
   },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief]);
   const strip = "grid w-8 shrink-0 place-items-start rounded border border-neutral-600 bg-neutral-900 py-2 text-lg hover:border-amber-400";
-  return <><button className={button} onClick={()=>{if(document.pointerLockElement)document.exitPointerLock();setOpen(true);}}>Asset Manager</button>{open && createPortal(
-    <div role="dialog" aria-label="Asset Manager" aria-modal="true" className="fixed inset-0 z-[2147483647] bg-black/75 p-2 text-white pointer-events-auto" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation(); if(e.key==="Escape")setOpen(false);}}>
+  return <><button className={button} onClick={()=>{if(document.pointerLockElement)document.exitPointerLock();setOpen(true);}}>{t("assetManager.title")}</button>{open && createPortal(
+    <div role="dialog" aria-label={t("assetManager.title")} aria-modal="true" className="fixed inset-0 z-[2147483647] bg-black/75 p-2 text-white pointer-events-auto" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation(); if(e.key==="Escape")setOpen(false);}}>
       <section className="flex h-full w-full flex-col rounded-lg border border-neutral-500 bg-neutral-950 p-3">
-        <header className="mb-2 flex shrink-0 items-center justify-between gap-3"><strong>Asset Manager</strong><span className="min-w-0 flex-1 truncate text-sm text-neutral-300">{error || "Left drag to orbit · Middle or right drag to pan · Wheel to zoom"}</span><button aria-label="Close Asset Manager" className={button} onClick={()=>setOpen(false)}>×</button></header>
+        <header className="mb-2 flex shrink-0 items-center justify-between gap-3"><strong>{t("assetManager.title")}</strong><span className="min-w-0 flex-1 truncate text-sm text-neutral-300">{error || t("assetManager.orbitHint")}</span><button aria-label={t("assetManager.close")} className={button} onClick={()=>setOpen(false)}>×</button></header>
         <div className="flex min-h-0 flex-1 gap-2">
           {listOpen ? <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-hidden rounded border border-neutral-700 p-2">
-            <div className="flex items-center justify-between gap-2"><strong>Assets</strong><button aria-label="Collapse the asset list" title="Collapse" className="px-2 hover:text-amber-400" onClick={()=>setListOpen(false)}>◀</button></div>
-            <div className="flex flex-wrap gap-1">{(["material","prop","actor","item"] as const).map((t,i)=><button key={t} className={button+" !px-2 !py-1"} aria-pressed={sample===t} onClick={()=>{setSample(t);if(background==="Selected texture" && t!=="material")setBackground("3×3");setSub("All");setPose(-1);setTurn(0);setPlacement("Auto");}}>{["Textures","Props","NPCs","Items"][i]}</button>)}</div>
-            <label>World <select className={button+" !py-1"} value={world} onChange={e=>{setWorld(e.target.value as typeof world);setPose(-1);}}><option>All</option><option value="scifi">Sci-fi</option><option value="fantasy">Fantasy</option></select></label>
-            {["material","prop"].includes(sample) && <div className="flex flex-wrap gap-1">{["All",...(sample==="material"?["wall","floor","ceiling"]:["3D","billboard","decal"])].map(k=><button key={k} className={button+" !px-2 !py-1"} aria-pressed={sub===k} onClick={()=>setSub(k)}>{k}</button>)}</div>}
+            <div className="flex items-center justify-between gap-2"><strong>{t("assetManager.assets")}</strong><button aria-label={t("assetManager.collapseAssets")} title={t("assetManager.collapse")} className="px-2 hover:text-amber-400" onClick={()=>setListOpen(false)}>◀</button></div>
+            <div className="flex flex-wrap gap-1">{(["material","prop","actor","item"] as const).map((tab,i)=><button key={tab} className={button+" !px-2 !py-1"} aria-pressed={sample===tab} onClick={()=>{setSample(tab);if(background==="Selected texture" && tab!=="material")setBackground("3×3");setSub("All");setPose(-1);setTurn(0);setPlacement("Auto");}}>{display(["Textures","Props","NPCs","Items"][i])}</button>)}</div>
+            <label>{t("assetManager.world")} <select className={button+" !py-1"} value={world} onChange={e=>{setWorld(e.target.value as typeof world);setPose(-1);}}><option value="All">{display("All")}</option><option value="scifi">{display("scifi")}</option><option value="fantasy">{display("fantasy")}</option></select></label>
+            {["material","prop"].includes(sample) && <div className="flex flex-wrap gap-1">{["All",...(sample==="material"?["wall","floor","ceiling"]:["3D","billboard","decal"])].map(k=><button key={k} className={button+" !px-2 !py-1"} aria-pressed={sub===k} onClick={()=>setSub(k)}>{display(k)}</button>)}</div>}
             <div className="grid min-h-0 flex-1 content-start grid-cols-2 gap-1 overflow-auto">{visible.map(e=>{
               const a=sample==="actor"?ACTOR_TYPES[e.key]:undefined;
               return <button key={e.key} className={button+" !p-1 text-xs"} aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>
                 {a?<span className="block h-12 w-12" style={{backgroundImage:"url("+e.img+")",backgroundSize:a.cols*100+"% "+a.rows*100+"%",backgroundPosition:"0 "+a.idleRow/Math.max(1,a.rows-1)*100+"%"}}/>:<img src={e.img} loading="lazy" alt="" className="h-14 w-full object-contain"/>}{e.label}</button>;
             })}</div>
-          </aside> : <button aria-label="Show the asset list" title="Assets" className={strip} onClick={()=>setListOpen(true)}>▶</button>}
+          </aside> : <button aria-label={t("assetManager.showAssets")} title={t("assetManager.assets")} className={strip} onClick={()=>setListOpen(true)}>▶</button>}
           <main className="flex min-w-0 flex-1 flex-col gap-2">
-            <div className="flex shrink-0 flex-wrap items-center gap-2"><strong>{entry?.label ?? "No matching assets"}</strong>
-              {sample==="material" && <>{["Wall","Floor","Ceiling"].map(v=><button className={button+" !py-1"} aria-pressed={orientation===v} key={v} onClick={()=>{orient(v);if(v==="Ceiling" || v==="Floor"){const cam=liveCamera.current;if(cam){cam.camera.position.y=v==="Ceiling"?.25:1.7;cam.controls.target.y=v==="Ceiling"?.95:.05;cam.controls.update();}}if(v!=="Wall" && layout==="Block")setLayout("Single");}}>{v}</button>)}{(orientation==="Wall"?["Single","Pair","Block"]:["Single","Pair"]).map(v=><button className={button+" !py-1"} aria-pressed={layout===v} key={v} onClick={()=>setLayout(v)}>{v}</button>)}</>}
-              {sample==="actor" && entry && <><label>Pose <select className={button+" !py-1"} value={pose} onChange={e=>setPose(+e.target.value)}><option value={-1}>Walk cycle</option>{Array.from({length:ACTOR_TYPES[id].rows},(_,i)=><option key={i} value={i}>Row {i+1}{i===ACTOR_TYPES[id].idleRow?" · Idle":""}</option>)}</select></label><a className={button+" !py-1"} target="_blank" rel="noreferrer" href={"?editor=actors&actor="+encodeURIComponent(id)}>Open NPC editor</a></>}
-              {sample==="prop" && propEditable(PROP_TYPES[id]) && <button className={button+" !py-1"} onClick={()=>{setOpen(false);propEdit.set({name:id,part:0});}}>Open prop editor</button>}
-              {!id.startsWith("decal:") && sample==="prop" && <label>Mount <select className={button+" !py-1"} value={placement} onChange={e=>setPlacement(e.target.value)}>{["Auto","Floor","Wall"].map(v=><option key={v}>{v}</option>)}</select></label>}</div>
-            <div className="flex flex-wrap gap-1" aria-label="Asset preview view">{["textured","faces","wireframe","normals","depth"].map(v=><button key={v} className={button+" !py-1 capitalize"} aria-pressed={view===v} onClick={()=>setView(v)}>{v}</button>)}</div>
-            {sample==="material" && layout!=="Single" && <label><input type="checkbox" checked={joinEdges} onChange={e=>setJoinEdges(e.target.checked)}/> Join panel edges</label>}
+            <div className="flex shrink-0 flex-wrap items-center gap-2"><strong>{entry?.label ?? t("assetManager.noAssets")}</strong>
+              {sample==="material" && <>{["Wall","Floor","Ceiling"].map(v=><button className={button+" !py-1"} aria-pressed={orientation===v} key={v} onClick={()=>{orient(v);if(v==="Ceiling" || v==="Floor"){const cam=liveCamera.current;if(cam){cam.camera.position.y=v==="Ceiling"?.25:1.7;cam.controls.target.y=v==="Ceiling"?.95:.05;cam.controls.update();}}if(v!=="Wall" && layout==="Block")setLayout("Single");}}>{display(v)}</button>)}{(orientation==="Wall"?["Single","Pair","Block"]:["Single","Pair"]).map(v=><button className={button+" !py-1"} aria-pressed={layout===v} key={v} onClick={()=>setLayout(v)}>{display(v)}</button>)}</>}
+              {sample==="actor" && entry && <><label>{t("assetManager.pose")} <select className={button+" !py-1"} value={pose} onChange={e=>setPose(+e.target.value)}><option value={-1}>{t("assetManager.walkCycle")}</option>{Array.from({length:ACTOR_TYPES[id].rows},(_,i)=><option key={i} value={i}>{t(i===ACTOR_TYPES[id].idleRow ? "assetManager.idleRow" : "assetManager.row", { n: i+1 })}</option>)}</select></label><a className={button+" !py-1"} target="_blank" rel="noreferrer" href={"?editor=actors&actor="+encodeURIComponent(id)}>{t("assetManager.npcEditor")}</a></>}
+              {sample==="prop" && propEditable(PROP_TYPES[id]) && <button className={button+" !py-1"} onClick={()=>{setOpen(false);propEdit.set({name:id,part:0});}}>{t("assetManager.propEditor")}</button>}
+              {!id.startsWith("decal:") && sample==="prop" && <label>{t("assetManager.mount")} <select className={button+" !py-1"} value={placement} onChange={e=>setPlacement(e.target.value)}>{["Auto","Floor","Wall"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>}</div>
+            <div className="flex flex-wrap gap-1" aria-label={t("assetManager.previewView")}>{["textured","faces","wireframe","normals","depth"].map(v=><button key={v} className={button+" !py-1 capitalize"} aria-pressed={view===v} onClick={()=>setView(v)}>{display(v)}</button>)}</div>
+            {sample==="material" && layout!=="Single" && <label><input type="checkbox" checked={joinEdges} onChange={e=>setJoinEdges(e.target.checked)}/> {t("assetManager.joinEdges")}</label>}
             <div className="min-h-0 max-h-[65vh] flex-1 overflow-hidden rounded border border-neutral-700 [&>canvas]:block" ref={host}/>
           </main>
           {panelOpen ? <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-auto rounded border border-neutral-700 p-2">
-            <div className="flex items-center justify-between gap-2"><strong>Properties</strong><button aria-label="Collapse the properties panel" title="Collapse" className="px-2 hover:text-amber-400" onClick={()=>setPanelOpen(false)}>▶</button></div>
-            <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">Look · {tuneId || "no tuning"}</summary>
+            <div className="flex items-center justify-between gap-2"><strong>{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 hover:text-amber-400" onClick={()=>setPanelOpen(false)}>▶</button></div>
+            <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.look", { texture: tuneId || t("assetManager.noTuning") })}</summary>
               {tune ? <>
-                <p className="my-1 text-xs text-neutral-400">Multipliers of the game's own values, so the debug sliders still work on top. Saved per texture, in the project.</p>
-                {TUNING.map(({key,label,max,hint})=><label key={key} className="my-1 block text-sm" title={hint}>{label}: <strong>{(tune[key]??1).toFixed(2)}×</strong><input className="block w-full" type="range" min="0" max={max} step=".05" value={tune[key]??1} onChange={e=>changeTune(key,+e.target.value)}/></label>)}
-                <div className="mt-2 flex flex-wrap items-center gap-2"><button className={button+" !py-1"} onClick={saveTune}>Save to project</button><button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);setTuneStamp(n=>n+1);setSaveNote("");}}>Reset</button></div>
+                <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>
+                {TUNING.map(({key,label,max,hint})=><label key={key} className="my-1 block text-sm" title={t(hint)}>{t(label)}: <strong>{(tune[key]??1).toFixed(2)}×</strong><input className="block w-full" type="range" min="0" max={max} step=".05" value={tune[key]??1} onChange={e=>changeTune(key,+e.target.value)}/></label>)}
+                <div className="mt-2 flex flex-wrap items-center gap-2"><button className={button+" !py-1"} onClick={saveTune}>{t("assetManager.save")}</button><button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);setTuneStamp(n=>n+1);setSaveNote("");}}>{t("assetManager.reset")}</button></div>
                 {saveNote && <p className="mt-1 text-xs text-neutral-300">{saveNote}</p>}
-              </> : <p className="my-1 text-xs text-neutral-400">{sample==="actor" ? "An NPC's normal strength is set in the NPC editor." : "This one has no tuning."}</p>}
+              </> : <p className="my-1 text-xs text-neutral-400">{sample==="actor" ? t("assetManager.actorTuning") : t("assetManager.noTuningHint")}</p>}
             </details>
-            <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">Preview room &amp; lights</summary>
+            <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.roomLights")}</summary>
               <div className="mt-1 flex flex-col gap-2 text-sm">
-                <label>Room <select className={button+" !py-1"} value={background} onChange={e=>setBackground(e.target.value)}>{["Empty","Gray","3×3","5×5",...(sample==="material"?["Selected texture"]:[])].map(v=><option key={v}>{v}</option>)}</select></label>
-                <label>Room ceiling <select className={button+" !py-1"} value={ceiling} onChange={e=>setCeiling(e.target.value)}>{["Auto","On","Off"].map(v=><option key={v}>{v}</option>)}</select></label>
-                <p className="text-xs text-neutral-300">Click the preview, then use W/S to move and A/D to strafe.</p>
-                <label><input type="checkbox" checked={rgb} onChange={e=>setRgb(e.target.checked)}/> RGB lights</label>
-                <label><input type="checkbox" checked={keyLight} onChange={e=>setKeyLight(e.target.checked)}/> Key light</label>
-                <label><input type="checkbox" checked={rimLight} onChange={e=>setRimLight(e.target.checked)}/> Side light</label>
-                <label>Rotation <input className="block w-full" type="range" min="-180" max="180" value={turn} onChange={e=>setTurn(+e.target.value)}/></label>
+                <label>{t("assetManager.room")} <select className={button+" !py-1"} value={background} onChange={e=>setBackground(e.target.value)}>{["Empty","Gray","3×3","5×5",...(sample==="material"?["Selected texture"]:[])].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>
+                <label>{t("assetManager.roomCeiling")} <select className={button+" !py-1"} value={ceiling} onChange={e=>setCeiling(e.target.value)}>{["Auto","On","Off"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>
+                <p className="text-xs text-neutral-300">{t("assetManager.walkHint")}</p>
+                <label><input type="checkbox" checked={rgb} onChange={e=>setRgb(e.target.checked)}/> {t("assetManager.rgb")}</label>
+                <label><input type="checkbox" checked={keyLight} onChange={e=>setKeyLight(e.target.checked)}/> {t("assetManager.keyLight")}</label>
+                <label><input type="checkbox" checked={rimLight} onChange={e=>setRimLight(e.target.checked)}/> {t("assetManager.sideLight")}</label>
+                <label>{t("assetManager.rotation")} <input className="block w-full" type="range" min="-180" max="180" value={turn} onChange={e=>setTurn(+e.target.value)}/></label>
               </div>
             </details>
-            {<details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">Asset maps · local preview</summary>{Object.entries(groups).map(([group,layers])=><section key={group}>{Object.keys(groups).length>1 && <strong>{group}</strong>}<div className="mt-1 grid grid-cols-2 gap-2">{channels.map(channel=>{
+            {<details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.maps")}</summary>{Object.entries(groups).map(([group,layers])=><section key={group}>{Object.keys(groups).length>1 && <strong>{group}</strong>}<div className="mt-1 grid grid-cols-2 gap-2">{channels.map(channel=>{
               const url=(sample==="material"?edits[channel]:undefined) ?? layers[channel];
               if(!url && sample!=="material")return null;
               const key=maskKey(group,channel);
-              return <div key={channel} className="border border-neutral-700 p-2 text-sm"><strong>{channel}</strong>{url && <button className="float-right px-1" title={(hidden[key]?"Enable ":"Disable ")+channel} aria-label={(hidden[key]?"Enable ":"Disable ")+group+" "+channel} aria-pressed={!hidden[key]} onClick={()=>setHidden(old=>({...old,[key]:!old[key]}))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12Q12 -2 22 12Q12 26 2 12Z"/><circle cx="12" cy="12" r="3"/>{hidden[key] && <path d="M2 2L22 22"/>}</svg></button>}{url ? <img src={url} alt={channel} className="h-14 w-full object-contain"/> : <p className="h-14">Empty</p>}
-                {sample==="material" && <><label className="cursor-pointer underline">Import<input type="file" accept="image/*" className="sr-only" onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(file)try{edit(channel,await importImage(file));}catch{setError("Could not import image.");}}}/></label>
-                {url && <button className="ml-1 underline" onClick={()=>edit(channel,"")}>Clear</button>}
-                {edits[channel]!==undefined && <button className="underline" onClick={()=>edit(channel)}>Restore original</button>}</>}
+              return <div key={channel} className="border border-neutral-700 p-2 text-sm"><strong>{display(channel)}</strong>{url && <button className="float-right px-1" title={t(hidden[key] ? "assetManager.enableMap" : "assetManager.disableMap", { map: display(channel) })} aria-label={t(hidden[key] ? "assetManager.enableGroupMap" : "assetManager.disableGroupMap", { group, map: display(channel) })} aria-pressed={!hidden[key]} onClick={()=>setHidden(old=>({...old,[key]:!old[key]}))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12Q12 -2 22 12Q12 26 2 12Z"/><circle cx="12" cy="12" r="3"/>{hidden[key] && <path d="M2 2L22 22"/>}</svg></button>}{url ? <img src={url} alt={display(channel)} className="h-14 w-full object-contain"/> : <p className="h-14">{t("assetManager.empty")}</p>}
+                {sample==="material" && <><label className="cursor-pointer underline">{t("assetManager.import")}<input type="file" accept="image/*" className="sr-only" onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(file)try{edit(channel,await importImage(file));}catch{setError(t("assetManager.importError"));}}}/></label>
+                {url && <button className="ml-1 underline" onClick={()=>edit(channel,"")}>{t("assetManager.clear")}</button>}
+                {edits[channel]!==undefined && <button className="underline" onClick={()=>edit(channel)}>{t("assetManager.restore")}</button>}</>}
               </div>;
             })}</div></section>)}</details>}
-          </aside> : <button aria-label="Show the properties panel" title="Properties" className={strip} onClick={()=>setPanelOpen(true)}>◀</button>}
+          </aside> : <button aria-label={t("assetManager.showProperties")} title={t("assetManager.properties")} className={strip} onClick={()=>setPanelOpen(true)}>◀</button>}
         </div>
       </section>
     </div>,document.body)}</>;

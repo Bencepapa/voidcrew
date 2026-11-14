@@ -45,6 +45,7 @@ import { setLootContext } from "./game/items";
 import { BaseScreen } from "./components/BaseScreen";
 import { ShipPicker } from "./components/ShipPicker";
 import { Minimap } from "./components/Minimap";
+import { t, useLang, type Key } from "./i18n";
 import { PartyPanel } from "./components/PartyPanel";
 import { MoveControls } from "./components/MoveControls";
 import { LogPanel } from "./components/LogPanel";
@@ -129,6 +130,8 @@ export default function App() {
     syncPose,
     openDoorAt,
   } = useGameState();
+  // (the interface's language: everything below renders again when it changes)
+  useLang();
   const [settings, setSettings] = useState<ViewportSettings>(DEFAULT_SETTINGS);
   // the map editor (see EDITOR.md): while it's on the world holds still,
   // walls don't stop the party and the headlamp is lit
@@ -188,7 +191,7 @@ export default function App() {
     const url = new URL(location.href);
     url.searchParams.set("seed", String(next));
     history.replaceState(null, "", url);
-    pushLog(`Variation ${next}: ${moodText({ ...moodOf(next), ...moodOverride })}.`);
+    pushLog(t("app.variation", { seed: next, mood: moodText({ ...moodOf(next), ...moodOverride }) }));
   };
   // the surface the pointer is on: the Texture tool's palette marks its row
   // (it sticks to the last one when nothing is under the pointer)
@@ -224,7 +227,7 @@ export default function App() {
     nextRun();
     enterMap(MAPS[type.entry] ?? START_MAP);
     setPhase("run");
-    pushLog(`You board the ${offer.name}, a derelict ${type.name.toLowerCase()}.`);
+    pushLog(t("app.boardShip", { ship: offer.name, type: type.name.toLowerCase() }));
   };
   if (!aim) aimFocusRef.current = null;
   const aimRef = useRef(aim);
@@ -458,7 +461,7 @@ export default function App() {
         const offset = drag.offset || undefined;
         const result = applyEdit(map.id, (f) => updateDoor(f, from, { kind: spec.kind, facing: spec.facing }, { offset }), step);
         if ("error" in result) {
-          pushLog(`Editor: ${result.error}`);
+          pushLog(t("app.editorError", { error: result.error }), "error");
           return false;
         }
         replaceMap(result.map);
@@ -468,7 +471,7 @@ export default function App() {
       }
       const to = target.cell;
       if (to.x === pos.x && to.y === pos.y) {
-        pushLog("Editor: can't put a door where the party stands.");
+        pushLog(t("app.doorAtParty"), "editor");
         return false;
       }
       const spec = doorAt(map, from.x, from.y);
@@ -491,7 +494,7 @@ export default function App() {
         step,
       );
       if ("error" in result) {
-        pushLog(`Editor: ${result.error}`);
+        pushLog(t("app.editorError", { error: result.error }), "error");
         return false;
       }
       replaceMap(result.map);
@@ -556,15 +559,15 @@ export default function App() {
       const key = e.key.toLowerCase();
       if (key === "c") {
         const file = mapFile(map.id);
-        const copy = (kind: ClipKind, spec: unknown, what: string) => {
+        const copy = (kind: ClipKind, spec: unknown, message: Key) => {
           clipboardRef.current = { kind, spec: structuredClone(spec) as Record<string, unknown> };
-          pushLog(`Editor: ${what} copied (Ctrl+V pastes it where the pointer is).`);
+          pushLog(t(message), "editor");
         };
-        if (editTool === "prop" && selectedProp !== null && file?.props?.[selectedProp]) copy("prop", file.props[selectedProp], "prop");
-        else if (editTool === "decal" && selectedDecal !== null && file?.decals?.[selectedDecal]) copy("decal", file.decals[selectedDecal], "decal");
-        else if (editTool === "item" && selectedItem !== null && file?.items?.[selectedItem]) copy("item", file.items[selectedItem], "item");
-        else if (editTool === "light" && selectedLight !== null && file?.lights?.[selectedLight]) copy("light", file.lights[selectedLight], "light");
-        else if (editTool === "robot" && selectedActor !== null && file?.actors?.[selectedActor]) copy("actor", file.actors[selectedActor], "robot");
+        if (editTool === "prop" && selectedProp !== null && file?.props?.[selectedProp]) copy("prop", file.props[selectedProp], "app.copiedProp")
+        else if (editTool === "decal" && selectedDecal !== null && file?.decals?.[selectedDecal]) copy("decal", file.decals[selectedDecal], "app.copiedDecal")
+        else if (editTool === "item" && selectedItem !== null && file?.items?.[selectedItem]) copy("item", file.items[selectedItem], "app.copiedItem")
+        else if (editTool === "light" && selectedLight !== null && file?.lights?.[selectedLight]) copy("light", file.lights[selectedLight], "app.copiedLight")
+        else if (editTool === "robot" && selectedActor !== null && file?.actors?.[selectedActor]) copy("actor", file.actors[selectedActor], "app.copiedRobot")
       } else if (key === "v" && clipboardRef.current) {
         const clip = clipboardRef.current;
         const target = hoverTargetRef.current;
@@ -579,7 +582,7 @@ export default function App() {
             ((f[list] ?? (f[list] = [] as never)) as unknown[]).push(entry);
             return f;
           });
-          if ("error" in result) pushLog(`Editor: ${result.error}`);
+          if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
           else {
             replaceMap(result.map);
             select(count);
@@ -630,7 +633,7 @@ export default function App() {
         const setId = alt ? null : paint[target.kind];
         result = applyEdit(map.id, (file) => paintTexture(file, layer, cell, setId));
         if (!("error" in result)) {
-          pushLog(`Editor: ${target.kind} at ${cell.x},${cell.y} - ${setId ?? "the map's own texture"}.`);
+          pushLog(t("app.textureAt", { surface: t(`app.${target.kind}`), x: cell.x, y: cell.y, texture: setId ?? t("app.ownTexture") }), "editor");
         }
       }
     } else if (editTool === "light") {
@@ -669,11 +672,11 @@ export default function App() {
         const value = ceilingHeight(map, cell.x, cell.y) + step;
         // one panel above the floor is the default: no need to write it
         result = applyEdit(map.id, (file) => setHeight(file, "ceiling", cell, value === floor + 1 ? null : value));
-        if (!("error" in result)) pushLog(`Editor: ceiling at ${cell.x},${cell.y} - ${value}.`);
+        if (!("error" in result)) pushLog(t("app.ceilingAt", { x: cell.x, y: cell.y, height: value }), "editor");
       } else {
         const value = floor + step;
         result = applyEdit(map.id, (file) => setHeight(file, "floor", cell, value === 0 ? null : value));
-        if (!("error" in result)) pushLog(`Editor: floor at ${cell.x},${cell.y} - ${value}.`);
+        if (!("error" in result)) pushLog(t("app.floorAt", { x: cell.x, y: cell.y, height: value }), "editor");
       }
     } else if (editTool === "ladder") {
       // against the side of the cell nearest the click (a click on a step's
@@ -718,7 +721,7 @@ export default function App() {
         } else {
           const choice = robotChoice && ACTOR_TYPES[robotChoice] && assetInWorld(robotChoice) ? robotChoice : null;
           if (!choice) {
-            pushLog("Editor: pick an NPC type in the palette first.");
+            pushLog(t("app.pickActor"), "editor");
             return;
           }
           const count = map.actors?.length ?? 0;
@@ -738,7 +741,7 @@ export default function App() {
       if (target.kind === "wall" && !target.door) return;
       if (alt && !isDoor) return;
       if (cell.x === pos.x && cell.y === pos.y && !isDoor) {
-        pushLog("Editor: can't put a door where the party stands.");
+        pushLog(t("app.doorAtParty"), "editor");
         return;
       }
       result = applyEdit(map.id, (file) => toggleDoor(file, cell));
@@ -756,7 +759,7 @@ export default function App() {
         setSelectedDecal((sel) => (sel === null || sel === picked ? null : sel > picked ? sel - 1 : sel));
       } else if (!alt && target.surfacePoint) {
         if (!decalChoice) {
-          pushLog("Editor: pick a decal in the palette first.");
+          pushLog(t("app.pickDecal"), "editor");
           return;
         }
         const { cell, surface, u, v } = target.surfacePoint;
@@ -861,7 +864,7 @@ export default function App() {
       const order: Direction[] = ["N", "E", "S", "W"];
       const facing: Direction = here ? order[(order.indexOf(map.start.facing) + 1) % 4] : dir;
       result = applyEdit(map.id, (file) => setStart(file, cell, facing));
-      if (!("error" in result)) pushLog(`Editor: start at ${cell.x},${cell.y}, facing ${facing}.`);
+      if (!("error" in result)) pushLog(t("app.startAt", { x: cell.x, y: cell.y, facing: facing }), "editor");
     } else if (editTool === "restricted") {
       // a click on a floor: restricted, or not any more
       if (target.kind === "wall") return;
@@ -910,7 +913,7 @@ export default function App() {
       } else {
         if (alt) return;
         if (cell.x === pos.x && cell.y === pos.y) {
-          pushLog("Editor: can't wall in the cell the party stands in.");
+          pushLog(t("app.wallAtParty"), "editor");
           return;
         }
         const count = map.chanceWalls?.length ?? 0;
@@ -924,14 +927,14 @@ export default function App() {
         result = applyEdit(map.id, (file) => dig(file, target.cell, from));
       } else if (tool === "fill" && target.kind !== "wall") {
         if (target.cell.x === pos.x && target.cell.y === pos.y) {
-          pushLog("Editor: can't fill in the cell the party stands in.");
+          pushLog(t("app.fillAtParty"), "editor");
           return;
         }
         result = applyEdit(map.id, (file) => fill(file, target.cell));
       }
     }
     if (!result) return;
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
@@ -958,21 +961,21 @@ export default function App() {
   const [miniZoom, setMiniZoom] = useState(false);
   const [miniSel, setMiniSel] = useState<Rect | null>(null);
   const zoomed = editMode && miniZoom && !compact;
-  const editArea = (what: string, change: (file: NonNullable<ReturnType<typeof mapFile>>, cells: Vec2[]) => NonNullable<ReturnType<typeof mapFile>>) => {
+  const editArea = (message: Key, change: (file: NonNullable<ReturnType<typeof mapFile>>, cells: Vec2[]) => NonNullable<ReturnType<typeof mapFile>>) => {
     if (!miniSel) return;
     const cells = rectCells(miniSel).filter((c) => c.x < map.width && c.y < map.height);
     const result = applyEdit(map.id, (file) => change(file, cells));
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else {
       replaceMap(result.map);
-      pushLog(`Editor: ${what} - ${cells.length} cells.`);
+      pushLog(t(message, { count: cells.length }), "editor");
     }
     setEdits((n) => n + 1);
   };
   const openCells = (cells: Vec2[]) => cells.filter((c) => cellAt(map, c.x, c.y) !== "wall");
-  const areaDig = () => editArea("dug out", (file, cells) => digCells(file, cells));
+  const areaDig = () => editArea("app.areaDig", (file, cells) => digCells(file, cells));
   const areaFill = () =>
-    editArea("filled in", (file, cells) =>
+    editArea("app.areaFill", (file, cells) =>
       fillCells(
         file,
         // (not under the party, nor the deck's start)
@@ -980,7 +983,7 @@ export default function App() {
       ),
     );
   const areaHeight = (which: "floor" | "ceiling", step: number) =>
-    editArea(`${which} ${step > 0 ? "raised" : "lowered"}`, (file, cells) => {
+    editArea(`app.area${which}${step > 0 ? "Raised" : "Lowered"}`, (file, cells) => {
       for (const c of openCells(cells)) {
         const floor = floorHeight(map, c.x, c.y);
         const value = Math.round(((which === "floor" ? floor : ceilingHeight(map, c.x, c.y)) + step) * 100) / 100;
@@ -990,7 +993,7 @@ export default function App() {
       return file;
     });
   const areaPaint = (surface: EditSurface) =>
-    editArea(`${surface} painted`, (file, cells) => {
+    editArea(`app.area${surface}Painted`, (file, cells) => {
       const layer: TextureLayer = surface === "wall" ? "wallTexture" : surface === "floor" ? "floorTexture" : "ceilingTexture";
       for (const c of openCells(cells)) paintTexture(file, layer, c, paint[surface]);
       return file;
@@ -1006,36 +1009,36 @@ export default function App() {
   }, [miniSel]);
   // "Clear all": everything of the current tool's layer off the map (one undo step)
   const clearLayer = (tool: EditTool) => {
-    const layers: Partial<Record<EditTool, { key: keyof NonNullable<ReturnType<typeof mapFile>>; label: string }>> = {
-      robot: { key: "actors", label: "NPCs" },
-      smoke: { key: "smokes", label: "particle emitters" },
-      prop: { key: "props", label: "props" },
-      decal: { key: "decals", label: "decals" },
-      item: { key: "items", label: "items" },
-      light: { key: "lights", label: "lights" },
-      exit: { key: "exits", label: "exits" },
-      restricted: { key: "restricted", label: "restricted cells" },
-      wall: { key: "chanceWalls", label: "chance walls" },
-      bridge: { key: "bridges", label: "bridges" },
-      ladder: { key: "ladders", label: "ladders" },
+    const layers: Partial<Record<EditTool, { key: keyof NonNullable<ReturnType<typeof mapFile>>; empty: Key; confirm: Key; removed: Key }>> = {
+      robot: { key: "actors", empty: "app.clearrobotEmpty", confirm: "app.clearrobotConfirm", removed: "app.clearrobotRemoved" },
+      smoke: { key: "smokes", empty: "app.clearsmokeEmpty", confirm: "app.clearsmokeConfirm", removed: "app.clearsmokeRemoved" },
+      prop: { key: "props", empty: "app.clearpropEmpty", confirm: "app.clearpropConfirm", removed: "app.clearpropRemoved" },
+      decal: { key: "decals", empty: "app.cleardecalEmpty", confirm: "app.cleardecalConfirm", removed: "app.cleardecalRemoved" },
+      item: { key: "items", empty: "app.clearitemEmpty", confirm: "app.clearitemConfirm", removed: "app.clearitemRemoved" },
+      light: { key: "lights", empty: "app.clearlightEmpty", confirm: "app.clearlightConfirm", removed: "app.clearlightRemoved" },
+      exit: { key: "exits", empty: "app.clearexitEmpty", confirm: "app.clearexitConfirm", removed: "app.clearexitRemoved" },
+      restricted: { key: "restricted", empty: "app.clearrestrictedEmpty", confirm: "app.clearrestrictedConfirm", removed: "app.clearrestrictedRemoved" },
+      wall: { key: "chanceWalls", empty: "app.clearwallEmpty", confirm: "app.clearwallConfirm", removed: "app.clearwallRemoved" },
+      bridge: { key: "bridges", empty: "app.clearbridgeEmpty", confirm: "app.clearbridgeConfirm", removed: "app.clearbridgeRemoved" },
+      ladder: { key: "ladders", empty: "app.clearladderEmpty", confirm: "app.clearladderConfirm", removed: "app.clearladderRemoved" },
     };
     const layer = layers[tool];
     const file = mapFile(map.id);
     if (!layer || !file) return;
     const count = (file[layer.key] as unknown[] | undefined)?.length ?? 0;
     if (!count) {
-      pushLog(`Editor: no ${layer.label} to clear.`);
+      pushLog(t(layer.empty), "editor");
       return;
     }
-    if (!window.confirm(`Remove all ${count} ${layer.label} from this map? (Undo brings them back.)`)) return;
+    if (!window.confirm(t(layer.confirm, { count }))) return;
     const result = applyEdit(map.id, (f) => {
       delete (f as unknown as Record<string, unknown>)[layer.key as string];
       return f;
     });
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else {
       replaceMap(result.map);
-      pushLog(`Editor: all ${count} ${layer.label} removed.`);
+      pushLog(t(layer.removed, { count }), "editor");
     }
     setSelectedLight(null);
     setSelectedProp(null);
@@ -1067,8 +1070,8 @@ export default function App() {
   };
   const editSave = () => {
     saveMap(map.id)
-      .then((file) => pushLog(`Editor: saved ${file}.`))
-      .catch((err) => pushLog(`Editor: not saved - ${err instanceof Error ? err.message : err}`))
+      .then((file) => pushLog(t("app.savedMap", { path: file }), "editor"))
+      .catch((err) => pushLog(t("app.saveFailed", { error: err instanceof Error ? err.message : err }), "error"))
       .finally(() => setEdits((n) => n + 1));
   };
   // Tab: the editor on and off; while on, Z / Y undo and redo, Ctrl+S saves
@@ -1122,7 +1125,7 @@ export default function App() {
     const render = clear ? undefined : pickRender(settings, DEFAULT_SETTINGS);
     // nothing differs from the defaults: say so instead of wiping what the map has
     if (!clear && !render) {
-      pushLog("Editor: the render values are all the defaults - nothing to save (Clear removes the map's).");
+      pushLog(t("app.defaultRender"), "editor");
       return;
     }
     const result = applyEdit(map.id, (file) => {
@@ -1130,16 +1133,16 @@ export default function App() {
       else delete file.render;
       return file;
     });
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else {
       replaceMap(result.map);
       // (in dev straight to disk too: it is meant to be kept)
-      const note = render ? "Render values saved to the map" : "Render values removed from the map";
+      const note = render ? "renderSaved" : "renderRemoved";
       if (import.meta.env.DEV) {
         saveMap(map.id)
-          .then((path) => pushLog(`Editor: ${note} - saved ${path}.`))
-          .catch((err) => pushLog(`Editor: ${note}, but not saved - ${err instanceof Error ? err.message : err}`));
-      } else pushLog(`Editor: ${note} (download the map to keep it).`);
+          .then((path) => pushLog(t(`app.${note}File`, { path }), "editor"))
+          .catch((err) => pushLog(t(`app.${note}Error`, { error: err instanceof Error ? err.message : err }), "error"));
+      } else pushLog(t(`app.${note}Download`), "editor");
     }
     if (clear) setSettings((s) => ({ ...s, ...renderDefaults(DEFAULT_SETTINGS) }));
     setEdits((n) => n + 1);
@@ -1168,14 +1171,14 @@ export default function App() {
   // the map's own look (undefined: back to the viewer's default)
   const changeMapLook = (patch: MapLook) => {
     const result = applyEdit(map.id, (file) => Object.assign(file, patch));
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
   const resize = (edge: Direction, grow: boolean) => {
     const result = applyEdit(map.id, (file) => resizeMap(file, edge, grow));
     if ("error" in result) {
-      pushLog(`Editor: ${result.error}`);
+      pushLog(t("app.editorError", { error: result.error }), "error");
       return;
     }
     replaceMap(result.map);
@@ -1188,36 +1191,36 @@ export default function App() {
     setEdits((n) => n + 1);
   };
   const newMap = () => {
-    const id = prompt("New map's id (its file name, e.g. derelict1-crew):")?.trim();
+    const id = prompt(t("app.newId"))?.trim();
     if (!id) return;
-    const name = prompt("Its name:", `Deck ${map.deck} - `)?.trim() || id;
-    const size = prompt("Its size, width x height:", "16x10") ?? "";
+    const name = prompt(t("app.name"), t("app.deckName", { deck: map.deck }))?.trim() || id;
+    const size = prompt(t("app.size"), "16x10") ?? "";
     const [w, h] = size.split(/[x, ]+/).map(Number);
     const result = createMap(id, blankMap(name, map.deck, w || 16, h || 10, mapFile(map.id) ?? undefined), undefined, map.world);
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else {
       openMap(result.map);
-      pushLog(`Editor: made ${id} - save it to keep it.`);
+      pushLog(t("app.mapCreated", { id: id }), "editor");
     }
   };
   const saveMapAs = () => {
-    const id = prompt("Copy this map as (its new id, e.g. derelict1-engineering):")?.trim();
+    const id = prompt(t("app.copyId"))?.trim();
     if (!id) return;
-    const name = prompt("Its name:", map.name)?.trim() || map.name;
+    const name = prompt(t("app.name"), map.name)?.trim() || map.name;
     const file = structuredClone(mapFile(map.id));
     if (!file) return;
     file.name = name;
     const result = createMap(id, file, map.id);
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else {
       openMap(result.map);
       // (straight to disk in dev: a copy is meant to be kept)
       if (import.meta.env.DEV) {
         saveMap(id)
-          .then((path) => pushLog(`Editor: saved ${path}.`))
-          .catch((err) => pushLog(`Editor: not saved - ${err instanceof Error ? err.message : err}`));
+          .then((path) => pushLog(t("app.savedMap", { path: path }), "editor"))
+          .catch((err) => pushLog(t("app.saveFailed", { error: err instanceof Error ? err.message : err }), "error"));
       }
-      pushLog(`Editor: copied ${map.id} as ${id}.`);
+      pushLog(t("app.mapCopied", { source: map.id, id: id }), "editor");
     }
   };
 
@@ -1232,7 +1235,7 @@ export default function App() {
     if (selectedActor === null) return;
     const index = selectedActor;
     const result = applyEdit(map.id, (file) => updateActor(file, index, patch), merge && `actor ${index} ${merge}`);
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
@@ -1265,7 +1268,7 @@ export default function App() {
     const spec = doorAt(map, cell.x, cell.y);
     const base = { kind: spec.kind, facing: spec.facing };
     const result = applyEdit(map.id, (file) => updateDoor(file, cell, base, patch), merge && `door ${cell.x},${cell.y} ${merge}`);
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
@@ -1347,7 +1350,7 @@ export default function App() {
     const own = selectedSmokeSpec.pos;
     const fixed = patch.pos ? { ...patch, pos: patch.pos.map((v, i) => (Number.isNaN(v) ? own[i] : v)) as [number, number, number] } : patch;
     const result = applyEdit(map.id, (file) => updateSmoke(file, index, fixed), merge && `smoke ${index} ${merge}`);
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
@@ -1421,7 +1424,7 @@ export default function App() {
     if (selectedItem === null) return;
     const index = selectedItem;
     const result = applyEdit(map.id, (file) => updateItem(file, index, patch), merge && `item ${index} ${merge}`);
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
@@ -1489,7 +1492,7 @@ export default function App() {
     if (selectedChanceWall === null) return;
     const index = selectedChanceWall;
     const result = applyEdit(map.id, (file) => updateChanceWall(file, index, patch), `wall ${index} ${Object.keys(patch).join()}`);
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
@@ -1512,7 +1515,7 @@ export default function App() {
     if (selectedDecal === null) return;
     const index = selectedDecal;
     const result = applyEdit(map.id, (file) => updateDecal(file, index, patch), merge && `decal ${index} ${merge}`);
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
@@ -1605,7 +1608,7 @@ export default function App() {
       },
       merge && `prop ${index} ${merge}`,
     );
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
@@ -1634,7 +1637,7 @@ export default function App() {
         elevation: Math.round(selectedPropInfo.top * 100) / 100,
       }),
     );
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else {
       replaceMap(result.map);
       setSelectedProp(count);
@@ -1718,7 +1721,7 @@ export default function App() {
     if (selectedLight === null) return;
     const index = selectedLight;
     const result = applyEdit(map.id, (file) => updateLight(file, index, patch), `light ${index} ${Object.keys(patch).join()}`);
-    if ("error" in result) pushLog(`Editor: ${result.error}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
@@ -1900,7 +1903,7 @@ export default function App() {
               // no base here: the party wakes again where the world begins
               respawn();
               enterMap(MAPS[WORLDS[map.world].startMap] ?? START_MAP);
-              pushLog("You wake again where it began.");
+              pushLog(t("app.wakeAgain"));
               return;
             }
             // the haul lost, the whole crew cloned, back to the base
@@ -2023,7 +2026,7 @@ export default function App() {
             if (!selectedExit) return;
             const cell = selectedExit;
             const result = applyEdit(map.id, (file) => nameExit(file, cell, name), `exit ${cell.x},${cell.y} name`);
-            if ("error" in result) pushLog(`Editor: ${result.error}`);
+            if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
             else replaceMap(result.map);
             setEdits((n) => n + 1);
           }}
@@ -2048,7 +2051,7 @@ export default function App() {
             if (selectedChanceWall === null) return;
             const index = selectedChanceWall;
             const result = applyEdit(map.id, (file) => removeChanceWall(file, index));
-            if ("error" in result) pushLog(`Editor: ${result.error}`);
+            if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
             else replaceMap(result.map);
             setSelectedChanceWall(null);
             setEdits((n) => n + 1);
@@ -2072,7 +2075,7 @@ export default function App() {
       <VirtualJoysticks axesRef={free.axesRef} />
       {finePointer && !view.mouseLocked && (
         <div className="absolute bottom-16 inset-x-0 text-center text-[11px] text-neutral-300/80 pointer-events-none">
-          Click the view for mouselook (Esc releases) · WASD move · Q/E turn
+          {t("app.mouseHint")}
         </div>
       )}
     </>
@@ -2080,11 +2083,11 @@ export default function App() {
   // what the Use button is called, by what's ahead of the party
   const useLabel = (() => {
     const ahead = { x: pos.x + DIR_VECTOR[dir].x, y: pos.y + DIR_VECTOR[dir].y };
-    if (cellAt(map, ahead.x, ahead.y) === "door") return "Open";
+    if (cellAt(map, ahead.x, ahead.y) === "door") return t("app.open");
     const container = (map.props ?? []).some(
       (p) => p.cell.x === ahead.x && p.cell.y === ahead.y && PROP_TYPES[p.prop]?.container,
     );
-    return container ? "Search" : "Use";
+    return container ? t("app.search") : t("app.use");
   })();
   // the old action menu is left out (the movement pad replaced it)
   const SHOW_ACTION_MENU = false;
@@ -2126,7 +2129,7 @@ export default function App() {
 
         <button
           onClick={() => setMenuOpen((open) => !open)}
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-label={menuOpen ? t("app.closeMenu") : t("app.openMenu")}
           className="absolute top-2 right-2 pointer-events-auto w-9 h-9 flex items-center justify-center border border-neutral-700 bg-neutral-950/90 text-neutral-200 text-lg rounded-sm"
         >
           {menuOpen ? "✕" : "☰"}
@@ -2179,7 +2182,7 @@ export default function App() {
             edit={
               editMode
                 ? {
-                    verb: editTool === "height" ? "raise (right: lower) the" : editTool === "texture" ? "paint (right: clear) the" : editTool === "dig" || editTool === "fill" ? "dig / fill (right) the" : "edit the",
+                    verb: editTool === "height" ? t("app.raiseVerb") : editTool === "texture" ? t("app.paintVerb") : editTool === "dig" || editTool === "fill" ? t("app.digVerb") : t("app.editVerb"),
                     surface: miniSurface,
                     onSurface: setMiniSurface,
                     onCell: onMinimapCell,
@@ -2203,36 +2206,36 @@ export default function App() {
                   return (
                     <>
                       <span className="text-amber-200">
-                        Block {miniSel.x1 - miniSel.x0 + 1} x {miniSel.y1 - miniSel.y0 + 1}:
+                        {t("app.block", { w: miniSel.x1 - miniSel.x0 + 1, h: miniSel.y1 - miniSel.y0 + 1 })}
                       </span>
-                      <button className={btn} onClick={areaDig} title="Every wall cell in the block dug out (heights and textures from the cell beside it)">Dig out</button>
-                      <button className={btn} onClick={areaFill} title="Every open cell in the block filled in as wall - what stands in them goes (not the party's or the start's cell)">Fill in</button>
-                      <span className="text-neutral-400">Floor</span>
-                      <button className={btn} onClick={() => areaHeight("floor", 0.25)} title="Raise the floors a quarter panel">▲</button>
-                      <button className={btn} onClick={() => areaHeight("floor", -0.25)} title="Lower the floors a quarter panel">▼</button>
-                      <span className="text-neutral-400">Ceiling</span>
-                      <button className={btn} onClick={() => areaHeight("ceiling", 0.25)} title="Raise the ceilings a quarter panel">▲</button>
-                      <button className={btn} onClick={() => areaHeight("ceiling", -0.25)} title="Lower the ceilings a quarter panel">▼</button>
-                      <span className="text-neutral-400">Paint</span>
+                      <button className={btn} onClick={areaDig} title={t("app.digTitle")}>{t("app.dig")}</button>
+                      <button className={btn} onClick={areaFill} title={t("app.fillTitle")}>{t("app.fill")}</button>
+                      <span className="text-neutral-400">{t("app.floor")}</span>
+                      <button className={btn} onClick={() => areaHeight("floor", 0.25)} title={t("app.raiseFloor")}>▲</button>
+                      <button className={btn} onClick={() => areaHeight("floor", -0.25)} title={t("app.lowerFloor")}>▼</button>
+                      <span className="text-neutral-400">{t("app.ceiling")}</span>
+                      <button className={btn} onClick={() => areaHeight("ceiling", 0.25)} title={t("app.raiseCeiling")}>▲</button>
+                      <button className={btn} onClick={() => areaHeight("ceiling", -0.25)} title={t("app.lowerCeiling")}>▼</button>
+                      <span className="text-neutral-400">{t("app.paint")}</span>
                       {(["floor", "wall", "ceiling"] as const).map((s) => (
-                        <button key={s} className={btn} onClick={() => areaPaint(s)} title={`Paint the ${s}s with the set picked in the palette (${paint[s] ?? "none picked: the map's own"})`}>
-                          {s === "wall" ? "walls" : `${s}s`}
-                          <span className="text-neutral-500"> {paint[s] ?? "own"}</span>
+                        <button key={s} className={btn} onClick={() => areaPaint(s)} title={t("app.paintSurface", { surface: t(`app.${s}Plural`), texture: paint[s] ?? t("app.nonePicked") })}>
+                          {t(`app.${s}Plural`)}
+                          <span className="text-neutral-500"> {paint[s] ?? t("app.own")}</span>
                         </button>
                       ))}
-                      <button className={`${btn} ml-auto`} onClick={() => setMiniSel(null)} title="Let go of the block (Esc)">✕</button>
+                      <button className={`${btn} ml-auto`} onClick={() => setMiniSel(null)} title={t("app.release")}>✕</button>
                     </>
                   );
                 })()
               ) : (
-                <span className="text-neutral-400">Drag on the map to select a block of cells: dig it out, fill it in, raise or lower it, paint it. A plain click edits one cell, as before.</span>
+                <span className="text-neutral-400">{t("app.blockHint")}</span>
               )}
             </div>
           ) : (
             <>
               <div className="text-[10px] text-neutral-500 px-1">
                 <div>{map.name}</div>
-                <div>{WORLDS[map.world].loop === "ship" ? <>Deck {map.deck} &middot; Day 17</> : WORLDS[map.world].name}</div>
+                <div>{WORLDS[map.world].loop === "ship" ? <>{t("app.deckDay", { deck: map.deck })}</> : WORLDS[map.world].name}</div>
               </div>
               <div className="flex-1 min-h-0">
                 <LogPanel log={log} />

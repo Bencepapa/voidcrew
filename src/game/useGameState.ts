@@ -23,9 +23,16 @@ import { lockedAway, planShip } from "./shipPlan";
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 
+// What a log line is, which colours it (see LogPanel): ordinary news (the
+// default), the map editor's own lines, errors (an edit refused, a save that
+// failed), and - for the game's events, tagged as they are got to - healing,
+// damage taken or dealt, danger and warnings.
+export type LogKind = "info" | "editor" | "error" | "warn" | "heal" | "damage" | "danger";
+
 export interface LogEntry {
   id: number;
   text: string;
+  kind?: LogKind;
 }
 
 // A lift ride in progress (performance.now() times), for the viewport's
@@ -170,8 +177,8 @@ export function useGameState() {
   const [inLift, setInLift] = useState(false);
   const [ride, setRide] = useState<LiftRide | null>(null);
 
-  const pushLog = useCallback((text: string) => {
-    setLog((prev) => [...prev.slice(-200), { id: logId++, text }]);
+  const pushLog = useCallback((text: string, kind?: LogKind) => {
+    setLog((prev) => [...prev.slice(-200), { id: logId++, text, kind }]);
   }, []);
 
   // Lift doors close LIFT_DOOR_CLOSE_MS after the last passage: entering or

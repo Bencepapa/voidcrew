@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useRef } from "react";
 import type { ReactElement } from "react";
 import { ceilingHeight, doorAt, floorHeight, windowPanels } from "../game/map";
@@ -264,9 +265,9 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
     return (
       <div className={`border border-green-800 bg-black/60 p-2 flex flex-col gap-1 ${edit.zoomed ? "h-full min-h-0" : ""}`} onPointerDown={(e) => e.stopPropagation()}>
         <div className="text-[10px] font-mono text-neutral-300">
-          Click: <span className="text-amber-200">{edit.verb}</span>{" "}
+          {t("minimap.click")} <span className="text-amber-200">{edit.verb}</span>{" "}
           <span className={edit.surface === "floor" ? "text-emerald-300 font-semibold" : "text-sky-300 font-semibold"}>
-            {edit.surface === "floor" ? "FLOOR" : "CEILING"}
+            {edit.surface === "floor" ? t("minimap.floorUpper") : t("minimap.ceilingUpper")}
           </span>
         </div>
         <div className="flex items-center gap-1 text-[10px] font-mono">
@@ -276,22 +277,19 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
               type="button"
               onClick={() => edit.onSurface(s)}
               className={`border rounded-sm px-2 py-0.5 ${edit.surface === s ? (s === "floor" ? "border-emerald-400 bg-emerald-400/20 text-emerald-200" : "border-sky-400 bg-sky-400/20 text-sky-200") : "border-neutral-600 text-neutral-300 hover:bg-neutral-800"}`}
-              title={`Clicks here edit the ${s}s (right-click: the other way)`}
+              title={t(s === "floor" ? "minimap.editFloors" : "minimap.editCeilings")}
             >
-              {s === "floor" ? "Floor" : "Ceiling"}
+              {s === "floor" ? t("minimap.floor") : t("minimap.ceiling")}
             </button>
           ))}
-          <span className="text-neutral-500 ml-auto">
-            {edit.selection ? `${edit.selection.x1 - edit.selection.x0 + 1} x ${edit.selection.y1 - edit.selection.y0 + 1} of ` : ""}
-            {W} x {H}
-          </span>
+          <span className="text-neutral-500 ml-auto">{edit.selection ? t("minimap.selectionSize", { w: edit.selection.x1 - edit.selection.x0 + 1, h: edit.selection.y1 - edit.selection.y0 + 1, width: W, height: H }) : t("minimap.mapSize", { width: W, height: H })}</span>
           {edit.onZoom && (
             <button
               type="button"
               onClick={edit.onZoom}
               className="border border-neutral-600 rounded-sm px-2 py-0.5 text-neutral-200 hover:bg-neutral-800"
-              title={edit.zoomed ? "Back to the small minimap" : "A big minimap on the left, to build rooms on: drag to select a block of cells"}
-              aria-label={edit.zoomed ? "Shrink the minimap" : "Enlarge the minimap"}
+              title={edit.zoomed ? t("minimap.backToTheSmallMinimap") : t("minimap.aBigMinimapOnTheLeftTo")}
+              aria-label={edit.zoomed ? t("minimap.shrinkTheMinimap") : t("minimap.enlargeTheMinimap")}
             >
               {edit.zoomed ? "⤡" : "⤢"}
             </button>
@@ -301,7 +299,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
           viewBox={`-0.5 -0.5 ${W + 1} ${H + 1}`}
           className={`block w-full cursor-crosshair touch-none ${edit.zoomed ? "min-h-0 flex-1" : ""}`}
           style={edit.zoomed ? undefined : { aspectRatio: `${W + 1} / ${H + 1}` }}
-          aria-label={`Map: ${map.name}`}
+          aria-label={t("minimap.mapName", { name: map.name })}
           onClick={(e) => click(e, false)}
           onContextMenu={(e) => click(e, true)}
           onPointerDown={dragStart}
@@ -360,7 +358,7 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
         viewBox={`0 0 ${span} ${span}`}
         className="block w-full aspect-square"
         style={{ opacity: compact ? 0.8 : 1 }}
-        aria-label={`Map: ${map.name}`}
+        aria-label={t("minimap.mapName", { name: map.name })}
       >
         {/* the map, slid so the player's cell sits in the middle */}
         {paper && (

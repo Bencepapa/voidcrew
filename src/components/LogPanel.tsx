@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import type { LogEntry } from "../game/useGameState";
+import type { LogEntry, LogKind } from "../game/useGameState";
+
+// the colour of each kind of line (the default is the log's own green)
+const KIND_COLOR: Record<LogKind, string> = {
+  info: "",
+  editor: "text-sky-300",
+  error: "text-red-400 font-semibold",
+  warn: "text-amber-300",
+  heal: "text-emerald-300",
+  damage: "text-orange-400",
+  danger: "text-red-500 font-semibold",
+};
 
 // The message log: the whole history (the game keeps the last 200 lines),
 // scrolled to the newest. On a phone it's a small box that can be scrolled,
@@ -11,7 +22,11 @@ export function LogPanel({ log, compact }: { log: LogEntry[]; compact?: boolean 
   useEffect(() => {
     for (const el of [box.current, big.current]) if (el) el.scrollTop = el.scrollHeight;
   }, [log, expanded]);
-  const lines = log.map((entry) => <div key={entry.id}>&gt; {entry.text}</div>);
+  const lines = log.map((entry) => (
+    <div key={entry.id} className={KIND_COLOR[entry.kind ?? "info"]}>
+      &gt; {entry.text}
+    </div>
+  ));
   return (
     <>
       <div className="relative h-full">

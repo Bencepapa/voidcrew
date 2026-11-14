@@ -1,0 +1,7 @@
+Read C:\dev\js\voidcrew\concept\editor-ui\i18n-brief.md first and follow it exactly.
+Your assignment:
+(1) src/editor/EditorBar.tsx (large, about 1200 lines, go panel by panel) into the i18n area "editorBar" (src/i18n/en/editorBar.ts and src/i18n/hu/editorBar.ts, keys "editorBar.<name>");
+(2) src/components/Minimap.tsx into the area "minimap" (src/i18n/en/minimap.ts and src/i18n/hu/minimap.ts, keys "minimap.<name>");
+(3) src/components/DebugPanel.tsx into the area "debug" (src/i18n/en/debug.ts and src/i18n/hu/debug.ts, keys "debug.<name>"). It already imports t and LangSwitch for a language row near the top: leave that row as it is. Module-level slider/option tables keep keys and call t() at render time.
+Another agent is editing src/App.tsx and src/editor/AssetManager.tsx and the files src/i18n/en/app.ts, src/i18n/hu/app.ts, src/i18n/en/assetManager.ts, src/i18n/hu/assetManager.ts at the same time: do not touch those.
+Run npx tsc --noEmit at the end (errors in the other agent's files may be transient: ignore those). Do not commit.

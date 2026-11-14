@@ -8,6 +8,8 @@ import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { LOCKED_WORLD, WORLDS, switchWorld } from "../game/worlds";
 import { GRAPHICS_PRESETS, VIEW_DISTANCE_HIGH, VIEW_DISTANCE_MAX, effectiveViewDistance, presetOf } from "../render/graphics";
 import type { WorldId } from "../game/worlds";
+import { LangSwitch } from "../i18n/LangSwitch";
+import { t, formatNumber, type Key } from "../i18n";
 import type { TextureSetKind } from "../render/textureSets";
 
 interface DebugPanelProps {
@@ -41,75 +43,75 @@ interface DebugPanelProps {
   onMapTexture?: (slot: string, setId: string | undefined) => void;
 }
 
-const WALL_PROFILE_OPTIONS: { id: WallProfileId; label: string }[] = [
-  { id: "relief", label: "Relief mesh (from depth map)" },
-  { id: "flat", label: "Flat" },
-  { id: "convex", label: "Beveled - convex (bulges out)" },
-  { id: "concave", label: "Beveled - concave (recedes in)" },
+const WALL_PROFILE_OPTIONS: { id: WallProfileId; label: Key }[] = [
+  { id: "relief", label: "debug.reliefMeshFromDepthMap" },
+  { id: "flat", label: "debug.flat" },
+  { id: "convex", label: "debug.beveledConvexBulgesOut" },
+  { id: "concave", label: "debug.beveledConcaveRecedesIn" },
 ];
 
 interface SliderConfig {
   key: keyof ViewportSettings;
-  label: string;
+  label: Key;
   min: number;
   max: number;
   step: number;
 }
 
 const VIEW_SLIDERS: SliderConfig[] = [
-  { key: "fov", label: "FOV", min: 40, max: 100, step: 1 },
-  { key: "moveDurationMs", label: "Step duration (ms)", min: 60, max: 600, step: 10 },
+  { key: "fov", label: "debug.fov", min: 40, max: 100, step: 1 },
+  { key: "moveDurationMs", label: "debug.stepDurationMs", min: 60, max: 600, step: 10 },
 ];
 
 const LIGHT_SLIDERS: SliderConfig[] = [
-  { key: "mapLightIntensity", label: "Map lights", min: 0, max: 3, step: 0.05 },
-  { key: "pointLightIntensity", label: "Headlamp", min: 0, max: 8, step: 0.1 },
-  { key: "ambientIntensity", label: "Ambient light", min: 0, max: 2, step: 0.05 },
+  { key: "mapLightIntensity", label: "debug.mapLights", min: 0, max: 3, step: 0.05 },
+  { key: "pointLightIntensity", label: "debug.headlamp", min: 0, max: 8, step: 0.1 },
+  { key: "ambientIntensity", label: "debug.ambientLight", min: 0, max: 2, step: 0.05 },
 ];
 
-const ACCENT_RATIO_SLIDER: SliderConfig = { key: "accentRatio", label: "Accent share of walls", min: 0, max: 1, step: 0.05 };
+const ACCENT_RATIO_SLIDER: SliderConfig = { key: "accentRatio", label: "debug.accentShareOfWalls", min: 0, max: 1, step: 0.05 };
 
 // how vivid a texture's pixel must be to count as accent (see accent.ts)
-const ACCENT_SLIDERS: SliderConfig[] = [{ key: "accentMinSat", label: "Accent: min saturation", min: 0, max: 1, step: 0.05 }];
-const LIVERY_NAMES: Record<number, string> = { 0: "red", 30: "orange", 55: "yellow", 120: "green", 185: "cyan", 215: "blue", 280: "purple" };
+const ACCENT_SLIDERS: SliderConfig[] = [{ key: "accentMinSat", label: "debug.accentMinSaturation", min: 0, max: 1, step: 0.05 }];
+const LIVERY_NAMES: Record<number, Key> = {"0":"debug.color.red","30":"debug.color.orange","55":"debug.color.yellow","120":"debug.color.green","185":"debug.color.cyan","215":"debug.color.blue","280":"debug.color.purple"};
 
 const CAMERA_SLIDERS: SliderConfig[] = [
-  { key: "eyeHeight", label: "Eye height", min: 0.1, max: 0.9, step: 0.01 },
-  { key: "cameraPullback", label: "Camera pullback", min: 0, max: 0.49, step: 0.01 },
+  { key: "eyeHeight", label: "debug.eyeHeight", min: 0.1, max: 0.9, step: 0.01 },
+  { key: "cameraPullback", label: "debug.cameraPullback", min: 0, max: 0.49, step: 0.01 },
 ];
 
 const RELIEF_SLIDERS: SliderConfig[] = [
-  { key: "reliefDepth", label: "Relief depth (unless the map sets it)", min: 0.005, max: 0.12, step: 0.005 },
-  { key: "reliefMinIsland", label: "Min feature size (px, 1 = off)", min: 1, max: 16, step: 1 },
-  { key: "aoIntensity", label: "AO strength (ambient)", min: 0, max: 1.5, step: 0.05 },
-  { key: "aoDirect", label: "AO on direct light", min: 0, max: 1, step: 0.05 },
-  { key: "aoRadius", label: "AO radius (px)", min: 1, max: 16, step: 1 },
+  { key: "reliefDepth", label: "debug.reliefDepthUnlessTheMapSetsIt", min: 0.005, max: 0.12, step: 0.005 },
+  { key: "reliefMinIsland", label: "debug.minFeatureSizePx1Off", min: 1, max: 16, step: 1 },
+  { key: "aoIntensity", label: "debug.aOStrengthAmbient", min: 0, max: 1.5, step: 0.05 },
+  { key: "aoDirect", label: "debug.aOOnDirectLight", min: 0, max: 1, step: 0.05 },
+  { key: "aoRadius", label: "debug.aORadiusPx", min: 1, max: 16, step: 1 },
 ];
 
 // the floors' own relief depth and normal strength (0: as the walls')
 const FLOOR_SLIDERS: SliderConfig[] = [
-  { key: "floorReliefDepth", label: "Floor relief depth", min: 0, max: 0.12, step: 0.005 },
-  { key: "floorNormalStrength", label: "Floor normal strength", min: 0, max: 3, step: 0.1 },
+  { key: "floorReliefDepth", label: "debug.floorReliefDepth", min: 0, max: 0.12, step: 0.005 },
+  { key: "floorNormalStrength", label: "debug.floorNormalStrength", min: 0, max: 3, step: 0.1 },
 ];
 
 const BEVEL_SLIDERS: SliderConfig[] = [
-  { key: "bevelFraction", label: "Bevel fraction", min: 0.05, max: 0.45, step: 0.01 },
-  { key: "bevelAngleDeg", label: "Bevel angle (deg, from floor)", min: 15, max: 75, step: 1 },
+  { key: "bevelFraction", label: "debug.bevelFraction", min: 0.05, max: 0.45, step: 0.01 },
+  { key: "bevelAngleDeg", label: "debug.bevelAngleDegFromFloor", min: 15, max: 75, step: 1 },
 ];
 
 // (non-relief walls only)
 const DISPLACEMENT_SLIDER: SliderConfig = {
   key: "displacementScale",
-  label: "Depth displacement",
+  label: "debug.depthDisplacement",
   min: 0,
   max: 0.06,
   step: 0.005,
 };
 
 const MATERIAL_SLIDERS: SliderConfig[] = [
-  { key: "roughness", label: "Roughness", min: 0.05, max: 1, step: 0.05 },
-  { key: "metalness", label: "Metalness", min: 0, max: 1, step: 0.05 },
-  { key: "normalStrength", label: "Normal map strength", min: 0, max: 3, step: 0.1 },
+  { key: "roughness", label: "debug.roughness", min: 0.05, max: 1, step: 0.05 },
+  { key: "metalness", label: "debug.metalness", min: 0, max: 1, step: 0.05 },
+  { key: "normalStrength", label: "debug.normalMapStrength", min: 0, max: 3, step: 0.1 },
 ];
 
 // times of day for the sky's light: strength, colour, where from, how high
@@ -122,6 +124,9 @@ const SKY_PRESETS: Record<string, Partial<ViewportSettings>> = {
   "Off": { skyLightIntensity: 0 },
 };
 
+const SKY_LABELS: Record<string, Key> = {"Night (moon)":"debug.sky.Nightmoon","Dawn":"debug.sky.Dawn","Noon":"debug.sky.Noon","Afternoon":"debug.sky.Afternoon","Dusk":"debug.sky.Dusk","Off":"debug.sky.Off"};
+const GRAPHICS_LABELS: Record<string, Key> = {"Low":"debug.preset.Low","Medium":"debug.preset.Medium","High":"debug.preset.High","Ultra":"debug.preset.Ultra","Custom":"debug.preset.Custom"};
+const MOOD_LABELS: Record<string, Key> = {"light":"debug.mood.light","threat":"debug.mood.threat","clutter":"debug.mood.clutter","smoke":"debug.mood.smoke","fire":"debug.mood.fire","doors":"debug.mood.doors","locks":"debug.mood.locks","robots":"debug.mood.robots","bright":"debug.mood.bright","dim":"debug.mood.dim","dark":"debug.mood.dark","low":"debug.mood.low","medium":"debug.mood.medium","high":"debug.mood.high","sparse":"debug.mood.sparse","normal":"debug.mood.normal","cluttered":"debug.mood.cluttered","clear":"debug.mood.clear","hazy":"debug.mood.hazy","smoky":"debug.mood.smoky","cold":"debug.mood.cold","smouldering":"debug.mood.smouldering","burning":"debug.mood.burning","few":"debug.mood.few","some":"debug.mood.some","many":"debug.mood.many","dormant":"debug.mood.dormant","fooled":"debug.mood.fooled","hostile":"debug.mood.hostile"};
 const SELECT = "bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm";
 
 export function DebugPanel({
@@ -151,8 +156,8 @@ export function DebugPanel({
     return (
       <div key={s.key} className="flex flex-col gap-0.5">
         <div className="flex justify-between text-[10px] text-neutral-300">
-          <span>{s.label}</span>
-          <span>{(settings[s.key] as number).toFixed(s.step >= 1 ? 0 : s.step >= 0.01 ? 2 : 3)}</span>
+          <span>{t(s.label)}</span>
+          <span>{formatNumber(settings[s.key] as number, s.step >= 1 ? 0 : s.step >= 0.01 ? 2 : 3)}</span>
         </div>
         <input
           type="range"
@@ -207,7 +212,7 @@ export function DebugPanel({
         onChange={(e) => onMapTexture?.(slot, e.target.value || undefined)}
         className={SELECT}
       >
-        <option value="">{accent ? "none (viewer default)" : "default"}</option>
+        <option value="">{accent ? t("debug.noneViewerDefault") : t("debug.default")}</option>
         {textureSetsOfKind(kind).map((id) => (
           <option key={id} value={id}>
             {TEXTURE_SETS[id].label}
@@ -235,10 +240,14 @@ export function DebugPanel({
     <div
       className={`w-full flex flex-col gap-1 border border-neutral-700 rounded-sm p-2 text-neutral-200 ${compact ? "bg-neutral-950/95" : "h-full bg-neutral-900/80 overflow-y-auto"}`}
     >
-      <div className="text-[11px] font-semibold text-neutral-200 uppercase tracking-wide">Debug</div>
+      <div className="text-[11px] font-semibold text-neutral-200 uppercase tracking-wide">{t("debug.debug")}</div>
+      <div className="flex items-center justify-between gap-2 text-[11px] text-neutral-300">
+        <span>{t("common.language")}</span>
+        <LangSwitch />
+      </div>
       {world && !LOCKED_WORLD &&
         select(
-          "World",
+          t("debug.world"),
           <select value={world} onChange={(e) => switchWorld(e.target.value as WorldId)} className={SELECT}>
             {(Object.values(WORLDS) as { id: WorldId; name: string }[]).map((w) => (
               <option key={w.id} value={w.id}>
@@ -249,13 +258,11 @@ export function DebugPanel({
         )}
 
       {section(
-        "Map attributes",
+        t("debug.mapAttributes"),
         <>
-          <div className="text-[10px] text-neutral-300">
-            Values saved with the map ({mapId ?? "map"}.json): applied when it opens, over the viewer defaults.
-          </div>
+          <div className="text-[10px] text-neutral-300">{t("debug.valuesSavedWithTheMapJsonApplied", { v1: mapId ?? "map" })}</div>
           {select(
-            "Wall type",
+            t("debug.wallType"),
             <select
               value={settings.wallProfile}
               onChange={(e) => set("wallProfile", e.target.value as WallProfileId)}
@@ -263,46 +270,45 @@ export function DebugPanel({
             >
               {WALL_PROFILE_OPTIONS.map((opt) => (
                 <option key={opt.id} value={opt.id}>
-                  {opt.label}
+                  {t(opt.label)}
                 </option>
               ))}
             </select>,
           )}
           {relief &&
             select(
-              "Relief shape (props follow the wall type)",
+              t("debug.reliefShapePropsFollowTheWallType"),
               <select
                 value={settings.reliefMode}
                 onChange={(e) => set("reliefMode", e.target.value as ViewportSettings["reliefMode"])}
                 className={SELECT}
               >
-                <option value="steps">Steps - distinct levels (machinery, panels)</option>
-                <option value="smooth">Smooth - slopes (stone, hedges, trees)</option>
+                <option value="steps">{t("debug.stepsDistinctLevelsMachineryPanels")}</option>
+                <option value="smooth">{t("debug.smoothSlopesStoneHedgesTrees")}</option>
               </select>,
             )}
-          {heading("Walls")}
+          {heading(t("debug.walls"))}
           {relief && RELIEF_SLIDERS.map(slider)}
           {beveled && BEVEL_SLIDERS.map(slider)}
           {!relief && slider(DISPLACEMENT_SLIDER)}
-          {slider({ key: "wallHeight", label: "Wall height", min: 0.6, max: 2, step: 0.05 })}
-          {heading("Floors (0 = as the walls)")}
+          {slider({ key: "wallHeight", label: "debug.wallHeight", min: 0.6, max: 2, step: 0.05 })}
+          {heading(t("debug.floors0AsTheWalls"))}
           {FLOOR_SLIDERS.map(slider)}
-          {heading("Material")}
+          {heading(t("debug.material"))}
           {MATERIAL_SLIDERS.map(slider)}
-          {heading("Light")}
+          {heading(t("debug.light"))}
           {LIGHT_SLIDERS.map(slider)}
           <label className="flex items-center justify-between gap-2 text-[11px]">
-            Distance fades to (fog colour) - saved with the map
-            <input
+            {t("debug.distanceFadesToFogColourSavedWith")}<input
               type="color"
               value={settings.fogColor}
               onChange={(e) => set("fogColor", e.target.value)}
               className="w-8 h-6 bg-transparent border border-neutral-600"
             />
           </label>
-          {heading("Sky light (under open ceilings)")}
+          {heading(t("debug.skyLightUnderOpenCeilings"))}
           {select(
-            "Time of day",
+            t("debug.timeOfDay"),
             <select
               value=""
               onChange={(e) => {
@@ -311,77 +317,68 @@ export function DebugPanel({
               }}
               className={SELECT}
             >
-              <option value="">set from a preset...</option>
+              <option value="">{t("debug.setFromAPreset")}</option>
               {Object.keys(SKY_PRESETS).map((name) => (
                 <option key={name} value={name}>
-                  {name}
+                  {t(SKY_LABELS[name])}
                 </option>
               ))}
             </select>,
           )}
-          {slider({ key: "skyLightIntensity", label: "Sky light strength (0 = none)", min: 0, max: 3, step: 0.05 })}
-          {slider({ key: "skyLightAzimuth", label: "Sky light from (compass, 0 = north)", min: 0, max: 359, step: 1 })}
-          {slider({ key: "skyLightElevation", label: "Sky light height (degrees)", min: 5, max: 90, step: 1 })}
+          {slider({ key: "skyLightIntensity", label: "debug.skyLightStrength0None", min: 0, max: 3, step: 0.05 })}
+          {slider({ key: "skyLightAzimuth", label: "debug.skyLightFromCompass0North", min: 0, max: 359, step: 1 })}
+          {slider({ key: "skyLightElevation", label: "debug.skyLightHeightDegrees", min: 5, max: 90, step: 1 })}
           <label className="flex items-center justify-between gap-2 text-[11px]">
-            Sky light colour
-            <input
+            {t("debug.skyLightColour")}<input
               type="color"
               value={settings.skyLightColor}
               onChange={(e) => set("skyLightColor", e.target.value)}
               className="w-8 h-6 bg-transparent border border-neutral-600"
             />
           </label>
-          {check("headlamp", "Headlamp on (L) - saved with the map")}
-          {check("bobEnabled", "Idle head-bob - saved with the map")}
+          {check("headlamp", t("debug.headlampOnLSavedWithTheMap"))}
+          {check("bobEnabled", t("debug.idleHeadBobSavedWithTheMap"))}
           {onSaveRender && (
             <div className="flex gap-1">
-              <button type="button" onClick={onSaveRender} className={`${button} flex-1 border-amber-500/60 text-amber-200`}>
-                Save to map
-              </button>
+              <button type="button" onClick={onSaveRender} className={`${button} flex-1 border-amber-500/60 text-amber-200`}>{t("debug.saveToMap")}</button>
               {mapHasRender && onClearRender && (
-                <button type="button" onClick={onClearRender} className={button} title="Remove the map's render values">
-                  Clear
-                </button>
+                <button type="button" onClick={onClearRender} className={button} title={t("debug.removeTheMapSRenderValues")}>{t("debug.clear")}</button>
               )}
             </div>
           )}
           {onEditMap && (
-            <button type="button" onClick={onEditMap} className={`${button} border-amber-500/60 text-amber-200`}>
-              Edit map (Tab)
-            </button>
+            <button type="button" onClick={onEditMap} className={`${button} border-amber-500/60 text-amber-200`}>{t("debug.editMapTab")}</button>
           )}
           {mapId && (
-            <button type="button" onClick={() => downloadMap(mapId)} className={button}>
-              Download map ({mapId}.json)
-            </button>
+            <button type="button" onClick={() => downloadMap(mapId)} className={button}>{t("debug.downloadMapJson", { v1: mapId })}</button>
           )}
         </>,
-        "material, AO, relief, wall height, ambient",
+        t("debug.materialAOReliefWallHeightAmbient"),
       )}
 
       {section(
-        "Lights",
+        t("debug.lights"),
         <>
-          {check("bakedLights", "Baked lighting (off: every map light real)")}
+          {check("bakedLights", t("debug.bakedLightingOffEveryMapLightReal"))}
           {settings.bakedLights && (
             <>
               {select(
-                "Baked light",
+                t("debug.bakedLight"),
                 <select
                   value={settings.lightGridMode}
                   onChange={(e) => set("lightGridMode", e.target.value as ViewportSettings["lightGridMode"])}
                   className={SELECT}
                 >
-                  <option value="directional">directional (main light + ambient)</option>
-                  <option value="cube">cube (six directions)</option>
+                  <option value="directional">{t("debug.directionalMainLightAmbient")}</option>
+                  <option value="cube">{t("debug.cubeSixDirections")}</option>
                 </select>,
               )}
-              {slider({ key: "lightGridDensity", label: "Baked samples per cell (unless the map sets it)", min: 2, max: 12, step: 1 })}
-              {slider({ key: "lightBounce", label: "Light bounce (0 = unlit rooms stay dark)", min: 0, max: 3, step: 0.05 })}
+              {slider({ key: "lightGridDensity", label: "debug.bakedSamplesPerCellUnlessTheMap", min: 2, max: 12, step: 1 })}
+              {slider({ key: "lightBounce", label: "debug.lightBounce0UnlitRoomsStayDark", min: 0, max: 3, step: 0.05 })}
             </>
           )}
           {select(
-            "Ship livery",
+            t("debug.shipLivery"),
             <select
               value={String(settings.shipAccent)}
               onChange={(e) => {
@@ -390,11 +387,11 @@ export function DebugPanel({
               }}
               className={SELECT}
             >
-              <option value="rolled">rolled for the ship</option>
-              <option value="painted">as painted</option>
+              <option value="rolled">{t("debug.rolledForTheShip")}</option>
+              <option value="painted">{t("debug.asPainted")}</option>
               {LIVERY_HUES.map((hue) => (
                 <option key={hue} value={hue}>
-                  {LIVERY_NAMES[hue] ?? hue}
+                  {LIVERY_NAMES[hue] ? t(LIVERY_NAMES[hue]) : hue}
                 </option>
               ))}
             </select>,
@@ -404,26 +401,24 @@ export function DebugPanel({
       )}
 
       {section(
-        "Texture defaults",
+        t("debug.textureDefaults"),
         <>
-          <div className="text-[10px] text-neutral-300">
-            The map's default texture sets (what isn't painted over): saved in the map file with Save to map.
-          </div>
+          <div className="text-[10px] text-neutral-300">{t("debug.theMapSDefaultTextureSetsWhat")}</div>
           {onMapTexture && (
             <>
-              {textureSelect("wall", "Wall texture", "wall")}
-              {textureSelect("accent", "Accent texture (some walls)", "wall", true)}
+              {textureSelect("wall", t("debug.wallTexture"), "wall")}
+              {textureSelect("accent", t("debug.accentTextureSomeWalls"), "wall", true)}
               {mapTextures?.accent && slider(ACCENT_RATIO_SLIDER)}
-              {textureSelect("floor", "Floor texture", "floor")}
-              {textureSelect("ceiling", "Ceiling texture", "ceiling")}
-              {textureSelect("door", "Door", "door")}
-              {textureSelect("doorFrame", "Door frame", "door")}
-              {textureSelect("liftDoor", "Lift door", "door")}
-              {textureSelect("window", "Window", "window")}
+              {textureSelect("floor", t("debug.floorTexture"), "floor")}
+              {textureSelect("ceiling", t("debug.ceilingTexture"), "ceiling")}
+              {textureSelect("door", t("debug.door"), "door")}
+              {textureSelect("doorFrame", t("debug.doorFrame"), "door")}
+              {textureSelect("liftDoor", t("debug.liftDoor"), "door")}
+              {textureSelect("window", t("debug.window"), "window")}
               {select(
-                "Sky image (open-air maps)",
+                t("debug.skyImageOpenAirMaps"),
                 <select value={mapTextures?.sky ?? ""} onChange={(e) => onMapTexture("sky", e.target.value || undefined)} className={SELECT}>
-                  <option value="">starry sky (generated)</option>
+                  <option value="">{t("debug.starrySkyGenerated")}</option>
                   {skies.map((name) => (
                     <option key={name} value={name}>
                       {name}
@@ -434,18 +429,15 @@ export function DebugPanel({
             </>
           )}
         </>,
-        "wall, accent, floor, ceiling, doors",
+        t("debug.wallAccentFloorCeilingDoors"),
       )}
 
       {section(
-        "Graphics",
+        t("debug.graphics"),
         <>
-          <div className="text-[10px] text-neutral-300">
-            For a weaker device: fewer particles, coarser walls, a lower resolution, a shorter view. Kept on this device. Some of these
-            rebuild the scene.
-          </div>
+          <div className="text-[10px] text-neutral-300">{t("debug.forAWeakerDeviceFewerParticlesCoarser")}</div>
           {select(
-            "Preset",
+            t("debug.preset"),
             <select
               value={presetOf(settings)}
               onChange={(e) => {
@@ -458,173 +450,171 @@ export function DebugPanel({
               }}
               className={SELECT}
             >
-              {presetOf(settings) === "Custom" && <option value="Custom">Custom</option>}
+              {presetOf(settings) === "Custom" && <option value="Custom">{t("debug.custom")}</option>}
               {Object.keys(GRAPHICS_PRESETS).map((name) => (
                 <option key={name} value={name}>
-                  {name}
+                  {t(GRAPHICS_LABELS[name])}
                 </option>
               ))}
             </select>,
           )}
-          {slider({ key: "particleQuality", label: "Particles (smoke, flames, petals)", min: 0.1, max: 1, step: 0.05 })}
+          {slider({ key: "particleQuality", label: "debug.particlesSmokeFlamesPetals", min: 0.1, max: 1, step: 0.05 })}
           {select(
-            "Particle updates",
+            t("debug.particleUpdates"),
             <select value={settings.particleEvery} onChange={(e) => set("particleEvery", Number(e.target.value))} className={SELECT}>
-              <option value={1}>every frame</option>
-              <option value={2}>every 2nd frame</option>
-              <option value={3}>every 3rd frame</option>
+              <option value={1}>{t("debug.everyFrame")}</option>
+              <option value={2}>{t("debug.every2ndFrame")}</option>
+              <option value={3}>{t("debug.every3rdFrame")}</option>
             </select>,
           )}
           {select(
-            "Smooth wall polygons",
+            t("debug.smoothWallPolygons"),
             <select value={settings.wallDetail} onChange={(e) => set("wallDetail", Number(e.target.value))} className={SELECT}>
-              <option value={16}>low (512 triangles a wall)</option>
-              <option value={32}>medium (2 048)</option>
-              <option value={64}>high (8 192)</option>
+              <option value={16}>{t("debug.low512TrianglesAWall")}</option>
+              <option value={32}>{t("debug.medium2048")}</option>
+              <option value={64}>{t("debug.high8192")}</option>
             </select>,
           )}
           {select(
-            "Resolution (device pixels per pixel)",
+            t("debug.resolutionDevicePixelsPerPixel"),
             <select value={settings.pixelRatioCap} onChange={(e) => set("pixelRatioCap", Number(e.target.value))} className={SELECT}>
-              <option value={0.5}>0.5x (blurry, lightest)</option>
-              <option value={0.75}>0.75x (soft)</option>
-              <option value={1}>1x</option>
-              <option value={1.25}>1.25x</option>
-              <option value={1.5}>1.5x</option>
-              <option value={2}>2x (sharpest)</option>
+              <option value={0.5}>{t("debug.05xBlurryLightest")}</option>
+              <option value={0.75}>{t("debug.075xSoft")}</option>
+              <option value={1}>{t("debug.1x")}</option>
+              <option value={1.25}>{t("debug.125x")}</option>
+              <option value={1.5}>{t("debug.15x")}</option>
+              <option value={2}>{t("debug.2xSharpest")}</option>
             </select>,
           )}
           {select(
-            "View distance limit (fog closes in)",
+            t("debug.viewDistanceLimitFogClosesIn"),
             <select value={settings.viewDistanceCap} onChange={(e) => set("viewDistanceCap", Number(e.target.value))} className={SELECT}>
-              <option value={5}>5 cells</option>
-              <option value={6}>6 cells</option>
-              <option value={7}>7 cells</option>
-              <option value={VIEW_DISTANCE_HIGH}>{VIEW_DISTANCE_HIGH} cells</option>
-              <option value={VIEW_DISTANCE_MAX}>none ({VIEW_DISTANCE_MAX} cells)</option>
+              <option value={5}>{t("debug.5Cells")}</option>
+              <option value={6}>{t("debug.6Cells")}</option>
+              <option value={7}>{t("debug.7Cells")}</option>
+              <option value={VIEW_DISTANCE_HIGH}>{t("debug.cells", { v1: VIEW_DISTANCE_HIGH })}</option>
+              <option value={VIEW_DISTANCE_MAX}>{t("debug.noneCells", { v1: VIEW_DISTANCE_MAX })}</option>
             </select>,
           )}
           {select(
-            "Distant detail (walls, doors, props)",
+            t("debug.distantDetailWallsDoorsProps"),
             <select value={settings.lodScale} onChange={(e) => set("lodScale", Number(e.target.value))} className={SELECT}>
-              <option value={1}>normal (coarser from 2 cells)</option>
-              <option value={3}>far (coarser from 7 cells)</option>
-              <option value={0}>full detail everywhere</option>
+              <option value={1}>{t("debug.normalCoarserFrom2Cells")}</option>
+              <option value={3}>{t("debug.farCoarserFrom7Cells")}</option>
+              <option value={0}>{t("debug.fullDetailEverywhere")}</option>
             </select>,
           )}
           {select(
-            "Smoothed edges (antialiasing)",
+            t("debug.smoothedEdgesAntialiasing"),
             <select value={settings.antialias} onChange={(e) => set("antialias", Number(e.target.value))} className={SELECT}>
-              <option value={0}>off</option>
-              <option value={1}>on</option>
+              <option value={0}>{t("debug.off")}</option>
+              <option value={1}>{t("debug.on")}</option>
             </select>,
           )}
           {select(
-            "Real lights at once (torches, fires, flashes)",
+            t("debug.realLightsAtOnceTorchesFiresFlashes"),
             <select value={settings.lightPool} onChange={(e) => set("lightPool", Number(e.target.value))} className={SELECT}>
-              <option value={2}>2 (lightest)</option>
+              <option value={2}>{t("debug.2Lightest")}</option>
               <option value={4}>4</option>
               <option value={6}>6</option>
-              <option value={8}>8 (all)</option>
+              <option value={8}>{t("debug.8All")}</option>
             </select>,
           )}
           {select(
-            "Surface normal maps (fine bumps)",
+            t("debug.surfaceNormalMapsFineBumps"),
             <select value={settings.normalMaps} onChange={(e) => set("normalMaps", Number(e.target.value))} className={SELECT}>
-              <option value={0}>off</option>
-              <option value={1}>on</option>
+              <option value={0}>{t("debug.off")}</option>
+              <option value={1}>{t("debug.on")}</option>
             </select>,
           )}
           {/* (past VIEW_DISTANCE_HIGH only when the limit above allows) */}
           {slider({
             key: "viewDistance",
-            label: "View distance (cells)",
+            label: "debug.viewDistanceCells",
             min: 5,
             max: Math.max(VIEW_DISTANCE_HIGH, settings.viewDistanceCap),
             step: 0.5,
           })}
           {effectiveViewDistance(settings) < settings.viewDistance && (
-            <div className="text-[10px] text-neutral-300">Limited to {effectiveViewDistance(settings)} by this device's setting above.</div>
+            <div className="text-[10px] text-neutral-300">{t("debug.limitedToByThisDeviceSSetting", { v1: effectiveViewDistance(settings) })}</div>
           )}
         </>,
-        "particles, wall polygons, resolution, view distance, lights, antialiasing",
+        t("debug.particlesWallPolygonsResolutionViewDistanceLights"),
       )}
 
       {section(
-        "View & camera",
+        t("debug.viewCamera"),
         <>
           {VIEW_SLIDERS.map(slider)}
           {CAMERA_SLIDERS.map(slider)}
-          {check("decalsEnabled", "Decals")}
+          {check("decalsEnabled", t("debug.decals"))}
           {select(
-            "Geometry view",
+            t("debug.geometryView"),
             <select
               value={settings.geometryView}
               onChange={(e) => set("geometryView", e.target.value as ViewportSettings["geometryView"])}
               className={SELECT}
             >
-              <option value="textured">textured</option>
-              <option value="faces">faces only (colored by direction)</option>
-              <option value="wireframe">wireframe</option>
-              <option value="normals">normal maps (what the sprites show instead of faces)</option>
-              <option value="depth">depth maps</option>
+              <option value="textured">{t("debug.textured")}</option>
+              <option value="faces">{t("debug.facesOnlyColoredByDirection")}</option>
+              <option value="wireframe">{t("debug.wireframe")}</option>
+              <option value="normals">{t("debug.normalMapsWhatTheSpritesShowInstead")}</option>
+              <option value="depth">{t("debug.depthMaps")}</option>
             </select>,
           )}
-          {check("showNormals", "Normal maps")}
-          {check("showMetal", "Metal / gloss")}
-          {check("showGlow", "Glow maps")}
-          {check("showAO", "Ambient occlusion")}
+          {check("showNormals", t("debug.normalMaps"))}
+          {check("showMetal", t("debug.metalGloss"))}
+          {check("showGlow", t("debug.glowMaps"))}
+          {check("showAO", t("debug.ambientOcclusion"))}
         </>,
       )}
 
       {section(
-        "Smoke",
+        t("debug.smoke"),
         <>
           {select(
-            "Smoke puffs",
+            t("debug.smokePuffs"),
             <select
               value={settings.smokeStyle}
               onChange={(e) => set("smokeStyle", e.target.value as ViewportSettings["smokeStyle"])}
               className={SELECT}
             >
-              <option value="noise">noise clouds (made in the game)</option>
-              <option value="painted">painted puffs</option>
-              <option value="animated">painted, played as they live</option>
-              <option value="paintedFew">painted, fewer, thicker, upright</option>
-              <option value="paintedFewAnimated">painted, fewer, thicker, all 36 frames once</option>
-              <option value="squares">see-through squares, upright</option>
-              <option value="turnedSquares">see-through squares, turning</option>
+              <option value="noise">{t("debug.noiseCloudsMadeInTheGame")}</option>
+              <option value="painted">{t("debug.paintedPuffs")}</option>
+              <option value="animated">{t("debug.paintedPlayedAsTheyLive")}</option>
+              <option value="paintedFew">{t("debug.paintedFewerThickerUpright")}</option>
+              <option value="paintedFewAnimated">{t("debug.paintedFewerThickerAll36FramesOnce")}</option>
+              <option value="squares">{t("debug.seeThroughSquaresUpright")}</option>
+              <option value="turnedSquares">{t("debug.seeThroughSquaresTurning")}</option>
             </select>,
           )}
-          {check("smokeWalls", "Smoke bumps into walls, floors, ceilings")}
-          {check("smokeProps", "Smoke bumps into props")}
-          {check("smokeActors", "Robots push smoke aside")}
+          {check("smokeWalls", t("debug.smokeBumpsIntoWallsFloorsCeilings"))}
+          {check("smokeProps", t("debug.smokeBumpsIntoProps"))}
+          {check("smokeActors", t("debug.robotsPushSmokeAside"))}
         </>,
       )}
 
       {section(
-        "Play & testing",
+        t("debug.playTesting"),
         <>
-          {check("gridMovement", "Grid movement (off: free, joysticks)")}
-          {check("aimMiniGame", "Aiming mini-game (off: chance roll)")}
-          {check("immortalCrew", "Immortal crew (HP stops at 1)")}
-          {check("noclip", "Noclip (walk through walls)")}
-          {check("wallBacking", "Black wall / pillar backing")}
-          {check("backingInspect", "Inspect backing: translucent walls + coloured panels")}
-          {check("enemyScanner", "Scanner: enemy outlines (crew gear)")}
+          {check("gridMovement", t("debug.gridMovementOffFreeJoysticks"))}
+          {check("aimMiniGame", t("debug.aimingMiniGameOffChanceRoll"))}
+          {check("immortalCrew", t("debug.immortalCrewHPStopsAt1"))}
+          {check("noclip", t("debug.noclipWalkThroughWalls"))}
+          {check("wallBacking", t("debug.blackWallPillarBacking"))}
+          {check("backingInspect", t("debug.inspectBackingTranslucentWallsColouredPanels"))}
+          {check("enemyScanner", t("debug.scannerEnemyOutlinesCrewGear"))}
         </>,
       )}
 
       {seed !== undefined &&
         section(
-          "Variation & mood",
+          t("debug.variationMood"),
           <>
             <div className="flex items-center justify-between gap-2 text-[11px]">
-              <span>Variation {seed}</span>
+              <span>{t("debug.variation", { v1: seed })}</span>
               {onReroll && (
-                <button type="button" onClick={onReroll} className="border border-neutral-600 rounded-sm px-2 py-0.5 hover:bg-neutral-800">
-                  Reroll
-                </button>
+                <button type="button" onClick={onReroll} className="border border-neutral-600 rounded-sm px-2 py-0.5 hover:bg-neutral-800">{t("debug.reroll")}</button>
               )}
             </div>
             {mood && onMood && (
@@ -633,16 +623,14 @@ export function DebugPanel({
                   <select
                     key={key}
                     value={moodOverride?.[key] ?? ""}
-                    title={`The ship's ${key}: rolled from the variation, or set`}
+                    title={t("debug.moodHint", { part: t(MOOD_LABELS[key]) })}
                     onChange={(e) => onMood({ ...moodOverride, [key]: e.target.value || undefined })}
                     className={SELECT}
                   >
-                    <option value="">
-                      {key}: {moodOf(seed ?? 0)[key]} (rolled)
-                    </option>
+                    <option value="">{t("debug.rolled", { v1: t(MOOD_LABELS[key]), v2: t(MOOD_LABELS[moodOf(seed ?? 0)[key]]) })}</option>
                     {MOOD_LEVELS[key].map((level) => (
                       <option key={level} value={level}>
-                        {key}: {level}
+                        {t("debug.moodValue", { part: t(MOOD_LABELS[key]), level: t(MOOD_LABELS[level]) })}
                       </option>
                     ))}
                   </select>
@@ -654,37 +642,31 @@ export function DebugPanel({
 
       {stats &&
         section(
-          "Stats",
+          t("debug.stats"),
           <div className="text-[10px] text-neutral-300 flex flex-col">
-            <span className={stats.fps < 30 ? "text-red-500 font-semibold" : stats.fps < 50 ? "text-amber-600 font-semibold" : "font-semibold"}>
-              FPS: {stats.fps.toFixed(0)} ({stats.frameMs.toFixed(1)} ms)
-            </span>
-            <span>Rendered triangles: {stats.renderedTriangles.toLocaleString()}</span>
-            <span>Draw calls: {stats.drawCalls}</span>
-            <span>Cells in sight: {stats.visibleCells}</span>
+            <span className={stats.fps < 30 ? "text-red-500 font-semibold" : stats.fps < 50 ? "text-amber-600 font-semibold" : "font-semibold"}>{t("debug.fpsMs", { v1: formatNumber(stats.fps, 0), v2: formatNumber(stats.frameMs, 1) })}</span>
+            <span>{t("debug.renderedTriangles", { v1: formatNumber(stats.renderedTriangles, 0) })}</span>
+            <span>{t("debug.drawCalls", { v1: stats.drawCalls })}</span>
+            <span>{t("debug.cellsInSight", { v1: stats.visibleCells })}</span>
             {relief && stats.relief && (
-              <span>
-                Relief triangles / wall: {stats.relief.trianglesPerWall.toLocaleString()} ({stats.relief.levelCount} levels)
-              </span>
+              <span>{t("debug.reliefTrianglesWallLevels", { v1: formatNumber(stats.relief.trianglesPerWall, 0), v2: stats.relief.levelCount })}</span>
             )}
             <button
               type="button"
               className={`${button} mt-1 self-start`}
               onClick={() => {
                 const lines = [
-                  `Map: ${mapId}  Graphics: ${presetOf(settings)} (particles ${settings.particleQuality}, every ${settings.particleEvery}, wall cells ${settings.wallDetail}, LOD scale ${settings.lodScale}, pixel ratio cap ${settings.pixelRatioCap}, antialias ${settings.antialias}, lights ${settings.lightPool}, normal maps ${settings.normalMaps}, view distance ${settings.viewDistance})`,
-                  `Screen: ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}x`,
-                  `FPS: ${stats.fps.toFixed(0)} (${stats.frameMs.toFixed(1)} ms)`,
-                  `Rendered triangles: ${stats.renderedTriangles}`,
-                  `Draw calls: ${stats.drawCalls}`,
-                  `Cells in sight: ${stats.visibleCells}`,
-                  ...(stats.relief ? [`Relief triangles / wall: ${stats.relief.trianglesPerWall} (${stats.relief.levelCount} levels)`] : []),
+                  t("debug.statsGraphics", { v1: String(mapId), v2: t(GRAPHICS_LABELS[presetOf(settings)]), v3: settings.particleQuality, v4: settings.particleEvery, v5: settings.wallDetail, v6: settings.lodScale, v7: settings.pixelRatioCap, v8: settings.antialias, v9: settings.lightPool, v10: settings.normalMaps, v11: settings.viewDistance }),
+                  t("debug.statsScreen", { v1: window.innerWidth, v2: window.innerHeight, v3: window.devicePixelRatio }),
+                  t("debug.fpsMs", { v1: formatNumber(stats.fps, 0), v2: formatNumber(stats.frameMs, 1) }),
+                  t("debug.renderedTriangles", { v1: stats.renderedTriangles }),
+                  t("debug.drawCalls", { v1: stats.drawCalls }),
+                  t("debug.cellsInSight", { v1: stats.visibleCells }),
+                  ...(stats.relief ? [t("debug.reliefTrianglesWallLevels", { v1: stats.relief.trianglesPerWall, v2: stats.relief.levelCount })] : []),
                 ];
                 copyText(lines.join("\n"));
               }}
-            >
-              Copy stats
-            </button>
+            >{t("debug.copyStats")}</button>
           </div>,
         )}
     </div>

@@ -7,8 +7,8 @@ tartunk meg, mit alakítunk át, mit hagyunk el, és milyen sorrendben építjü
 ## 1. Röviden
 
 - **Megtartjuk:** a felső fájl/eszköz/nézet sáv, a bal oldali kereshető
-  asset-fa, a jobb oldali kontextusfüggő Inspector, az alsó állapotsor, a
-  „globális megfogás” (Alt), a rétegenkénti szem ikon, a debug leválasztása.
+  asset-fa, a jobb oldali kontextusfüggő Inspector, az alsó állapotsor,
+  a Select-alapú kijelölés (az Alt-os megfogás helyett), a rétegenkénti szem ikon, a debug leválasztása.
 - **Átalakítjuk:** a tervben az eszköz és az asset egy dolog, a valóságban
   nem az (ige vs. főnév); a gizmo helyett elemfajtánkénti fogantyúk; a napló
   nem tűnhet el nyomtalanul (az editor ide írja a hibaüzeneteit); a minimap
@@ -33,7 +33,7 @@ tartunk meg, mit alakítunk át, mit hagyunk el, és milyen sorrendben építjü
 | Jobb oldali Inspector kijelölés szerint | **Marad, ez a legnagyobb nyereség** | Az `EditorBar`-ban már vannak a kijelölt elem adatai (`PropInfo`, `LightInfo`, …), csak a gombsorba ágyazva. Lásd 6. |
 | „Map Settings” mint az Inspector alapnézete | **Marad** | A mai **Map** eszköz panelje (méret, új/mentés másként, fénysűrűség, relief, akcentus) + a debug panel MAP ATTRIBUTES / TEXTURE DEFAULTS / VARIATION & MOOD blokkjai. |
 | Alsó, kétsoros állapotsor | **Marad, bővítve** | 3 sor értelmes: eszköz+kijelölés, üzenet, gyorsgombok. Itt jelenik meg a napló utolsó sora. Lásd 9. |
-| Globális megfogás (Alt/Space) | **Marad, de a Kijelölő eszköz a fő megoldás** | Lásd 7. |
+| Globális megfogás (Alt/Space) | **Elmarad: a Select az alapeszköz** | Lásd 7. A módosítók a szabványt követik. |
 | 3D transzformációs gizmo | **Módosul** | Elemfajtánkénti fogantyúk. Lásd 8. |
 | Körvonal a tárgyak körül | **Marad, minden elemfajtára** | Ma csak a célcella és a kijelölt fény/tárgy kap keretet. Lásd 8. |
 | FPS / Topdown váltó | **Későbbre** | A nagyított minimap + objektumikonok kiváltja. Lásd 10. |
@@ -184,35 +184,53 @@ kell rajzolni.
 - **Több elem kijelölése** (később): közös mezők (esély, magasság) együtt
   állíthatók; nélküle a blokkjelölés a 2D térképen elég.
 
-## 7. Kijelölés: Kijelölő eszköz + Alt (globális megfogás)
+## 7. Kijelölés és módosítók – a szabványt követjük (döntés)
 
-Ma minden eszköz csak a saját elemfajtáját fogja meg (a kategóriaváltás a
-fájdalom). A terv megoldása az Alt; ennél erősebb, ha:
+Döntés: a **Select az alapeszköz**, a módosítók és gyorsbillentyűk a
+megszokott szerkesztőket követik (3ds Max, Unity, Blender, Tiled), nem saját
+találmányok. Ezzel az Alt-os „globális megfogás” szükségtelen: a Select
+eszköz eleve bármit megfog, a kategóriavédelem csak a Lerak / Dig / Height
+eszközökben marad (ott a kattintás letesz vagy szerkeszt, nem választ).
 
-- **Select (kurzor) eszköz**, az alapértelmezett: kattintás bármit kijelöl
-  (a legközelebbi elem a kurzor alatt: NPC > item > prop > decal > fény >
-  felület), húzás elmozdítja, Delete töröl, Ctrl+húzás másol. Az Inspector
-  követi.
-- **Alt** (vagy a tartott `Q`; lásd a 14. pontot) bármely más eszközben ideiglenesen
-  Select-té teszi: kitart-engedd. Ilyenkor a „kategóriavédelem” fel van oldva.
-- A **kategóriavédelem** a Lerak/Dig/Height eszközben marad: kattintás nem
-  fog meg véletlenül mást, csak letesz/szerkeszt.
+- **Select (Q), az alapértelmezett:** kattintás kijelöl (a legközelebbi elem a
+  kurzor alatt: NPC > item > prop > decal > fény > felület), húzás elmozdítja,
+  Delete töröl. Az Inspector követi.
 - **Egy kijelölés:** ma kilenc külön `useState` (`selectedProp`,
-  `selectedDecal`, …) van. Egy `selection: { kind, index }` állapotra
-  cseréljük – ez az Inspector és a Select feltétele.
-- Érintőképernyőn nincs módosító: a Select-gomb + hosszú nyomás ugyanezt adja.
+  `selectedDecal`, …) van. Egy `selection` állapotra (és később több elemre)
+  cseréljük.
+- **Érintőképernyőn** nincs módosító: Select-gomb, hosszú nyomás = Ctrl+kattintás.
 
-| Módosító | Hatás (ma → terv) |
-| --- | --- |
-| Alt (tartva) | – → bármely réteg megfogható |
-| Ctrl + húzás | másolat húzása (marad) |
-| Shift + húzás | ma: ajtó másik cellába; nyilaknál „több”. A terv rács-kikapcsolást javasolna – ez ütközne, ezért marad a mai jelentés, a rács-kikapcsolás külön kapcsoló az állapotsorban |
-| R / Shift+R | forgatás 90° / 15° (marad) |
-| Delete | törlés (marad) |
-| Z / Y és Ctrl+Z / Ctrl+Y | mindkettő működjön (ma csak Z / Y) |
-| Ctrl+C / V | marad |
-| M | nagy/kis minimap |
-| F | kamera a kijelöltre |
+**Billentyűk és egérmódosítók (javaslat; a mai kiosztást felülírja, ahol eltér)**
+
+| Mit | Billentyű | Szabvány | Ma |
+| --- | --- | --- | --- |
+| Kijelölés | kattintás | mind | (eszközfüggő) |
+| Hozzáadás / kivétel a kijelöléshez | Ctrl+kattintás | 3ds Max, Unity | – |
+| Kivétel a kijelölésből | Alt+kattintás | 3ds Max | – |
+| Összes / fordított kijelölés | Ctrl+A / Ctrl+I | 3ds Max | – |
+| Kijelölés zárolása | Space | 3ds Max | – |
+| Klónozás húzással | Shift+húzás | 3ds Max | Ctrl+húzás |
+| Duplikálás helyben | Ctrl+D | Unity, Tiled | – |
+| Másolás / kivágás / beillesztés | Ctrl+C / X / V | mind | Ctrl+C / V |
+| Törlés | Delete | mind | Delete |
+| Visszavonás / újra | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) | mind | Z / Y |
+| Mentés / Mentés másként | Ctrl+S / Ctrl+Shift+S | mind | Ctrl+S |
+| Eszközök | Q Select · W Mozgat · E Forgat · B Lerak (stamp) · D Dig/Fill · H Height · T Textúra | 3ds Max / Unity (QWER), Tiled (B) | – |
+| Forgatás 90° / finom | E / Shift+E (kijelölve) | Unity (E) | R / Shift+R |
+| Rács-illesztés ki/be | S | 3ds Max | – |
+| Fókusz a kijelöltre | F | Unity, Blender | – |
+| Nagyított minimap | M | – | gomb |
+| Szerkesztő be/ki | Tab | – | Tab |
+| Pan | középső gomb vagy Space+húzás (2D térkép) | Tiled | – |
+| Nagyítás | görgő (2D térkép: Ctrl+görgő) | Tiled | – |
+
+- **Az Alt egyetlen jelentést kap** (kivétel a kijelölésből, 3ds Max), így
+  nem ütközik a böngésző menüjével sem.
+- **Ajtó húzása:** nincs külön módosító: a húzás a járat mentén csúsztat, és
+  a cella szélén túl a szomszéd (alkalmas) cellába viszi; a Shift ezért
+  felszabadul klónozásra.
+- **Áttérés:** egy ideig a régi billentyűk is működnek (Z/Y, R, Ctrl+húzás),
+  a súgóban „régi” jelöléssel; a következő kiadásban kikerülnek.
 
 ## 8. Körvonal és fogantyúk (a gizmo helyett)
 
@@ -260,8 +278,19 @@ ezért **elemfajtánkénti fogantyú** értelmes, nem univerzális gizmo:
   Így az olcsó „Topdown” megvan, 3D-s felülnézet-kamera nélkül.
 - **Nagy pályák:** pan és zoom (kerék / csípés) – ma a térkép mindig teljes
   méretben fér ki; 32×32 fölött nem lesz elég.
-- **3D Topdown** (ortografikus kamera): csak ha a 2D ikonréteg után még
-  hiányzik.
+- **3D Topdown (döntés: kell, kísérlet fut).** Texturázáshoz és nagyobb
+  terület átlátásához, akár falakon át: a plafon el, a kamera fent, a
+  görgő zoomol, WASD / nyilak / középső gomb mozog, a tárgyak megfoghatók és
+  áthelyezhetők (a tárgyak és az eszközök ugyanúgy működnek, mert a kijelölés
+  sugárkövetéssel megy). Első változat megvan (`O` billentyű vagy a
+  nézet bal alsó gombja; `GameViewport.tsx`): perspektív kamera lefelé
+  nézve (Ctrl+görgő: dőlés, Q/E: forgatás), plafon és látótávolsági
+  vágás ki, a falak sötét áttetsző „sapkák”. Mérni kell: teljes térképnél
+  a háromszög- és rajzhívás-szám, és a falak olvashatósága felülről.
+- **Padlótextúra a minimapon:** a cellák a padló textúrájával (minta-kitöltés,
+  olcsó) és fölötte a magasság-árnyalat; így a minimap is használható
+  festésre. A falak textúrája és a bevilágítás csak a 3D-ben (top-down)
+  látszik rendesen.
 
 ## 11. Fájlműveletek és Debug
 
@@ -304,6 +333,35 @@ nézetek és kapcsolók a viewportban.
 
 Az 1–3 lépés egymás után a kulcs; a 4–6 párhuzamosítható (külön fájlok).
 
+### Kapu minden lépés után (döntés)
+
+Mielőtt a következő lépésnek nekikezdünk, az éppen elkészült szerkesztői
+funkciókat **a sci-fi világban is** megnézzük (Debug › World, vagy egy
+hajó-térkép), nem csak a fantasyban. Az editor saját stílusú és nem a játék
+UI-jára épül, ezért a felület nem szokott gondot okozni – a **háttér** viszont
+más (világos, szürke-zöld fém a fantasy barna-narancs kövei helyett), és ez a
+félig átlátszó ikonokat, a körvonalakat és a feliratokat érinti.
+
+Ellenőrzőlista (lépésenként, képernyőképekkel a `concept/editor-ui/checks/<lépés>/`
+mappába):
+
+- [ ] **Ikonok jól látszanak** világos és sötét háttér előtt is (kontraszt, a
+      félig átlátszó panel mögött is), az aktív állapot felismerhető.
+- [ ] **Szövegek olvashatók** mindkét világban és **mindkét nyelven** (a
+      magyar szöveg hosszabb: nem csúszik ki, nem tördelődik rondán).
+- [ ] **Körvonalak és jelölések** (kijelölés, hover, fogantyúk, blokkjelölés,
+      a top-down sapkák) elkülönülnek a sci-fi textúráktól is (nem olvad bele
+      a szürke falba vagy a zöldes padlóba).
+- [ ] **Log színek** (szerkesztő, hiba) olvashatók a log hátterén.
+- [ ] **1440×860 és 1024×768** méreten, és ahol a lépés érinti: mobil.
+- [ ] **Teljesítmény:** a lépés ne lassítsa a szerkesztést a nagyobb sci-fi
+      deckeken sem (FPS a Stats-ban).
+- [ ] Ami nem jó, a következő lépés előtt javul; a javítás is a kapu része.
+
+A kapu eredménye egy-két mondat és a képek a lépés commitjában vagy a
+leírásában. Ha a sci-fi világ egy eszközhöz hiányos (pl. nincs a világhoz
+asset), az is bekerül a jegyzetbe.
+
 ## 14. Amit eddig kihagytunk (felvetve, nincs eldöntve)
 
 1. **Hibák / figyelmeztetések panel.** A térképbetöltő ma csak a szerkesztés
@@ -344,9 +402,10 @@ Az 1–3 lépés egymás után a kulcs; a 4–6 párhuzamosítható (külön fá
 Igény: a szerkesztők közül nem mindenki tud jól angolul, ezért az editor
 (később a játék) UI-ja magyarul és angolul is menjen.
 
-- **Kapcsoló:** a felső sávban egy kis `HU | EN` váltó (vagy a Debug/Settings
-  alatt); az első indításkor a böngésző nyelve (`navigator.language`)
-  dönt, utána a választás megmarad (`localStorage`). Váltás újratöltés nélkül.
+- **Kapcsoló:** egy kis `HU | EN` váltó a **Settings** (ma: a Debug panel
+  teteje) alatt, nem kiemelt helyen (döntés). Az első indításkor a böngésző
+  nyelve (`navigator.language`) dönt, utána a választás megmarad
+  (`localStorage`). Váltás újratöltés nélkül.
 - **Szöveglista:** `src/i18n/en.ts` és `src/i18n/hu.ts`, azonos kulcsokkal;
   a magyar hiányzó kulcsa angolra esik vissza. Típusos kulcsok: ha egy kulcs
   az egyikből hiányzik, a TypeScript szól. Használat: `t("tool.dig")`,
@@ -380,16 +439,21 @@ Igény: a szerkesztők közül nem mindenki tud jól angolul, ezért az editor
   fordítható szöveggel szülessenek. A meglévő szövegek átemelése fokozatosan
   megy, panelenként.
 
-## 16. Nyitott döntések
+## 16. Döntések
 
-1. **Alt vagy más billentyű** a globális megfogásra? Az Alt Windowsban/
-   Chrome-ban menüt aktivál (megoldható), a Space görget. Javaslat: Alt,
-   `preventDefault`-tal, és tartott `Q` tartalékként.
-2. **Select legyen az alap eszköz?** Ma az alap a Dig/Fill (kattintás = ásás).
-   Javaslat: Select alap, a Dig/Fill/Height a felső sávból (és gyorsgombról) érhető.
-3. **Ctrl+Z / Ctrl+Y** is támogatott legyen (ma csak Z / Y)?
-4. **3D Topdown** kell-e a 2D ikonréteg után?
-5. **Napló:** elég az állapotsor üzenetmező + előzményfiók, vagy kell fix
+Eldöntve:
+
+1. **Select az alapeszköz** (Q).
+2. **Módosítók és billentyűk a szabványt követik** (3ds Max, Unity, Tiled) –
+   a 7. pont táblázata; az Alt-os globális megfogás elmarad.
+3. **Ctrl+Z / Ctrl+Y** a szabvány (a Z / Y átmenetileg marad).
+4. **A nyelvváltó a Settingsben van**, nem kiemelve.
+
+Nyitott:
+
+5. ~~3D Topdown~~ – eldöntve: kell, a kísérlet megvan (10. pont).
+6. **Napló:** elég az állapotsor üzenetmező + előzményfiók, vagy kell fix
    hely is?
-6. **Világ-specifikus paletták** (sci-fi / fantasy): a fa mindig csak az aktív
+7. **Világ-specifikus paletták** (sci-fi / fantasy): a fa mindig csak az aktív
    világot mutassa (ma így van), vagy kapcsolóval mindkettőt?
+8. **Magyar szakszótár** (a 15. pont) jóváhagyása a szerkesztőkkel.

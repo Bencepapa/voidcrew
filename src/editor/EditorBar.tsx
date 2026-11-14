@@ -1,3 +1,4 @@
+import { t, formatNumber, type Key } from "../i18n";
 // The map editor's toolbar, over the top of the game view while editing
 // (see EDITOR.md): what a click or tap does - dig a wall out, fill a floor
 // in (the right mouse button always fills), paint a surface with a texture
@@ -37,14 +38,14 @@ export interface MapLook {
 // (a box's top comes with its side)
 const PROP_TEXTURES = [...textureSetsOfKind("wall"), ...textureSetsOfKind("propFace")].filter((id) => !id.endsWith("_top"));
 // the deck's default texture sets: the slot, and which sets are offered for it
-const TEXTURE_SLOTS: { slot: string; label: string; kind: "wall" | "floor" | "ceiling" | "door" | "window" }[] = [
-  { slot: "wall", label: "Wall", kind: "wall" },
-  { slot: "floor", label: "Floor", kind: "floor" },
-  { slot: "ceiling", label: "Ceiling", kind: "ceiling" },
-  { slot: "door", label: "Door", kind: "door" },
-  { slot: "doorFrame", label: "Door frame", kind: "door" },
-  { slot: "liftDoor", label: "Lift door", kind: "door" },
-  { slot: "window", label: "Window", kind: "window" },
+const TEXTURE_SLOTS: { slot: string; label: Key; kind: "wall" | "floor" | "ceiling" | "door" | "window" }[] = [
+  { slot: "wall", label: "editorBar.wall", kind: "wall" },
+  { slot: "floor", label: "editorBar.floor", kind: "floor" },
+  { slot: "ceiling", label: "editorBar.ceiling", kind: "ceiling" },
+  { slot: "door", label: "editorBar.door", kind: "door" },
+  { slot: "doorFrame", label: "editorBar.doorFrame", kind: "door" },
+  { slot: "liftDoor", label: "editorBar.liftDoor", kind: "door" },
+  { slot: "window", label: "editorBar.window", kind: "window" },
 ];
 const DENSITIES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
 const RELIEF_DEPTHS = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.12];
@@ -329,7 +330,7 @@ function DecalPalette(p: { choice: string | null; onChoice: (choice: DecalChoice
           />
         </button>
       ))}
-      <span className="text-[10px] text-neutral-400 px-1">Turn: {p.rotation}° (R)</span>
+      <span className="text-[10px] text-neutral-400 px-1">{t("editorBar.turnR", { v1: p.rotation })}</span>
     </div>
   );
 }
@@ -337,7 +338,7 @@ function DecalPalette(p: { choice: string | null; onChoice: (choice: DecalChoice
 // an item's chance of being there in a variation (1: always - left out of
 // the map file)
 function chanceSlider(value: number, onChange: (chance: number | undefined) => void) {
-  return slider("Chance", value, 0, 1, 0.05, (v) => onChange(v >= 1 ? undefined : v));
+  return slider(t("editorBar.chance"), value, 0, 1, 0.05, (v) => onChange(v >= 1 ? undefined : v));
 }
 
 // the fields linking an item to others (see Linked): its name, and the one
@@ -363,9 +364,9 @@ function linkFields(links: Linked, ids: string[], onChange: (patch: Linked) => v
           <option key={id} value={id} />
         ))}
       </datalist>
-      {field("id", "Name", "Its name, for other items to link to")}
-      {field("with", "With", "Only there when the item of this name is")}
-      {field("without", "Without", "Only there when the item of this name isn't")}
+      {field("id", t("editorBar.name"), t("editorBar.itsNameForOtherItemsToLink"))}
+      {field("with", t("editorBar.with"), t("editorBar.onlyThereWhenTheItemOfThis"))}
+      {field("without", t("editorBar.without"), t("editorBar.onlyThereWhenTheItemOfThis14"))}
     </>
   );
 }
@@ -384,51 +385,68 @@ function slider(label: string, value: number, min: number, max: number, step: nu
         onChange={(e) => onChange(Math.round(parseFloat(e.target.value) * 100) / 100)}
         className="w-20"
       />
-      <span className="w-8 text-neutral-400">{value.toFixed(2)}</span>
+      <span className="w-8 text-neutral-400">{formatNumber(value)}</span>
     </label>
   );
 }
 // the tools after Light
-const MORE_TOOLS: { tool: EditTool; label: string; title: string }[] = [
-  { tool: "ladder", label: "Ladder", title: "Put a ladder up to a higher cell" },
-  { tool: "bridge", label: "Bridge", title: "Span a cell with a bridge" },
-  { tool: "door", label: "Door", title: "Make a cell a door, or back" },
-  { tool: "prop", label: "Prop", title: "Put in or take out props" },
-  { tool: "decal", label: "Decal", title: "Put decals on walls, floors and ceilings" },
-  { tool: "robot", label: "NPC", title: "Put in NPCs (robots, monsters), their facing, route and chance" },
-  { tool: "item", label: "Item", title: "Put loot on floors, tables, beds and crates" },
-  { tool: "smoke", label: "Particles", title: "Smoke emitters: puffs rising from a point, lit by the light around" },
-  { tool: "exit", label: "Exit", title: "Ways off the ship: standing there, Use ends the run" },
-  { tool: "start", label: "Start", title: "Where the party starts the deck, and which way it looks" },
-  { tool: "restricted", label: "Restricted", title: "Where the crew mustn't be: cameras and robots that take it for crew still call it in here" },
-  { tool: "wall", label: "Chance wall", title: "Walls left to chance: there in some variations, open floor in others" },
-  { tool: "map", label: "Map", title: "The map's size; open, make or copy maps" },
+const MORE_TOOLS: { tool: EditTool; label: Key; title: Key }[] = [
+  { tool: "ladder", label: "editorBar.ladder", title: "editorBar.putALadderUpToAHigher" },
+  { tool: "bridge", label: "editorBar.bridge", title: "editorBar.spanACellWithABridge" },
+  { tool: "door", label: "editorBar.door", title: "editorBar.makeACellADoorOrBack" },
+  { tool: "prop", label: "editorBar.prop", title: "editorBar.putInOrTakeOutProps" },
+  { tool: "decal", label: "editorBar.decal", title: "editorBar.putDecalsOnWallsFloorsAndCeilings" },
+  { tool: "robot", label: "editorBar.npc", title: "editorBar.putInNPCsRobotsMonstersTheirFacing" },
+  { tool: "item", label: "editorBar.item", title: "editorBar.putLootOnFloorsTablesBedsAnd" },
+  { tool: "smoke", label: "editorBar.particles", title: "editorBar.smokeEmittersPuffsRisingFromAPoint" },
+  { tool: "exit", label: "editorBar.exit", title: "editorBar.waysOffTheShipStandingThereUse" },
+  { tool: "start", label: "editorBar.start", title: "editorBar.whereThePartyStartsTheDeckAnd" },
+  { tool: "restricted", label: "editorBar.restricted", title: "editorBar.whereTheCrewMustnTBeCameras" },
+  { tool: "wall", label: "editorBar.chanceWall", title: "editorBar.wallsLeftToChanceThereInSome" },
+  { tool: "map", label: "editorBar.map", title: "editorBar.theMapSSizeOpenMakeOr" },
 ];
 // the tools whose layer can be hidden from the view: the layer's name
 const HIDEABLE_LAYERS: Partial<Record<EditTool, string>> = { robot: "robot", smoke: "smoke", prop: "prop", decal: "decal", item: "item" };
 // the tools with a layer of their own that "Clear all" can empty
 const CLEARABLE_TOOLS = new Set<EditTool>(["robot", "smoke", "prop", "decal", "item", "light", "exit", "restricted", "wall", "bridge", "ladder"]);
 // what a click does with each (where the toolbar doesn't say otherwise)
-const TOOL_HELP: Partial<Record<EditTool, string>> = {
-  height: "click a floor or ceiling: up 0.25 · right-click: down",
-  ladder: "click near a floor's edge (or a step's face): a ladder up that side · again: take it out",
-  bridge: "click a floor: a bridge across it the way you face, at the ledges' height · again: take it out",
-  door: "click a floor: a door there · click a door: pick it · right-click a door: back to floor",
-  robot: "pick a type, then click a floor: one there (facing you) · click a robot: pick it · Shift+click a floor: add it to the picked one's route · right-click: take it out",
-  decal: "click a wall, floor or ceiling: the decal there · click a decal: pick it · right-click: take it off",
-  prop: "click a floor (near a side or corner to push it there): put it in · click a prop: pick it · right-click: take it out",
-  smoke: "click a wall, floor or anything: smoke from there (picked) · click its marker: pick it · right-click its marker: take it out",
-  exit: "click a floor: a way off the ship there (picked) · click one: pick it · right-click: take it out",
-  restricted: "click a floor: restricted (shaded red on the map) · again: not any more",
-  start: "click a floor: the party starts there, facing the way it faces now · click the start again: turn it a quarter",
-  item: "click a floor or a table / bed / crate top: the item there · click an item: pick it · right-click: take it out",
-  wall: "click a wall or a floor: a wall left to chance there (picked) · click one: pick it · right-click one: a plain wall again",
+const TOOL_HELP: Partial<Record<EditTool, Key>> = {
+  height: "editorBar.clickAFloorOrCeilingUp0",
+  ladder: "editorBar.clickNearAFloorSEdgeOr",
+  bridge: "editorBar.clickAFloorABridgeAcrossIt",
+  door: "editorBar.clickAFloorADoorThereClick",
+  robot: "editorBar.pickATypeThenClickAFloor",
+  decal: "editorBar.clickAWallFloorOrCeilingThe",
+  prop: "editorBar.clickAFloorNearASideOr",
+  smoke: "editorBar.clickAWallFloorOrAnythingSmoke",
+  exit: "editorBar.clickAFloorAWayOffThe",
+  restricted: "editorBar.clickAFloorRestrictedShadedRedOn",
+  start: "editorBar.clickAFloorThePartyStartsThere",
+  item: "editorBar.clickAFloorOrATableBed",
+  wall: "editorBar.clickAWallOrAFloorA",
 };
-const SURFACES: { surface: EditSurface; label: string }[] = [
-  { surface: "wall", label: "Wall" },
-  { surface: "floor", label: "Floor" },
-  { surface: "ceiling", label: "Ceiling" },
+const SURFACES: { surface: EditSurface; label: Key }[] = [
+  { surface: "wall", label: "editorBar.wall" },
+  { surface: "floor", label: "editorBar.floor" },
+  { surface: "ceiling", label: "editorBar.ceiling" },
 ];
+const WAKE_LABELS: Record<ActorWake["mode"], Record<number, Key>> = {
+  "dormant": {
+    "1": "editorBar.wake.dormant.1",
+    "2": "editorBar.wake.dormant.2",
+    "3": "editorBar.wake.dormant.3"
+  },
+  "fooled": {
+    "1": "editorBar.wake.fooled.1",
+    "2": "editorBar.wake.fooled.2",
+    "3": "editorBar.wake.fooled.3"
+  },
+  "arrive": {
+    "1": "editorBar.wake.arrive.1",
+    "2": "editorBar.wake.arrive.2",
+    "3": "editorBar.wake.arrive.3"
+  }
+};
 const idle = "border-neutral-600 bg-black/60 text-neutral-200 hover:bg-neutral-800";
 const active = "border-amber-400 bg-amber-400/20 text-amber-200";
 
@@ -450,60 +468,48 @@ export function EditorBar(p: Props) {
         type="button"
         className={`${BUTTON} ${p.tool === "dig" || p.tool === "fill" ? active : idle}`}
         onClick={() => p.onTool("dig")}
-        title="Left click: dig a wall out - right click: fill a floor in"
-      >
-        Dig/Fill
-      </button>
+        title={t("editorBar.leftClickDigAWallOutRight")}
+      >{t("editorBar.digFill")}</button>
       <button
         type="button"
         className={`${BUTTON} ${p.tool === "height" ? active : idle}`}
         onClick={() => p.onTool("height")}
-        title="Raise (left click) or lower (right click) a floor or ceiling"
-      >
-        Height
-      </button>
+        title={t("editorBar.raiseLeftClickOrLowerRightClick")}
+      >{t("editorBar.height")}</button>
       <button
         type="button"
         className={`${BUTTON} ${p.tool === "texture" ? active : idle}`}
         onClick={() => p.onTool("texture")}
-        title="Paint a surface"
-      >
-        Texture
-      </button>
+        title={t("editorBar.paintASurface")}
+      >{t("editorBar.texture")}</button>
       <button
         type="button"
         className={`${BUTTON} ${p.tool === "light" ? active : idle}`}
         onClick={() => p.onTool("light")}
-        title="Add or remove a ceiling light"
-      >
-        Light
-      </button>
+        title={t("editorBar.addOrRemoveACeilingLight")}
+      >{t("editorBar.light")}</button>
       {MORE_TOOLS.map(({ tool, label, title }) => (
         <button
           key={tool}
           type="button"
           className={`${BUTTON} ${p.tool === tool ? active : idle}`}
           onClick={() => p.onTool(tool)}
-          title={title}
+          title={t(title)}
         >
-          {label}
+          {t(label)}
         </button>
       ))}
       <span className="w-2" />
-      <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canUndo} onClick={p.onUndo} title="Z">
-        Undo
-      </button>
-      <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canRedo} onClick={p.onRedo} title="Y">
-        Redo
-      </button>
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canUndo} onClick={p.onUndo} title="Z">{t("editorBar.undo")}</button>
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canRedo} onClick={p.onRedo} title="Y">{t("editorBar.redo")}</button>
       {HIDEABLE_LAYERS[p.tool] && (
         <button
           type="button"
           className={`${BUTTON} ${p.hiddenLayers.has(HIDEABLE_LAYERS[p.tool]!) ? active : idle}`}
           onClick={() => p.onToggleLayer(HIDEABLE_LAYERS[p.tool]!)}
-          title="Hide this layer from the view (to see past it) - or show it again; the map keeps it"
+          title={t("editorBar.hideThisLayerFromTheViewTo")}
         >
-          {p.hiddenLayers.has(HIDEABLE_LAYERS[p.tool]!) ? "Show" : "Hide"}
+          {p.hiddenLayers.has(HIDEABLE_LAYERS[p.tool]!) ? t("editorBar.show") : t("editorBar.hide")}
         </button>
       )}
       {CLEARABLE_TOOLS.has(p.tool) && (
@@ -511,24 +517,16 @@ export function EditorBar(p: Props) {
           type="button"
           className={`${BUTTON} border-red-700/70 bg-black/60 text-red-300 hover:bg-red-900/30`}
           onClick={() => p.onClearLayer(p.tool)}
-          title="Take everything of this tool's layer off the map (Undo brings it back)"
-        >
-          Clear all
-        </button>
+          title={t("editorBar.takeEverythingOfThisToolSLayer")}
+        >{t("editorBar.clearAll")}</button>
       )}
       <span className="w-2" />
       {import.meta.env.DEV && (
-        <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSave} title="Ctrl+S">
-          Save{p.unsaved ? " •" : ""}
-        </button>
+        <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSave} title="Ctrl+S">{t("editorBar.save", { v1: p.unsaved ? " •" : "" })}</button>
       )}
-      <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDownload}>
-        Download
-      </button>
+      <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDownload}>{t("editorBar.download")}</button>
       <span className="w-2" />
-      <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExit} title="Tab">
-        Exit editor
-      </button>
+      <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExit} title="Tab">{t("editorBar.exitEditor")}</button>
       {p.tool === "texture" && (
         <>
           <span className="basis-full" />
@@ -540,15 +538,13 @@ export function EditorBar(p: Props) {
                   p.surface === surface ? "bg-amber-400/15 ring-1 ring-amber-400/40" : "bg-black/40"
                 }`}
               >
-                <span className="w-12 text-[10px] text-neutral-400 text-right">{label}</span>
+                <span className="w-12 text-[10px] text-neutral-400 text-right">{t(label)}</span>
                 <button
                   type="button"
                   className={`${BUTTON} ${p.paint[surface] === null ? active : idle}`}
                   onClick={() => p.onPaint(surface, null)}
-                  title="The texture the map gives this surface"
-                >
-                  Default
-                </button>
+                  title={t("editorBar.theTextureTheMapGivesThisSurface")}
+                >{t("editorBar.default")}</button>
                 {textureSetsOfKind(surface).map((id) => (
                   <button
                     key={id}
@@ -571,7 +567,7 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            {!(p.robotChoice && assetInWorld(p.robotChoice)) && <span className="text-[10px] text-amber-200">pick a type to put in:</span>}
+            {!(p.robotChoice && assetInWorld(p.robotChoice)) && <span className="text-[10px] text-amber-200">{t("editorBar.pickATypeToPutIn")}</span>}
             {Object.keys(ACTOR_TYPES).filter((id) => assetInWorld(id)).map((type) => (
               <button
                 key={type}
@@ -588,9 +584,7 @@ export function EditorBar(p: Props) {
               <span className="basis-full" />
               <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
                 <span className="text-amber-200">{p.actor.type}</span>
-                <span className="flex items-center gap-0.5">
-                  Faces
-                  {(["N", "E", "S", "W"] as Direction[]).map((d) => (
+                <span className="flex items-center gap-0.5">{t("editorBar.faces")} {(["N", "E", "S", "W"] as Direction[]).map((d) => (
                     <button
                       key={d}
                       type="button"
@@ -599,15 +593,13 @@ export function EditorBar(p: Props) {
                     >
                       {d}
                     </button>
-                  ))}
-                </span>
+                  ))}</span>
                 {chanceSlider(p.actor.chance, (chance) => p.onActorChange({ chance }))}
                 <label
                   className="flex items-center gap-1"
-                  title="Until the ship's alert reaches a level: powered down, taking the crew for its own (fake IDs), or not there yet (reinforcements)"
+                  title={t("editorBar.untilTheShipSAlertReachesA")}
                 >
-                  Until alert
-                  <select
+                  {t("editorBar.untilAlert")}<select
                     value={p.actor.wake ? `${p.actor.wake.mode} ${p.actor.wake.level}` : ""}
                     onChange={(e) => {
                       const [mode, level] = e.target.value.split(" ");
@@ -618,36 +610,27 @@ export function EditorBar(p: Props) {
                     }}
                     className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
                   >
-                    <option value="">on guard from the start</option>
+                    <option value="">{t("editorBar.onGuardFromTheStart")}</option>
                     {(["dormant", "fooled", "arrive"] as const).flatMap((mode) =>
                       ([1, 2, 3] as const).map((level) => (
-                        <option key={`${mode} ${level}`} value={`${mode} ${level}`}>
-                          {mode === "dormant" ? "dormant" : mode === "fooled" ? "fooled by IDs" : "arrives"} until{" "}
-                          {["", "suspicious", "alert", "lockdown"][level]}
-                        </option>
+                        <option key={`${mode} ${level}`} value={`${mode} ${level}`}>{t(WAKE_LABELS[mode][level])}</option>
                       )),
                     )}
                   </select>
                 </label>
                 {p.actor.wake?.mode === "arrive" &&
-                  slider("Every (s)", p.actor.wake.every ?? 30, 10, 120, 5, (v) =>
+                  slider(t("editorBar.everyS"), p.actor.wake.every ?? 30, 10, 120, 5, (v) =>
                     p.onActorChange({ wake: { ...p.actor!.wake!, every: v === 30 ? undefined : v } }),
                   )}
                 {p.actor.wake?.mode === "arrive" &&
-                  slider("Max", p.actor.wake.max ?? 1, 1, 5, 1, (v) => p.onActorChange({ wake: { ...p.actor!.wake!, max: v === 1 ? undefined : v } }))}
+                  slider(t("editorBar.max"), p.actor.wake.max ?? 1, 1, 5, 1, (v) => p.onActorChange({ wake: { ...p.actor!.wake!, max: v === 1 ? undefined : v } }))}
                 {linkFields(p.actor.links, p.linkIds, p.onActorChange)}
-                <span className="text-neutral-400">{p.actor.route ? `route: ${p.actor.route} cells` : "stands"}</span>
+                <span className="text-neutral-400">{p.actor.route ? t("editorBar.routeCells", { n: p.actor.route }) : t("editorBar.stands")}</span>
                 {p.actor.route > 0 && (
-                  <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorClearRoute}>
-                    Clear route
-                  </button>
+                  <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorClearRoute}>{t("editorBar.clearRoute")}</button>
                 )}
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorDelete}>
-                  Remove
-                </button>
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorDeselect}>
-                  Done
-                </button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorDelete}>{t("editorBar.remove")}</button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorDeselect}>{t("editorBar.done")}</button>
               </div>
             </>
           )}
@@ -657,88 +640,69 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
-            <span className="text-amber-200">
-              {p.door.kind} door, front {p.door.facing}
-            </span>
-            {slider("Place", p.door.offset, -DOOR_EDGE_OFFSET, DOOR_EDGE_OFFSET, 0.02, (v) =>
+            <span className="text-amber-200">{t("editorBar.doorFront", { v1: t(p.door.kind === "lift" ? "editorBar.doorKindLift" : "editorBar.doorKindStandard"), v2: p.door.facing })}</span>
+            {slider(t("editorBar.place"), p.door.offset, -DOOR_EDGE_OFFSET, DOOR_EDGE_OFFSET, 0.02, (v) =>
               p.onDoorChange({ offset: v || undefined }),
             )}
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: -DOOR_EDGE_OFFSET })}>
-              Back edge
-            </button>
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: undefined })}>
-              Middle
-            </button>
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: DOOR_EDGE_OFFSET })}>
-              Front edge
-            </button>
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorFlip} title="Turn it round (it stays where it is)">
-              Flip front
-            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: -DOOR_EDGE_OFFSET })}>{t("editorBar.backEdge")}</button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: undefined })}>{t("editorBar.middle")}</button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: DOOR_EDGE_OFFSET })}>{t("editorBar.frontEdge")}</button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorFlip} title={t("editorBar.turnItRoundItStaysWhereIt")}>{t("editorBar.flipFront")}</button>
             {chanceSlider(p.door.chance, (chance) => p.onDoorChange({ chance }))}
             {linkFields(p.door.links, p.linkIds, p.onDoorChange)}
             <label className="flex items-center gap-1">
-              Label
-              <input
+              {t("editorBar.label")}<input
                 type="text"
                 value={p.door.label}
                 onChange={(e) => p.onDoorChange({ label: e.target.value || undefined })}
                 className="w-16 bg-neutral-800 border border-neutral-700 px-1"
               />
             </label>
-            <label className="flex items-center gap-1" title="The flag that opens it: a code read on a terminal, a keycard picked up (empty: no key)">
-              Lock key
-              <input
+            <label className="flex items-center gap-1" title={t("editorBar.theFlagThatOpensItACode")}>
+              {t("editorBar.lockKey")}<input
                 type="text"
                 value={p.door.lock?.key ?? ""}
                 onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { key: e.target.value || undefined }) })}
                 className="w-20 bg-neutral-800 border border-neutral-700 px-1"
               />
             </label>
-            <label className="flex items-center gap-1" title="Whether the crew's hacker can break it, and how hard it is (energy and time)">
-              Hack
-              <select
+            <label className="flex items-center gap-1" title={t("editorBar.whetherTheCrewSHackerCanBreak")}>
+              {t("editorBar.hack")}<select
                 value={p.door.lock?.hack ?? 0}
                 onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { hack: Number(e.target.value) || undefined }) })}
                 className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
               >
-                <option value={0}>no</option>
-                <option value={1}>easy</option>
-                <option value={2}>hard</option>
-                <option value={3}>very hard</option>
+                <option value={0}>{t("editorBar.no")}</option>
+                <option value={1}>{t("editorBar.easy")}</option>
+                <option value={2}>{t("editorBar.hard")}</option>
+                <option value={3}>{t("editorBar.veryHard")}</option>
               </select>
             </label>
-            <label className="flex items-center gap-1" title="A keypad: its code - a new one each ship - shows on one of the ship's code-holding terminals">
+            <label className="flex items-center gap-1" title={t("editorBar.aKeypadItsCodeANewOne")}>
               <input
                 type="checkbox"
                 checked={!!p.door.lock?.code}
                 onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { code: e.target.checked || undefined }) })}
               />
-              Code
-            </label>
+              {t("editorBar.code")}</label>
             {p.door.lock &&
-              slider("Locked", p.door.lock.chance ?? 1, 0, 1, 0.05, (v) =>
+              slider(t("editorBar.locked"), p.door.lock.chance ?? 1, 0, 1, 0.05, (v) =>
                 p.onDoorChange({ lock: doorLock(p.door!.lock, { chance: v >= 1 ? undefined : v }) }),
               )}
             {p.door.lock && (
-              <label className="flex items-center gap-1" title="What the party is told at the shut door">
-                Says
-                <input
+              <label className="flex items-center gap-1" title={t("editorBar.whatThePartyIsToldAtThe")}>
+                {t("editorBar.says")}<input
                   type="text"
                   value={p.door.lock.message ?? ""}
-                  placeholder="It's locked."
+                  placeholder={t("editorBar.itSLocked")}
                   onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { message: e.target.value || undefined }) })}
                   className="w-32 bg-neutral-800 border border-neutral-700 px-1"
                 />
               </label>
             )}
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorDelete} title="Delete">
-              Remove
-            </button>
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorDeselect}>
-              Done
-            </button>
-            <span className="text-neutral-500">arrows: move (Shift: more)</span>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorDelete} title={t("editorBar.delete")}>{t("editorBar.remove")}</button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorDeselect}>{t("editorBar.done")}</button>
+            <span className="text-neutral-500">{t("editorBar.arrowsMoveShiftMore")}</span>
           </div>
         </>
       )}
@@ -747,8 +711,7 @@ export function EditorBar(p: Props) {
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-1 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
             <label className="flex items-center gap-1">
-              Map
-              <select value={p.mapId} onChange={(e) => p.onOpenMap(e.target.value)} className="bg-neutral-800 border border-neutral-700 px-1 py-0.5">
+              {t("editorBar.map")}<select value={p.mapId} onChange={(e) => p.onOpenMap(e.target.value)} className="bg-neutral-800 border border-neutral-700 px-1 py-0.5">
                 {p.mapIds.map((id) => (
                   <option key={id} value={id}>
                     {id}
@@ -756,75 +719,62 @@ export function EditorBar(p: Props) {
                 ))}
               </select>
             </label>
-            <span className="text-neutral-400">
-              {p.mapSize.width} x {p.mapSize.height}
-            </span>
+            <span className="text-neutral-400">{t("editorBar.x", { v1: p.mapSize.width, v2: p.mapSize.height })}</span>
             {(["N", "S", "W", "E"] as Direction[]).map((edge) => (
               <span key={edge} className="flex items-center gap-0.5">
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onResize(edge, true)} title={`Add a row/column at the ${edge} edge`}>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onResize(edge, true)} title={t("editorBar.growEdge", { edge })}>
                   +{edge}
                 </button>
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onResize(edge, false)} title={`Cut the ${edge} edge (all wall only)`}>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onResize(edge, false)} title={t("editorBar.cutEdge", { edge })}>
                   −{edge}
                 </button>
               </span>
             ))}
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onNewMap}>
-              New map…
-            </button>
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSaveMapAs}>
-              Save as…
-            </button>
-            <label className="flex items-center gap-1" title="Few: softer, light spills to the cells around. Many: sharper shadows.">
-              Baked light
-              <select
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onNewMap}>{t("editorBar.newMap")}</button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSaveMapAs}>{t("editorBar.saveAs")}</button>
+            <label className="flex items-center gap-1" title={t("editorBar.fewSofterLightSpillsToTheCells")}>
+              {t("editorBar.bakedLight")}<select
                 value={p.mapLook.lightGridDensity ?? ""}
                 onChange={(e) => p.onMapLook({ lightGridDensity: e.target.value ? Number(e.target.value) : undefined })}
                 className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
               >
-                <option value="">default</option>
+                <option value="">{t("editorBar.defaultLower")}</option>
                 {DENSITIES.map((d) => (
-                  <option key={d} value={d}>
-                    {d} per cell
-                  </option>
+                  <option key={d} value={d}>{t("editorBar.perCell", { v1: d })}</option>
                 ))}
               </select>
             </label>
             <label
               className="flex items-center gap-1"
-              title="The ambient part of the baked light from a coarser grid: a lit room's light spreads into the cells around it, the main light keeps the sharp shadows"
+              title={t("editorBar.theAmbientPartOfTheBakedLight")}
             >
-              Ambient
-              <select
+              {t("editorBar.ambient")}<select
                 value={p.mapLook.lightGridAmbient ?? ""}
                 onChange={(e) => p.onMapLook({ lightGridAmbient: e.target.value ? Number(e.target.value) : undefined })}
                 className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
               >
-                <option value="">same grid</option>
+                <option value="">{t("editorBar.sameGrid")}</option>
                 {[2, 3, 4].map((d) => (
-                  <option key={d} value={d}>
-                    {d} per cell
-                  </option>
+                  <option key={d} value={d}>{t("editorBar.perCell", { v1: d })}</option>
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-1" title="The hue the deck's trim is painted in: a ship's livery turns it (none: it's left as painted)">
+            <label className="flex items-center gap-1" title={t("editorBar.theHueTheDeckSTrimIs")}>
               <input
                 type="checkbox"
                 checked={!!p.mapLook.accent}
                 onChange={(e) => p.onMapLook({ accent: e.target.checked ? { hue: 0 } : undefined })}
               />
-              Accent
-            </label>
+              {t("editorBar.accent")}</label>
             {p.mapLook.accent &&
-              slider("Hue", p.mapLook.accent.hue, 0, 359, 1, (v) => p.onMapLook({ accent: { ...p.mapLook.accent!, hue: v } }))}
+              slider(t("editorBar.hue"), p.mapLook.accent.hue, 0, 359, 1, (v) => p.onMapLook({ accent: { ...p.mapLook.accent!, hue: v } }))}
             {p.mapLook.accent &&
               slider("+-", p.mapLook.accent.range ?? 30, 5, 90, 1, (v) =>
                 p.onMapLook({ accent: { ...p.mapLook.accent!, range: v === 30 ? undefined : v } }),
               )}
             {TEXTURE_SLOTS.map(({ slot, label, kind }) => (
-              <label key={slot} className="flex items-center gap-1" title={`The deck's default ${label.toLowerCase()} texture set (what isn't painted otherwise)`}>
-                {label}
+              <label key={slot} className="flex items-center gap-1" title={t("editorBar.defaultTexture", { surface: t(label).toLowerCase() })}>
+                {t(label)}
                 <select
                   value={p.mapLook.textures?.[slot] ?? ""}
                   onChange={(e) => {
@@ -834,7 +784,7 @@ export function EditorBar(p: Props) {
                   }}
                   className="bg-neutral-800 border border-neutral-700 px-1 py-0.5 max-w-[7rem]"
                 >
-                  <option value="">default</option>
+                  <option value="">{t("editorBar.defaultLower")}</option>
                   {textureSetsOfKind(kind).map((id) => (
                     <option key={id} value={id}>
                       {TEXTURE_SETS[id].label}
@@ -843,14 +793,13 @@ export function EditorBar(p: Props) {
                 </select>
               </label>
             ))}
-            <label className="flex items-center gap-1" title="How deep the walls' relief is (rebuilds the deck)">
-              Relief
-              <select
+            <label className="flex items-center gap-1" title={t("editorBar.howDeepTheWallsReliefIsRebuilds")}>
+              {t("editorBar.relief")}<select
                 value={p.mapLook.reliefDepth ?? ""}
                 onChange={(e) => p.onMapLook({ reliefDepth: e.target.value ? Number(e.target.value) : undefined })}
                 className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
               >
-                <option value="">default</option>
+                <option value="">{t("editorBar.defaultLower")}</option>
                 {RELIEF_DEPTHS.map((d) => (
                   <option key={d} value={d}>
                     {d}
@@ -873,11 +822,10 @@ export function EditorBar(p: Props) {
                   {p.decal.name}
                   {p.decal.action ? ` (${p.decal.action})` : ""}
                 </span>
-                {slider("Turn", p.decal.rotation, 0, 345, 15, (v) => p.onDecalChange({ rotation: v || undefined }))}
-                {slider("Scale", p.decal.scale, 0.25, 4, 0.05, (v) => p.onDecalChange({ scale: v === 1 ? undefined : v }))}
-                <label className="flex items-center gap-1" title='What touching it does: "terminal:<id>" opens that terminal of the map, "lift" a lift button'>
-                  Action
-                  <input
+                {slider(t("editorBar.turn"), p.decal.rotation, 0, 345, 15, (v) => p.onDecalChange({ rotation: v || undefined }))}
+                {slider(t("editorBar.scale"), p.decal.scale, 0.25, 4, 0.05, (v) => p.onDecalChange({ scale: v === 1 ? undefined : v }))}
+                <label className="flex items-center gap-1" title={t("editorBar.whatTouchingItDoesTerminalIdOpens")}>
+                  {t("editorBar.action")}<input
                     type="text"
                     value={p.decal.action ?? ""}
                     placeholder="terminal:log1"
@@ -887,13 +835,9 @@ export function EditorBar(p: Props) {
                 </label>
                 {chanceSlider(p.decal.chance, (chance) => p.onDecalChange({ chance }))}
                 {linkFields(p.decal.links, p.linkIds, p.onDecalChange)}
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDecalDelete} title="Delete">
-                  Remove
-                </button>
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDecalDeselect}>
-                  Done
-                </button>
-                <span className="text-neutral-500">arrows: move (Shift: more) · R: turn</span>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDecalDelete} title={t("editorBar.delete")}>{t("editorBar.remove")}</button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDecalDeselect}>{t("editorBar.done")}</button>
+                <span className="text-neutral-500">{t("editorBar.arrowsMoveShiftMoreRTurn")}</span>
               </div>
             </>
           )}
@@ -913,31 +857,28 @@ export function EditorBar(p: Props) {
                 {name}
               </button>
             ))}
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropRotate} title="R">
-              Turn: {p.propRotation}°
-            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropRotate} title="R">{t("editorBar.rotationDegrees", { v1: p.propRotation })}</button>
           </div>
           {p.prop && (
             <>
               <span className="basis-full" />
               <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
                 <span className="text-amber-200">{p.prop.name}</span>
-                {slider("Turn", p.prop.rotation, 0, 345, 15, (v) => p.onPropChange({ rotation: v || undefined }))}
-                {slider("Scale", p.prop.scale, 0.25, 4, 0.05, (v) => p.onPropChange({ scale: v === 1 ? undefined : v }))}
-                {slider("Height", p.prop.elevation, -0.5, Math.max(0, p.prop.roomHeight - 0.05), 0.05, (v) =>
+                {slider(t("editorBar.turn"), p.prop.rotation, 0, 345, 15, (v) => p.onPropChange({ rotation: v || undefined }))}
+                {slider(t("editorBar.scale"), p.prop.scale, 0.25, 4, 0.05, (v) => p.onPropChange({ scale: v === 1 ? undefined : v }))}
+                {slider(t("editorBar.height"), p.prop.elevation, -0.5, Math.max(0, p.prop.roomHeight - 0.05), 0.05, (v) =>
                   p.onPropChange({ elevation: v || undefined }),
                 )}
                 {chanceSlider(p.prop.chance, (chance) => p.onPropChange({ chance }))}
                 {linkFields(p.prop.links, p.linkIds, p.onPropChange)}
                 {p.prop.retexturable && (
                   <label className="flex items-center gap-1">
-                    Texture
-                    <select
+                    {t("editorBar.texture")}<select
                       value={p.prop.texture ?? ""}
                       onChange={(e) => p.onPropChange({ texture: e.target.value || undefined })}
                       className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
                     >
-                      <option value="">its own</option>
+                      <option value="">{t("editorBar.itsOwn")}</option>
                       {PROP_TEXTURES.map((id) => (
                         <option key={id} value={id}>
                           {TEXTURE_SETS[id].label}
@@ -951,21 +892,13 @@ export function EditorBar(p: Props) {
                     type="button"
                     className={`${BUTTON} ${idle}`}
                     onClick={() => propEdit.set({ name: p.prop!.name, part: 0 })}
-                    title="Edit its type: size, relief, normal strength - and a views prop's boxes over its views"
-                  >
-                    Edit type…
-                  </button>
+                    title={t("editorBar.editItsTypeSizeReliefNormalStrength")}
+                  >{t("editorBar.editType")}</button>
                 )}
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropStack} title="The palette's prop, on top of this one">
-                  Stack {p.propChoice} on top
-                </button>
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropDelete} title="Delete">
-                  Remove
-                </button>
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropDeselect}>
-                  Done
-                </button>
-                <span className="text-neutral-500">arrows: nudge · PgUp/PgDn: height · R: turn</span>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropStack} title={t("editorBar.thePaletteSPropOnTopOf")}>{t("editorBar.stackOnTop", { v1: p.propChoice })}</button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropDelete} title={t("editorBar.delete")}>{t("editorBar.remove")}</button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropDeselect}>{t("editorBar.done")}</button>
+                <span className="text-neutral-500">{t("editorBar.arrowsNudgePgUpPgDnHeightRTurn")}</span>
               </div>
             </>
           )}
@@ -975,34 +908,30 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
-            <span className="text-amber-200">{p.smoke.fire ? "fire" : "smoke"}</span>
-            <label className="flex items-center gap-1" title="A fire: flames, dark smoke off them, a flickering light - its cell burns (Color tints the flames)">
+            <span className="text-amber-200">{p.smoke.fire ? t("editorBar.fire") : t("editorBar.smoke")}</span>
+            <label className="flex items-center gap-1" title={t("editorBar.aFireFlamesDarkSmokeOffThem")}>
               <input type="checkbox" checked={p.smoke.fire} onChange={(e) => p.onSmokeChange({ fire: e.target.checked || undefined })} />
-              Fire
-            </label>
-            <label className="flex items-center gap-1" title="Falling petals instead of smoke: Color is theirs, Amount and Puff size how many and how big, Blow the wind">
+              {t("editorBar.fire140")}</label>
+            <label className="flex items-center gap-1" title={t("editorBar.fallingPetalsInsteadOfSmokeColorIs")}>
               <input type="checkbox" checked={p.smoke.petals} onChange={(e) => p.onSmokeChange({ petals: e.target.checked || undefined })} />
-              Petals
-            </label>
+              {t("editorBar.petals")}</label>
             {p.smoke.fire && (
-              <label className="flex items-center gap-1" title="Only decoration (a torch): the flames and the light, but it doesn't burn the party and the actors walk into its cell">
+              <label className="flex items-center gap-1" title={t("editorBar.onlyDecorationATorchTheFlamesAnd")}>
                 <input type="checkbox" checked={p.smoke.decorative} onChange={(e) => p.onSmokeChange({ decorative: e.target.checked || undefined })} />
-                Decoration
-              </label>
+                {t("editorBar.decoration")}</label>
             )}
-            {slider("Amount", p.smoke.density, 0.25, 3, 0.25, (v) => p.onSmokeChange({ density: v === 1 ? undefined : v }))}
-            {slider("Puff size", p.smoke.size, 0.4, 2.5, 0.1, (v) => p.onSmokeChange({ size: v === 1 ? undefined : v }))}
-            {slider("Height", p.smoke.height, 0, Math.max(0, p.smoke.roomHeight - 0.05), 0.05, (v) => p.onSmokeChange({ pos: [NaN, v, NaN] }))}
-            {slider("Blow", p.smoke.blow.speed, 0, 4, 0.25, (v) => p.onSmokeChange({ blow: smokeBlow({ ...p.smoke!.blow, speed: v }) }))}
+            {slider(t("editorBar.amount"), p.smoke.density, 0.25, 3, 0.25, (v) => p.onSmokeChange({ density: v === 1 ? undefined : v }))}
+            {slider(t("editorBar.puffSize"), p.smoke.size, 0.4, 2.5, 0.1, (v) => p.onSmokeChange({ size: v === 1 ? undefined : v }))}
+            {slider(t("editorBar.height"), p.smoke.height, 0, Math.max(0, p.smoke.roomHeight - 0.05), 0.05, (v) => p.onSmokeChange({ pos: [NaN, v, NaN] }))}
+            {slider(t("editorBar.blow"), p.smoke.blow.speed, 0, 4, 0.25, (v) => p.onSmokeChange({ blow: smokeBlow({ ...p.smoke!.blow, speed: v }) }))}
             {p.smoke.blow.speed > 0 && (
               <>
-                {slider("Heading", p.smoke.blow.yaw, 0, 345, 15, (v) => p.onSmokeChange({ blow: smokeBlow({ ...p.smoke!.blow, yaw: v }) }))}
-                {slider("Tilt", p.smoke.blow.pitch, -90, 90, 15, (v) => p.onSmokeChange({ blow: smokeBlow({ ...p.smoke!.blow, pitch: v }) }))}
+                {slider(t("editorBar.heading"), p.smoke.blow.yaw, 0, 345, 15, (v) => p.onSmokeChange({ blow: smokeBlow({ ...p.smoke!.blow, yaw: v }) }))}
+                {slider(t("editorBar.tilt"), p.smoke.blow.pitch, -90, 90, 15, (v) => p.onSmokeChange({ blow: smokeBlow({ ...p.smoke!.blow, pitch: v }) }))}
               </>
             )}
             <label className="flex items-center gap-1">
-              Color
-              <input
+              {t("editorBar.color")}<input
                 type="color"
                 value={p.smoke.color}
                 onChange={(e) => p.onSmokeChange({ color: e.target.value })}
@@ -1011,13 +940,9 @@ export function EditorBar(p: Props) {
             </label>
             {chanceSlider(p.smoke.chance, (chance) => p.onSmokeChange({ chance }))}
             {linkFields(p.smoke.links, p.linkIds, p.onSmokeChange)}
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSmokeDelete} title="Delete">
-              Remove
-            </button>
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSmokeDeselect}>
-              Done
-            </button>
-            <span className="text-neutral-500">arrows / PgUp PgDn: move</span>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSmokeDelete} title={t("editorBar.delete")}>{t("editorBar.remove")}</button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSmokeDeselect}>{t("editorBar.done")}</button>
+            <span className="text-neutral-500">{t("editorBar.arrowsPgUpPgDnMove")}</span>
           </div>
         </>
       )}
@@ -1025,23 +950,18 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
-            <span className="text-amber-200">exit</span>
+            <span className="text-amber-200">{t("editorBar.exitLower")}</span>
             <label className="flex items-center gap-1">
-              Name
-              <input
+              {t("editorBar.name")}<input
                 type="text"
                 value={p.exit.name}
-                placeholder="Airlock"
+                placeholder={t("editorBar.airlock")}
                 onChange={(e) => p.onExitName(e.target.value || undefined)}
                 className="w-32 bg-neutral-800 border border-neutral-700 px-1"
               />
             </label>
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExitRemove}>
-              Remove
-            </button>
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExitDeselect}>
-              Done
-            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExitRemove}>{t("editorBar.remove")}</button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExitDeselect}>{t("editorBar.done")}</button>
           </div>
         </>
       )}
@@ -1060,8 +980,7 @@ export function EditorBar(p: Props) {
               <span className="basis-full" />
               <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
                 <label className="flex items-center gap-1">
-                  Item
-                  <select
+                  {t("editorBar.item")}<select
                     value={p.item.item}
                     onChange={(e) => p.onItemChange({ item: e.target.value })}
                     className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
@@ -1073,19 +992,15 @@ export function EditorBar(p: Props) {
                     ))}
                   </select>
                 </label>
-                {slider("Count", p.item.count, 1, 20, 1, (v) => p.onItemChange({ count: v > 1 ? v : undefined }))}
-                {slider("Height", p.item.elevation, 0, Math.max(0, p.item.roomHeight - 0.05), 0.01, (v) =>
+                {slider(t("editorBar.count"), p.item.count, 1, 20, 1, (v) => p.onItemChange({ count: v > 1 ? v : undefined }))}
+                {slider(t("editorBar.height"), p.item.elevation, 0, Math.max(0, p.item.roomHeight - 0.05), 0.01, (v) =>
                   p.onItemChange({ elevation: v || undefined }),
                 )}
                 {chanceSlider(p.item.chance, (chance) => p.onItemChange({ chance }))}
                 {linkFields(p.item.links, p.linkIds, p.onItemChange)}
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onItemDelete} title="Delete">
-                  Remove
-                </button>
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onItemDeselect}>
-                  Done
-                </button>
-                <span className="text-neutral-500">arrows: nudge · PgUp/PgDn: height</span>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onItemDelete} title={t("editorBar.delete")}>{t("editorBar.remove")}</button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onItemDeselect}>{t("editorBar.done")}</button>
+                <span className="text-neutral-500">{t("editorBar.arrowsNudgePgUpPgDnHeight")}</span>
               </div>
             </>
           )}
@@ -1095,80 +1010,70 @@ export function EditorBar(p: Props) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
-            <span className="text-amber-200">chance wall</span>
-            {slider("Chance", p.chanceWall.chance, 0, 1, 0.05, (chance) => p.onChanceWallChange({ chance }))}
+            <span className="text-amber-200">{t("editorBar.chanceWallLower")}</span>
+            {slider(t("editorBar.chance"), p.chanceWall.chance, 0, 1, 0.05, (chance) => p.onChanceWallChange({ chance }))}
             {linkFields(p.chanceWall.links, p.linkIds, p.onChanceWallChange)}
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onChanceWallRemove} title="Always a wall">
-              Plain wall
-            </button>
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onChanceWallDeselect}>
-              Done
-            </button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onChanceWallRemove} title={t("editorBar.alwaysAWall")}>{t("editorBar.plainWall")}</button>
+            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onChanceWallDeselect}>{t("editorBar.done")}</button>
           </div>
         </>
       )}
       {TOOL_HELP[p.tool] && (
         <>
           <span className="basis-full" />
-          <span className="text-[10px] text-neutral-400 bg-black/60 px-2 py-0.5 rounded-sm">{TOOL_HELP[p.tool]}</span>
+          <span className="text-[10px] text-neutral-400 bg-black/60 px-2 py-0.5 rounded-sm">{t(TOOL_HELP[p.tool]!)}</span>
         </>
       )}
       {p.tool === "light" && (
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            <span className="text-[10px] text-neutral-400">Place:</span>
+            <span className="text-[10px] text-neutral-400">{t("editorBar.place159")}</span>
             <button
               type="button"
               className={`${BUTTON} ${p.lightPlace === "ceiling" ? active : idle}`}
               onClick={() => p.onLightPlace("ceiling")}
-              title="A click on a floor or ceiling hangs a lamp in the cell"
-            >
-              Ceiling lamp
-            </button>
+              title={t("editorBar.aClickOnAFloorOrCeiling")}
+            >{t("editorBar.ceilingLamp")}</button>
             <button
               type="button"
               className={`${BUTTON} ${p.lightPlace === "point" ? active : idle}`}
               onClick={() => p.onLightPlace("point")}
-              title="A click puts a light just off the surface pointed at (Shift+click too)"
-            >
-              Point light
-            </button>
-            <span className="text-[10px] text-neutral-500">click: pick / place · right-click: remove</span>
+              title={t("editorBar.aClickPutsALightJustOff")}
+            >{t("editorBar.pointLight")}</button>
+            <span className="text-[10px] text-neutral-500">{t("editorBar.clickPickPlaceRightClickRemove")}</span>
           </div>
           {p.light && (
             <>
               <span className="basis-full" />
               <div className="flex flex-wrap items-center justify-center gap-2 bg-black/70 px-2 py-1 rounded-sm text-[10px] text-neutral-300">
                 <label className="flex items-center gap-1">
-                  Color
-                  <input
+                  {t("editorBar.color")}<input
                     type="color"
                     value={p.light.color}
                     onChange={(e) => p.onLightChange({ color: e.target.value })}
                     className="w-7 h-6 bg-transparent border border-neutral-600"
                   />
                 </label>
-                {slider("Intensity", p.light.intensity, 0, 4, 0.05, (v) => p.onLightChange({ intensity: v }))}
-                {slider("Range", p.light.range, 0.5, 6, 0.1, (v) => p.onLightChange({ range: v }))}
+                {slider(t("editorBar.intensity"), p.light.intensity, 0, 4, 0.05, (v) => p.onLightChange({ intensity: v }))}
+                {slider(t("editorBar.range"), p.light.range, 0.5, 6, 0.1, (v) => p.onLightChange({ range: v }))}
                 {chanceSlider(p.light.chance, (chance) => p.onLightChange({ chance }))}
                 {linkFields(p.light.links, p.linkIds, p.onLightChange)}
-                <label className="flex items-center gap-1" title="An unsteady light isn't baked: one of the few real lights serves it">
-                  Effect
-                  <select
+                <label className="flex items-center gap-1" title={t("editorBar.anUnsteadyLightIsnTBakedOne")}>
+                  {t("editorBar.effect")}<select
                     value={p.light.effect ?? ""}
                     onChange={(e) => p.onLightChange({ effect: (e.target.value || undefined) as LightEffect | undefined })}
                     className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
                   >
-                    <option value="">steady</option>
-                    <option value="flicker">flicker</option>
-                    <option value="spark">spark</option>
-                    <option value="pulse">pulse</option>
+                    <option value="">{t("editorBar.steady")}</option>
+                    <option value="flicker">{t("editorBar.flicker")}</option>
+                    <option value="spark">{t("editorBar.spark")}</option>
+                    <option value="pulse">{t("editorBar.pulse")}</option>
                   </select>
                 </label>
                 {p.light.pos && (
                   <>
-                    {slider("Height", p.light.pos[1], 0.05, p.light.roomHeight - 0.05, 0.05, (v) =>
+                    {slider(t("editorBar.height"), p.light.pos[1], 0.05, p.light.roomHeight - 0.05, 0.05, (v) =>
                       p.onLightChange({ pos: [p.light!.pos![0], v, p.light!.pos![2]] }),
                     )}
                     <label className="flex items-center gap-1">
@@ -1177,17 +1082,12 @@ export function EditorBar(p: Props) {
                         checked={!!p.light.bulb}
                         onChange={(e) => p.onLightChange({ bulb: e.target.checked || undefined })}
                       />
-                      bulb in game
-                    </label>
-                    <span className="text-neutral-500">arrows / PgUp PgDn: move</span>
+                      {t("editorBar.bulbInGame")}</label>
+                    <span className="text-neutral-500">{t("editorBar.arrowsPgUpPgDnMove")}</span>
                   </>
                 )}
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onLightDelete} title="Delete">
-                  Remove
-                </button>
-                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onLightDeselect}>
-                  Done
-                </button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onLightDelete} title={t("editorBar.delete")}>{t("editorBar.remove")}</button>
+                <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onLightDeselect}>{t("editorBar.done")}</button>
               </div>
             </>
           )}

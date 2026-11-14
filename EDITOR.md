@@ -354,6 +354,11 @@ works on the map's `lights`:
 4. 2D view: painting, patrol routes, "test from here".
 5. Mobile toolbar; new maps.
 
+The editor's UI rework (layout, inspector, select tool, handles, asset tree,
+languages) has its own plan and order: EDITOR_UI_PLAN.md. After each of its
+steps the finished features are checked in the sci-fi world too (icons
+visible, texts readable, in both languages) before the next one starts.
+
 ## Palette sources
 
 No hand-kept list of its own – each palette reads what's already there:

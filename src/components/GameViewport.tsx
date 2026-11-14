@@ -584,6 +584,14 @@ function wallVariantRoll(x: number, z: number): number {
 const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
 // how long the editor leaves the quick flat preview of its structural edits before the scene's full build
 const EDIT_SETTLE_MS = 5000;
+// The top-down view (editing; the O key or the button): the camera high above
+// the map looking down (tilted with Ctrl+wheel), the ceilings and the sight
+// culling and fog off - to survey and texture a large area, even across
+// walls. Height above the floor: ZOOM_MIN..ZOOM_MAX cells; the wheel zooms.
+const TOPDOWN_FOV = 40;
+const TOPDOWN_REACH = 400;
+const TOPDOWN_ZOOM_MIN = 1.5;
+const TOPDOWN_ZOOM_MAX = 60;
 
 const FOG_NEAR = 1.6;
 // (the fog ends this far short of the view distance)
@@ -1655,6 +1663,11 @@ export function GameViewport({
     return () => clearTimeout(timer);
   }, [map, sceneMap, editMode]);
   const applyLightsRef = useRef<((next: GameMap) => void) | null>(null);
+  // the top-down view (see the scene effect's `topdown`): on or off, and a way to switch it
+  const [topdownOn, setTopdownOn] = useState(false);
+  const topdownToggleRef = useRef<((on?: boolean) => void) | null>(null);
+  // (kept here, not in the scene effect: a rebuild after an edit keeps the view where it was)
+  const topdownRef = useRef({ on: false, x: 0, z: 0, h: 9, tilt: Math.PI / 2, yaw: 0, fresh: false });
   const rebakeRef = useRef<(() => void) | null>(null);
   useEffect(() => rebakeRef.current?.(), [settings.lightGridDensity, settings.lightGridMode, settings.lightBounce]);
   // the map as it is now (lights included - the scene's may be older)
@@ -2430,6 +2443,7 @@ export function GameViewport({
         const ceilingKit = ceilingId === "sky" ? null : ceilingKitAt(x, y);
         if (ceilingId === "sky") {
           const pane = new THREE.Mesh(floorGeo, skySurface());
+          pane.userData.skyCeiling = true;
           pane.rotation.x = Math.PI / 2;
           pane.position.set(x, ceiling * wallHeight, y);
           group.add(pane);
@@ -4502,8 +4516,68 @@ export function GameViewport({
     // shows nothing new. Redone when the party changes cell or a door opens
     // or shuts; picks the lights (updateLightPool) and what gets drawn
     // (applySight).
+    // the top-down camera (see TOPDOWN_*): what it looks at (x, z), its height
+    // above the floor, its tilt (90 degrees: straight down) and heading
+    const topdown = topdownRef.current;
+    let topCaps: THREE.Group | null = null;
+    // the walls seen from above: a dark, see-through cap on each wall cell (the walls
+    // are only faces, so they'd be nothing from up here)
+    const capMaterial = new THREE.MeshBasicMaterial({ color: 0x2a2018, transparent: true, opacity: 0.5, depthWrite: false, fog: false });
+    const capGeometry = new THREE.PlaneGeometry(1, 1);
+    function buildCaps() {
+      if (topCaps) {
+        scene.remove(topCaps);
+        topCaps = null;
+      }
+      const caps = new THREE.Group();
+      for (let y = 0; y < liveMap.height; y++) {
+        for (let x = 0; x < liveMap.width; x++) {
+          if (cellAt(liveMap, x, y) !== "wall") continue;
+          let top = 1;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            if (cellAt(liveMap, x + dx, y + dy) !== "wall") top = Math.max(top, ceilingHeight(liveMap, x + dx, y + dy));
+          }
+          const cap = new THREE.Mesh(capGeometry, capMaterial);
+          cap.rotation.x = -Math.PI / 2;
+          cap.position.set(x, top * wallHeight + 0.01, y);
+          caps.add(cap);
+        }
+      }
+      topCaps = caps;
+      scene.add(caps);
+    }
+    function setTopdown(on: boolean) {
+      if (on === topdown.on) return;
+      topdown.on = on;
+      if (on) {
+        topdown.fresh = true;
+        buildCaps();
+      } else if (topCaps) {
+        scene.remove(topCaps);
+        topCaps = null;
+      }
+      for (const obj of group.children) if (obj.userData.skyCeiling) obj.traverse((o) => o.layers.set(on ? 1 : 0));
+      // (every surface is judged again: all in sight up here, back to the party's own sight down there)
+      sight = { key: "", cells: sight.cells };
+      culledCount = -1;
+      setTopdownOn(on);
+    }
+    topdownToggleRef.current = (on) => setTopdown(on ?? !topdown.on);
+    // (a rebuild while the view is up: its caps and open skies again)
+    if (topdown.on) {
+      topdown.fresh = false;
+      buildCaps();
+      for (const obj of group.children) if (obj.userData.skyCeiling) obj.traverse((o) => o.layers.set(1));
+    }
     let sight = { key: "", cells: new Set<string>() };
     function updateSight(party: { x: number; z: number }, range: number) {
+      if (topdown.on) {
+        if (sight.key === "topdown") return false;
+        const all = new Set<string>();
+        for (let y = 0; y < liveMap.height; y++) for (let x = 0; x < liveMap.width; x++) all.add(cellKey(x, y));
+        sight = { key: "topdown", cells: all };
+        return true;
+      }
       const doors = openDoorsRef.current;
       const cx = Math.round(party.x);
       const cz = Math.round(party.z);
@@ -4622,7 +4696,7 @@ export function GameViewport({
       const eye = camera.position;
       for (const obj of facingSurfaces) {
         const { n, d } = obj.userData.facing as { n: THREE.Vector3; d: number };
-        obj.visible = !!obj.userData.inSight && (cullingOff || n.dot(eye) - d > -FACING_MARGIN);
+        obj.visible = !!obj.userData.inSight && (topdown.on ? n.y > -0.5 : cullingOff || n.dot(eye) - d > -FACING_MARGIN);
       }
       // the corner joins' strips: those in sight and in view (one merged
       // mesh can't be frustum-culled as a whole)
@@ -5987,6 +6061,76 @@ export function GameViewport({
     renderer.domElement.addEventListener("pointermove", onHover);
     renderer.domElement.addEventListener("pointerleave", onLeave);
     renderer.domElement.addEventListener("contextmenu", onContextMenu);
+    // The top-down view's input: O switches it (editing only); WASD / arrows
+    // pan and Q / E turn it - taken before the game's own keys (this runs in
+    // the capture phase), so the party doesn't walk; the wheel zooms
+    // (Ctrl+wheel tilts); the middle button drags the map.
+    const topdownKeys = new Set<string>();
+    const typingIn = (target: EventTarget | null) =>
+      target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !["range", "checkbox", "radio", "button"].includes(target.type)));
+    const onTopdownKey = (e: KeyboardEvent) => {
+      if (typingIn(e.target) || e.ctrlKey || e.altKey || e.metaKey) return;
+      const key = e.key.toLowerCase();
+      if (e.type === "keydown" && key === "o" && editModeRef.current && !e.repeat) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setTopdown(!topdown.on);
+        return;
+      }
+      if (!topdown.on) return;
+      if (["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.type === "keydown") topdownKeys.add(key);
+        else topdownKeys.delete(key);
+      }
+      if (key === "shift") {
+        if (e.type === "keydown") topdownKeys.add("Shift");
+        else topdownKeys.delete("Shift");
+      }
+    };
+    window.addEventListener("keydown", onTopdownKey, true);
+    window.addEventListener("keyup", onTopdownKey, true);
+    const onTopdownBlur = () => topdownKeys.clear();
+    window.addEventListener("blur", onTopdownBlur);
+    const onTopdownWheel = (e: WheelEvent) => {
+      if (!topdown.on) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.ctrlKey) topdown.tilt = Math.min(Math.PI / 2, Math.max(0.5, topdown.tilt - Math.sign(e.deltaY) * 0.06));
+      else topdown.h = Math.min(TOPDOWN_ZOOM_MAX, Math.max(TOPDOWN_ZOOM_MIN, topdown.h * Math.exp(e.deltaY * 0.0012)));
+    };
+    renderer.domElement.addEventListener("wheel", onTopdownWheel, { capture: true, passive: false });
+    let topdownPan: { x: number; y: number } | null = null;
+    const onTopdownDown = (e: PointerEvent) => {
+      if (!topdown.on || e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      topdownPan = { x: e.clientX, y: e.clientY };
+      renderer.domElement.setPointerCapture(e.pointerId);
+    };
+    const onTopdownMove = (e: PointerEvent) => {
+      if (!topdownPan) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      // cells per pixel at the looked-at floor
+      const perPx = (2 * Math.tan(THREE.MathUtils.degToRad(TOPDOWN_FOV) / 2) * (topdown.h / Math.sin(topdown.tilt))) / Math.max(1, rect.height);
+      const dx = (e.clientX - topdownPan.x) * perPx;
+      const dy = (e.clientY - topdownPan.y) * perPx;
+      const sy = Math.sin(topdown.yaw);
+      const cy = Math.cos(topdown.yaw);
+      // (dragging the map: the view moves the other way)
+      topdown.x -= cy * dx + sy * dy / Math.sin(topdown.tilt);
+      topdown.z -= sy * dx - cy * dy / Math.sin(topdown.tilt);
+      topdownPan = { x: e.clientX, y: e.clientY };
+    };
+    const onTopdownUp = (e: PointerEvent) => {
+      if (!topdownPan) return;
+      topdownPan = null;
+      if (renderer.domElement.hasPointerCapture(e.pointerId)) renderer.domElement.releasePointerCapture(e.pointerId);
+    };
+    renderer.domElement.addEventListener("pointerdown", onTopdownDown, true);
+    renderer.domElement.addEventListener("pointermove", onTopdownMove);
+    renderer.domElement.addEventListener("pointerup", onTopdownUp);
     // The cell a point of the view shows: the first solid surface there - a
     // wall's face (the wall cell behind it, dug from the open cell in front),
     // else the floor or ceiling of the cell it's in: floors face up, ceiling
@@ -6528,7 +6672,7 @@ export function GameViewport({
       aimBlend += ((focused ? 1 : 0) - aimBlend) * (1 - Math.exp(-dt / AIM_CAMERA_TAU));
       aimFov += (aimFovGoal - aimFov) * (1 - Math.exp(-dt / AIM_CAMERA_TAU));
       if (!focused) aimFovGoal = fov;
-      const viewFov = fov + (aimFov - fov) * aimBlend;
+      const viewFov = topdown.on ? TOPDOWN_FOV : fov + (aimFov - fov) * aimBlend;
       if (Math.abs(camera.fov - viewFov) > 1e-3) {
         camera.fov = viewFov;
         camera.updateProjectionMatrix();
@@ -6544,6 +6688,38 @@ export function GameViewport({
         camZ + lookZ + (aimLookAt.z - camZ - lookZ) * aimBlend,
       );
       camera.rotateZ(bobRoll * (1 - aimBlend) + DOWN_ROLL * fall);
+      if (topdown.on && !editModeRef.current) setTopdown(false);
+      if (topdown.on) {
+        // (it starts over the party)
+        if (topdown.fresh) {
+          topdown.fresh = false;
+          topdown.x = cam.x;
+          topdown.z = cam.z;
+        }
+        // the view's panning keys (WASD / arrows, the heading's frame; Shift: faster), Q / E turn it
+        const move = topdownKeys;
+        const speed = topdown.h * 0.9 * (move.has("Shift") ? 2.5 : 1) * dt;
+        const sy = Math.sin(topdown.yaw);
+        const cy = Math.cos(topdown.yaw);
+        const forward = (move.has("w") || move.has("arrowup") ? 1 : 0) - (move.has("s") || move.has("arrowdown") ? 1 : 0);
+        const right = (move.has("d") || move.has("arrowright") ? 1 : 0) - (move.has("a") || move.has("arrowleft") ? 1 : 0);
+        topdown.x += (sy * forward + cy * right) * speed;
+        topdown.z += (-cy * forward + sy * right) * speed;
+        topdown.yaw += ((move.has("e") ? 1 : 0) - (move.has("q") ? 1 : 0)) * 1.4 * dt;
+        topdown.x = Math.min(liveMap.width, Math.max(-1, topdown.x));
+        topdown.z = Math.min(liveMap.height, Math.max(-1, topdown.z));
+        // the view looks at the floor under (x, z), from `h` above it, back along the heading
+        const sinT = Math.sin(topdown.tilt);
+        const dist = topdown.h / sinT;
+        const fx = Math.sin(topdown.yaw);
+        const fz = -Math.cos(topdown.yaw);
+        const baseY = floorY(Math.round(topdown.x), Math.round(topdown.z));
+        camera.up.set(fx, 0, fz);
+        camera.position.set(topdown.x - fx * dist * Math.cos(topdown.tilt), baseY + topdown.h, topdown.z - fz * dist * Math.cos(topdown.tilt));
+        camera.lookAt(topdown.x, baseY, topdown.z);
+      } else if (camera.up.y !== 1) {
+        camera.up.set(0, 1, 0);
+      }
       // the billboards (trees) face the eye, turning about the vertical only
       for (const b of billboardProps) b.rotation.y = Math.atan2(camera.position.x - b.position.x, camera.position.z - b.position.z);
 
@@ -6556,11 +6732,12 @@ export function GameViewport({
       }
       pointLight.intensity = s.headlamp ? s.pointLightIntensity * rideDip : 0;
       lightGrid.scale.value = s.bakedLights ? s.mapLightIntensity * rideDip : 0;
-      const fogFar = effectiveViewDistance(s) - FOG_FAR_MARGIN;
+      const viewReach = topdown.on ? TOPDOWN_REACH : effectiveViewDistance(s);
+      const fogFar = viewReach - FOG_FAR_MARGIN;
       if (fog.far !== fogFar) {
         fog.far = fogFar;
         fog.near = fogNear(fogFar);
-        camera.far = effectiveViewDistance(s) + 0.5;
+        camera.far = viewReach + 0.5;
         camera.updateProjectionMatrix();
       }
       if (s.fogColor !== fogColorNow) {
@@ -6819,6 +6996,16 @@ export function GameViewport({
       renderer.domElement.removeEventListener("pointermove", onHover);
       renderer.domElement.removeEventListener("pointerleave", onLeave);
       renderer.domElement.removeEventListener("contextmenu", onContextMenu);
+      window.removeEventListener("keydown", onTopdownKey, true);
+      window.removeEventListener("keyup", onTopdownKey, true);
+      window.removeEventListener("blur", onTopdownBlur);
+      renderer.domElement.removeEventListener("wheel", onTopdownWheel, true);
+      renderer.domElement.removeEventListener("pointerdown", onTopdownDown, true);
+      renderer.domElement.removeEventListener("pointermove", onTopdownMove);
+      renderer.domElement.removeEventListener("pointerup", onTopdownUp);
+      topdownToggleRef.current = null;
+      capMaterial.dispose();
+      capGeometry.dispose();
       container.removeChild(renderer.domElement);
       for (const geo of geometries) geo.dispose();
       // (their textures and relief stay cached for the next build)
@@ -6901,6 +7088,20 @@ export function GameViewport({
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
       <div ref={containerRef} className="absolute inset-0" />
+      {editMode && (
+        <button
+          type="button"
+          onClick={() => topdownToggleRef.current?.()}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-pressed={topdownOn}
+          title="Top-down view (O): WASD / arrows pan, Q / E turn, wheel zooms, Ctrl+wheel tilts, middle button drags"
+          className={`absolute left-2 bottom-2 z-10 border rounded-sm px-2 py-1 text-[11px] font-mono ${
+            topdownOn ? "border-amber-400 bg-amber-400/25 text-amber-200" : "border-neutral-600 bg-black/60 text-neutral-200 hover:bg-neutral-800"
+          }`}
+        >
+          {topdownOn ? "\u2B13 Top-down" : "\u2B12 Top-down"}
+        </button>
+      )}
       <LoadingScreen loading={loading} inLift={!!ride} title={WORLDS[map.world].loop === "ship" ? "USV HORIZON" : WORLDS[map.world].name.toUpperCase()} />
     </div>
   );
