@@ -1694,6 +1694,16 @@ export function GameViewport({
     let disposed = false;
     let raf = 0;
     const buildStart = performance.now();
+    // Where the build's time goes (shown in the console when the scene is ready - always with
+    // ?profile in the address, else in dev; and in window.__voidcrewBuild): totals by kind of
+    // work, and when the textures and the builds were all in.
+    const phases: Record<string, { ms: number; n: number }> = {};
+    const tick = (name: string, since: number) => {
+      const p = (phases[name] ??= { ms: 0, n: 0 });
+      p.ms += performance.now() - since;
+      p.n++;
+    };
+    const milestones: Record<string, number> = {};
 
     const scene = new THREE.Scene();
     const fogStartFar = effectiveViewDistance(settings) - FOG_FAR_MARGIN;
@@ -1771,6 +1781,8 @@ export function GameViewport({
       if (disposed || ready) return;
       const progress = (texturesLoaded + buildsTotal - buildsPending) / Math.max(1, texturesTotal + buildsTotal);
       if (newMap) setLoading({ title: map.name, progress });
+      if (texturesTotal > 0 && texturesLoaded >= texturesTotal) milestones["textures loaded"] ??= performance.now() - buildStart;
+      if (buildsTotal > 0 && buildsPending === 0) milestones["geometry builds done"] ??= performance.now() - buildStart;
       if (buildsPending > 0 || texturesLoaded < texturesTotal) return;
       // let the builds' own .then()s (placing the meshes) run first
       setTimeout(() => {
@@ -1780,11 +1792,29 @@ export function GameViewport({
           const mat = (o as THREE.Mesh).material;
           for (const m of Array.isArray(mat) ? mat : mat ? [mat] : []) useLightGrid(m, lightGrid);
         });
+        const compileFrom = performance.now();
         renderer.compile(scene, camera);
+        tick("shader compile", compileFrom);
         // (behind the loading screen, not on the first aim)
+        const raycastFrom = performance.now();
         prepareRaycasts(group);
-        // dev: how long the build took (ms), e.g. after a map edit
-        if (import.meta.env.DEV) Object.assign(window, { __voidcrewBuild: { total: performance.now() - buildStart } });
+        tick("raycast set-up (BVH)", raycastFrom);
+        // how long the build took (ms), and where it went, e.g. after a map edit
+        const total = performance.now() - buildStart;
+        const report = {
+          total,
+          // (since the page began: when this scene's build started, and when it was ready - the time before it is loading the app itself)
+          startedAt: Math.round(buildStart),
+          readyAt: Math.round(performance.now()),
+          newMap,
+          milestones: Object.fromEntries(Object.entries(milestones).map(([k, v]) => [k, Math.round(v)])),
+          phases: Object.fromEntries(Object.entries(phases).map(([k, v]) => [k, { ms: Math.round(v.ms), n: v.n }])),
+        };
+        Object.assign(window, { __voidcrewBuild: report });
+        if (import.meta.env.DEV || /[?&]profile\b/.test(location.search)) {
+          console.info(`[voidcrew] scene ready in ${Math.round(total)} ms (${newMap ? "new map" : "rebuild"}); build started at ${report.startedAt} ms, ready at ${report.readyAt} ms since the page began`, report.milestones);
+          console.table(report.phases);
+        }
         shownMapRef.current = map.id;
         setLoading(null);
         onReadyRef.current?.(map.id);
@@ -2001,12 +2031,14 @@ export function GameViewport({
     });
     // the bake (and a coarser one for the ambient part, if the map asks)
     const bake = (m: GameMap) => {
+      const bakeFrom = performance.now();
       const options = bakeOptions(m);
       const ambient =
         options.mode === "directional" && liveMap === map && m.lightGridAmbient && m.lightGridAmbient !== options.perCell
           ? bakeLightGrid(m, mapLights, wallHeight, { ...options, perCell: m.lightGridAmbient })
           : undefined;
       setLightGrid(lightGrid, bakeLightGrid(m, mapLights, wallHeight, options), ambient);
+      tick("light bake", bakeFrom);
     };
     bake(map);
     // the bake, a moment after the last call (a slider dragged, a prop moved)
@@ -2721,7 +2753,9 @@ export function GameViewport({
             gridPromise = loadWithRetry(kit.depthUrl, 4);
             cache.grids.set(kit.depthUrl, gridPromise);
           }
+          const gridFrom = performance.now();
           let grid = await gridPromise;
+          tick("height map load (wait)", gridFrom);
           // (a map with holes or cut-out levels is never built smooth - see
           // ReliefOptions.smooth - so its distant version gets the coarser grid)
           const smooth = settings.reliefMode === "smooth" && !grid.solid && !shape.holeLevels;
@@ -2731,7 +2765,9 @@ export function GameViewport({
             const coarseKey = `${kit.depthUrl}|${shape.coarse}`;
             let coarse = coarseGrids.get(coarseKey);
             if (!coarse) {
+              const coarseFrom = performance.now();
               coarse = downsampleHeightGrid(grid, shape.coarse);
+              tick("coarse height grids", coarseFrom);
               coarseGrids.set(coarseKey, coarse);
             }
             grid = coarse;
@@ -2746,6 +2782,7 @@ export function GameViewport({
               edgeProfile = (await cached(detailed))?.edge;
             }
           }
+          const reliefFrom = performance.now();
           const made = createReliefWallGeometry(grid, {
             wallWidth: shape.width ?? 1,
             wallHeight: shape.height,
@@ -2768,6 +2805,7 @@ export function GameViewport({
             edgeModes: shape.edgeModes,
             edgeProfile,
           });
+          tick(shape.lodOnly ? "relief geometry (far versions)" : "relief geometry", reliefFrom);
           // a partial panel or a far version uses its full panel's AO map
           if (shape.rows || shape.lodOnly) made.aoMap.dispose();
           return made;
