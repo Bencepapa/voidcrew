@@ -2105,6 +2105,62 @@ export function GameViewport({
     // bridge decks), kept in step with the material settings like theirs
     const ownMaterials: THREE.MeshStandardMaterial[] = [];
     const inspectMaterialDefaults = new WeakMap<THREE.Material, { transparent: boolean; opacity: number; depthWrite: boolean }>();
+    // Top-down: the upright sprites (trees and other billboards, NPCs, loose
+    // items) are edge-on from above, so they lie down as icons - on the floor,
+    // the top of the picture toward the top of the screen, no bigger than a
+    // cell (items grown, they are small). Put back when the view is left.
+    const flatState = new WeakMap<THREE.Object3D, { scale: THREE.Vector3; child?: THREE.Object3D; childPos?: THREE.Vector3 }>();
+    const flatRoots = new Set<THREE.Object3D>();
+    const spriteOf = (root: THREE.Object3D): THREE.Mesh | undefined => {
+      if (root.userData.spriteMesh) return root.userData.spriteMesh as THREE.Mesh;
+      let found: THREE.Mesh | undefined;
+      root.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!found && m.isMesh && m.geometry?.type === "PlaneGeometry") found = m;
+      });
+      if (found) root.userData.spriteMesh = found;
+      return found;
+    };
+    function lieFlat(root: THREE.Object3D, child: THREE.Mesh | undefined, grow = 1) {
+      let st = flatState.get(root);
+      if (!st) {
+        st = { scale: root.scale.clone(), child, childPos: child?.position.clone() };
+        flatState.set(root, st);
+      }
+      flatRoots.add(root);
+      root.rotation.order = "YXZ";
+      root.rotation.set(-Math.PI / 2, -topdown.yaw, 0);
+      const plane = (child ?? (root as THREE.Mesh)).geometry as THREE.PlaneGeometry | undefined;
+      const w = plane?.parameters?.width;
+      const h = plane?.parameters?.height;
+      const k = grow * (w && h ? Math.min(1, 0.95 / Math.max(w, h)) : 1);
+      root.scale.copy(st.scale).multiplyScalar(k);
+      if (child) child.position.set(0, 0, 0.02);
+    }
+    function layFlatSprites() {
+      if (!topdown.on) {
+        if (flatRoots.size) {
+          for (const root of flatRoots) {
+            const st = flatState.get(root);
+            root.rotation.order = "XYZ";
+            root.rotation.x = 0;
+            root.rotation.z = 0;
+            if (st) {
+              root.scale.copy(st.scale);
+              if (st.child && st.childPos) st.child.position.copy(st.childPos);
+            }
+          }
+          flatRoots.clear();
+        }
+        return;
+      }
+      for (const b of billboardProps) lieFlat(b, spriteOf(b));
+      for (const entry of actorMeshes.values()) {
+        lieFlat(entry.mesh, undefined);
+        entry.mesh.position.y = floorY(Math.round(entry.mesh.position.x), Math.round(entry.mesh.position.z)) + 0.05;
+      }
+      for (const item of looseItems.values()) if (!item.taken) lieFlat(item.obj, undefined, 2.4);
+    }
     // The debug normal / depth views draw a material's own map as its colour
     // (unlit: black base, the map as its emissive); the feature switches for
     // the sprites' normal maps and metalness (the wall kits' are set every
@@ -5837,14 +5893,15 @@ export function GameViewport({
       if (kind === "prop") {
         const spec = latestMapRef.current.props?.[index];
         const obj = propObjects.get(index);
-        return spec && obj && !PROP_TYPES[spec.prop]?.wall ? [obj.position.x, obj.position.z, floorY(spec.cell.x, spec.cell.y)] : null;
+        return spec && obj && !PROP_TYPES[spec.prop]?.wall ? [obj.position.x, obj.position.z, obj.position.y] : null;
       }
       if (kind === "light") {
         const l = mapLights.find((m) => m.source === index);
         if (!l) return null;
         const cx = Math.round(l.x);
         const cz = Math.round(l.z);
-        return [l.x, l.z, l.kind === "ceiling" ? ceilingY(cx, cz) : floorY(cx, cz)];
+        // (a free-standing light slides on its own level: the pointer's ray meets that, not the floor under it)
+        return [l.x, l.z, l.kind === "ceiling" ? ceilingY(cx, cz) : l.y * wallHeight];
       }
       if (kind === "actor") {
         const actor = actorsRef.current.find((a) => a.id === index);
@@ -6142,8 +6199,8 @@ export function GameViewport({
       const sy = Math.sin(topdown.yaw);
       const cy = Math.cos(topdown.yaw);
       // (dragging the map: the view moves the other way)
-      topdown.x -= cy * dx + sy * dy / Math.sin(topdown.tilt);
-      topdown.z -= sy * dx - cy * dy / Math.sin(topdown.tilt);
+      topdown.x -= cy * dx - (sy * dy) / Math.sin(topdown.tilt);
+      topdown.z -= sy * dx + (cy * dy) / Math.sin(topdown.tilt);
       topdownPan = { x: e.clientX, y: e.clientY };
     };
     const onTopdownUp = (e: PointerEvent) => {
@@ -6863,8 +6920,10 @@ export function GameViewport({
       if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ);
       else if (aimFrameRef.current) aimFrameRef.current = null;
       updateLightPool(
-        { x: cam.x, z: cam.z },
-        { x: camX, y: eyeY, z: camZ, fwdX: fwdX / fwdLen, fwdZ: fwdZ / fwdLen },
+        topdown.on ? { x: topdown.x, z: topdown.z } : { x: cam.x, z: cam.z },
+        topdown.on
+          ? { x: topdown.x, y: floorY(Math.round(topdown.x), Math.round(topdown.z)) + 1, z: topdown.z, fwdX: 0, fwdZ: 0 }
+          : { x: camX, y: eyeY, z: camZ, fwdX: fwdX / fwdLen, fwdZ: fwdZ / fwdLen },
         s.mapLightIntensity * rideDip,
         dt,
       );
@@ -6911,6 +6970,7 @@ export function GameViewport({
         }
         hiddenApplied = hidden.size > 0;
       }
+      layFlatSprites();
       applyMaterialViews(s);
       scene.overrideMaterial = geometryViewMaterial(s.geometryView);
       renderer.render(scene, camera);
