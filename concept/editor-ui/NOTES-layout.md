@@ -1,0 +1,5 @@
+- The editor's left column (src/App.tsx) now wraps the minimap in a collapsible `section` with a thin chevron header row (`minimap.title`).
+- Collapsed state lives in localStorage under `voidcrew-editor-minimap-collapsed`; default expanded, and a failed storage read/write just skips remembering.
+- Collapsing frees the minimap's height for the AssetTree dock, which stays `flex-1 min-h-0` and scrolls inside its own group list.
+- Only edit mode without the zoomed minimap shows the toggle; the zoomed and non-editing layouts are unchanged.
+- Strings added to `src/i18n/en/minimap.ts` and `src/i18n/hu/minimap.ts`; `npx tsc --noEmit` is clean.

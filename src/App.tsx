@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { isTextEntry } from "./keyboardFocus";
 import { Inspector, type InspectedKind } from "./editor/Inspector";
 import { ProblemsPanel } from "./editor/ProblemsPanel";
@@ -72,6 +73,9 @@ import { useFreeMovement } from "./game/useFreeMovement";
 
 // phones in portrait (narrow) or landscape (short) get the overlay layout
 const COMPACT_QUERY = "(max-width: 767px), (max-height: 540px)";
+
+// whether the editor's minimap block is folded away (kept in this browser)
+const MINIMAP_COLLAPSE_KEY = "voidcrew-editor-minimap-collapsed";
 
 // an item's links (see Linked), as the editor's panels show them
 const linksOf = (item: Linked): Linked => ({ id: item.id, with: item.with, without: item.without });
@@ -1023,6 +1027,14 @@ export default function App() {
   minimapCell.current = onMinimapCell;
   const [miniZoom, setMiniZoom] = useState(false);
   const [miniSel, setMiniSel] = useState<Rect | null>(null);
+  // (the minimap block folds away to give the asset tree the column's height)
+  const [minimapCollapsed, setMinimapCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(MINIMAP_COLLAPSE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
   const problems = useMemo(()=>editMode ? validateMap(map) : [],[editMode,map]);
   const repairProblems = (code:"inWall"|"duplicate") => {
     const result=applyEdit(map.id,code==="inWall"?removeInWall:removeDuplicates);
@@ -2285,6 +2297,45 @@ export default function App() {
   ) : (
     <ActionMenu onUse={use} onInventory={toggleHaul} compact={compact} />
   );
+  // the left column's map (edit mode wraps it in the collapsible block below)
+  const minimap = (
+    <Minimap
+      map={map}
+      pos={pos}
+      dir={dir}
+      loot={editMode ? undefined : lootMarks}
+      locked={lockedDoors}
+      showRestricted={editMode}
+      edit={
+        editMode
+          ? {
+              hiddenCategories: hiddenLayers,
+              onMarker: (category,index) => {
+                switch(category){
+                  case "prop":setEditTool("prop");setSelectedProp(index);break;
+                  case "npc":setEditTool("robot");setSelectedActor(index);break;
+                  case "item":setEditTool("item");setSelectedItem(index);break;
+                  case "smoke":setEditTool("smoke");setSelectedSmoke(index);break;
+                  case "light":setEditTool("light");setSelectedLight(index);break;
+                  case "decal":setEditTool("decal");setSelectedDecal(index);break;
+                }
+              },
+              verb: editTool === "height" ? t("app.raiseVerb") : editTool === "texture" ? t("app.paintVerb") : editTool === "dig" || editTool === "fill" ? t("app.digVerb") : t("app.editVerb"),
+              surface: miniSurface,
+              onSurface: setMiniSurface,
+              onCell: (cell: Vec2, alt: boolean) => minimapCell.current(cell, alt),
+              zoomed,
+              onZoom: () => {
+                setMiniZoom((z) => !z);
+                setMiniSel(null);
+              },
+              selection: zoomed ? miniSel : null,
+              onSelect: zoomed ? setMiniSel : undefined,
+            }
+          : undefined
+      }
+    />
+  );
 
   if (compact && !editMode) {
     // The game fills the screen; panels float on top with translucent
@@ -2361,44 +2412,34 @@ export default function App() {
       </header>}
       <div className="flex-1 flex gap-2 min-h-0">
         <div className={`${zoomed ? "w-[40vw]" : editMode ? "w-40 xl:w-56" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0 ${editMode ? "max-md:hidden" : ""}`}>
-          <div className={zoomed ? "flex-1 min-h-0" : ""}>
-          <Minimap
-            map={map}
-            pos={pos}
-            dir={dir}
-            loot={editMode ? undefined : lootMarks}
-            locked={lockedDoors}
-            showRestricted={editMode}
-            edit={
-              editMode
-                ? {
-                    hiddenCategories: hiddenLayers,
-                    onMarker: (category,index) => {
-                      switch(category){
-                        case "prop":setEditTool("prop");setSelectedProp(index);break;
-                        case "npc":setEditTool("robot");setSelectedActor(index);break;
-                        case "item":setEditTool("item");setSelectedItem(index);break;
-                        case "smoke":setEditTool("smoke");setSelectedSmoke(index);break;
-                        case "light":setEditTool("light");setSelectedLight(index);break;
-                        case "decal":setEditTool("decal");setSelectedDecal(index);break;
-                      }
-                    },
-                    verb: editTool === "height" ? t("app.raiseVerb") : editTool === "texture" ? t("app.paintVerb") : editTool === "dig" || editTool === "fill" ? t("app.digVerb") : t("app.editVerb"),
-                    surface: miniSurface,
-                    onSurface: setMiniSurface,
-                    onCell: (cell: Vec2, alt: boolean) => minimapCell.current(cell, alt),
-                    zoomed,
-                    onZoom: () => {
-                      setMiniZoom((z) => !z);
-                      setMiniSel(null);
-                    },
-                    selection: zoomed ? miniSel : null,
-                    onSelect: zoomed ? setMiniSel : undefined,
-                  }
-                : undefined
-            }
-          />
-          </div>
+          {editMode && !zoomed ? (
+            <section className="flex shrink-0 flex-col">
+              <button
+                type="button"
+                className="flex shrink-0 items-center gap-1 border border-neutral-700 bg-neutral-900 px-2 py-1 text-left text-[11px] font-semibold text-neutral-200"
+                aria-expanded={!minimapCollapsed}
+                aria-label={t(minimapCollapsed ? "minimap.expand" : "minimap.collapse")}
+                title={t(minimapCollapsed ? "minimap.expand" : "minimap.collapse")}
+                onClick={() =>
+                  setMinimapCollapsed((folded) => {
+                    const next = !folded;
+                    try {
+                      localStorage.setItem(MINIMAP_COLLAPSE_KEY, String(next));
+                    } catch {
+                      /* storage unavailable: the block just won't remember */
+                    }
+                    return next;
+                  })
+                }
+              >
+                {minimapCollapsed ? <ChevronRight size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+                {t("minimap.title")}
+              </button>
+              {!minimapCollapsed && minimap}
+            </section>
+          ) : (
+            <div className={zoomed ? "flex-1 min-h-0" : ""}>{minimap}</div>
+          )}
           {zoomed ? (
             <div className="shrink-0 border border-green-800 bg-black/60 p-2 text-[10px] font-mono text-neutral-200 flex flex-wrap items-center gap-1">
               {miniSel ? (

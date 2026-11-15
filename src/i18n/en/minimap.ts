@@ -1,5 +1,8 @@
 // English strings for minimap.
 export const minimapEn = {
+  "minimap.title": "Minimap",
+  "minimap.collapse": "Collapse the minimap",
+  "minimap.expand": "Expand the minimap",
   "minimap.click": "Click:",
   "minimap.floorUpper": "FLOOR",
   "minimap.ceilingUpper": "CEILING",
