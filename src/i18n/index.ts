@@ -1,3 +1,5 @@
+import { inspectorEn } from "./en/inspector";
+import { inspectorHu } from "./hu/inspector";
 import { editorShellEn } from "./en/editorShell";
 import { editorShellHu } from "./hu/editorShell";
 import { effectsEn } from "./en/effects";
@@ -28,8 +30,8 @@ import { debugHu } from "./hu/debug";
 import { editorBarHu } from "./hu/editorBar";
 import { minimapHu } from "./hu/minimap";
 
-const en = { ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...minimapEn };
-const hu: Partial<Record<Key, string>> = { ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...minimapHu };
+const en = { ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...minimapEn };
+const hu: Partial<Record<Key, string>> = { ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...minimapHu };
 
 export type Key = keyof typeof en;
 export type Lang = "en" | "hu";

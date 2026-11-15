@@ -1,0 +1,57 @@
+﻿import { createPortal } from "react-dom";
+import { useRef } from "react";
+import { EditorBar, editorToolLabel, type EditorBarProps } from "./EditorBar";
+import { CommitContext, neutralStyle } from "./inspector/parts";
+import { ActorFields } from "./inspector/ActorFields";
+import { DoorFields } from "./inspector/DoorFields";
+import { PropFields } from "./inspector/PropFields";
+import { DecalFields } from "./inspector/DecalFields";
+import { ItemFields } from "./inspector/ItemFields";
+import { LightFields } from "./inspector/LightFields";
+import { SmokeFields } from "./inspector/SmokeFields";
+import { ExitFields } from "./inspector/ExitFields";
+import { ChanceWallFields } from "./inspector/ChanceWallFields";
+import { MapFields } from "./inspector/MapFields";
+import { PROP_TYPES } from "../game/props";
+import { ACTOR_TYPES } from "../game/actors";
+import { TEXTURE_SETS } from "../render/textureSets";
+import { t } from "../i18n";
+
+export type InspectedKind = "prop" | "decal" | "item" | "light" | "actor" | "smoke" | "exit" | "chanceWall" | "door";
+export interface Inspected { kind: InspectedKind; cell?: {x:number;y:number} }
+const fields = {prop:PropFields,decal:DecalFields,item:ItemFields,light:LightFields,actor:ActorFields,smoke:SmokeFields,exit:ExitFields,chanceWall:ChanceWallFields,door:DoorFields};
+const icons = {prop:"◇",decal:"▧",item:"◆",light:"☼",actor:"♙",smoke:"≋",exit:"↗",chanceWall:"▦",door:"▯"};
+
+// This bridge keeps all existing App callbacks in one place while the toolbar
+// and inspector are portalled into their separate shell docks.
+export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
+ const transaction=useRef(Date.now());
+ const kind=p.inspected?.kind;
+ const selected=kind ? p[kind] : null;
+ const Fields=kind && selected ? fields[kind] : MapFields;
+ const props={...p};
+ // Every gesture has a fresh merge suffix. All live updates during the gesture
+ // retain App's existing per-object/per-field merge key and preview path.
+ const merge = () => `inspector ${transaction.current}`;
+ for(const name of ["onActorChange","onDoorChange","onPropChange","onDecalChange","onSmokeChange","onItemChange","onLightChange","onChanceWallChange","onMapLook"] as const) {
+  // Their patch types differ, but each wrapper forwards precisely its own patch.
+  Object.assign(props,{[name]:(patch: never)=>p[name](patch,merge())});
+ }
+ const type=kind==="prop"?p.prop?.name:kind==="decal"?p.decal?.name:kind==="actor"?p.actor?.type:kind==="item"?p.item?.item:kind==="door"&&p.door?t("editorBar.doorFront", {v1:t(p.door.kind==="lift"?"editorBar.doorKindLift":"editorBar.doorKindStandard"),v2:p.door.facing}):undefined;
+ const actor=kind==="actor"&&type?ACTOR_TYPES[type]:undefined;
+ const prop=kind==="prop"&&type?PROP_TYPES[type]:undefined;
+ const texture=prop && ("texture" in prop?prop.texture:"side" in prop?prop.side:"views" in prop?`${prop.views}_front`:undefined);
+ const thumbnail=kind==="decal"&&type?`${import.meta.env.BASE_URL}decals/${type}/diffuse.png`:texture?(TEXTURE_SETS[texture as keyof typeof TEXTURE_SETS]?.diffuse ?? `${import.meta.env.BASE_URL}textures/${texture}/diffuse.png`):undefined;
+ const heading=kind&&selected?editorToolLabel(kind==="actor"?"robot":kind==="chanceWall"?"wall":kind):t("inspector.mapSettings");
+ const panel=<aside aria-label={t("editorShell.properties")} style={neutralStyle} className="voidcrew-editor-controls min-w-0 bg-neutral-900 text-[11px] text-neutral-300" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>{if(e.currentTarget.contains(e.target as Node))e.stopPropagation();}} onWheel={e=>e.stopPropagation()}>
+  <style>{".theme-fantasy .voidcrew-editor-controls .border { box-shadow: none; }"}</style>
+  <header className="sticky top-0 z-10 flex min-w-0 items-center gap-2 bg-neutral-950 p-2 border-b border-neutral-700">
+   <span aria-hidden="true" className="text-xl text-neutral-200">{kind&&selected?icons[kind]:"▦"}</span>
+   {thumbnail&&<img src={thumbnail} alt="" className="h-10 w-10 shrink-0 object-contain" style={{imageRendering:"pixelated"}}/>}
+   {actor&&<span aria-hidden="true" className="h-10 w-10 shrink-0" style={{backgroundImage:`url(${import.meta.env.BASE_URL}actors/${actor.sheet}/diffuse.png)`,backgroundSize:`${actor.cols*100}% ${actor.rows*100}%`,backgroundPosition:`0 ${actor.idleRow/(actor.rows-1)*100}%`,imageRendering:"pixelated"}}/>}
+   <div className="min-w-0"><strong className="block text-neutral-100">{heading}</strong>{type&&<span className="block break-words">{type}</span>}{p.inspected?.cell&&<span className="text-neutral-400">{t("inspector.cell",p.inspected.cell)}</span>}</div>
+  </header>
+  <CommitContext.Provider value={()=>{transaction.current++;}}><div key={`${p.mapId}:${kind??"map"}`}><Fields {...props}/></div></CommitContext.Provider>
+ </aside>;
+ return <><EditorBar {...p}/>{p.dock ? createPortal(panel,p.dock) : panel}</>;
+}
