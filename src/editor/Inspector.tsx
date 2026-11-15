@@ -32,7 +32,7 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
  const kind=p.inspected?.kind;
  const selected=kind ? p[kind] : null;
  const Fields=kind && selected ? fields[kind] : MapFields;
- const props={...p};
+ const props={...p, placing:p.inspected?.placing};
  // Every gesture has a fresh merge suffix. All live updates during the gesture
  // retain App's existing per-object/per-field merge key and preview path.
  const merge = () => `inspector ${transaction.current}`;

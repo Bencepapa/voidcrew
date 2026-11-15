@@ -1,6 +1,7 @@
+import { assetInWorld } from "../../game/worlds";
 import { t } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
-import { Section, slider, chanceSlider, linkFields, BUTTON, idle } from "./parts";
+import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle } from "./parts";
 
 import { PROP_TYPES, propEditable } from "../../game/props";
 import { propEdit } from "../propEditState";
@@ -18,6 +19,8 @@ return <>
                 )}
 </Section>
 <Section kind="prop" section="look">
+<KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id)).map(value => ({value,label:value}))} onChange={prop => p.onPropChange({prop})}/>
+
 {p.prop.retexturable && (
                   <label className="flex items-center gap-1">
                     {t("editorBar.texture")}<select

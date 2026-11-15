@@ -1,6 +1,6 @@
 import { t } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
-import { Section, slider, chanceSlider, linkFields, BUTTON, idle, doorLock } from "./parts";
+import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle, doorLock } from "./parts";
 
 import { DOOR_EDGE_OFFSET } from "../../game/map";
 export function DoorFields(p: EditorBarProps) {
@@ -16,6 +16,8 @@ return <>
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorFlip} title={t("editorBar.turnItRoundItStaysWhereIt")}>{t("editorBar.flipFront")}</button>
 </Section>
 <Section kind="door" section="logic">
+<KindChoice label={t("editorBar.kind")} value={p.door.kind} options={[{value:"standard",label:t("editorBar.doorKindStandard")},{value:"lift",label:t("editorBar.doorKindLift")}]} onChange={kind => p.onDoorChange({kind:kind as "standard" | "lift"})}/>
+
 {chanceSlider(p.door.chance, (chance) => p.onDoorChange({ chance }))}
 {linkFields(p.door.links, p.linkIds, p.onDoorChange)}
 </Section>
@@ -36,18 +38,7 @@ return <>
                 className="w-20 bg-neutral-800 border border-neutral-700 px-1"
               />
             </label>
-<label className="flex items-center gap-1" title={t("editorBar.whetherTheCrewSHackerCanBreak")}>
-              {t("editorBar.hack")}<select
-                value={p.door.lock?.hack ?? 0}
-                onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { hack: Number(e.target.value) || undefined }) })}
-                className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
-              >
-                <option value={0}>{t("editorBar.no")}</option>
-                <option value={1}>{t("editorBar.easy")}</option>
-                <option value={2}>{t("editorBar.hard")}</option>
-                <option value={3}>{t("editorBar.veryHard")}</option>
-              </select>
-            </label>
+<KindChoice label={t("editorBar.hack")} title={t("editorBar.whetherTheCrewSHackerCanBreak")} value={String(p.door.lock?.hack ?? 0)} options={(["no","easy","hard","veryHard"] as const).map((key,i) => ({value:String(i),label:t(`editorBar.${key}`)}))} onChange={v => p.onDoorChange({lock:doorLock(p.door!.lock,{hack:Number(v) || undefined})})}/>
 <label className="flex items-center gap-1" title={t("editorBar.aKeypadItsCodeANewOne")}>
               <input
                 type="checkbox"

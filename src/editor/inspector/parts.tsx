@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode, type CSSProperties } from "react";
+import { createContext, useContext, useState, useId, type ReactNode, type CSSProperties } from "react";
 import type { Lock } from "../../game/story";
 import type { Linked } from "../../game/types";
 import { t } from "../../i18n";
@@ -96,3 +96,24 @@ export const neutralStyle = {
  "--color-neutral-200":"#e5e5e5", "--color-neutral-100":"#f5f5f5",
  "--color-black":"#000000", "--color-amber-400":"#fbbf24", "--color-amber-200":"#fde68a"
 } as CSSProperties;
+
+export type ChoiceOption = { value: string; label: string; title?: string };
+export function KindChoice({label, title, value, options, onChange, buttonClass = BUTTON, activeClass = active, idleClass = idle}: {
+ label?: string; title?: string; value: string; options: ChoiceOption[];
+ onChange: (value: string) => void; buttonClass?: string; activeClass?: string; idleClass?: string;
+}) {
+ const id = useId();
+ const commit = useContext(CommitContext);
+ const choose = (next: string, control: HTMLElement) => {
+  if (next !== value) { onChange(next); commit(); }
+  control.blur();
+ };
+ return <div className="flex min-w-0 flex-wrap items-center gap-1" title={title}>
+  {label && <label id={id} htmlFor={options.length > 4 ? `${id}-select` : undefined}>{label}</label>}
+  {options.length <= 4 ? <div role="radiogroup" aria-labelledby={label ? id : undefined} aria-label={label ? undefined : title} className="flex min-w-0 flex-wrap gap-1">
+   {options.map(option => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} title={option.title} className={`${buttonClass} ${value === option.value ? activeClass : idleClass}`} onClick={e => choose(option.value, e.currentTarget)}>{option.label}</button>)}
+  </div> : <select id={`${id}-select`} value={value} onChange={e => choose(e.currentTarget.value, e.currentTarget)} className="min-w-0 max-w-full flex-1 bg-neutral-800 border border-neutral-700 px-1 py-0.5">
+   {options.map(option => <option key={option.value} value={option.value} title={option.title}>{option.label}</option>)}
+  </select>}
+ </div>;
+}

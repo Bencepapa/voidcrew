@@ -1,5 +1,6 @@
 // Hungarian strings for editorBar.
 export const editorBarHu = {
+  "editorBar.kind": "Fajta",
   "editorBar.wall": "Fal",
   "editorBar.floor": "Padló",
   "editorBar.ceiling": "Plafon",

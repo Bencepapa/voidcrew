@@ -1,4 +1,4 @@
-import { neutralStyle } from "./inspector/parts";
+import { KindChoice, neutralStyle } from "./inspector/parts";
 import type { SmokeSpec, Weather } from "../game/types";
 import { t, type Key } from "../i18n";
 // The map editor's toolbar, over the top of the game view while editing
@@ -76,13 +76,13 @@ export interface EditorBarProps {
   robotChoice: string | null;
   onRobotChoice: (type: string) => void;
   actor: ActorInfo | null;
-  onActorChange: (patch: { facing?: Direction; chance?: number; wake?: ActorWake } & Linked, merge?: string) => void;
+  onActorChange: (patch: { actor?: string; facing?: Direction; chance?: number; wake?: ActorWake } & Linked, merge?: string) => void;
   onActorClearRoute: () => void;
   onActorDelete: () => void;
   onActorDeselect: () => void;
   // the Door tool: the selected door, and what the panel does with it
   door: DoorInfo | null;
-  onDoorChange: (patch: { offset?: number; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => void;
+  onDoorChange: (patch: { kind?: "standard" | "lift"; offset?: number; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => void;
   onDoorFlip: () => void;
   onDoorDelete: () => void;
   onDoorDeselect: () => void;
@@ -110,7 +110,7 @@ export interface EditorBarProps {
   onDecalDeselect: () => void;
   // the selected prop, and what the panel does with it
   prop: PropInfo | null;
-  onPropChange: (patch: { rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string } & Linked, merge?: string) => void;
+  onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string } & Linked, merge?: string) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
   // the Smoke tool: the picked emitter
@@ -582,19 +582,10 @@ export function EditorBar(p: EditorBarProps) {
         <>
           <span className="basis-full" />
           <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            <span className="text-[10px] text-neutral-400">{t("editorBar.place159")}</span>
-            <button
-              type="button"
-              className={`${BUTTON} ${p.lightPlace === "ceiling" ? active : idle}`}
-              onClick={() => p.onLightPlace("ceiling")}
-              title={t("editorBar.aClickOnAFloorOrCeiling")}
-            >{t("editorBar.ceilingLamp")}</button>
-            <button
-              type="button"
-              className={`${BUTTON} ${p.lightPlace === "point" ? active : idle}`}
-              onClick={() => p.onLightPlace("point")}
-              title={t("editorBar.aClickPutsALightJustOff")}
-            >{t("editorBar.pointLight")}</button>
+            <KindChoice label={t("editorBar.place159")} value={p.lightPlace} onChange={v => p.onLightPlace(v as LightPlace)} buttonClass={BUTTON} activeClass={active} idleClass={idle} options={[
+              {value:"ceiling",label:t("editorBar.ceilingLamp"),title:t("editorBar.aClickOnAFloorOrCeiling")},
+              {value:"point",label:t("editorBar.pointLight"),title:t("editorBar.aClickPutsALightJustOff")},
+            ]}/>
             <span className="text-[10px] text-neutral-500">{t("editorBar.clickPickPlaceRightClickRemove")}</span>
           </div>
 
