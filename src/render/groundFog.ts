@@ -41,7 +41,8 @@ export function createGroundFog(emitters: SpriteEmitter[], quality: number, ligh
   return {
     mesh,
     update(_dt:number,time:number,camera:THREE.Camera) {
-      for (const {e,cloud,seeds} of batches) {
+      for (const {e,cloud,seeds,material} of batches) {
+        material.color.copy(e.color);
         cloud.visible = Math.hypot(camera.position.x-e.x,camera.position.z-e.z) < e.spread + 10;
         if (!cloud.visible) continue;
         const h = e.height ?? .6;

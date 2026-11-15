@@ -1,3 +1,4 @@
+import { isTextEntry } from "./keyboardFocus";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
@@ -9,14 +10,15 @@ import "./index.css";
 // on the window, and this one - added before any of them - stops the event
 // there. The field still gets its character: that's the key's own doing,
 // not a handler's. Sliders, checkboxes and dropdowns don't count as typing.
-const TEXT_INPUTS = new Set(["text", "search", "number", "password", "email", "url", "tel"]);
-function typing(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target instanceof HTMLTextAreaElement || target.isContentEditable) return true;
-  return target instanceof HTMLInputElement && TEXT_INPUTS.has(target.type);
-}
 for (const type of ["keydown", "keyup", "keypress"] as const) {
-  window.addEventListener(type, (e) => typing(e.target) && e.stopImmediatePropagation(), true);
+  window.addEventListener(type, (e) => {
+    if (!(e.target instanceof HTMLElement) || !isTextEntry(e.target)) return;
+    if (type === "keydown" && (e.key === "Escape" || (e.key === "Enter" && e.target instanceof HTMLInputElement))) {
+      e.preventDefault();
+      e.target.blur();
+    }
+    e.stopImmediatePropagation();
+  }, true);
 }
 
 createRoot(document.getElementById("root")!).render(

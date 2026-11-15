@@ -1,5 +1,6 @@
-﻿import { createPortal } from "react-dom";
-import { useRef } from "react";
+import { isTextEntry } from "../keyboardFocus";
+import { createPortal } from "react-dom";
+import { useCallback, useRef } from "react";
 import { EditorBar, editorToolLabel, type EditorBarProps } from "./EditorBar";
 import { CommitContext, neutralStyle } from "./inspector/parts";
 import { ActorFields } from "./inspector/ActorFields";
@@ -27,6 +28,7 @@ const icons = {prop:"◇",decal:"▧",item:"◆",light:"☼",actor:"♙",smoke:"
 // and inspector are portalled into their separate shell docks.
 export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
  const transaction=useRef(Date.now());
+ const commit=useCallback(()=>{transaction.current++;},[]);
  const kind=p.inspected?.kind;
  const selected=kind ? p[kind] : null;
  const Fields=kind && selected ? fields[kind] : MapFields;
@@ -45,7 +47,7 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
  const thumbnail=kind==="decal"&&type?`${import.meta.env.BASE_URL}decals/${type}/diffuse.png`:texture?(TEXTURE_SETS[texture as keyof typeof TEXTURE_SETS]?.diffuse ?? `${import.meta.env.BASE_URL}textures/${texture}/diffuse.png`):undefined;
  const kindName=kind?editorToolLabel(kind==="actor"?"robot":kind==="chanceWall"?"wall":kind):"";
  const heading=kind&&selected?(p.inspected?.placing?t("inspector.next",{kind:kindName}):kindName):t("inspector.mapSettings");
- const panel=<aside aria-label={t("editorShell.properties")} style={neutralStyle} className="voidcrew-editor-controls min-w-0 bg-neutral-900 text-[11px] text-neutral-300" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>{if(e.currentTarget.contains(e.target as Node))e.stopPropagation();}} onWheel={e=>e.stopPropagation()}>
+ const panel=<aside aria-label={t("editorShell.properties")} style={neutralStyle} className="voidcrew-editor-controls min-w-0 bg-neutral-900 text-[11px] text-neutral-300" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>{if(e.target instanceof HTMLInputElement && e.target.type==="range")e.target.blur();if(e.currentTarget.contains(e.target as Node))e.stopPropagation();}} onChange={e=>{if(e.target instanceof HTMLElement && !isTextEntry(e.target) && !(e.target instanceof HTMLInputElement && ["color","range"].includes(e.target.type)))e.target.blur();}} onClick={e=>{(e.target as HTMLElement).closest("button")?.blur();}} onKeyUp={e=>{if(e.key==="Enter" && e.target instanceof HTMLElement && !isTextEntry(e.target))e.target.blur();}} onWheel={e=>e.stopPropagation()}>
   <style>{".theme-fantasy .voidcrew-editor-controls .border { box-shadow: none; }"}</style>
   <header className="sticky top-0 z-10 flex min-w-0 items-center gap-2 bg-neutral-950 p-2 border-b border-neutral-700">
    <span aria-hidden="true" className="text-xl text-neutral-200">{kind&&selected?icons[kind]:"▦"}</span>
@@ -53,7 +55,7 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
    {actor&&<span aria-hidden="true" className="h-10 w-10 shrink-0" style={{backgroundImage:`url(${import.meta.env.BASE_URL}actors/${actor.sheet}/diffuse.png)`,backgroundSize:`${actor.cols*100}% ${actor.rows*100}%`,backgroundPosition:`0 ${actor.idleRow/(actor.rows-1)*100}%`,imageRendering:"pixelated"}}/>}
    <div className="min-w-0"><strong className="block text-neutral-100">{heading}</strong>{type&&<span className="block break-words">{type}</span>}{p.inspected?.cell&&<span className="text-neutral-400">{t("inspector.cell",p.inspected.cell)}</span>}</div>
   </header>
-  <CommitContext.Provider value={()=>{transaction.current++;}}><div key={`${p.mapId}:${kind??"map"}`}><Fields {...props}/></div></CommitContext.Provider>
+  <CommitContext.Provider value={commit}><div key={`${p.mapId}:${kind??"map"}`}><Fields {...props}/></div></CommitContext.Provider>
  </aside>;
  return <><EditorBar {...p}/>{p.dock ? createPortal(panel,p.dock) : panel}</>;
 }

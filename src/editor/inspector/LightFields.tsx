@@ -1,3 +1,4 @@
+import { ColorField } from "../ColorField";
 import { t } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
 import { Section, slider, chanceSlider, linkFields, BUTTON, idle } from "./parts";
@@ -25,12 +26,7 @@ return <>
 </Section>
 <Section kind="light" section="look">
 <label className="flex items-center gap-1">
-                  {t("editorBar.color")}<input
-                    type="color"
-                    value={p.light.color}
-                    onChange={(e) => p.onLightChange({ color: e.target.value })}
-                    className="w-7 h-6 bg-transparent border border-neutral-600"
-                  />
+                  {t("editorBar.color")}<ColorField value={p.light.color} onChange={color => p.onLightChange({color})}/>
                 </label>
 {slider(t("editorBar.intensity"), p.light.intensity, 0, 4, 0.05, (v) => p.onLightChange({ intensity: v }))}
 {slider(t("editorBar.range"), p.light.range, 0.5, 6, 0.1, (v) => p.onLightChange({ range: v }))}

@@ -1,3 +1,4 @@
+import { isTextEntry } from "../keyboardFocus";
 import { createWeather } from "../render/weather";
 import { createGroundFog } from "../render/groundFog";
 import { createFireflies } from "../render/fireflies";
@@ -3949,9 +3950,9 @@ export function GameViewport({
     const smokeMarkerGeo = new THREE.OctahedronGeometry(0.04);
     geometries.push(smokeMarkerGeo);
     const smokeMarkerMat = new THREE.MeshBasicMaterial({ color: 0xb8c4cc, wireframe: true });
-    // a ground fog's area while editing: a flat ring and a faint disc of its spread's radius on the floor under the emitter
+    // a ground fog's area while editing: a ring showing its spread on the floor under the emitter
     const fogRingMat = new THREE.MeshBasicMaterial({ color: 0x9fd4ff, transparent: true, opacity: 0.85, depthTest: false, side: THREE.DoubleSide, fog: false });
-    const fogDiscMat = new THREE.MeshBasicMaterial({ color: 0x9fd4ff, transparent: true, opacity: 0.1, depthTest: false, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const fogHeightMat = new THREE.LineBasicMaterial({ color: 0x9fd4ff, depthTest: false, fog: false });
     // (and a line from it the way it blows)
     const smokeBlowGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]);
     geometries.push(smokeBlowGeo);
@@ -3961,7 +3962,9 @@ export function GameViewport({
     let fireEmitters: SmokeEmitter[] = [];
     let petalEmitters: SpriteEmitter[] = [];
     let moteEmitters: PetalEmitter[] = [], mistEmitters: SpriteEmitter[] = [], flyEmitters: SpriteEmitter[] = [];
+    const effectColors = new Map<number, THREE.Color>();
     const buildSmoke = (m: GameMap) => {
+      effectColors.clear();
       fireEmitters = [];
       petalEmitters = []; moteEmitters = []; mistEmitters = []; flyEmitters = [];
       return createSmoke(
@@ -4004,12 +4007,12 @@ export function GameViewport({
           cell: cellKey(spec.cell.x, spec.cell.y),
         };
         const effect = spec.effect ?? (spec.petals ? "motes" : spec.fire ? "fire" : "smoke");
+        effectColors.set(index, emitter.color);
         if (effect === "groundfog") {
           // (not pickable: a click on it is a click on the floor under it)
           const r = Math.max(0.25, spec.spread ?? 3);
           const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.01, r - 0.05), r, 96), fogRingMat);
-          const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 64), fogDiscMat);
-          for (const shape of [ring, disc]) {
+          for (const shape of [ring]) {
             shape.rotation.x = -Math.PI / 2;
             shape.position.y = emitter.floor - at.y + 0.04;
             shape.renderOrder = 9;
@@ -4018,11 +4021,24 @@ export function GameViewport({
             geometries.push(shape.geometry);
             marker.add(shape);
           }
+          const base = emitter.floor - at.y + 0.04;
+          const height = (spec.height ?? .6) * wallHeight;
+          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, base, 0), new THREE.Vector3(0, base + height, 0),
+            new THREE.Vector3(.12, base + height, 0),
+          ]), fogHeightMat);
+          line.userData.fogShape = true;
+          line.raycast = () => {};
+          line.renderOrder = 9;
+          geometries.push(line.geometry);
+          marker.add(line);
         }
         if (effect === "mist") return [{ ...emitter, standing: true, blow: undefined }];
         if (["motes", "petals", "groundfog", "fireflies"].includes(effect)) {
           // falling petals: their own little system, no smoke from here
           const list = effect === "motes" ? moteEmitters : effect === "groundfog" ? mistEmitters : effect === "fireflies" ? flyEmitters : petalEmitters;
+          const color = new THREE.Color(parseColor(spec.color) ?? (effect === "fireflies" ? 0xd9ef78 : effect === "groundfog" ? 0xb4b8bc : effect === "petals" ? 0xffffff : 0xf4a6c0));
+          effectColors.set(index, color);
           (list as SpriteEmitter[]).push({
             sprite: spec.sprite, height: (spec.height ?? .6) * wallHeight,
             x: emitter.x,
@@ -4032,14 +4048,15 @@ export function GameViewport({
             spread: effect === "groundfog" ? spec.spread ?? 3 : .9,
             density: emitter.density,
             size: emitter.size,
-            color: new THREE.Color(parseColor(spec.color) ?? (effect === "fireflies" ? 0xd9ef78 : effect === "groundfog" ? 0xb4b8bc : effect === "petals" ? 0xffffff : 0xf4a6c0)),
+            color,
             wind: blow ? [blow[0] * 0.1, blow[2] * 0.1] : [0, 0],
           });
           return [];
         }
         if (effect !== "fire") return [emitter];
         // (its color tints the flames: none, as they burn)
-        fireEmitters.push({ ...emitter, color: new THREE.Color(parseColor(spec.color) ?? 0xffffff) });
+        emitter.color.setHex(parseColor(spec.color) ?? 0xffffff);
+        fireEmitters.push({ ...emitter });
         return [{
           ...emitter,
           y: Math.min(emitter.ceiling - 0.1, emitter.y + FIRE_SMOKE_LIFT * wallHeight),
@@ -5010,8 +5027,17 @@ export function GameViewport({
       }
       if (lightsOf(next) !== lightsOf(applied)) applyLights(next);
       if (JSON.stringify(next.smokes) !== JSON.stringify(applied.smokes)) {
-        applySmoke(next);
-        sceneVersion++;
+        const shape = (m: GameMap) => JSON.stringify(m.smokes?.map(({color, ...rest}) => rest));
+        if (shape(next) === shape(applied)) {
+          next.smokes?.forEach((spec, index) => {
+            const effect = spec.effect ?? (spec.petals ? "motes" : spec.fire ? "fire" : "smoke");
+            const fallback = effect === "fire" || effect === "petals" ? 0xffffff : effect === "fireflies" ? 0xd9ef78 : effect === "motes" ? 0xf4a6c0 : effect === "groundfog" ? 0xb4b8bc : SMOKE_COLOR;
+            effectColors.get(index)?.setHex(parseColor(spec.color) ?? fallback);
+          });
+        } else {
+          applySmoke(next);
+          sceneVersion++;
+        }
       }
       if (JSON.stringify(next.decals) !== JSON.stringify(applied.decals) && settingsRef.current.decalsEnabled) {
         // (decals: redone on the surfaces already there)
@@ -6305,8 +6331,7 @@ export function GameViewport({
     // the capture phase), so the party doesn't walk; the wheel zooms
     // (Ctrl+wheel tilts); the middle button drags the map.
     const topdownKeys = new Set<string>();
-    const typingIn = (target: EventTarget | null) =>
-      target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !["range", "checkbox", "radio", "button"].includes(target.type)));
+    const typingIn = isTextEntry;
     const onTopdownKey = (e: KeyboardEvent) => {
       if (typingIn(e.target) || e.ctrlKey || e.altKey || e.metaKey) return;
       const key = e.key.toLowerCase();
@@ -7314,7 +7339,7 @@ export function GameViewport({
       fire.dispose();
       smokeMarkerMat.dispose();
       fogRingMat.dispose();
-      fogDiscMat.dispose();
+      fogHeightMat.dispose();
       smokeBlowMat.dispose();
       backingMat.dispose();
       for (const mat of billboardMaterials) mat.dispose();

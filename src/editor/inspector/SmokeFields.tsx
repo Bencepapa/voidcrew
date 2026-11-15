@@ -1,3 +1,4 @@
+import { ColorField } from "../ColorField";
 import { useContext } from "react";
 import { t } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
@@ -25,12 +26,7 @@ return <>
 {slider(t("editorBar.opacityDark"), p.smoke.opacityDark, 0, 1, 0.05, (v) => p.onSmokeChange({ opacityDark: Math.abs(v - 0.3) < 0.001 ? undefined : v }))}
 </>}
 <label className="flex items-center gap-1">
-              {t("editorBar.color")}<input
-                type="color"
-                value={p.smoke.color}
-                onChange={(e) => p.onSmokeChange({ color: e.target.value })}
-                className="w-7 h-6 bg-transparent border border-neutral-600"
-              />
+              {t("editorBar.color")}<ColorField value={p.smoke.color} onChange={color => p.onSmokeChange({color})}/>
             </label>
 </Section>
 <Section kind="smoke" section="logic">

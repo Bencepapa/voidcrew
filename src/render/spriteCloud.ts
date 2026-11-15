@@ -41,6 +41,6 @@ export function spriteCloud(emitters: SpriteEmitter[], quality: number, kind: "p
       dummy.updateMatrix();inst.setMatrixAt(i,dummy.matrix);
       if(kind==="fireflies") {tint.setScalar(Math.pow(Math.max(0,Math.sin(time*(0.8+p*0.12)+p)),3));inst.setColorAt(i,tint);}
     }
-    for(const b of batches){b.inst.instanceMatrix.needsUpdate=true;if(b.inst.instanceColor)b.inst.instanceColor.needsUpdate=true;}
+    for(const b of batches){b.mat.color.copy(b.e.color);b.inst.instanceMatrix.needsUpdate=true;if(b.inst.instanceColor)b.inst.instanceColor.needsUpdate=true;}
   },dispose(){for(const b of batches){b.geo.dispose();b.mat.dispose();if(!texture)b.map.dispose();}}};
 }
