@@ -11,3 +11,6 @@ coverage/
 # the actual assets used by the game
 concept/gen/
 dist-*/
+
+# Isolated asset-tree development server cache
+.vite-asset-tree/
