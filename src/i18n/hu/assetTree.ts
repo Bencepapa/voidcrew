@@ -1,4 +1,4 @@
-export const assetTreeHu = {"assetTree.title": "Assetek", "assetTree.search": "Keres\u00e9s n\u00e9v vagy fajta szerint\u2026", "assetTree.pillar": "Pill\u00e9r / Saroklet\u00f6r\u00e9s", "assetTree.decals": "Matric\u00e1k", "assetTree.lights": "F\u00e9nyek", "assetTree.empty": "Nincs tal\u00e1lat",
+export const assetTreeHu = {"assetTree.title": "Assetek", "assetTree.search": "Keres\u00e9s n\u00e9v vagy fajta szerint\u2026", "assetTree.pillar": "Pill\u00e9r / Saroklet\u00f6r\u00e9s", "assetTree.decals": "Matric\u00e1k", "assetTree.lights": "F\u00e9nyek", "assetTree.empty": "Nincs tal\u00e1lat", "assetTree.lock": "R\u00e9teg z\u00e1rol\u00e1sa", "assetTree.unlock": "R\u00e9teg felold\u00e1sa",
 "assetTree.name.Scrap metal": "F\u00e9mhullad\u00e9k",
 "assetTree.name.Wiring": "Vezet\u00e9k",
 "assetTree.name.Circuit board": "\u00c1ramk\u00f6ri lap",

@@ -927,6 +927,8 @@ const EDIT_FILL_COLOR = 0x40d0ff;
 const EDIT_PAINT_COLOR = 0x60ff80;
 const EDIT_LIGHT_ADD_COLOR = 0xffe040;
 const EDIT_SELECT_COLOR = 0x80f0ff;
+// the editor tools whose layer can be locked (and the layer each edits)
+const TOOL_LAYER: Partial<Record<EditTool, string>> = { texture: "texture", light: "light", prop: "prop", decal: "decal", robot: "robot", item: "item", smoke: "smoke" };
 // how far off a surface a free-standing light is placed (world units)
 const LIGHT_SPOT_GAP = 0.12;
 // muzzle flashes (see addFlash): the party's, and an actor's (its color,
@@ -1044,6 +1046,9 @@ interface GameViewportProps {
   // the editor's layers hidden from the view ("robot" for the NPCs, "smoke" for the
   // particles, "prop", "decal", "item") - drawing only, the map still has them
   hiddenLayers?: ReadonlySet<string>;
+  // the editor's layers locked from picking and editing in the view - they stay
+  // visible, and clicks pass through them to what is behind
+  lockedLayers?: ReadonlySet<string>;
   // the tool the editor has picked: what the highlight says a click does
   editTool?: EditTool;
   onEdit?: (target: EditTarget, alt: boolean, shift: boolean) => void;
@@ -1430,6 +1435,7 @@ export function GameViewport({
   editMode,
   onTopdownExit,
   hiddenLayers,
+  lockedLayers,
   editTool,
   onEdit,
   onEditHover,
@@ -1543,6 +1549,8 @@ export function GameViewport({
   onTouchRef.current = onTouch;
   const hiddenLayersRef = useRef<ReadonlySet<string>>(hiddenLayers ?? new Set());
   hiddenLayersRef.current = hiddenLayers ?? hiddenLayersRef.current;
+  const lockedLayersRef = useRef<ReadonlySet<string>>(lockedLayers ?? new Set());
+  lockedLayersRef.current = lockedLayers ?? lockedLayersRef.current;
   const onTopdownExitRef = useRef(onTopdownExit);
   onTopdownExitRef.current = onTopdownExit;
   const editModeRef = useRef(!!editMode);
@@ -6103,6 +6111,7 @@ export function GameViewport({
       dragItem = null;
       if (!editModeRef.current || e.button !== 0) return;
       const tool = editToolRef.current;
+      if (toolLocked()) return;
       // each tool grabs only its own kind of thing
       const kind: EditDragKind | null =
         tool === "prop" || tool === "decal" || tool === "item" || tool === "smoke" || tool === "light" || tool === "door"
@@ -6286,6 +6295,7 @@ export function GameViewport({
       if (!p || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8 || performance.now() - p.at > 500) return;
       const ndc = viewNdc(e.clientX, e.clientY);
       if (editModeRef.current) {
+        if (toolLocked()) return;
         const target = editTargetAt(ndc);
         if (target) onEditRef.current?.(target, e.button === 2, e.shiftKey);
         return;
@@ -6427,14 +6437,35 @@ export function GameViewport({
       for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (dragOwn(o)) return true;
       return false;
     };
+    // The editor layer a picked object belongs to (a locked one is looked
+    // through: what's behind it can still be clicked).
+    const objectLayer = (obj: THREE.Object3D): string | undefined => {
+      for (let o: THREE.Object3D | null = obj; o; o = o.parent) {
+        const u = o.userData;
+        if (u.propIndex !== undefined) return "prop";
+        if (u.decalIndex !== undefined) return "decal";
+        if (u.itemIndex !== undefined) return "item";
+        if (u.actorId !== undefined) return "robot";
+        if (u.smokeIndex !== undefined) return "smoke";
+        if (u.mapLight !== undefined) return "light";
+      }
+      return undefined;
+    };
+    const toolLocked = () => {
+      const layer = TOOL_LAYER[editToolRef.current];
+      return !!layer && lockedLayersRef.current.has(layer);
+    };
     function editTargetAt(ndc: THREE.Vector2): EditTarget | null {
       editRaycaster.setFromCamera(ndc, camera);
       const lightTool = editToolRef.current === "light";
+      const locked = lockedLayersRef.current;
       const hits = editRaycaster
         .intersectObjects(group.children, true)
-        .filter(
-          (h) =>
-            h.face &&
+        .filter((h) => {
+          if (!h.face) return false;
+          const layer = objectLayer(h.object);
+          if (locked.size && layer && locked.has(layer)) return false;
+          return (
             (h.object.userData.actorId === undefined || editToolRef.current === "robot") &&
             (lightTool || h.object.userData.mapLight === undefined) &&
             drawnChain(h.object) &&
@@ -6442,8 +6473,9 @@ export function GameViewport({
             (!seeThrough(h.object) || (editToolRef.current === "item" && isItemObject(h.object))) &&
             // (the thing being dragged is looked through: what's behind it is
             // where it goes)
-            !(dragItem?.moved && ownedByDrag(h.object)),
-        );
+            !(dragItem?.moved && ownedByDrag(h.object))
+          );
+        });
       const hit = hits[0];
       if (!hit?.face) return null;
       // the Decal tool: a decal lies on its surface - it counts if it's as
@@ -6653,18 +6685,19 @@ export function GameViewport({
     }
     // What is under the pointer is found with a ray (through thousands of triangles); it only changes when the pointer,
     // the view, the tool, the map or a drag does - not worked out again every frame while all of those stand still.
-    let hoverCache: { map: GameMap; tool: string; x: number; y: number; dragging: boolean; pos: THREE.Vector3; quat: THREE.Quaternion; target: EditTarget | null } | null = null;
+    let hoverCache: { map: GameMap; tool: string; locked: ReadonlySet<string>; x: number; y: number; dragging: boolean; pos: THREE.Vector3; quat: THREE.Quaternion; target: EditTarget | null } | null = null;
     function hoverTarget(): EditTarget | null {
       const at = editHover ?? ORIGIN_NDC;
       const dragging = !!dragItem?.moved;
+      const locked = lockedLayersRef.current;
       const c = hoverCache;
-      if (c && c.map === latestMapRef.current && c.tool === editToolRef.current && c.x === at.x && c.y === at.y && c.dragging === dragging && c.pos.equals(camera.position) && c.quat.equals(camera.quaternion)) return c.target;
+      if (c && c.map === latestMapRef.current && c.tool === editToolRef.current && c.locked === locked && c.x === at.x && c.y === at.y && c.dragging === dragging && c.pos.equals(camera.position) && c.quat.equals(camera.quaternion)) return c.target;
       const target = editTargetAt(at);
-      hoverCache = { map: latestMapRef.current, tool: editToolRef.current, x: at.x, y: at.y, dragging, pos: camera.position.clone(), quat: camera.quaternion.clone(), target };
+      hoverCache = { map: latestMapRef.current, tool: editToolRef.current, locked, x: at.x, y: at.y, dragging, pos: camera.position.clone(), quat: camera.quaternion.clone(), target };
       return target;
     }
     function updateEditHighlight() {
-      const target = editModeRef.current ? hoverTarget() : null;
+      const target = editModeRef.current && !toolLocked() ? hoverTarget() : null;
       reportHover(target);
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });

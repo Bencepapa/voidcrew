@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState, type CSSProperties } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Lock, LockOpen } from "lucide-react";
 import { t, type Key } from "../i18n";
 import { assetInWorld } from "../game/worlds";
 import { PROP_TYPES } from "../game/props";
@@ -54,6 +54,7 @@ export function AssetTree(p: EditorBarProps) {
         <div className="flex items-center border-y border-neutral-800 bg-neutral-950">
           <button type="button" className="min-w-0 flex-1 p-1 text-left" aria-expanded={!collapsed.has(group.id)} onClick={()=>collapse(prev=>{const next=new Set(prev);next.has(group.id)?next.delete(group.id):next.add(group.id);return next;})}>{collapsed.has(group.id)?"▸":"▾"} {group.label}</button>
           <button type="button" className="p-1" aria-label={`${t(p.hiddenLayers.has(group.id)?"editorBar.show":"editorBar.hide")} ${group.label}`} aria-pressed={p.hiddenLayers.has(group.id)} onClick={()=>p.onToggleLayer(group.id)}>{p.hiddenLayers.has(group.id)?<EyeOff size={14}/>:<Eye size={14}/>}</button>
+          <button type="button" className="p-1" title={`${t(p.lockedLayers.has(group.id)?"assetTree.unlock":"assetTree.lock")} ${group.label}`} aria-label={`${t(p.lockedLayers.has(group.id)?"assetTree.unlock":"assetTree.lock")} ${group.label}`} aria-pressed={p.lockedLayers.has(group.id)} onClick={()=>p.onToggleLayerLock(group.id)}>{p.lockedLayers.has(group.id)?<Lock size={14}/>:<LockOpen size={14}/>}</button>
         </div>
         {(!collapsed.has(group.id)||!!term)&&<>
           {group.id==="texture"&&<div className="flex flex-wrap gap-1 p-1">{(["wall","floor","ceiling"] as const).map(s=><button type="button" key={s} aria-pressed={surface===s} className="border border-neutral-600 px-1 aria-pressed:bg-neutral-700" onClick={()=>setSurface(s)}>{t(`editorBar.${s}`)}</button>)}</div>}

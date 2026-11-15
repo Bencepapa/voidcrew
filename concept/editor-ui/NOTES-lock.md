@@ -1,0 +1,5 @@
+- Could not run the app in a browser, so picking, dragging and hover were not exercised interactively.
+- Did not test every layer kind in a live scene (texture and light locks were only reasoned about).
+- Could not confirm clicks pass through every nested object variant (prop/decal children, light bulbs).
+- Did not verify lock state across map switches or language switches in the running UI.
+- Did not test touch input, pointer lock, or minimap selection paths with a locked layer.

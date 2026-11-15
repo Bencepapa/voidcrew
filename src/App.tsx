@@ -1141,6 +1141,14 @@ export default function App() {
       if (!next.delete(layer)) next.add(layer);
       return next;
     });
+  // layers locked from picking and editing in the view (they stay visible)
+  const [lockedLayers, setLockedLayers] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleLayerLock = (layer: string) =>
+    setLockedLayers((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(layer)) next.add(layer);
+      return next;
+    });
   const editUndo = () => {
     const m = undo(map.id);
     if (m) replaceMap(m);
@@ -2042,6 +2050,7 @@ export default function App() {
       onTouch={touch}
       editMode={editMode}
       hiddenLayers={hiddenLayers}
+      lockedLayers={lockedLayers}
       editTool={editTool}
       onEdit={onEdit}
       selectedLight={selectedLightInfo ? selectedLight : null}
@@ -2168,6 +2177,8 @@ export default function App() {
           onClearLayer={clearLayer}
           hiddenLayers={hiddenLayers}
           onToggleLayer={toggleLayer}
+          lockedLayers={lockedLayers}
+          onToggleLayerLock={toggleLayerLock}
           propChoice={propChoice}
           onPropChoice={setPropChoice}
           propRotation={propRotation}
