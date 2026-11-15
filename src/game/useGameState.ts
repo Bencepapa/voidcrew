@@ -286,6 +286,7 @@ export function useGameState() {
             : level === 2
               ? "SHIP SECURITY: ALERT. Your IDs are flagged - drones are powering up."
               : "Ship security: suspicious. Something is checking your IDs.",
+          "danger",
         );
         // the ones waiting for it wake (and know roughly where the crew is)
         actors = actors.map((a) => {
@@ -309,7 +310,7 @@ export function useGameState() {
       nextArrivalRef.current.set(index, now + (wake.every ?? ARRIVE_EVERY_S) * 1000);
       const arrival = actorFromSpec(m, spec, spawnIdRef.current++, now);
       actors = [...actors, { ...arrival, spawnOf: index, hostile: true, lastSeenAt: now, lastSeenCell: { ...party } }];
-      pushLog(`${ACTOR_TYPES[spec.actor].name} arrives${standing ? " - another one" : ""}.`);
+      pushLog(`${ACTOR_TYPES[spec.actor].name} arrives${standing ? " - another one" : ""}.`, "danger");
     });
     // lockdown: every unit knows where the crew is
     if (level === 3 && now - lastHuntRef.current > LOCKDOWN_HUNT_MS) {
@@ -347,7 +348,7 @@ export function useGameState() {
   const wipeIfDownRef = useRef<() => boolean>(() => false);
   wipeIfDownRef.current = () => {
     if (wipedRef.current !== null || !crewRef.current.every((c) => c.hp === 0)) return false;
-    pushLog("The whole crew is down.");
+    pushLog("The whole crew is down.", "danger");
     wipedRef.current = performance.now();
     setWipedAt(wipedRef.current);
     if (aimRef.current) {
@@ -473,7 +474,7 @@ export function useGameState() {
       );
       // a camera sees the crew: every robot on guard knows where, a while
       if (seenBy) {
-        if (!spotted) pushLog("A camera marks your position - the robots are coming.");
+        if (!spotted) pushLog("A camera marks your position - the robots are coming.", "danger");
         spottedRef.current = { cell: seenBy, until: gameClock.now() + SPOTTED_MS };
       }
       let next = stepped;
@@ -487,6 +488,7 @@ export function useGameState() {
           type?.watcher
             ? `${type.name} spots you - security is alerted.`
             : `${type?.name ?? "Something"} challenges you: restricted area. Security is alerted.`,
+          "danger",
         );
       }
       // the fights between actors (and the crew's turrets firing at the
@@ -536,7 +538,7 @@ export function useGameState() {
           crewRef.current = crewRef.current.map((c) => (c.id === victim.id ? { ...c, hp } : c));
           setCrew(crewRef.current);
           setHurtAt(performance.now());
-          pushLog(`The fire burns ${victim.name} for ${damage}.` + (hp === 0 ? ` ${victim.name} goes down!` : ""));
+          pushLog(`The fire burns ${victim.name} for ${damage}.` + (hp === 0 ? ` ${victim.name} goes down!` : ""), hp === 0 ? "danger" : "damage");
           wipeIfDownRef.current();
         }
       }
@@ -563,6 +565,7 @@ export function useGameState() {
         pushLog(
           `${name} hits ${victim.name} for ${attack.damage}${odds}.` +
             (hp === 0 ? ` ${victim.name} goes down!` : ""),
+          hp === 0 ? "danger" : "damage",
         );
         if (wipeIfDownRef.current()) break;
       }
@@ -595,11 +598,11 @@ export function useGameState() {
       const weapon = mate && crewWeapon(mate.id);
       if (!weapon || aimRef.current || busy()) return;
       if (mate.hp === 0) {
-        pushLog(`${mate.name} is down.`);
+        pushLog(`${mate.name} is down.`, "danger");
         return;
       }
       if (gameClock.now() < readyAtRef.current[index]) {
-        pushLog(`${mate.name}'s ${weapon.name.toLowerCase()} isn't ready.`);
+        pushLog(`${mate.name}'s ${weapon.name.toLowerCase()} isn't ready.`, "warn");
         return;
       }
       const cool = () => setReadyAt((prev) => prev.map((t, i) => (i === index ? gameClock.now() + weapon.cooldownMs : t)));
@@ -608,18 +611,18 @@ export function useGameState() {
           .filter((c) => c.hp > 0 && c.hp < c.maxHp)
           .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
         if (!hurt) {
-          pushLog("Nobody needs patching up.");
+          pushLog("Nobody needs patching up.", "warn");
           return;
         }
         const amount = Math.min(hurt.maxHp - hurt.hp, rollAmount(weapon.amount));
         crewRef.current = crewRef.current.map((c) => (c.id === hurt.id ? { ...c, hp: c.hp + amount } : c));
         setCrew(crewRef.current);
-        pushLog(hurt.id === mate.id ? `${mate.name} takes a stim: +${amount} HP.` : `${mate.name} patches up ${hurt.name}: +${amount} HP.`);
+        pushLog(hurt.id === mate.id ? `${mate.name} takes a stim: +${amount} HP.` : `${mate.name} patches up ${hurt.name}: +${amount} HP.`, "heal");
         cool();
         return;
       }
       if (!targetsInReach(weapon.range ?? 1).length) {
-        pushLog(`${mate.name}: no target in reach.`);
+        pushLog(`${mate.name}: no target in reach.`, "warn");
         return;
       }
       gameClock.setRate(AIM_TIME_RATE);
@@ -662,6 +665,7 @@ export function useGameState() {
             `${mate.name} hits the ${(result.crit ?? type.parts[result.part].label).toLowerCase()}` +
               `${result.crit ? " (critical!)" : ""} for ${hit.damage}` +
               (hit.killed ? " - it's destroyed!" : hit.effect ? ` - ${hit.effect}.` : "."),
+            hit.effect ? "warn" : undefined,
           );
         }
       } else {
@@ -727,12 +731,12 @@ export function useGameState() {
     (lock: ActiveLock, done: () => void): boolean => {
       const h = hacker();
       if (!lock.hack || !h) {
-        pushLog(lockedText(lock));
+        pushLog(lockedText(lock), "warn");
         return false;
       }
       const cost = HACK_ENERGY * lock.hack;
       if (h.en < cost) {
-        pushLog(`${h.name} is too drained to hack it (needs ${cost} EN).`);
+        pushLog(`${h.name} is too drained to hack it (needs ${cost} EN).`, "warn");
         return false;
       }
       crewRef.current = crewRef.current.map((c) => (c.id === h.id ? { ...c, en: c.en - cost } : c));
@@ -742,7 +746,7 @@ export function useGameState() {
       pushLog(`${h.name} jacks into the lock... (-${cost} EN)`);
       raiseAlert(ALERT_NOISE.hack);
       setTimeout(() => {
-        pushLog(`${h.name} cracks it: the lock clicks open.`);
+        pushLog(`${h.name} cracks it: the lock clicks open.`, "success");
         done();
       }, ms);
       return true;
@@ -762,12 +766,12 @@ export function useGameState() {
       const open = keypadRef.current;
       if (!open) return false;
       if (code !== open.lock.pin) {
-        pushLog(`Keypad: ${code || "----"} - ACCESS DENIED.`);
+        pushLog(`Keypad: ${code || "----"} - ACCESS DENIED.`, "warn");
         raiseAlert(ALERT_NOISE.wrongCode);
         return false;
       }
       closeKeypad();
-      pushLog("Keypad: ACCESS GRANTED. The lock clicks open.");
+      pushLog("Keypad: ACCESS GRANTED. The lock clicks open.", "success");
       open.done();
       return true;
     },
@@ -782,13 +786,13 @@ export function useGameState() {
   const openLock = useCallback(
     (lock: ActiveLock, hack: boolean, done: () => void): boolean => {
       if (lock.key && hasFlag(lock.key)) {
-        pushLog("You have what it takes: the lock clicks open.");
+        pushLog("You have what it takes: the lock clicks open.", "success");
         done();
         return true;
       }
       // (a keypad: the code, or the hacker from there)
       if (lock.pin && !powerRef.current) {
-        pushLog("The keypad is dark - no power.");
+        pushLog("The keypad is dark - no power.", "warn");
         if (!hack) return false;
         return hackLock(lock, done);
       }
@@ -799,7 +803,7 @@ export function useGameState() {
         return false;
       }
       if (!hack) {
-        pushLog(lockedText(lock));
+        pushLog(lockedText(lock), "warn");
         return false;
       }
       return hackLock(lock, done);
@@ -840,7 +844,7 @@ export function useGameState() {
     setPowerOn(!plan?.powerOff);
     powerRef.current = !plan?.powerOff;
     setLightsUp(false);
-    if (plan?.powerOff) pushLog("The ship is dead dark - its power is down. Somewhere aboard there's a breaker.");
+    if (plan?.powerOff) pushLog("The ship is dead dark - its power is down. Somewhere aboard there's a breaker.", "warn");
   }, [plan, pushLog]);
   const setPower = useCallback(
     (on: boolean) => {
@@ -848,7 +852,7 @@ export function useGameState() {
       powerRef.current = on;
       setPowerOn(on);
       if (on) setLightsUp(true);
-      pushLog(on ? "Power hums back through the ship: lights, doors, lifts." : "The power dies. Doors, lifts and keypads go dark.");
+      pushLog(on ? "Power hums back through the ship: lights, doors, lifts." : "The power dies. Doors, lifts and keypads go dark.", on ? "success" : "warn");
       return true;
     },
     [pushLog],
@@ -944,7 +948,7 @@ export function useGameState() {
       const m = mapRef.current;
       const t = m.terminals?.[id];
       if (!t) {
-        pushLog("The screen stays dark.");
+        pushLog("The screen stays dark.", "warn");
         return;
       }
       const unlocked = `unlocked:${m.id}:terminal ${id}`;
@@ -1005,13 +1009,13 @@ export function useGameState() {
     const lift = liftAt(from, cabin);
     if (!lift || busy() || openingDoor) return;
     if (!powerRef.current) {
-      pushLog("The lift panel is dark - no power.");
+      pushLog("The lift panel is dark - no power.", "warn");
       return;
     }
     const to = MAPS[lift.to];
     const arrival = to?.lifts?.find((l) => l.to === from.id) ?? to?.lifts?.[0];
     if (!to || !arrival) {
-      pushLog("The lift panel stays dark.");
+      pushLog("The lift panel stays dark.", "warn");
       return;
     }
     const up = to.deck < from.deck;
@@ -1084,7 +1088,7 @@ export function useGameState() {
 
     const way = passage(map, pos, elevation, next, moveDir);
     if (way.kind === "blocked") {
-      pushLog(BLOCKED_MESSAGES[way.reason]);
+      pushLog(BLOCKED_MESSAGES[way.reason], "warn");
       return;
     }
     // (one on the floor under a bridge isn't in the way on its deck)
@@ -1095,7 +1099,7 @@ export function useGameState() {
       way.y,
     );
     if (blocker) {
-      pushLog(`${ACTOR_TYPES[blocker.type].name} blocks the way.`);
+      pushLog(`${ACTOR_TYPES[blocker.type].name} blocks the way.`, "warn");
       return;
     }
     if (way.kind === "drop") pushLog(way.height > 0.5 ? "You jump down." : "You hop down.");
@@ -1103,7 +1107,7 @@ export function useGameState() {
       // up only facing the ladder; down either way (backing down it faces
       // the ladder, like climbing down a real one)
       if (way.up && moveDir !== dir) {
-        pushLog("Face the ladder to climb it.");
+        pushLog("Face the ladder to climb it.", "warn");
         return;
       }
       pushLog(way.up ? "You climb up the ladder." : "You climb down the ladder.");
@@ -1117,7 +1121,7 @@ export function useGameState() {
       const lock = doorLock(door);
       if (lock && !unlockDoor(lock, door)) return;
       if (!powerRef.current) {
-        pushLog("No power to the door. Use to force it open.");
+        pushLog("No power to the door. Use to force it open.", "warn");
         return;
       }
       startOpening(door);
@@ -1210,8 +1214,8 @@ export function useGameState() {
       // (a story item says what it is)
       const named = found.filter((it) => it.name);
       const plain = stacks.filter((_, i) => !found[i].name);
-      if (plain.length) pushLog(`You pick up ${stacksText(plain)}.`);
-      for (const it of named) pushLog(`You pick up the ${it.name}.`);
+      if (plain.length) pushLog(`You pick up ${stacksText(plain)}.`, "success");
+      for (const it of named) pushLog(`You pick up the ${it.name}.`, "success");
       addToHaul(stacks);
       setLooted((prev) => new Set([...prev, ...found.map((it) => lootKey("item", (fullMap.items ?? []).indexOf(it)))]));
       for (const it of found) {
@@ -1260,7 +1264,7 @@ export function useGameState() {
         raiseFlag(unlockedFlag(map.id, ahead), true);
         // (no power: unlocked, but it still has to be forced)
         if (powerRef.current) storyRef.current.open(ahead);
-        else pushLog("Unlocked - but without power it has to be forced (Use).");
+        else pushLog("Unlocked - but without power it has to be forced (Use).", "warn");
       });
       return;
     }
@@ -1284,7 +1288,7 @@ export function useGameState() {
         if (items.length) wreckSpills.push({ id: ++spillIdRef.current, from: { x: a.cell.x, y: a.y + 0.2, z: a.cell.y }, floorY: a.y, items });
       }
       const stacks = [...parts].map(([item, count]) => ({ item, count }));
-      pushLog(stacks.length ? `You salvage ${stacksText(stacks)} from the wreck.` : "You search the wreck: nothing worth taking.");
+      pushLog(stacks.length ? `You salvage ${stacksText(stacks)} from the wreck.` : "You search the wreck: nothing worth taking.", stacks.length ? "success" : "warn");
       addToHaul(stacks);
       setSpills((prev) => [...prev.slice(-8), ...wreckSpills]);
       setLooted((prev) => new Set([...prev, ...wrecks.map((a) => `${actorKey(map, a.id)} wreck`)]));
@@ -1297,7 +1301,7 @@ export function useGameState() {
         setRunEnd({ exit: exit.name ?? "the airlock", at: gameClock.now() });
         return;
       }
-      if (!picked) pushLog("There's nothing to use here.");
+      if (!picked) pushLog("There's nothing to use here.", "warn");
       return;
     }
     const taken = new Map<string, number>();
@@ -1322,9 +1326,9 @@ export function useGameState() {
     const what = containers.length > 1 ? "the containers" : `the ${PROP_TYPES[containers[0].prop].container === "crate" ? "crate" : "container"}`;
     if (!stacks.length) {
       const emptied = keys.every((k) => looted.has(k));
-      pushLog(emptied ? `You've emptied ${what} already.` : `You search ${what}: nothing.`);
+      pushLog(emptied ? `You've emptied ${what} already.` : `You search ${what}: nothing.`, "warn");
     } else {
-      pushLog(`You take ${stacksText(stacks)} from ${what}.`);
+      pushLog(`You take ${stacksText(stacks)} from ${what}.`, "success");
       addToHaul(stacks);
       setSpills((prev) => [...prev.slice(-8), ...newSpills]);
     }
@@ -1334,7 +1338,7 @@ export function useGameState() {
   // The breaker: the ship's power back on (if it's down)
   const throwBreaker = () => {
     if (setPower(true)) raiseAlert(ALERT_NOISE.breaker);
-    else pushLog("The breaker is already on.");
+    else pushLog("The breaker is already on.", "warn");
   };
   throwBreakerRef.current = throwBreaker;
   setPowerRef.current = setPower;
@@ -1355,6 +1359,7 @@ export function useGameState() {
         : stance === "dormant"
           ? "Security powers the robots down."
           : "Security flags the crew as intruders.",
+      stance === "hostile" ? "danger" : "success",
     );
   };
 
@@ -1374,6 +1379,7 @@ export function useGameState() {
           : mode === "off"
             ? "The turrets power down."
             : "The turrets are back on guard.",
+      mode === "hostile" ? "danger" : "success",
     );
   };
 
@@ -1503,7 +1509,7 @@ export function useGameState() {
       const lock = doorLock(cell);
       if (lock && !unlockDoor(lock, cell)) return;
       if (!powerRef.current) {
-        pushLog("No power to the door. Use to force it open.");
+        pushLog("No power to the door. Use to force it open.", "warn");
         return;
       }
       startOpening(cell);
