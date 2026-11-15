@@ -22,6 +22,45 @@ const DECAL_DEPTH = 0.2;
 // (so the later one shows on top), up to this many steps.
 const DECAL_LAYERS = 64;
 const LAYER_UNITS = 3;
+
+// A decal with no normal map of its own (a path, ruts) lay perfectly flat on a relief ground, so it caught no
+// glints where the ground around it did. Its normal is made from the picture's brightness (lighter: higher).
+function normalFromDiffuse(map: THREE.Texture): THREE.Texture | null {
+  const image = map.image as CanvasImageSource & { width: number; height: number };
+  const { width, height } = image;
+  if (!width || !height || typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(image, 0, 0);
+  const src = ctx.getImageData(0, 0, width, height);
+  const out = ctx.createImageData(width, height);
+  const lum = (x: number, y: number) => {
+    const i = (Math.min(height - 1, Math.max(0, y)) * width + Math.min(width - 1, Math.max(0, x))) * 4;
+    return (0.299 * src.data[i] + 0.587 * src.data[i + 1] + 0.114 * src.data[i + 2]) / 255;
+  };
+  const STRENGTH = 3;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const dx = (lum(x + 1, y) - lum(x - 1, y)) * STRENGTH;
+      const dy = (lum(x, y + 1) - lum(x, y - 1)) * STRENGTH;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * width + x) * 4;
+      out.data[i] = Math.round((-dx / len * 0.5 + 0.5) * 255);
+      out.data[i + 1] = Math.round((dy / len * 0.5 + 0.5) * 255);
+      out.data[i + 2] = Math.round((1 / len * 0.5 + 0.5) * 255);
+      out.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter;
+  texture.wrapS = map.wrapS;
+  texture.wrapT = map.wrapT;
+  return texture;
+}
 // Pulling decals over the surfaces' distant versions (see pullUniforms): how
 // much nearer than a panel's middle one of its decal's vertices can be (half
 // a panel's diagonal, about), and a little extra pull on top of the measured
@@ -176,8 +215,12 @@ export class DecalLibrary {
         const map = await this.loadTexture(`${dir}diffuse.png${bust}`);
         map.colorSpace = THREE.SRGBColorSpace;
         map.magFilter = THREE.NearestFilter;
-        const normalMap = entry.normal ? await this.loadTexture(`${dir}normal.png${bust}`) : null;
+        let normalMap = entry.normal ? await this.loadTexture(`${dir}normal.png${bust}`) : null;
         if (normalMap) normalMap.magFilter = THREE.NearestFilter;
+        else if (!entry.water) {
+          normalMap = normalFromDiffuse(map);
+          if (normalMap) this.disposables.push(normalMap);
+        }
         const material: THREE.Material = entry.water
           ? this.waterMaterial(map)
           : new THREE.MeshStandardMaterial({

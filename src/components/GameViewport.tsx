@@ -7059,7 +7059,8 @@ export function GameViewport({
       decals.forEachLitMaterial((mat) => {
         mat.roughness = Math.min(1, s.roughness);
         mat.metalness = s.showMetal ? Math.min(1, s.metalness) : 0;
-        const normal = s.showNormals ? s.normalStrength : 0;
+        // (like a floor's: its own strength setting, else 1)
+        const normal = s.showNormals ? (s.floorNormalStrength > 0 ? s.floorNormalStrength : 1) : 0;
         mat.normalScale.set(normal, normal);
       });
       for (const mat of ownMaterials) {
