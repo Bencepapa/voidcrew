@@ -4137,7 +4137,7 @@ export function GameViewport({
     let motes = createMotes(moteEmitters, settings.particleQuality);
     let mist = createGroundFog(mistEmitters, settings.particleQuality, lightGrid, (x,z)=>cellAt(latestMapRef.current,x,z)!=="wall" && cellAt(latestMapRef.current,x,z)!==undefined);
     let flies = createFireflies(flyEmitters, settings.particleQuality);
-    const weather = createWeather(settings.particleQuality);
+    const weather = createWeather(settings.particleQuality, lightGrid.weather);
     let weatherMap = map;
     scene.add(motes.mesh, mist.mesh, flies.mesh, weather.mesh);
     // the editor changed only the smoke: made anew, the rest stays built
@@ -7111,7 +7111,7 @@ export function GameViewport({
         const cell = cellAt(weatherMap,x,z);
         const open = (weatherMap.ceilingTextureAt?.(x,z) ?? weatherMap.textures?.ceiling) === "sky";
         return { floor:floorY(x,z), ceiling:open ? Infinity : ceilingY(x,z), valid:cell!==undefined && cell!=="wall", open };
-      });
+      }, weatherMap);
       const every = Math.max(1, Math.round(s.particleEvery));
       if (every === 1 || particleFrame % every === 0) {
         const pdt = gameDt * every;

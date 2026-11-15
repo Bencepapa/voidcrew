@@ -14,6 +14,8 @@ export const effectsEn = {
   "effects.standing": "Standing mist",
   "effects.ground": "Ground fog",
   "effects.sprite": "Sprite",
+  "effects.wetness": "Wetness",
+  "effects.snowCover": "Snow cover",
   "effects.weather": "Weather",
   "effects.none": "None",
   "effects.rain": "Rain",

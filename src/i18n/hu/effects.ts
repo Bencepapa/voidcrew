@@ -14,6 +14,8 @@ export const effectsHu = {
   "effects.standing": "Álló köd",
   "effects.ground": "Talajköd",
   "effects.sprite": "Kép",
+  "effects.wetness": "Nedvess\u00e9g",
+  "effects.snowCover": "H\u00f3takar\u00f3",
   "effects.weather": "Időjárás",
   "effects.none": "Nincs",
   "effects.rain": "Eső",

@@ -1,3 +1,4 @@
+import { createWeatherUniforms, useWeatherSurface, type WeatherUniforms } from "./weather";
 import * as THREE from "three";
 import { ACCENT_GLSL, ACCENT_UNIFORMS } from "./accent";
 import { cellAt, ceilingHeight, floorHeight } from "../game/map";
@@ -470,6 +471,7 @@ function clearLine(
 // The shared uniforms every lit material reads the grid through (one set per
 // scene: a new bake swaps their values).
 export interface LightGridUniforms {
+  weather: WeatherUniforms;
   faces: { value: THREE.Data3DTexture }[];
   min: { value: THREE.Vector3 };
   size: { value: THREE.Vector3 };
@@ -528,6 +530,7 @@ export function createLightGridUniforms(): LightGridUniforms {
     return tex;
   };
   return {
+    weather: createWeatherUniforms(),
     faces: AXES.map(() => ({ value: empty() })),
     min: { value: new THREE.Vector3() },
     size: { value: new THREE.Vector3(1, 1, 1) },
@@ -578,6 +581,7 @@ export function setLightGrid(uniforms: LightGridUniforms, data: LightGridData, a
 }
 
 export function disposeLightGrid(uniforms: LightGridUniforms) {
+  uniforms.weather.uWeatherColumns.value.dispose();
   for (const f of uniforms.faces) f.value.dispose();
   uniforms.reach.value.dispose();
 }
@@ -599,6 +603,7 @@ const SHEEN = 0.9;
 export function useLightGrid(material: THREE.Material, uniforms: LightGridUniforms) {
   if (!(material as THREE.MeshStandardMaterial).isMeshStandardMaterial || material.userData.lightGrid) return;
   material.userData.lightGrid = true;
+  useWeatherSurface(material, uniforms.weather);
   const previous = material.onBeforeCompile;
   const previousKey = material.customProgramCacheKey();
   // (the ship's livery only on the deck's own surfaces - its walls, floors,

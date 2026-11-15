@@ -368,7 +368,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       if (cells[e.y]?.[e.x] !== "floor") throw new Error(`exit at ${e.x},${e.y} isn't in a floor cell`);
       return { cell: { x: e.x, y: e.y }, name: e.name };
     }),
-    weather: file.weather ? { ...file.weather, intensity: Math.max(0, Math.min(2, file.weather.intensity ?? 1)) } : undefined,
+    weather: file.weather ? { ...file.weather, wetness: Math.max(0, Math.min(1, file.weather.wetness ?? (file.weather.type === "rain" ? 0.6 : 0))), snowCover: Math.max(0, Math.min(1, file.weather.snowCover ?? 0.6)), intensity: Math.max(0, Math.min(2, file.weather.intensity ?? 1)) } : undefined,
     smokes: (file.smokes ?? []).map((s) => {
       if (cells[s.y]?.[s.x] === undefined || cells[s.y][s.x] === "wall") throw new Error(`smoke at ${s.x},${s.y} isn't in a walkable cell`);
       return {
