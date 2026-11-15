@@ -79,6 +79,11 @@ export class DecalLibrary {
   // surface keys each decal landed on (for debugging)
   readonly built: { decal: string; key: string; triangles: number }[] = [];
   private disposables: { dispose(): void }[] = [];
+  // the lit materials of the decals loaded so far, the layered copies too: the viewer's surface sliders
+  // (roughness, metalness, normal strength) drive them like the floors and walls
+  forEachLitMaterial(fn: (material: THREE.MeshStandardMaterial) => void) {
+    for (const d of this.disposables) if (d instanceof THREE.MeshStandardMaterial) fn(d);
+  }
   private disposed = false;
 
   constructor(

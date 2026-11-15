@@ -7056,6 +7056,12 @@ export function GameViewport({
         kit.litMat?.normalScale.set(normal, normal);
         if (kit.wallMat.userData.glow && !mapViewOn) kit.wallMat.emissiveIntensity = s.showGlow ? SURFACE_GLOW : 0;
       }
+      decals.forEachLitMaterial((mat) => {
+        mat.roughness = Math.min(1, s.roughness);
+        mat.metalness = s.showMetal ? Math.min(1, s.metalness) : 0;
+        const normal = s.showNormals ? s.normalStrength : 0;
+        mat.normalScale.set(normal, normal);
+      });
       for (const mat of ownMaterials) {
         const tune = mat.userData.tuneId ? textureTuning(mat.userData.tuneId as string) : undefined;
         mat.roughness = Math.min(1, s.roughness * (tune?.rough ?? 1));
