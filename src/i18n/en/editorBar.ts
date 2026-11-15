@@ -1,5 +1,6 @@
 // English strings for editorBar.
 export const editorBarEn = {
+  "editorBar.kind": "Kind",
   "editorBar.wall": "Wall",
   "editorBar.floor": "Floor",
   "editorBar.ceiling": "Ceiling",

@@ -1,6 +1,8 @@
+import { ACTOR_TYPES } from "../../game/actors";
+import { assetInWorld } from "../../game/worlds";
 import { t, type Key } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
-import { Section, slider, chanceSlider, linkFields, BUTTON, idle, active } from "./parts";
+import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle, active } from "./parts";
 import type { Direction, ActorWake } from "../../game/types";
 
 const WAKE_LABELS: Record<ActorWake["mode"], Record<number, Key>> = {
@@ -39,34 +41,22 @@ return <>
                   <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onActorClearRoute}>{t("editorBar.clearRoute")}</button>
                 )}
 </Section>
+<Section kind="actor" section="look">
+<KindChoice label={t("editorBar.npc")} value={p.actor.type} options={Object.keys(ACTOR_TYPES).filter(id => assetInWorld(id)).map(value => ({value,label:value}))} onChange={actor => p.onActorChange({actor})}/>
+</Section>
 <Section kind="actor" section="logic">
 {chanceSlider(p.actor.chance, (chance) => p.onActorChange({ chance }))}
 {linkFields(p.actor.links, p.linkIds, p.onActorChange)}
 </Section>
 <Section kind="actor" section="advanced">
-<label
-                  className="flex items-center gap-1"
-                  title={t("editorBar.untilTheShipSAlertReachesA")}
-                >
-                  {t("editorBar.untilAlert")}<select
-                    value={p.actor.wake ? `${p.actor.wake.mode} ${p.actor.wake.level}` : ""}
-                    onChange={(e) => {
-                      const [mode, level] = e.target.value.split(" ");
-                      const keep = p.actor!.wake?.mode === "arrive" && mode === "arrive" ? p.actor!.wake : {};
-                      p.onActorChange({
-                        wake: mode ? ({ ...keep, mode, level: Number(level) } as ActorWake) : undefined,
-                      });
-                    }}
-                    className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
-                  >
-                    <option value="">{t("editorBar.onGuardFromTheStart")}</option>
-                    {(["dormant", "fooled", "arrive"] as const).flatMap((mode) =>
-                      ([1, 2, 3] as const).map((level) => (
-                        <option key={`${mode} ${level}`} value={`${mode} ${level}`}>{t(WAKE_LABELS[mode][level])}</option>
-                      )),
-                    )}
-                  </select>
-                </label>
+<KindChoice label={t("editorBar.untilAlert")} title={t("editorBar.untilTheShipSAlertReachesA")} value={p.actor.wake ? `${p.actor.wake.mode} ${p.actor.wake.level}` : ""} options={[
+ {value:"",label:t("editorBar.onGuardFromTheStart")},
+ ...(["dormant","fooled","arrive"] as const).flatMap(mode => ([1,2,3] as const).map(level => ({value:`${mode} ${level}`,label:t(WAKE_LABELS[mode][level])})))
+]} onChange={v => {
+ const [mode,level] = v.split(" ");
+ const keep = p.actor!.wake?.mode === "arrive" && mode === "arrive" ? p.actor!.wake : {};
+ p.onActorChange({wake:mode ? {...keep,mode,level:Number(level)} as ActorWake : undefined});
+}}/>
 {p.actor.wake?.mode === "arrive" &&
                   slider(t("editorBar.everyS"), p.actor.wake.every ?? 30, 10, 120, 5, (v) =>
                     p.onActorChange({ wake: { ...p.actor!.wake!, every: v === 30 ? undefined : v } }),

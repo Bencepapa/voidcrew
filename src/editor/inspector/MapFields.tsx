@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import { t, type Key } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
-import { OptionalNumber, CommitContext, Section, slider, BUTTON, idle } from "./parts";
+import { KindChoice, OptionalNumber, CommitContext, Section, slider, BUTTON, idle } from "./parts";
 import type { Direction } from "../../game/types";
 
 import { TEXTURE_SETS, textureSetsOfKind } from "../../render/textureSets";
@@ -62,25 +62,11 @@ return <>
                 p.onMapLook({ accent: { ...p.mapLook.accent!, range: v === 30 ? undefined : v } }),
               )}
 {TEXTURE_SLOTS.map(({ slot, label, kind }) => (
-              <label key={slot} className="flex items-center gap-1" title={t("editorBar.defaultTexture", { surface: t(label).toLowerCase() })}>
-                {t(label)}
-                <select
-                  value={p.mapLook.textures?.[slot] ?? ""}
-                  onChange={(e) => {
-                    const textures = { ...p.mapLook.textures, [slot]: e.target.value || undefined };
-                    for (const k of Object.keys(textures)) if (!textures[k]) delete textures[k];
-                    p.onMapLook({ textures: Object.keys(textures).length ? textures : undefined });
-                  }}
-                  className="bg-neutral-800 border border-neutral-700 px-1 py-0.5 max-w-[7rem]"
-                >
-                  <option value="">{t("editorBar.defaultLower")}</option>
-                  {textureSetsOfKind(kind).map((id) => (
-                    <option key={id} value={id}>
-                      {TEXTURE_SETS[id].label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <KindChoice key={slot} label={t(label)} title={t("editorBar.defaultTexture", {surface:t(label).toLowerCase()})} value={p.mapLook.textures?.[slot] ?? ""} options={[{value:"",label:t("editorBar.defaultLower")},...textureSetsOfKind(kind).map(value => ({value,label:TEXTURE_SETS[value].label}))]} onChange={v => {
+ const textures = {...p.mapLook.textures,[slot]:v || undefined};
+ for (const k of Object.keys(textures)) if (!textures[k]) delete textures[k];
+ p.onMapLook({textures:Object.keys(textures).length ? textures : undefined});
+}}/>
             ))}
 <OptionalNumber label={t("editorBar.relief")} title={t("editorBar.howDeepTheWallsReliefIsRebuilds")} value={p.mapLook.reliefDepth} min={0.01} max={0.12} step={0.01} defaultValue={0.04} onChange={v=>p.onMapLook({reliefDepth:v})}/>
 </Section>

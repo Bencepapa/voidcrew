@@ -1,3 +1,4 @@
+import { KindChoice } from "./inspector/parts";
 import { NumberField } from "./NumberField";
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
@@ -6,9 +7,7 @@ export function EffectFields({value,onChange,onCommit}:{value:Pick<SmokeSpec,"ef
   const [sprites,setSprites]=useState<string[]>([]);
   useEffect(()=>{let live=true;fetch(`${import.meta.env.BASE_URL}particles/index.json`).then(r=>r.json()).then((s:string[])=>{if(live)setSprites(s);}).catch(()=>{});return()=>{live=false;};},[]);
   return <>
-    <label>{t("effects.effect")} <select value={value.effect??"smoke"} onChange={e=>onChange({effect:e.target.value as AmbientEffect})}>
-      {(["smoke","fire","mist","groundfog","motes","petals","fireflies"] as const).map(k=><option key={k} value={k}>{t(`effects.${k}`)}</option>)}
-    </select></label>
+    <KindChoice label={t("effects.effect")} value={value.effect ?? "smoke"} options={(["smoke","fire","mist","groundfog","motes","petals","fireflies"] as const).map(value => ({value,label:t(`effects.${value}`)}))} onChange={effect => onChange({effect:effect as AmbientEffect})}/>
     {value.effect==="groundfog" && <>
       <NumberField label={t("effects.spread")} value={value.spread??3} min={.25} max={12} step={.25} defaultValue={3} slider onChange={spread=>onChange({spread})} onCommit={onCommit}/>
       <NumberField label={t("effects.height")} value={value.height??.6} min={.05} max={2} step={.05} defaultValue={.6} onChange={height=>onChange({height})} onCommit={onCommit}/>

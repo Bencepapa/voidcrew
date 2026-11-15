@@ -1330,7 +1330,7 @@ export default function App() {
       lock: spec.lock,
     };
   })();
-  const changeDoor = (patch: { offset?: number; facing?: Direction; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => {
+  const changeDoor = (patch: { kind?: "standard" | "lift"; offset?: number; facing?: Direction; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => {
     if (!selectedDoor) return;
     const cell = selectedDoor;
     const spec = doorAt(map, cell.x, cell.y);
@@ -2224,7 +2224,7 @@ export default function App() {
           lightPlace={lightPlace}
           onLightPlace={setLightPlace}
           light={placingKind === "light" ? lightTemplateInfo : selectedLightInfo}
-          onLightChange={placingKind === "light" ? (patch: Partial<MapLight>) => { remember("light", patch); setTemplateTick((n) => n + 1); } : (patch, merge) => changeLight(patch, merge)}
+          onLightChange={placingKind === "light" ? (patch: Partial<MapLight>) => { if ("pos" in patch) setLightPlace(patch.pos ? "point" : "ceiling"); remember("light", patch); setTemplateTick((n) => n + 1); } : (patch, merge) => changeLight(patch, merge)}
           onLightDelete={deleteLight}
           onLightDeselect={() => setSelectedLight(null)}
           compact={compact}
