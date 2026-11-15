@@ -591,6 +591,8 @@ const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
 // how long the editor leaves the quick flat preview of its structural edits before the scene's full build
 const EDIT_SETTLE_MS = 5000;
 const ORIGIN_NDC = new THREE.Vector2(0, 0);
+// the relief depth a floor texture is tuned against in the Asset Manager (its default)
+const FLOOR_BASE_DEPTH = 0.04;
 // The top-down view (editing; the O key or the button): the camera high above
 // the map looking down (tilted with Ctrl+wheel), the ceilings and the sight
 // culling and fog off - to survey and texture a large area, even across
@@ -2018,8 +2020,9 @@ export function GameViewport({
     let mapLights = generateLights(map, skyLightOf(settings));
     // the walls' relief depth: the map's own, else the settings'
     const reliefDepth = map.reliefDepth ?? settings.reliefDepth;
-    // the floors have a relief depth of their own (0: as the walls')
-    const floorDepth = settings.floorReliefDepth > 0 ? settings.floorReliefDepth : reliefDepth;
+    // the floors have a relief depth of their own (0: the Asset Manager's own baseline, so a texture's tuned depth is
+    // what shows - not multiplied by whatever the walls' depth is set to)
+    const floorDepth = settings.floorReliefDepth > 0 ? settings.floorReliefDepth : FLOOR_BASE_DEPTH;
     // props follow the wall profile: flat (or beveled) walls, flat props
     const propReliefDepth = settings.wallProfile === "relief" ? reliefDepth : 0.0005;
     // the static lights, baked (see lightGrid.ts) - every lit material reads
@@ -2350,7 +2353,7 @@ export function GameViewport({
       wallHeight,
       levels: (cell) => ({ floor: floorY(cell.x, cell.y), ceiling: ceilingY(cell.x, cell.y) }),
       // standing water lies over the floor's highest relief
-      waterLift: (settings.floorReliefDepth > 0 ? settings.floorReliefDepth : (map.reliefDepth ?? settings.reliefDepth)) * 0.9 + 0.004,
+      waterLift: floorDepth * 0.9 + 0.004,
       parent: group,
     });
     if (settings.decalsEnabled) track(decals.add(map.decals ?? []));
@@ -7045,7 +7048,9 @@ export function GameViewport({
           }
           mat.aoMapIntensity = s.showAO ? s.aoIntensity : 0;
         }
-        const strength = kit.floor && s.floorNormalStrength > 0 ? s.floorNormalStrength : s.normalStrength;
+        // (a floor's normal strength: its own, else 1 - the Asset Manager's baseline - not the walls' setting on top
+        // of its tuned value)
+        const strength = kit.floor ? (s.floorNormalStrength > 0 ? s.floorNormalStrength : 1) : s.normalStrength;
         const normal = s.showNormals ? strength * (kit.normal ?? 1) * (tune?.normal ?? 1) : 0;
         kit.wallMat.normalScale.set(normal, normal);
         kit.litMat?.normalScale.set(normal, normal);
