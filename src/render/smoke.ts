@@ -84,6 +84,9 @@ const LIFE: [number, number] = [3.2, 5];
 const RISE: [number, number] = [0.14, 0.24];
 const WIDTH: [number, number] = [0.1, 0.6];
 const OPACITY = 0.42;
+// a standing mist: many soft puffs lying about the emitter, each faint, together a haze (0.1 was no haze at all)
+// (smoke is drawn at 30% where it is dark, as it shows by the light it scatters: so it has to start high)
+const STANDING_OPACITY = 0.8;
 // how fast blown smoke loses its speed (per second: it gets speed / DRAG
 // far), and how much one puff's speed and heading differ from another's
 const DRAG = 1.6;
@@ -289,13 +292,13 @@ export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, w
     const push = 0.8 + Math.random() * 0.4;
     const stray = () => (Math.random() - 0.5) * 2 * speed * BLOW_SPREAD;
     // (flames: from all over their patch)
-    const spread = e.standing ? e.size : fire ? FIRE_SPREAD * e.size : 0.05;
+    const spread = e.standing ? e.size * 2 : fire ? FIRE_SPREAD * e.size : 0.05;
     return {
       jx: bx * push + stray(),
       jy: by * push + stray(),
       jz: bz * push + stray(),
       x: e.x + (Math.random() - 0.5) * spread,
-      y: e.y,
+      y: e.standing ? e.y + Math.random() * 0.5 * e.size : e.y,
       z: e.z + (Math.random() - 0.5) * spread,
       vx: (Math.random() - 0.5) * (fire ? 0.12 : 0.05),
       vy: e.standing ? 0 : between(fire ? FIRE_RISE : RISE),
@@ -702,7 +705,7 @@ void main() {
         }
         if (e.standing) width = e.size * (0.8 + 0.3 * Math.sin(t * Math.PI));
         centers.setXYZ(n, p.x, p.y, p.z);
-        params.setXYZW(n, width, Math.min(1, (e.standing ? 0.1 : fire ? FIRE_OPACITY : OPACITY) * (few ? FEW_OPACITY : 1)) * fade, turn, tile);
+        params.setXYZW(n, width, Math.min(1, (e.standing ? STANDING_OPACITY : fire ? FIRE_OPACITY : OPACITY) * (few ? FEW_OPACITY : 1)) * fade, turn, tile);
         // (a flame's color by its age, tinted by its fire's)
         const c = fire ? tintFlame(fireColor(t, flame), e.color) : e.color;
         colors.setXYZ(n, c.r * p.shade, c.g * p.shade, c.b * p.shade);
