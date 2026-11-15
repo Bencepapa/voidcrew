@@ -1,4 +1,4 @@
-export const assetTreeEn = {"assetTree.title": "Assets", "assetTree.search": "Search name or kind...", "assetTree.pillar": "Pillar / Chamfer", "assetTree.decals": "Decals", "assetTree.lights": "Lights", "assetTree.empty": "No matching assets",
+export const assetTreeEn = {"assetTree.title": "Assets", "assetTree.search": "Search name or kind...", "assetTree.pillar": "Pillar / Chamfer", "assetTree.decals": "Decals", "assetTree.lights": "Lights", "assetTree.empty": "No matching assets", "assetTree.lock": "Lock layer", "assetTree.unlock": "Unlock layer",
 "assetTree.name.Scrap metal": "Scrap metal",
 "assetTree.name.Wiring": "Wiring",
 "assetTree.name.Circuit board": "Circuit board",

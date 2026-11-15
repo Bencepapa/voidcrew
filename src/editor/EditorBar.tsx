@@ -61,6 +61,9 @@ export interface EditorBarProps {
   // the layers hidden from the view, and hiding or showing one (the tool's)
   hiddenLayers: ReadonlySet<string>;
   onToggleLayer: (layer: string) => void;
+  // the layers locked from picking and editing in the view (they stay visible)
+  lockedLayers: ReadonlySet<string>;
+  onToggleLayerLock: (layer: string) => void;
   // the Prop tool: the prop a click puts in, and its turn (degrees)
   propChoice: string;
   onPropChoice: (prop: string) => void;
