@@ -806,19 +806,30 @@ function computeAmbientOcclusion(
   ];
   const ao = new Float32Array(w * h);
   const r = Math.max(1, Math.round(radius));
+  // the distance of each step in each direction (it depends on nothing else: worked out once, not for every cell -
+  // a hypot per step was a third of a deck's load time)
+  const inverseDist = new Float32Array(DIRS.length * r);
+  for (let d = 0; d < DIRS.length; d++) {
+    for (let s = 1; s <= r; s++) inverseDist[d * r + s - 1] = 1 / Math.hypot(DIRS[d][0] * s * cellW, DIRS[d][1] * s * cellH);
+  }
+  const lastX = w - 1;
+  const lastY = h - 1;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const z0 = z[y * w + x];
       let occlusion = 0;
-      for (const [dx, dy] of DIRS) {
+      for (let d = 0; d < DIRS.length; d++) {
+        const dx = DIRS[d][0];
+        const dy = DIRS[d][1];
         let maxSlope = 0;
         for (let s = 1; s <= r; s++) {
           // clamp at the map edge: the neighboring wall panel continues the
           // same surface there
-          const xx = Math.min(w - 1, Math.max(0, x + dx * s));
-          const yy = Math.min(h - 1, Math.max(0, y + dy * s));
-          const dist = Math.hypot(dx * s * cellW, dy * s * cellH);
-          const slope = (z[yy * w + xx] - z0) / dist;
+          let xx = x + dx * s;
+          let yy = y + dy * s;
+          xx = xx < 0 ? 0 : xx > lastX ? lastX : xx;
+          yy = yy < 0 ? 0 : yy > lastY ? lastY : yy;
+          const slope = (z[yy * w + xx] - z0) * inverseDist[d * r + s - 1];
           if (slope > maxSlope) maxSlope = slope;
         }
         occlusion += maxSlope / Math.sqrt(1 + maxSlope * maxSlope);

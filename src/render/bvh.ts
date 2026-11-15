@@ -30,3 +30,27 @@ export function prepareRaycasts(root: THREE.Object3D) {
     if ((obj as THREE.Mesh).isMesh) ensureBoundsTree((obj as THREE.Mesh).geometry as THREE.BufferGeometry);
   });
 }
+
+// The same, a little at a time after the deck is shown: a slice of a few milliseconds at a time,
+// between frames, so the load does not wait for it (and the game does not stall: a ray that
+// comes sooner builds the hierarchy of what it tests itself, as always). Returns a way to stop.
+export function prepareRaycastsGradually(root: THREE.Object3D): () => void {
+  const meshes: THREE.Mesh[] = [];
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.isMesh && mesh.geometry && !(mesh.geometry as THREE.BufferGeometry).boundsTree) meshes.push(mesh);
+  });
+  let stopped = false;
+  let next = 0;
+  const SLICE_MS = 6;
+  const step = () => {
+    if (stopped) return;
+    const until = performance.now() + SLICE_MS;
+    while (next < meshes.length && performance.now() < until) ensureBoundsTree(meshes[next++].geometry as THREE.BufferGeometry);
+    if (next < meshes.length) setTimeout(step, 0);
+  };
+  setTimeout(step, 0);
+  return () => {
+    stopped = true;
+  };
+}

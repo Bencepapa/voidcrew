@@ -6,7 +6,7 @@ import type { SpriteEmitter } from "../render/spriteCloud";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
-import { prepareRaycasts } from "../render/bvh";
+import { prepareRaycastsGradually } from "../render/bvh";
 import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
 import { effectiveViewDistance, loadGraphics } from "../render/graphics";
@@ -1775,6 +1775,9 @@ export function GameViewport({
     let buildsPending = 0;
     let buildsTotal = 0;
     let ready = false;
+    let stopRaycastPrep: (() => void) | null = null;
+    // loads that start only once the scene is shown (so they do not take the loading's connections)
+    const afterReady: (() => void)[] = [];
     const newMap = shownMapRef.current !== map.id;
     if (newMap) setLoading({ title: map.name, progress: 0 });
     const checkReady = () => {
@@ -1795,10 +1798,9 @@ export function GameViewport({
         const compileFrom = performance.now();
         renderer.compile(scene, camera);
         tick("shader compile", compileFrom);
-        // (behind the loading screen, not on the first aim)
-        const raycastFrom = performance.now();
-        prepareRaycasts(group);
-        tick("raycast set-up (BVH)", raycastFrom);
+        // (the raycast hierarchies: built a little at a time once the deck is shown, not before it -
+        // they were a tenth to a sixth of the load)
+        stopRaycastPrep = prepareRaycastsGradually(group);
         // how long the build took (ms), and where it went, e.g. after a map edit
         const total = performance.now() - buildStart;
         const report = {
@@ -1817,6 +1819,7 @@ export function GameViewport({
         }
         shownMapRef.current = map.id;
         setLoading(null);
+        for (const start of afterReady.splice(0)) start();
         onReadyRef.current?.(map.id);
       }, 0);
     };
@@ -5263,16 +5266,45 @@ export function GameViewport({
       glowMaps.set(typeName, tex);
       return tex;
     };
+    // The actors' normal maps are the biggest files of a deck (1-3 MB each): the scene does not wait
+    // for them. They load on their own (outside the loading manager) and are put on the actors'
+    // materials - the one of the type and its clones, one for each actor in the scene - when they
+    // arrive; till then the actors are lit flat.
+    const actorNormals = new Map<string, { texture: THREE.Texture; materials: Set<THREE.MeshStandardMaterial> }>();
     const actorMaterial = (typeName: string) => {
       let mat = actorMaterials.get(typeName);
       if (!mat) {
         const type = ACTOR_TYPES[typeName];
         const base = `${import.meta.env.BASE_URL}actors/${type.sheet}/`;
         const diffuse = kitTexture(base + "diffuse.png" + bust);
-        const normalMap = kitTexture(base + "normal.png" + bust);
+        const normalUrl = base + "normal.png" + bust;
+        let normalMap = cache.textures.get(normalUrl);
+        const materials = new Set<THREE.MeshStandardMaterial>();
+        if (!normalMap) {
+          // (the texture is there at once, its image comes later; the request itself waits for the scene to be shown)
+          const texture = new THREE.Texture();
+          normalMap = texture;
+          cache.textures.set(normalUrl, texture);
+          const start = () => {
+            new THREE.ImageLoader().load(normalUrl, (image) => {
+              if (disposed) return;
+              texture.image = image;
+              texture.needsUpdate = true;
+              for (const m of materials) {
+                m.normalMap = texture;
+                m.needsUpdate = true;
+              }
+            });
+          };
+          if (ready) start();
+          else afterReady.push(start);
+        }
+        actorNormals.set(typeName, { texture: normalMap, materials });
         diffuse.colorSpace = THREE.SRGBColorSpace;
         for (const tex of [diffuse, normalMap]) tex.magFilter = THREE.NearestFilter;
-        mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap, alphaTest: 0.5, roughness: 0.6, metalness: 0.35 });
+        // (already in, from an earlier build of the scene: on at once)
+        mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap: normalMap.image ? normalMap : null, alphaTest: 0.5, roughness: 0.6, metalness: 0.35 });
+        materials.add(mat);
         // (its sheet's own normal strength - set in the actor editor)
         const normal = actorOffsets(type.sheet)?.normal ?? 1;
         mat.normalScale.set(normal, normal);
@@ -5379,6 +5411,9 @@ export function GameViewport({
         }
         if (!entry) {
           const material = actorMaterial(actor.type).clone();
+          // (its type's normal map, if it is not in yet, is put on it too when it comes)
+          const late = actorNormals.get(actor.type);
+          if (late) late.materials.add(material);
           const highlight = highlightMaterial(material);
           useLightGrid(material, lightGrid);
           const mesh = new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), material);
@@ -7168,6 +7203,7 @@ export function GameViewport({
 
     return () => {
       disposed = true;
+      stopRaycastPrep?.();
       if (applyLightsRef.current === applyChanges) applyLightsRef.current = null;
       const w = window as { __voidcrewSnapshot?: () => string };
       if (w.__voidcrewSnapshot === snapshot) delete w.__voidcrewSnapshot;
