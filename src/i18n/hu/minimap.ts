@@ -1,5 +1,8 @@
 // Hungarian strings for minimap.
 export const minimapHu = {
+  "minimap.title": "Térkép",
+  "minimap.collapse": "Térkép összecsukása",
+  "minimap.expand": "Térkép kinyitása",
   "minimap.click": "Kattintás:",
   "minimap.floorUpper": "PADLÓ",
   "minimap.ceilingUpper": "PLAFON",
