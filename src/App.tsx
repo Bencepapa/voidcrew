@@ -1,3 +1,4 @@
+import { isTextEntry } from "./keyboardFocus";
 import { Inspector, type InspectedKind } from "./editor/Inspector";
 import { ProblemsPanel } from "./editor/ProblemsPanel";
 import { validateMap, removeInWall, removeDuplicates } from "./editor/validate";
@@ -607,7 +608,7 @@ export default function App() {
     function onKey(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) return;
+      if (isTextEntry(el)) return;
       const key = e.key.toLowerCase();
       if (key === "c") {
         const file = mapFile(map.id);
@@ -1144,6 +1145,7 @@ export default function App() {
   editKeys.current = { editUndo, editRedo, editSave };
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (isTextEntry(e.target)) return;
       if (e.key === "Tab" && !aimRef.current) {
         e.preventDefault();
         if (e.repeat) return;

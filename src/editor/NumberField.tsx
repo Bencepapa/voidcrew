@@ -160,6 +160,7 @@ export function NumberField({
     if (d.moved) {
       flush();
       onCommit?.(d.last);
+      e.currentTarget.blur();
     } else if (!disabled) {
       setText(formatNumber(value, shownDigits).replace(/\s/g, ""));
       typing.current = true;
@@ -205,7 +206,6 @@ export function NumberField({
         onPointerUp={pointerUp}
         onPointerCancel={() => { const d=drag.current; drag.current=null; setDragging(false); if(d?.moved) onCommit?.(d.last); }}
         onKeyDown={(e) => {
-          e.stopPropagation();
           if (disabled || editing) return;
           if (e.key === "ArrowUp" || e.key === "ArrowRight") {
             e.preventDefault();
