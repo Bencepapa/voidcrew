@@ -64,3 +64,29 @@ npm run actors:sheet -- --diffuse "C:/path/wolf.webp" --depth "C:/path/wolf_dept
   `worlds.ts` or the i18n files.
 - If you painted `emissive.png` by hand, re-running `actors:emissive` overwrites it; pass `--keep` to leave existing ones.
 - Check the normals in the viewer's "normal maps" view mode.
+
+## 5. Image-generation prompts (the ones I use)
+
+### Depth map
+
+Give it together with the finished diffuse sheet.
+
+```
+Using the image above, make a grayscale depth map, same framing and size, magenta background becomes pure black: white = nearest to the viewer, mid gray = body, dark = parts recessed toward the wall. Flat, stepped plateaus, no gradients, no noise.
+```
+
+### Diffuse, common part
+
+The style block to put at the start of every diffuse prompt.
+
+```
+Pixel art, chunky readable pixels with ordered/checkerboard dithering, limited palette (about 32 colors), dark fantasy dungeon, warm torchlight, desaturated brown-grey stone, no outlines other than natural dark crevices, no text, no UI, no watermark.
+```
+
+### Sample: wall-mounted torch
+
+`[common part here]` followed by the subject:
+
+```
+A single wall-mounted dungeon torch, seen straight from the front, orthographic, centered, on a flat solid magenta (#ff00ff) background. Dark wrought-iron bracket bolted to the wall, a tapered iron cup holding a charred, oil-blackened wood bundle at the top. NO flame, NO smoke, NO glow (the fire is added in-engine). Slightly rusted iron, soot stains on the cup rim. Tall and narrow proportions (about 1:3), no wall behind it, no shadow on the background, clean edges against the magenta.
+```
