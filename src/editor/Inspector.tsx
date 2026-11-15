@@ -1,3 +1,4 @@
+import { AssetTree } from "./AssetTree";
 import { isTextEntry } from "../keyboardFocus";
 import { createPortal } from "react-dom";
 import { useCallback, useRef } from "react";
@@ -57,5 +58,5 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
   </header>
   <CommitContext.Provider value={commit}><div key={`${p.mapId}:${kind??"map"}`}><Fields {...props}/></div></CommitContext.Provider>
  </aside>;
- return <><EditorBar {...p}/>{p.dock ? createPortal(panel,p.dock) : panel}</>;
+ return <><EditorBar {...p}/>{p.assetDock && createPortal(<AssetTree {...p}/>, p.assetDock)}{p.dock ? createPortal(panel,p.dock) : panel}</>;
 }

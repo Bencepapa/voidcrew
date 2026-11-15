@@ -11,7 +11,7 @@ import { baseMaps, channels, importImage, type Channel, type MaterialMaps } from
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 
 const button = "rounded border border-neutral-500 bg-neutral-800 px-3 py-2 text-left hover:border-amber-400 aria-pressed:border-amber-400 aria-pressed:bg-neutral-700";
-type Sample = "material" | "actor" | "prop" | "item";
+export type Sample = "material" | "actor" | "prop" | "item";
 import { ITEM_TYPES } from "../game/items";
 import { assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { fetchDecalManifest } from "../render/decals";
@@ -79,12 +79,24 @@ const TUNING: { key: keyof TextureTuning; label: Key; max: number; hint: Key }[]
 ];
 
 
+export function openAssetManager(sample: Sample, id: string) {
+  window.dispatchEvent(new CustomEvent("voidcrew:open-asset", {detail: {sample, id}}));
+}
+
 export function AssetManager() {
   const [open, setOpen] = useState(false);
   const [sample, setSample] = useState<Sample>("material");
   const [selected, select] = useState("fantasywall1");
   const [world, setWorld] = useState<WorldId | "All">("All");
   const [sub, setSub] = useState("All");
+  useEffect(() => {
+    const openAsset = (event: Event) => {
+      const {sample, id} = (event as CustomEvent<{sample: Sample; id: string}>).detail;
+      setSample(sample); select(id); setWorld("All"); setSub("All"); setOpen(true);
+    };
+    window.addEventListener("voidcrew:open-asset", openAsset);
+    return () => window.removeEventListener("voidcrew:open-asset", openAsset);
+  }, []);
   const [orientation, orient] = useState("Wall");
   const [background, setBackground] = useState("Gray");
   const [ceiling, setCeiling] = useState("Auto");

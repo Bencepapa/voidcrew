@@ -1,3 +1,5 @@
+import { assetTreeEn } from "./en/assetTree";
+import { assetTreeHu } from "./hu/assetTree";
 import { inspectorEn } from "./en/inspector";
 import { inspectorHu } from "./hu/inspector";
 import { editorShellEn } from "./en/editorShell";
@@ -30,8 +32,8 @@ import { debugHu } from "./hu/debug";
 import { editorBarHu } from "./hu/editorBar";
 import { minimapHu } from "./hu/minimap";
 
-const en = { ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...minimapEn };
-const hu: Partial<Record<Key, string>> = { ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...minimapHu };
+const en = { ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...minimapEn };
+const hu: Partial<Record<Key, string>> = { ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...minimapHu };
 
 export type Key = keyof typeof en;
 export type Lang = "en" | "hu";

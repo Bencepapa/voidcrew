@@ -149,6 +149,7 @@ export default function App() {
   const [editorDebug, setEditorDebug] = useState(false);
   // the keyboard shortcut help overlay (opened with ? or the top bar's ? button)
   const [shortcutHelp, setShortcutHelp] = useState(false);
+  const [assetDock, setAssetDock] = useState<HTMLElement | null>(null);
   const [editDock, setEditDock] = useState<HTMLElement | null>(null);
   // the Light tool: the selected hand-placed light (its index in the map's
   // lights), and what a plain click places - a ceiling lamp, or (as a
@@ -2125,6 +2126,8 @@ export default function App() {
       {editMode && <PropEditor />}
       {editMode && (
         <Inspector
+          assetDock={assetDock}
+          onAssetEffect={(kind, effect) => { remember(kind, {effect, ...(kind === "smoke" ? {fire: undefined, petals: undefined} : {})}); setTemplateTick(n => n + 1); }}
           inspected={inspected}
           shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>}
           dock={editDock}
@@ -2435,6 +2438,7 @@ export default function App() {
                 <div>{map.name}</div>
                 <div>{WORLDS[map.world].loop === "ship" ? <>{t("app.deckDay", { deck: map.deck })}</> : WORLDS[map.world].name}</div>
               </div>
+              {editMode && !zoomed && <div ref={setAssetDock} className="flex-1 min-h-0 overflow-hidden"/>}
               {!editMode && <div className="flex-1 min-h-0">
                 <LogPanel log={log} />
               </div>}

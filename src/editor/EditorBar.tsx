@@ -1,4 +1,4 @@
-import { KindChoice, neutralStyle } from "./inspector/parts";
+import { neutralStyle } from "./inspector/parts";
 import type { SmokeSpec, Weather } from "../game/types";
 import { t, type Key } from "../i18n";
 // The map editor's toolbar, over the top of the game view while editing
@@ -13,18 +13,12 @@ import { t, type Key } from "../i18n";
 
 import type { Lock } from "../game/story";
 import type { ActorWake } from "../game/types";
-import { useEffect, useState } from "react";
+
 import { createPortal } from "react-dom";
-import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
-import { assetInWorld } from "../game/worlds";
-import { fetchDecalManifest } from "../render/decals";
+
 import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
 import type { Direction, LightEffect, Linked, MapLight } from "../game/types";
-import { PROP_TYPES } from "../game/props";
-
-import { ACTOR_TYPES } from "../game/actors";
-import { ITEM_TYPES } from "../game/items";
 
 export interface MapLook {
   weather?: Weather;
@@ -43,6 +37,8 @@ export interface MapLook {
 
 export interface EditorBarProps {
   shared?: React.ReactNode;
+  assetDock?: HTMLElement | null;
+  onAssetEffect: (kind: "smoke" | "light", effect: string | undefined) => void;
   // an element to draw the toolbar into (the right column) instead of over
   // the top of the view
   dock?: HTMLElement | null;
@@ -292,47 +288,6 @@ export interface LightInfo {
 
 const BUTTON = "px-2 py-1 border rounded-sm text-[11px] disabled:opacity-30";
 
-// The decals there are (public/decals/index.json), as thumbnails; a click
-// picks one (with its image's size, which placing it needs).
-function DecalPalette(p: { choice: string | null; onChoice: (choice: DecalChoice) => void; rotation: number }) {
-  const [names, setNames] = useState<string[]>([]);
-  useEffect(() => {
-    let live = true;
-    fetchDecalManifest(import.meta.env.BASE_URL, "")
-      .then((manifest) => live && setNames(Object.keys(manifest).filter((id) => assetInWorld(id))))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, []);
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm max-w-[640px]">
-      {names.map((name) => (
-        <button
-          key={name}
-          type="button"
-          title={name}
-          className={`w-9 h-9 border flex items-center justify-center bg-neutral-900 ${
-            p.choice === name ? "border-amber-400" : "border-neutral-700 hover:border-neutral-400"
-          }`}
-          onClick={(e) => {
-            const img = e.currentTarget.querySelector("img");
-            p.onChoice({ name, width: img?.naturalWidth || 64, height: img?.naturalHeight || 64 });
-          }}
-        >
-          <img
-            src={`${import.meta.env.BASE_URL}decals/${name}/diffuse.png`}
-            alt={name}
-            className="max-w-full max-h-full"
-            style={{ imageRendering: "pixelated" }}
-          />
-        </button>
-      ))}
-      <span className="text-[10px] text-neutral-400 px-1">{t("editorBar.turnR", { v1: p.rotation })}</span>
-    </div>
-  );
-}
-
 // an item's chance of being there in a variation (1: always - left out of
 // the map file)
 
@@ -377,11 +332,6 @@ const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   item: "editorBar.clickAFloorOrATableBed",
   wall: "editorBar.clickAWallOrAFloorA",
 };
-const SURFACES: { surface: EditSurface; label: Key }[] = [
-  { surface: "wall", label: "editorBar.wall" },
-  { surface: "floor", label: "editorBar.floor" },
-  { surface: "ceiling", label: "editorBar.ceiling" },
-];
 
 export function editorToolLabel(tool: EditTool): string {
   if(tool==="dig" || tool==="fill")return t("editorBar.digFill");
@@ -475,122 +425,13 @@ export function EditorBar(p: EditorBarProps) {
       }}
     >
       {!p.toolbarDock && toolbar}
-      {p.tool === "texture" && (
-        <>
-          <span className="basis-full" />
-          <div className="flex flex-col items-center gap-1">
-            {SURFACES.map(({ surface, label }) => (
-              <div
-                key={surface}
-                className={`flex flex-wrap items-center justify-center gap-1 px-1 py-0.5 rounded-sm ${
-                  p.surface === surface ? "bg-amber-400/15 ring-1 ring-amber-400/40" : "bg-black/40"
-                }`}
-              >
-                <span className="w-12 text-[10px] text-neutral-400 text-right">{t(label)}</span>
-                <button
-                  type="button"
-                  className={`${BUTTON} ${p.paint[surface] === null ? active : idle}`}
-                  onClick={() => p.onPaint(surface, null)}
-                  title={t("editorBar.theTextureTheMapGivesThisSurface")}
-                >{t("editorBar.default")}</button>
-                {textureSetsOfKind(surface).map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    title={`${TEXTURE_SETS[id].label} (${id})`}
-                    aria-label={TEXTURE_SETS[id].label}
-                    className={`w-7 h-7 border bg-cover bg-center ${
-                      p.paint[surface] === id ? "border-amber-400" : "border-neutral-600 hover:border-neutral-400"
-                    }`}
-                    style={{ backgroundImage: `url(${TEXTURE_SETS[id].diffuse})` }}
-                    onClick={() => p.onPaint(surface, id)}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      {p.tool === "robot" && (
-        <>
-          <span className="basis-full" />
-          <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            {!(p.robotChoice && assetInWorld(p.robotChoice)) && <span className="text-[10px] text-amber-200">{t("editorBar.pickATypeToPutIn")}</span>}
-            {Object.keys(ACTOR_TYPES).filter((id) => assetInWorld(id)).map((type) => (
-              <button
-                key={type}
-                type="button"
-                className={`${BUTTON} ${p.robotChoice === type ? active : idle}`}
-                onClick={() => p.onRobotChoice(type)}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
-
-        </>
-      )}
-
-      {p.tool === "decal" && (
-        <>
-          <span className="basis-full" />
-          <DecalPalette choice={p.decalChoice} onChoice={p.onDecalChoice} rotation={p.decalRotation} />
-
-        </>
-      )}
-      {p.tool === "prop" && (
-        <>
-          <span className="basis-full" />
-          <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            {Object.keys(PROP_TYPES).filter((id) => assetInWorld(id)).map((name) => (
-              <button
-                key={name}
-                type="button"
-                className={`${BUTTON} ${p.propChoice === name ? active : idle}`}
-                onClick={() => p.onPropChoice(name)}
-              >
-                {name}
-              </button>
-            ))}
-            <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropRotate} title="R">{t("editorBar.rotationDegrees", { v1: p.propRotation })}</button>
-          </div>
-
-        </>
-      )}
-
-      {p.tool === "item" && (
-        <>
-          <span className="basis-full" />
-          <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            {Object.entries(ITEM_TYPES).filter(([id]) => assetInWorld(id)).map(([id, type]) => (
-              <button key={id} type="button" className={`${BUTTON} ${p.itemChoice === id ? active : idle}`} onClick={() => p.onItemChoice(id)}>
-                {type.name}
-              </button>
-            ))}
-          </div>
-
-        </>
-      )}
-
       {TOOL_HELP[p.tool] && (
         <>
           <span className="basis-full" />
           <span className="text-[10px] text-neutral-400 bg-black/60 px-2 py-0.5 rounded-sm">{t(TOOL_HELP[p.tool]!)}</span>
         </>
       )}
-      {p.tool === "light" && (
-        <>
-          <span className="basis-full" />
-          <div className="flex flex-wrap items-center justify-center gap-1 bg-black/60 px-2 py-1 rounded-sm">
-            <KindChoice label={t("editorBar.place159")} value={p.lightPlace} onChange={v => p.onLightPlace(v as LightPlace)} buttonClass={BUTTON} activeClass={active} idleClass={idle} options={[
-              {value:"ceiling",label:t("editorBar.ceilingLamp"),title:t("editorBar.aClickOnAFloorOrCeiling")},
-              {value:"point",label:t("editorBar.pointLight"),title:t("editorBar.aClickPutsALightJustOff")},
-            ]}/>
-            <span className="text-[10px] text-neutral-500">{t("editorBar.clickPickPlaceRightClickRemove")}</span>
-          </div>
 
-        </>
-      )}
     </div>
   );
   return p.toolbarDock ? createPortal(<>{toolbar}{bar}</>, p.toolbarDock) : bar;

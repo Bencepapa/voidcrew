@@ -2542,6 +2542,7 @@ export function GameViewport({
           mesh.rotation.x = -Math.PI / 2;
           mesh.position.set(x, floor * wallHeight, y);
           group.add(mesh);
+          markSurface(mesh);
           decals.registerSurface(surfaceKey({ x, y }, "floor"), mesh);
         }
 
@@ -2553,6 +2554,7 @@ export function GameViewport({
           pane.rotation.x = Math.PI / 2;
           pane.position.set(x, ceiling * wallHeight, y);
           group.add(pane);
+          markSurface(pane);
         } else if (ceilingKit) {
           ceilingKit.slots.push({
             x,
@@ -2567,6 +2569,7 @@ export function GameViewport({
           mesh.rotation.x = Math.PI / 2;
           mesh.position.set(x, ceiling * wallHeight, y);
           group.add(mesh);
+          markSurface(mesh);
           decals.registerSurface(surfaceKey({ x, y }, "ceiling"), mesh);
         }
 
@@ -3127,6 +3130,7 @@ export function GameViewport({
               mesh.add(glass);
             }
             group.add(mesh);
+            markSurface(mesh);
             decals.registerSurface(slot.key, mesh);
           }
         })
@@ -7121,7 +7125,7 @@ export function GameViewport({
         motes.update(pdt, t); mist.update(pdt, t, camera); flies.update(pdt, t, camera);
       }
       for (const marker of smokeMarkers.values()) {
-        marker.visible = editModeRef.current;
+        marker.visible = editModeRef.current && !hiddenLayersRef.current.has("smoke");
         // (a ground fog's area - ring and disc - shows only while its emitter is the one selected)
         const picked = marker.userData.smokeIndex === selectedSmokeRef.current;
         for (const child of marker.children) if (child.userData.fogShape) child.visible = picked;
@@ -7139,14 +7143,14 @@ export function GameViewport({
         topdown.on
           ? { x: topdown.x, y: floorY(Math.round(topdown.x), Math.round(topdown.z)) + 1, z: topdown.z, fwdX: 0, fwdZ: 0 }
           : { x: camX, y: eyeY, z: camZ, fwdX: fwdX / fwdLen, fwdZ: fwdZ / fwdLen },
-        s.mapLightIntensity * rideDip,
+        s.mapLightIntensity * rideDip * (editModeRef.current && hiddenLayersRef.current.has("light") ? 0 : 1),
         dt,
       );
       cullFacing();
       // free-standing lights' bulbs: shown while editing (to pick them),
       // in the game only where the light asks for it
       for (const obj of fixtures) {
-        if (obj.userData.bulb === "editor") obj.visible = editModeRef.current;
+        obj.visible = !(editModeRef.current && hiddenLayersRef.current.has("light")) && (obj.userData.bulb !== "editor" || editModeRef.current);
       }
 
       const liftDoor = ride ? liftDoorOf(map, { x: Math.round(cam.x), y: Math.round(cam.z) }) : undefined;
@@ -7163,6 +7167,9 @@ export function GameViewport({
       // the layers the editor hides (only while editing)
       const hidden = editModeRef.current ? hiddenLayersRef.current : NO_LAYERS;
       if (hidden.size || hiddenApplied) {
+        // Surfaces already restore their visibility in the culling pass above.
+        if (hidden.has("texture")) for (const obj of facingSurfaces) obj.visible = false;
+        backingMat.visible = s.wallBacking && !hidden.has("texture");
         const smokeShown = !hidden.has("smoke");
         smoke.mesh.visible = smokeShown;
         fire.mesh.visible = smokeShown;
