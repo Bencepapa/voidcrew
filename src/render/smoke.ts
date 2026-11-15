@@ -11,6 +11,9 @@ import type { LightGridUniforms } from "./lightGrid";
 
 export interface SmokeEmitter {
   standing?: boolean;
+  // opacity in strong light (a factor, 1: as drawn) and what part of it is left in weak light (default DARK_OPACITY)
+  opacity?: number;
+  opacityDark?: number;
   // where it comes out (world units)
   x: number;
   y: number;
@@ -340,10 +343,12 @@ export function createSmoke(emitters: SmokeEmitter[], grid: LightGridUniforms, w
   const centers = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
   const params = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);
   const colors = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
-  for (const attr of [centers, params, colors]) attr.setUsage(THREE.DynamicDrawUsage);
+  const darks = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
+  for (const attr of [centers, params, colors, darks]) attr.setUsage(THREE.DynamicDrawUsage);
   geometry.setAttribute("aCenter", centers);
   geometry.setAttribute("aParams", params);
   geometry.setAttribute("aColor", colors);
+  geometry.setAttribute("aDark", darks);
   geometry.instanceCount = 0;
 
   const texture = puffTexture();
@@ -386,11 +391,13 @@ attribute vec3 aCenter;
 // row from the top, and a fraction: how far on to the row below (played)
 attribute vec4 aParams;
 attribute vec3 aColor;
+attribute float aDark;
 uniform float uGrid;
 varying vec2 vUv;
 varying vec2 vUv2;
 varying float vFrame;
 varying float vOpacity;
+varying float vDark;
 varying vec3 vWorld;
 varying vec3 vColor;
 // the puff's own right, up and toward-the-view in the world, and where on it
@@ -409,6 +416,7 @@ void main() {
   vUv = (uv + vec2(col, uGrid - 1.0 - row)) / uGrid;
   vUv2 = (uv + vec2(col, uGrid - 1.0 - min(row + 1.0, uGrid - 1.0))) / uGrid;
   vOpacity = aParams.y;
+  vDark = aDark;
   vColor = aColor;
   float c = cos(aParams.z);
   float s = sin(aParams.z);
@@ -453,6 +461,7 @@ varying vec2 vUv;
 varying vec2 vUv2;
 varying float vFrame;
 varying float vOpacity;
+varying float vDark;
 varying vec3 vWorld;
 varying vec3 vColor;
 varying vec3 vRight;
@@ -526,7 +535,7 @@ void main() {
   }
   // smoke shows by the light it scatters: thin in the dark, thick in light
   float lit = dot(light, vec3(0.2126, 0.7152, 0.0722)) * RECIPROCAL_PI;
-  alpha *= mix(${DARK_OPACITY.toFixed(3)}, 1.0, smoothstep(0.0, ${FULL_LIGHT.toFixed(3)}, lit));
+  alpha *= mix(vDark, 1.0, smoothstep(0.0, ${FULL_LIGHT.toFixed(3)}, lit));
   // (as a matte surface would show it: the grid holds the light arriving)
   gl_FragColor = vec4(vColor * (shaded + vec3(uAmbient * ${AMBIENT_SHARE.toFixed(3)})) * RECIPROCAL_PI, alpha);
   #include <tonemapping_fragment>
@@ -705,7 +714,8 @@ void main() {
         }
         if (e.standing) width = e.size * (0.8 + 0.3 * Math.sin(t * Math.PI));
         centers.setXYZ(n, p.x, p.y, p.z);
-        params.setXYZW(n, width, Math.min(1, (e.standing ? STANDING_OPACITY : fire ? FIRE_OPACITY : OPACITY) * (few ? FEW_OPACITY : 1)) * fade, turn, tile);
+        params.setXYZW(n, width, Math.min(1.5, (e.standing ? STANDING_OPACITY : fire ? FIRE_OPACITY : OPACITY) * (e.opacity ?? 1) * (few ? FEW_OPACITY : 1)) * fade, turn, tile);
+        darks.setX(n, e.opacityDark ?? DARK_OPACITY);
         // (a flame's color by its age, tinted by its fire's)
         const c = fire ? tintFlame(fireColor(t, flame), e.color) : e.color;
         colors.setXYZ(n, c.r * p.shade, c.g * p.shade, c.b * p.shade);
@@ -722,7 +732,7 @@ void main() {
         params.setXYZW(0, test.size ?? 0.8, 1, 0, test.tile ?? 0);
         geometry.instanceCount = 1;
       }
-      centers.needsUpdate = params.needsUpdate = colors.needsUpdate = true;
+      centers.needsUpdate = params.needsUpdate = colors.needsUpdate = darks.needsUpdate = true;
     },
     dispose() {
       geometry.dispose();

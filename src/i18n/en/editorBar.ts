@@ -145,6 +145,8 @@ export const editorBarEn = {
   "editorBar.decoration": "Decoration",
   "editorBar.amount": "Amount",
   "editorBar.puffSize": "Puff size",
+  "editorBar.opacityLit": "Opacity, strong light",
+  "editorBar.opacityDark": "Opacity, weak light",
   "editorBar.blow": "Blow",
   "editorBar.heading": "Heading",
   "editorBar.tilt": "Tilt",

@@ -3998,6 +3998,8 @@ export function GameViewport({
           blow,
           density: spec.density ?? 1,
           size: spec.size ?? 1,
+          opacity: spec.opacity,
+          opacityDark: spec.opacityDark,
           color: new THREE.Color(parseColor(spec.color) ?? SMOKE_COLOR),
           cell: cellKey(spec.cell.x, spec.cell.y),
         };
@@ -7396,3 +7398,4 @@ function LoadingScreen({ loading, inLift, title }: { loading: { title: string; p
     </div>
   );
 }
+

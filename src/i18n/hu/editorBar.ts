@@ -145,6 +145,8 @@ export const editorBarHu = {
   "editorBar.decoration": "Dísz",
   "editorBar.amount": "Mennyiség",
   "editorBar.puffSize": "Gomolyagméret",
+  "editorBar.opacityLit": "Átlátszatlanság, erős fény",
+  "editorBar.opacityDark": "Átlátszatlanság, gyenge fény",
   "editorBar.blow": "Fúvás",
   "editorBar.heading": "Irány",
   "editorBar.tilt": "Dőlés",

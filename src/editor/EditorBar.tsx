@@ -131,6 +131,8 @@ export interface EditorBarProps {
       fire?: boolean;
       petals?: boolean;
       decorative?: boolean;
+      opacity?: number;
+      opacityDark?: number;
     } & Linked,
     merge?: string,
   ) => void;
@@ -238,6 +240,8 @@ export interface SmokeInfo {
   petals: boolean;
   // a fire that is only decoration: it doesn't burn
   decorative: boolean;
+  opacity: number;
+  opacityDark: number;
   chance: number;
   links: Linked;
 }
@@ -600,3 +604,4 @@ export function EditorBar(p: EditorBarProps) {
   );
   return p.toolbarDock ? createPortal(<>{toolbar}{bar}</>, p.toolbarDock) : bar;
 }
+

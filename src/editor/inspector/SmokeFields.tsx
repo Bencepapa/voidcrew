@@ -20,6 +20,10 @@ return <>
             )}
 {slider(t("editorBar.amount"), p.smoke.density, 0.25, 3, 0.25, (v) => p.onSmokeChange({ density: v === 1 ? undefined : v }))}
 {slider(t("editorBar.puffSize"), p.smoke.size, 0.4, 2.5, 0.1, (v) => p.onSmokeChange({ size: v === 1 ? undefined : v }))}
+{p.smoke.effect !== "groundfog" && <>
+{slider(t("editorBar.opacityLit"), p.smoke.opacity, 0.05, 1.5, 0.05, (v) => p.onSmokeChange({ opacity: v === 1 ? undefined : v }))}
+{slider(t("editorBar.opacityDark"), p.smoke.opacityDark, 0, 1, 0.05, (v) => p.onSmokeChange({ opacityDark: Math.abs(v - 0.3) < 0.001 ? undefined : v }))}
+</>}
 <label className="flex items-center gap-1">
               {t("editorBar.color")}<input
                 type="color"
@@ -46,3 +50,4 @@ return <>
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSmokeDeselect}>{t("editorBar.done")}</button></footer>
 </>;
 }
+

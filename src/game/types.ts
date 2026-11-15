@@ -235,6 +235,10 @@ export interface SmokeSpec extends Linked {
   // a fire that is only decoration (a torch): flames and light, but it
   // doesn't burn and the actors walk into its cell
   decorative?: boolean;
+  // how opaque the puffs are in strong light (1: as drawn; 0.05..1.5), and how much of that is left in weak
+  // light (0..1; 0.3 when not given): a smoke lit by a faint lamp and one in daylight can be tuned apart
+  opacity?: number;
+  opacityDark?: number;
   // the chance (0..1) it's there in a variation (see variation.ts)
   chance?: number;
 }
@@ -371,3 +375,4 @@ export interface Crewmate {
   en: number;
   maxEn: number;
 }
+

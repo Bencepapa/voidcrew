@@ -352,7 +352,7 @@ export default function App() {
   // is selected, the inspector shows and changes these (see placingKind).
   const templates = useRef<Record<"smoke" | "light" | "prop" | "item" | "actor", Record<string, unknown>>>({ smoke: {}, light: {}, prop: {}, item: {}, actor: {} });
   const TEMPLATE_KEYS = {
-    smoke: ["effect", "mistStyle", "sprite", "spread", "height", "density", "size", "color", "blow", "chance", "decorative"],
+    smoke: ["effect", "mistStyle", "sprite", "spread", "height", "density", "size", "color", "blow", "chance", "decorative", "opacity", "opacityDark"],
     light: ["color", "intensity", "range", "effect", "bulb", "chance"],
     prop: ["texture", "scale", "chance"],
     item: ["count", "chance"],
@@ -1408,6 +1408,8 @@ export default function App() {
         blow: { speed: selectedSmokeSpec.blow?.speed ?? 0, yaw: selectedSmokeSpec.blow?.yaw ?? 0, pitch: selectedSmokeSpec.blow?.pitch ?? 0 },
         fire: !!selectedSmokeSpec.fire,
         decorative: !!selectedSmokeSpec.decorative,
+        opacity: selectedSmokeSpec.opacity ?? 1,
+        opacityDark: selectedSmokeSpec.opacityDark ?? 0.3,
         petals: !!selectedSmokeSpec.petals,
         chance: selectedSmokeSpec.chance ?? 1,
         links: linksOf(selectedSmokeSpec),
@@ -1869,6 +1871,8 @@ export default function App() {
     blow: { speed: smokeTemplate.blow?.speed ?? 0, yaw: smokeTemplate.blow?.yaw ?? 0, pitch: smokeTemplate.blow?.pitch ?? 0 },
     fire: false,
     decorative: !!smokeTemplate.decorative,
+    opacity: smokeTemplate.opacity ?? 1,
+    opacityDark: smokeTemplate.opacityDark ?? 0.3,
     petals: false,
     chance: smokeTemplate.chance ?? 1,
     links: {},
@@ -2483,3 +2487,4 @@ export default function App() {
     </div>
   );
 }
+

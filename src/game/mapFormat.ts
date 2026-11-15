@@ -110,6 +110,8 @@ export interface MapFile {
     fire?: boolean;
     petals?: boolean;
     decorative?: boolean;
+    opacity?: number;
+    opacityDark?: number;
     chance?: number;
     id?: string;
     with?: string;
@@ -383,6 +385,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
         sprite: s.sprite,
         fire: s.effect ? s.effect === "fire" : s.fire,
         decorative: s.decorative,
+        opacity: s.opacity === undefined ? undefined : Math.max(0.05, Math.min(1.5, s.opacity)),
+        opacityDark: s.opacityDark === undefined ? undefined : Math.max(0, Math.min(1, s.opacityDark)),
         chance: s.chance,
         id: s.id,
         with: s.with,
