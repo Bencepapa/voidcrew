@@ -7057,8 +7057,10 @@ export function GameViewport({
         if (kit.wallMat.userData.glow && !mapViewOn) kit.wallMat.emissiveIntensity = s.showGlow ? SURFACE_GLOW : 0;
       }
       decals.forEachLitMaterial((mat) => {
-        mat.roughness = Math.min(1, s.roughness);
-        mat.metalness = s.showMetal ? Math.min(1, s.metalness) : 0;
+        // (a decal's own base - roughness 0.75, metalness 0.15 - at the viewer's defaults (0.55, 0.45), scaled with the
+        // sliders: a plain metalness of 1 blacked them out, as the floors it lies on are only tuned a part of it)
+        mat.roughness = Math.min(1, 0.75 * (s.roughness / 0.55));
+        mat.metalness = s.showMetal ? Math.min(0.5, 0.15 * (s.metalness / 0.45)) : 0;
         // (like a floor's: its own strength setting, else 1)
         const normal = s.showNormals ? (s.floorNormalStrength > 0 ? s.floorNormalStrength : 1) : 0;
         mat.normalScale.set(normal, normal);
