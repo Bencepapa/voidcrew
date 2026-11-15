@@ -69,12 +69,13 @@ export function NumberField({
   // the value as a number with no float noise (0.1 + 0.2)
   const tidy = (v: number) => Number(v.toFixed(Math.max(shownDigits, decimalsOf(step), 4)));
 
+  const typing = useRef(false);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
   const [dragging, setDragging] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  const drag = useRef<{ x: number; start: number; moved: boolean; width: number } | null>(null);
+  const drag = useRef<{ x: number; start: number; moved: boolean; width: number; last: number } | null>(null);
 
   useEffect(() => {
     if (editing) input.current?.select();
@@ -82,13 +83,16 @@ export function NumberField({
 
   const set = (v: number, commit = false) => {
     const next = tidy(snap(v));
+    if (drag.current) drag.current.last = next;
     onChange(next);
     if (commit) onCommit?.(next);
   };
 
   const pointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (disabled || editing || e.button !== 0) return;
-    drag.current = { x: e.clientX, start: value, moved: false, width: box.current?.getBoundingClientRect().width || 100 };
+    e.preventDefault();
+    e.currentTarget.focus();
+    drag.current = { last: value, x: e.clientX, start: value, moved: false, width: box.current?.getBoundingClientRect().width || 100 };
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -118,14 +122,17 @@ export function NumberField({
     }
     setDragging(false);
     if (!d) return;
-    if (d.moved) onCommit?.(value);
+    if (d.moved) onCommit?.(d.last);
     else if (!disabled) {
       setText(formatNumber(value, shownDigits).replace(/\s/g, ""));
+      typing.current = true;
       setEditing(true);
     }
   };
 
   const finishTyping = (accept: boolean) => {
+    if (!typing.current) return;
+    typing.current = false;
     setEditing(false);
     if (!accept) return;
     const parsed = Number(text.replace(",", ".").replace(/[^\d.+\-eE]/g, ""));
@@ -141,7 +148,7 @@ export function NumberField({
     <div className={`flex items-center gap-2 text-[11px] ${disabled ? "opacity-40" : ""} ${className}`} title={title}>
       {label && (
         <span
-          className="shrink-0 text-neutral-300 select-none"
+          className="min-w-0 max-w-[55%] break-words text-neutral-300 select-none"
           onDoubleClick={() => defaultValue !== undefined && !disabled && set(defaultValue, true)}
         >
           {label}
@@ -159,8 +166,9 @@ export function NumberField({
         onPointerDown={pointerDown}
         onPointerMove={pointerMove}
         onPointerUp={pointerUp}
-        onPointerCancel={pointerUp}
+        onPointerCancel={() => { const d=drag.current; drag.current=null; setDragging(false); if(d?.moved) onCommit?.(d.last); }}
         onKeyDown={(e) => {
+          e.stopPropagation();
           if (disabled || editing) return;
           if (e.key === "ArrowUp" || e.key === "ArrowRight") {
             e.preventDefault();
@@ -171,11 +179,13 @@ export function NumberField({
           } else if (e.key === "Enter") {
             e.preventDefault();
             setText(formatNumber(value, shownDigits).replace(/\s/g, ""));
-            setEditing(true);
+            typing.current = true;
+      setEditing(true);
           }
         }}
         onWheel={(e) => {
           if (disabled || editing || document.activeElement !== e.currentTarget) return;
+          e.stopPropagation();
           stepBy(e.deltaY < 0 ? 1 : -1, e);
         }}
         className={`relative min-w-0 flex-1 overflow-hidden rounded-sm border bg-neutral-800 px-1.5 py-0.5 font-mono text-right text-neutral-100 outline-none select-none touch-none ${

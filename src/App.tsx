@@ -1,3 +1,4 @@
+import { Inspector, type InspectedKind } from "./editor/Inspector";
 import { ProblemsPanel } from "./editor/ProblemsPanel";
 import { validateMap, removeInWall, removeDuplicates } from "./editor/validate";
 import { EditorStatusBar } from "./editor/EditorStatusBar";
@@ -7,7 +8,7 @@ import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
 import { saveGraphics } from "./render/graphics";
 import type { AimFocus, AimFrame, EditDrag, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
-import { EditorBar, editorToolLabel } from "./editor/EditorBar";
+import { editorToolLabel } from "./editor/EditorBar";
 import { SharedEditor, sharedConfigured } from "./editor/SharedEditor";
 import { AssetManager } from "./editor/AssetManager";
 import { PropEditor } from "./editor/PropEditor";
@@ -1212,8 +1213,8 @@ export default function App() {
     changeMapLook({ textures: Object.keys(textures).length ? textures : undefined } as MapLook);
   };
   // the map's own look (undefined: back to the viewer's default)
-  const changeMapLook = (patch: MapLook) => {
-    const result = applyEdit(map.id, (file) => Object.assign(file, patch));
+  const changeMapLook = (patch: MapLook, merge?: string) => {
+    const result = applyEdit(map.id, (file) => Object.assign(file, patch), merge && `map ${Object.keys(patch).join()} ${merge}`);
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
@@ -1536,10 +1537,10 @@ export default function App() {
     const wall = selectedChanceWall === null ? undefined : map.chanceWalls?.[selectedChanceWall];
     return wall ? { chance: wall.chance ?? 1, links: linksOf(wall) } : null;
   })();
-  const changeChanceWall = (patch: { chance?: number } & Linked) => {
+  const changeChanceWall = (patch: { chance?: number } & Linked, merge = "") => {
     if (selectedChanceWall === null) return;
     const index = selectedChanceWall;
-    const result = applyEdit(map.id, (file) => updateChanceWall(file, index, patch), `wall ${index} ${Object.keys(patch).join()}`);
+    const result = applyEdit(map.id, (file) => updateChanceWall(file, index, patch), `wall ${index} ${Object.keys(patch).join()} ${merge}`);
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
@@ -1765,10 +1766,10 @@ export default function App() {
     };
   })();
   // a change from the panel (a slider dragged: one undo step per setting)
-  const changeLight = (patch: Partial<MapLight>) => {
+  const changeLight = (patch: Partial<MapLight>, merge = "") => {
     if (selectedLight === null) return;
     const index = selectedLight;
-    const result = applyEdit(map.id, (file) => updateLight(file, index, patch), `light ${index} ${Object.keys(patch).join()}`);
+    const result = applyEdit(map.id, (file) => updateLight(file, index, patch), `light ${index} ${Object.keys(patch).join()} ${merge}`);
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setEdits((n) => n + 1);
@@ -1786,6 +1787,32 @@ export default function App() {
   // party; Delete removes the selected light
   const facingRef = useRef(dir);
   facingRef.current = dir;
+  // Step 2 bridge: observe the existing independent selections without changing
+  // their owners. Only a newly selected value wins; clearing it shows Map settings.
+  const inspectorPicks = {prop:selectedProp, decal:selectedDecal, item:selectedItem,
+    light:selectedLight, actor:selectedActor, smoke:selectedSmoke, exit:selectedExit,
+    chanceWall:selectedChanceWall, door:selectedDoor};
+  const inspectorSelection = useRef<{map:string; picks:typeof inspectorPicks; kind:InspectedKind|null}>({map:map.id,picks:inspectorPicks,kind:null});
+  const previousInspector = inspectorSelection.current;
+  let inspectedKind = previousInspector.map === map.id ? previousInspector.kind : null;
+  for (const kind of Object.keys(inspectorPicks) as InspectedKind[]) {
+    const next=inspectorPicks[kind], previous=previousInspector.picks[kind];
+    const same=typeof next === "object" && next && typeof previous === "object" && previous
+      ? next.x===previous.x && next.y===previous.y : next===previous;
+    if (next!==null && !same) inspectedKind=kind;
+  }
+  if (inspectedKind && inspectorPicks[inspectedKind]===null) inspectedKind=null;
+  inspectorSelection.current={map:map.id,picks:inspectorPicks,kind:inspectedKind};
+  const inspectedCells = {prop:selectedProp===null?undefined:map.props?.[selectedProp]?.cell,
+    decal:selectedDecal===null?undefined:map.decals?.[selectedDecal]?.cell,
+    item:selectedItem===null?undefined:map.items?.[selectedItem]?.cell,
+    light:selectedLight===null?undefined:map.lights?.[selectedLight],
+    actor:selectedActor===null?undefined:map.actors?.[selectedActor]?.cell,
+    smoke:selectedSmokeSpec?.cell, exit:selectedExit??undefined,
+    chanceWall:selectedChanceWall===null?undefined:map.chanceWalls?.[selectedChanceWall]?.cell,
+    door:selectedDoor??undefined};
+  const inspected=inspectedKind ? {kind:inspectedKind,cell:inspectedCells[inspectedKind]} : null;
+
   const lightKeys = useRef({ selectedLightInfo, changeLight, deleteLight });
   lightKeys.current = { selectedLightInfo, changeLight, deleteLight };
   useEffect(() => {
@@ -2006,7 +2033,8 @@ export default function App() {
       {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
       {editMode && <PropEditor />}
       {editMode && (
-        <EditorBar
+        <Inspector
+          inspected={inspected}
           shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>}
           dock={editDock}
           toolbarDock={toolbarDock}
@@ -2033,12 +2061,12 @@ export default function App() {
           robotChoice={robotChoice}
           onRobotChoice={setRobotChoice}
           actor={selectedActorInfo}
-          onActorChange={(patch) => changeActor(patch, Object.keys(patch).join())}
+          onActorChange={(patch, merge) => changeActor(patch, Object.keys(patch).join() + (merge ?? ""))}
           onActorClearRoute={() => changeActor({ patrol: undefined })}
           onActorDelete={deleteActor}
           onActorDeselect={() => setSelectedActor(null)}
           door={selectedDoorInfo}
-          onDoorChange={(patch) => changeDoor(patch, Object.keys(patch).join())}
+          onDoorChange={(patch, merge) => changeDoor(patch, Object.keys(patch).join() + (merge ?? ""))}
           onDoorFlip={() =>
             selectedDoorInfo &&
             changeDoor({ facing: behindOf(selectedDoorInfo.facing), offset: -selectedDoorInfo.offset || undefined })
@@ -2058,17 +2086,17 @@ export default function App() {
           onDecalChoice={setDecalChoice}
           decalRotation={decalRotation}
           decal={selectedDecalInfo}
-          onDecalChange={(patch) => changeDecal(patch, Object.keys(patch).join())}
+          onDecalChange={(patch, merge) => changeDecal(patch, Object.keys(patch).join() + (merge ?? ""))}
           onDecalDelete={deleteDecal}
           onDecalDeselect={() => setSelectedDecal(null)}
           prop={selectedPropInfo}
-          onPropChange={(patch) => changeProp(patch, Object.keys(patch).join())}
+          onPropChange={(patch, merge) => changeProp(patch, Object.keys(patch).join() + (merge ?? ""))}
           onPropStack={stackProp}
           onPropDelete={deleteProp}
           onPropDeselect={() => setSelectedProp(null)}
           linkIds={linkIds}
           smoke={selectedSmokeInfo}
-          onSmokeChange={(patch) => changeSmoke(patch, Object.keys(patch).join())}
+          onSmokeChange={(patch, merge) => changeSmoke(patch, Object.keys(patch).join() + (merge ?? ""))}
           onSmokeDelete={deleteSmoke}
           onSmokeDeselect={() => setSelectedSmoke(null)}
           exit={selectedExitInfo}
@@ -2092,7 +2120,7 @@ export default function App() {
           itemChoice={itemChoice}
           onItemChoice={setItemChoice}
           item={selectedItemInfo}
-          onItemChange={(patch) => changeItem(patch, Object.keys(patch).join())}
+          onItemChange={(patch, merge) => changeItem(patch, Object.keys(patch).join() + (merge ?? ""))}
           onItemDelete={deleteItem}
           onItemDeselect={() => setSelectedItem(null)}
           chanceWall={selectedChanceWallInfo}
