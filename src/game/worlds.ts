@@ -93,7 +93,7 @@ export function setActiveWorld(world: WorldId) {
 
 // the fantasy names that don't start with "fantasy"
 const FANTASY_ASSETS = new Set([
-  "ogre1", "goblin1", "mage1", "thief1", "skeleton1",
+  "ogre1", "goblin1", "goblin2", "wolf1", "necromancer1", "mage1", "thief1", "skeleton1",
   "potion_red", "potion_blue", "scroll", "purse", "sword", "skull", "coins", "dagger", "arrows", "gem",
   "torch1", "pedestal1", "tree1", "tree2", "pine1", "bush1", "bush2", "fern1", "barrel1", "deadtree1",
   "fantasy_bokor_kerek", "fantasy_bokor_bogyos", "fantasy_bokor_pazsit",
