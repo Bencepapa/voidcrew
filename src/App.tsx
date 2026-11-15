@@ -218,7 +218,8 @@ export default function App() {
   const [, setEdits] = useState(0);
   // the graphics choices belong to the device: kept in this browser
   useEffect(() => saveGraphics(settings), [settings.particleQuality, settings.wallDetail, settings.pixelRatioCap, settings.particleEvery, settings.viewDistanceCap, settings.lodScale, settings.antialias, settings.lightPool, settings.normalMaps]);
-  const viewSettings = editMode ? { ...settings, noclip: true, headlamp: true } : settings;
+  const [editLamp, setEditLamp] = useState(true);
+  const viewSettings = editMode ? { ...settings, noclip: true, headlamp: editLamp } : settings;
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const aimFrameRef = useRef<AimFrame | null>(null);
@@ -1971,11 +1972,18 @@ export default function App() {
   // L: the headlamp
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "l" || e.key === "L") setSettings((s) => ({ ...s, headlamp: !s.headlamp }));
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "l" || e.key === "L") {
+        // in the editor the lamp is its own switch (on by default); the game's setting stays as it was
+        if (editMode) setEditLamp((on) => !on);
+        else setSettings((s) => ({ ...s, headlamp: !s.headlamp }));
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [editMode]);
 
   // 1-4: a crewmate's weapon (see combat.ts); aiming needs the pointer
   useEffect(() => {
