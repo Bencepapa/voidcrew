@@ -3,13 +3,11 @@ import type { SmokeSpec, Weather } from "../game/types";
 import { t, type Key } from "../i18n";
 // The map editor's toolbar, over the top of the game view while editing
 // (see EDITOR.md): what a click or tap does - dig a wall out, fill a floor
-// in (the right mouse button always fills), paint a surface with a texture
-// set (its palette follows the surface under the pointer), or toggle a
-// ceiling light - undo and redo, saving to disk (dev server only),
-// downloading the file, and leaving edit mode. The Texture tool's palette
-// has a row per surface, each with its own pick, so it never changes under
-// the pointer on its way to it: a click paints the surface with its row's
-// pick. The row of the surface under the pointer is marked.
+// in (the right mouse button always fills), or set a floor's height - undo
+// and redo, saving to disk (dev server only), downloading the file, and
+// leaving edit mode. The Texture, Light, Prop, Decal, NPC, Item and Particles
+// tools are picked in the asset tree now (see AssetTree); their handlers and
+// labels stay here.
 
 import type { Lock } from "../game/story";
 import type { ActorWake } from "../game/types";
@@ -296,7 +294,7 @@ const BUTTON = "px-2 py-1 border rounded-sm text-[11px] disabled:opacity-30";
 
 // a labeled slider with its value, for the light panel
 
-// the tools after Light
+// the tools after Light, with their labels (see editorToolLabel)
 const MORE_TOOLS: { tool: EditTool; label: Key; title: Key }[] = [
   { tool: "ladder", label: "editorBar.ladder", title: "editorBar.putALadderUpToAHigher" },
   { tool: "bridge", label: "editorBar.bridge", title: "editorBar.spanACellWithABridge" },
@@ -312,6 +310,8 @@ const MORE_TOOLS: { tool: EditTool; label: Key; title: Key }[] = [
   { tool: "wall", label: "editorBar.chanceWall", title: "editorBar.wallsLeftToChanceThereInSome" },
   { tool: "map", label: "editorBar.map", title: "editorBar.theMapSSizeOpenMakeOr" },
 ];
+// the tools the asset tree picks (see AssetTree): no button for them in the bar
+const TREE_TOOLS = new Set<EditTool>(["texture", "light", "prop", "decal", "robot", "item", "smoke"]);
 // the tools whose layer can be hidden from the view: the layer's name
 const HIDEABLE_LAYERS: Partial<Record<EditTool, string>> = { robot: "robot", smoke: "smoke", prop: "prop", decal: "decal", item: "item" };
 // the tools with a layer of their own that "Clear all" can empty
@@ -360,19 +360,7 @@ export function EditorBar(p: EditorBarProps) {
         onClick={() => p.onTool("height")}
         title={t("editorBar.raiseLeftClickOrLowerRightClick")}
       >{t("editorBar.height")}</button>
-      <button
-        type="button"
-        className={`${BUTTON} ${p.tool === "texture" ? active : idle}`}
-        onClick={() => p.onTool("texture")}
-        title={t("editorBar.paintASurface")}
-      >{t("editorBar.texture")}</button>
-      <button
-        type="button"
-        className={`${BUTTON} ${p.tool === "light" ? active : idle}`}
-        onClick={() => p.onTool("light")}
-        title={t("editorBar.addOrRemoveACeilingLight")}
-      >{t("editorBar.light")}</button>
-      {MORE_TOOLS.map(({ tool, label, title }) => (
+      {MORE_TOOLS.filter(({ tool }) => !TREE_TOOLS.has(tool)).map(({ tool, label, title }) => (
         <button
           key={tool}
           type="button"

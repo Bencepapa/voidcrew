@@ -1,0 +1,5 @@
+- Removed the Texture, Light, Prop, Decal, NPC, Item and Particles buttons from the top bar; their handlers, state and labels remain.
+- The asset tree already selects all seven (Textures, Props, Decals, Items, NPCs, Lights, Particles), so no tool is unreachable.
+- Shortcuts in ShortcutHelp still apply once a tool is picked from the tree; none needed a removed button, so the list is unchanged.
+- i18n keys were left in place: the labels and tooltips are still referenced by labels, tree groups and inspector fields.
+- `npx tsc --noEmit` is clean.
