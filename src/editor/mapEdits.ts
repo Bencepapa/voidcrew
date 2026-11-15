@@ -1,4 +1,5 @@
 import type { MapFile } from "../game/mapFormat";
+import { t } from "../i18n";
 import { PROP_TYPES } from "../game/props";
 import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
 
@@ -373,17 +374,17 @@ export function resizeMap(file: MapFile, edge: Direction, grow: boolean): MapFil
     return file;
   }
   const minSize = 3;
-  if ((edge === "N" || edge === "S") && height <= minSize) throw new Error("the map can't get any shorter");
-  if ((edge === "E" || edge === "W") && width <= minSize) throw new Error("the map can't get any narrower");
+  if ((edge === "N" || edge === "S") && height <= minSize) throw new Error(t("editorShell.error.mapShorter"));
+  if ((edge === "E" || edge === "W") && width <= minSize) throw new Error(t("editorShell.error.mapNarrower"));
   const strip = (x: number, y: number) =>
     edge === "N" ? y === 0 : edge === "S" ? y === height - 1 : edge === "W" ? x === 0 : x === width - 1;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      if (strip(x, y) && file.layout[y][x] !== "W") throw new Error(`the ${edge} edge isn't all wall (cell ${x},${y})`);
+      if (strip(x, y) && file.layout[y][x] !== "W") throw new Error(t("editorShell.error.edgeNotWall", { edge, x, y }));
     }
   }
   const on = allPositions(file).find((p) => strip(p.x, p.y));
-  if (on) throw new Error(`something is placed on the ${edge} edge (at ${on.x},${on.y})`);
+  if (on) throw new Error(t("editorShell.error.placedOnEdge", { edge, x: on.x, y: on.y }));
   for (const rows of rowsOf()) {
     if (edge === "N") rows.shift();
     if (edge === "S") rows.pop();

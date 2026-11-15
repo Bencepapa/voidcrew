@@ -1,4 +1,5 @@
 import type { TextureSetFiles } from "../render/textureSets";
+import { t } from "../i18n";
 
 export const channels = ["diffuse", "normal", "depth", "gloss", "metal", "emissive", "glow"] as const;
 export type Channel = typeof channels[number];
@@ -34,7 +35,7 @@ export function importImage(file: File): Promise<string> {
     reader.onload = async () => {
       const image = new Image();
       image.src = String(reader.result);
-      try { await image.decode(); resolve(image.src); } catch { reject(new Error("Invalid image file")); }
+      try { await image.decode(); resolve(image.src); } catch { reject(new Error(t("editorShell.error.invalidImage"))); }
     };
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);

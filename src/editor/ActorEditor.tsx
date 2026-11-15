@@ -1,5 +1,6 @@
 import { SheetViewport } from "./SheetViewport";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t, useLang, type Key } from "../i18n";
 import { ACTOR_TYPES } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
 import type { ActorOffsets } from "../render/actorOffsets";
@@ -27,12 +28,13 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`can't load ${src}`));
+    img.onerror = () => reject(new Error(t("editorShell.actorEditor.loadFailed", { src })));
     img.src = src;
   });
 }
 
 export function ActorEditor() {
+  const lang = useLang();
   const names = Object.keys(ACTOR_TYPES);
   const [name, setName] = useState(() => { const id = new URLSearchParams(location.search).get("actor"); return id && names.includes(id) ? id : names[0]; });
   const type = ACTOR_TYPES[name];
@@ -58,7 +60,7 @@ export function ActorEditor() {
       const saved = actorOffsets(type.sheet);
       setOffsets(Array.from({ length: type.cols * type.rows }, (_, i) => saved?.offsets[i] ?? [0, 0]));
       setNormal(saved?.normal ?? 1);
-      setStatus(bust ? "sheet reloaded" : "");
+      setStatus(bust ? t("editorShell.actorEditor.sheetReloaded") : "");
     },
     [type],
   );
@@ -182,11 +184,11 @@ export function ActorEditor() {
       guides(ctx, 0, 0, PREVIEW_ZOOM);
       ctx.fillStyle = "#8a8";
       ctx.font = "11px monospace";
-      ctx.fillText(`col ${col}${mirror ? " (mirrored)" : ""}  row ${row}`, 4, 12);
+      ctx.fillText(t("editorShell.actorEditor.frameLabel", { col, mirrored: mirror ? t("editorShell.actorEditor.mirrored") : "", row }), 4, 12);
     };
     tick();
     return () => cancelAnimationFrame(raf);
-  }, [image, drawFrame, mode, fps, sel]);
+  }, [image, drawFrame, mode, fps, sel, lang]);
 
   const nudge = useCallback(
     (ddx: number, ddy: number) => {
@@ -229,7 +231,8 @@ export function ActorEditor() {
       method: "POST",
       body: JSON.stringify(data()),
     });
-    setStatus(res.ok ? `saved to ${await res.text()}` : `save failed: ${await res.text()}`);
+    const text = await res.text();
+    setStatus(res.ok ? t("editorShell.actorEditor.saved", { path: text }) : t("editorShell.actorEditor.saveFailed", { error: text }));
   };
   const download = () => {
     const a = document.createElement("a");
@@ -244,17 +247,17 @@ export function ActorEditor() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-300 p-4 flex flex-col gap-3 text-xs">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="font-semibold uppercase tracking-wide text-neutral-400">Actor editor</span>
+        <span className="font-semibold uppercase tracking-wide text-neutral-400">{t("editorShell.actorEditor.title")}</span>
         <select value={name} onChange={(e) => setName(e.target.value)} className="bg-neutral-800 border border-neutral-600 px-1">
           {names.map((n) => (
             <option key={n}>{n}</option>
           ))}
         </select>
         <button className={button} onClick={() => load(true)}>
-          Reload sheet
+          {t("editorShell.actorEditor.reloadSheet")}
         </button>
-        <label className="flex items-center gap-1" title="Its normal map's strength in the game (1: as made); saved with the shifts">
-          normal
+        <label className="flex items-center gap-1" title={t("editorShell.actorEditor.normalHint")}>
+          {t("editorShell.actorEditor.normal")}
           <input
             type="number"
             step={0.1}
@@ -269,17 +272,17 @@ export function ActorEditor() {
           />
         </label>
         <button className={button} onClick={save}>
-          Save
+          {t("editorShell.save")}
         </button>
         <button className={button} onClick={download}>
-          Download JSON
+          {t("editorShell.actorEditor.downloadJson")}
         </button>
         <span className="text-green-400">{status}</span>
       </div>
 
       <div className="grid gap-4 items-start md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-1">
-          <span className="text-neutral-500">Sheet (click a frame, or W/A/S/D)</span>
+          <span className="text-neutral-500">{t("editorShell.actorEditor.sheetHint")}</span>
           <SheetViewport key={name} height="min(56vh, 32rem)"><canvas
             ref={sheetRef}
             width={cellW * type.cols * SHEET_ZOOM}
@@ -297,38 +300,38 @@ export function ActorEditor() {
 
         <div className="flex flex-col gap-1">
           <span className="text-neutral-500">
-            Frame col {sel.col}, row {sel.row}: shift {dx}, {dy} px (arrow keys, Shift = 5)
+            {t("editorShell.actorEditor.frameInfo", { col: sel.col, row: sel.row, dx, dy })}
           </span>
           <canvas style={{maxHeight:"38vh",maxWidth:"100%",objectFit:"contain",alignSelf:"start"}} ref={frameRef} width={cellW * ZOOM} height={cellH * ZOOM} />
           <div className="flex flex-wrap items-center gap-2">
-            <span>Ghost:</span>
+            <span>{t("editorShell.actorEditor.ghost")}</span>
             {(["none", "idle", "prev", "next"] as Ghost[]).map((g) => (
               <label key={g} className="flex items-center gap-1">
                 <input type="radio" checked={ghost === g} onChange={() => setGhost(g)} />
-                {g === "prev" ? "previous walk frame" : g === "next" ? "next walk frame" : g}
+                {t(({ none: "editorShell.actorEditor.ghostNone", idle: "editorShell.actorEditor.ghostIdle", prev: "editorShell.actorEditor.ghostPrev", next: "editorShell.actorEditor.ghostNext" } as Record<Ghost, Key>)[g])}
               </label>
             ))}
             <button className={button} onClick={() => nudge(-dx, -dy)}>
-              Reset frame
+              {t("editorShell.actorEditor.resetFrame")}
             </button>
           </div>
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-neutral-500">Preview</span>
+          <span className="text-neutral-500">{t("editorShell.actorEditor.preview")}</span>
           <canvas style={{maxHeight:"38vh",maxWidth:"100%",objectFit:"contain",alignSelf:"start"}} ref={previewRef} width={cellW * PREVIEW_ZOOM} height={cellH * PREVIEW_ZOOM} />
           <div className="flex flex-wrap items-center gap-2">
             {(
               [
-                ["walk", "walk (this column)"],
-                ["turn", "turn round (this row)"],
-                ["both", "walk + turn"],
-                ["fight", "fire, fall, wreck (this column)"],
-              ] as [PreviewMode, string][]
+                ["walk", "editorShell.actorEditor.previewWalk"],
+                ["turn", "editorShell.actorEditor.previewTurn"],
+                ["both", "editorShell.actorEditor.previewBoth"],
+                ["fight", "editorShell.actorEditor.previewFight"],
+              ] as [PreviewMode, Key][]
             ).map(([m, label]) => (
               <label key={m} className="flex items-center gap-1">
                 <input type="radio" checked={mode === m} onChange={() => setMode(m)} />
-                {label}
+                {t(label)}
               </label>
             ))}
           </div>
@@ -339,8 +342,7 @@ export function ActorEditor() {
         </div>
       </div>
       <div className="text-neutral-500">
-        {count} frames; shifts are in sheet pixels and mirror with mirrored views. Save writes src/actors/{type.sheet}.json,
-        which the running game picks up.
+        {t("editorShell.actorEditor.footer", { count, sheet: type.sheet })}
       </div>
     </div>
   );

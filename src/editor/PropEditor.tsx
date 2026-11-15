@@ -1,5 +1,6 @@
 import { SheetViewport } from "./SheetViewport";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { t, type Key } from "../i18n";
 import { PROP_TYPES, propEditable, type PropEdit, type PropFace, type PropPart, type PropType } from "../game/props";
 import { propEdit } from "./propEditState";
 
@@ -81,6 +82,13 @@ function shownIn(part: PropPart, view: ViewName): PropPart {
   return part.src?.[view] ?? part;
 }
 const FACES: PropFace[] = ["front", "back", "left", "right", "top"];
+const FACE_KEYS: Record<PropFace, Key> = {
+  front: "editorShell.propEditor.faceFront",
+  back: "editorShell.propEditor.faceBack",
+  left: "editorShell.propEditor.faceLeft",
+  right: "editorShell.propEditor.faceRight",
+  top: "editorShell.propEditor.faceTop",
+};
 
 const round = (n: number) => Math.round(n * 10000) / 10000;
 
@@ -92,9 +100,10 @@ function commonEdit(type: PropType): PropEdit {
     ...(type.normal !== undefined ? { normal: type.normal } : {}),
   };
 }
-async function postEdit(name: string, edit: PropEdit): Promise<string> {
+async function postEdit(name: string, edit: PropEdit): Promise<{ ok: boolean; text: string }> {
   const res = await fetch(`${import.meta.env.BASE_URL}__voidcrew/prop?name=${name}`, { method: "POST", body: `${JSON.stringify(edit, null, 2)}\n` });
-  return res.ok ? `saved ${await res.text()}` : `save failed: ${await res.text()}`;
+  const body = await res.text();
+  return { ok: res.ok, text: res.ok ? t("editorShell.propEditor.saved", { path: body }) : t("editorShell.propEditor.saveFailed", { error: body }) };
 }
 const BTN = "px-2 py-0.5 bg-neutral-800 border border-neutral-600 hover:bg-neutral-700";
 function NumField({ value, onChange, step = 0.005 }: { value: number; onChange: (v: number) => void; step?: number }) {
@@ -113,7 +122,7 @@ function NumField({ value, onChange, step = 0.005 }: { value: number; onChange: 
 function LookFields({ type, changed }: { type: PropType; changed: () => void }) {
   return (
     <span className="flex items-center gap-2">
-      <span className="text-neutral-400" title="Relief depth, relative to props' usual">relief</span>
+      <span className="text-neutral-400" title={t("editorShell.propEditor.reliefHint")}>{t("editorShell.propEditor.relief")}</span>
       <NumField
         value={type.relief ?? 1}
         step={0.1}
@@ -123,7 +132,7 @@ function LookFields({ type, changed }: { type: PropType; changed: () => void }) 
           changed();
         }}
       />
-      <span className="text-neutral-400" title="Normal map strength, relative to the viewer's Normal strength">normal</span>
+      <span className="text-neutral-400" title={t("editorShell.propEditor.normalHint")}>{t("editorShell.propEditor.normal")}</span>
       <NumField
         value={type.normal ?? 1}
         step={0.1}
@@ -160,11 +169,11 @@ function PlainPropPanel({ name, type }: { name: string; type: PropType }) {
     setTick((t) => t + 1);
     propEdit.changed();
   };
-  const what: Record<string, string> = {
-    box: "a box: its side texture on four sides, its top texture on top",
-    panel: "one upright cutout, seen from both sides",
-    cross: "two cutouts crossed at right angles (reads as solid from any side) - no boxes: its size is the cutouts' width and height",
-    cabin: "a walk-in box seen into through its door",
+  const what: Record<string, Key> = {
+    box: "editorShell.propEditor.box",
+    panel: "editorShell.propEditor.panel",
+    cross: "editorShell.propEditor.cross",
+    cabin: "editorShell.propEditor.cabin",
   };
   return (
     <div
@@ -173,18 +182,18 @@ function PlainPropPanel({ name, type }: { name: string; type: PropType }) {
       onKeyDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-amber-200">Prop</span>
+        <span className="text-amber-200">{t("editorBar.prop")}</span>
         <PropSelect name={name} />
-        <button type="button" className={BTN} onClick={async () => setStatus(await postEdit(name, commonEdit(type)))}>
-          Save
+        <button type="button" className={BTN} onClick={async () => setStatus((await postEdit(name, commonEdit(type))).text)}>
+          {t("editorShell.save")}
         </button>
         <button type="button" className={`ml-auto ${BTN}`} onClick={() => propEdit.set({ name: null })}>
           ✕
         </button>
       </div>
-      <div className="text-neutral-500 mb-2">{what[type.kind] ?? type.kind}</div>
+      <div className="text-neutral-500 mb-2">{what[type.kind] ? t(what[type.kind]) : type.kind}</div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-neutral-400">size</span>
+        <span className="text-neutral-400">{t("editorShell.propEditor.size")}</span>
         {([0, 1, 2] as const).map((axis) => (
           <span key={axis}>
             {"xyz"[axis]}{" "}
@@ -301,7 +310,7 @@ export function PropEditor() {
       if (img) ctx.drawImage(img, pad, pad, iw * zoom, ih * zoom);
       else {
         ctx.fillStyle = "#e06060";
-        ctx.fillText("no image", pad + 4, pad + 14);
+        ctx.fillText(t("editorShell.propEditor.noImage"), pad + 4, pad + 14);
       }
       ctx.strokeStyle = "#555b66";
       ctx.strokeRect(pad - 0.5, pad - 0.5, iw * zoom + 1, ih * zoom + 1);
@@ -499,8 +508,8 @@ export function PropEditor() {
       ...(views.elevation ? { elevation: views.elevation } : {}),
     };
     const result = await postEdit(name, edit);
-    setStatus(result);
-    if (result.startsWith("saved")) setSaved(true);
+    setStatus(result.text);
+    if (result.ok) setSaved(true);
   };
 
   const num = (value: number, onChange: (v: number) => void, step = 0.005) => (
@@ -522,35 +531,34 @@ export function PropEditor() {
       onKeyDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-amber-200">Prop boxes</span>
+        <span className="text-amber-200">{t("editorShell.propEditor.propBoxes")}</span>
         <PropSelect name={name} />
         <label className="flex items-center gap-1">
           <input type="checkbox" checked={showDepth} onChange={(e) => setShowDepth(e.target.checked)} />
-          depth
+          {t("editorShell.propEditor.depth")}
         </label>
         <button type="button" className="px-2 py-0.5 bg-neutral-800 border border-neutral-600 hover:bg-neutral-700" onClick={load}>
-          Reload images
+          {t("editorShell.propEditor.reloadImages")}
         </button>
         <button
           type="button"
           className={`px-2 py-0.5 border ${saved ? "bg-neutral-800 border-neutral-600" : "bg-amber-700 border-amber-500"} hover:bg-neutral-700`}
           onClick={save}
         >
-          Save
+          {t("editorShell.save")}
         </button>
         <button type="button" className="ml-auto px-2 py-0.5 bg-neutral-800 border border-neutral-600 hover:bg-neutral-700" onClick={() => propEdit.set({ name: null })}>
           ✕
         </button>
       </div>
       <div className="text-neutral-500 mb-2">
-        drag a box to move it, its edge to resize (snaps to the view's pixels) · images: public/textures/{views.views}_front|side|top/
-        diffuse.png, depth.png - save in GIMP, they reload here and in the game
+        {t("editorShell.propEditor.dragHint", { views: views.views })}
       </div>
 
       {VIEWS.map((view) =>
         view === "front" ? (
           <div key={view} className="mb-1">
-            <div className="text-neutral-400">front (x →, y ↑)</div>
+            <div className="text-neutral-400">{t("editorShell.propEditor.frontView")}</div>
             <SheetViewport key={name} height={view==="front" ? "min(24vh, 13rem)" : "min(17vh, 10rem)"}><canvas
               ref={(c) => {
                 canvases.current[view] = c;
@@ -567,7 +575,7 @@ export function PropEditor() {
       <div className="grid grid-cols-2 gap-2 mb-2">
         {(["side", "top"] as const).map((view) => (
           <div key={view}>
-            <div className="text-neutral-400">{view === "side" ? "side (front ← z, y ↑)" : "top (x →, front ↓)"}</div>
+            <div className="text-neutral-400">{t(view === "side" ? "editorShell.propEditor.sideView" : "editorShell.propEditor.topView")}</div>
             <SheetViewport key={name} height="min(17vh, 10rem)"><canvas
               ref={(c) => {
                 canvases.current[view] = c;
@@ -583,9 +591,9 @@ export function PropEditor() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-2">
-        <span className="text-neutral-400">size</span>
+        <span className="text-neutral-400">{t("editorShell.propEditor.size")}</span>
         x {num(views.size[0], (v) => setSize(0, v))} y {num(views.size[1], (v) => setSize(1, v))} z {num(views.size[2], (v) => setSize(2, v))}
-        <span className="text-neutral-400 ml-2">elevation</span>
+        <span className="text-neutral-400 ml-2">{t("editorShell.propEditor.elevation")}</span>
         {num(views.elevation ?? 0, (v) => {
           views.elevation = v || undefined;
           changed();
@@ -599,10 +607,10 @@ export function PropEditor() {
             front {views.px.front.join("×")} · side {views.px.side.join("×")} · top {views.px.top.join("×")}
           </span>
         ) : (
-          <span className="text-neutral-500">none: each view stretched over the whole size</span>
+          <span className="text-neutral-500">{t("editorShell.propEditor.noPx")}</span>
         )}
-        <button type="button" className="px-2 py-0.5 bg-neutral-800 border border-neutral-600 hover:bg-neutral-700" onClick={fitPx} title="Each view at the front view's pixel scale">
-          from the images
+        <button type="button" className="px-2 py-0.5 bg-neutral-800 border border-neutral-600 hover:bg-neutral-700" onClick={fitPx} title={t("editorShell.propEditor.fitPxHint")}>
+          {t("editorShell.propEditor.fromImages")}
         </button>
         {views.px && (
           <button
@@ -613,7 +621,7 @@ export function PropEditor() {
               changed();
             }}
           >
-            clear
+            {t("editorShell.propEditor.clear")}
           </button>
         )}
       </div>
@@ -622,12 +630,12 @@ export function PropEditor() {
         <thead className="text-neutral-500">
           <tr>
             <td>#</td>
-            <td>min x</td>
-            <td>min y</td>
-            <td>min z</td>
-            <td>max x</td>
-            <td>max y</td>
-            <td>max z</td>
+            <td>{t("editorShell.propEditor.minX")}</td>
+            <td>{t("editorShell.propEditor.minY")}</td>
+            <td>{t("editorShell.propEditor.minZ")}</td>
+            <td>{t("editorShell.propEditor.maxX")}</td>
+            <td>{t("editorShell.propEditor.maxY")}</td>
+            <td>{t("editorShell.propEditor.maxZ")}</td>
           </tr>
         </thead>
         <tbody>
@@ -645,7 +653,7 @@ export function PropEditor() {
         <div className="flex flex-wrap items-center gap-3 mb-2 border border-amber-800/60 px-2 py-1">
           <span className="text-amber-300">#{state.part}</span>
           <label className="flex items-center gap-1">
-            shape
+            {t("editorShell.propEditor.shape")}
             <select
               value={picked.shape ?? "box"}
               onChange={(e) => {
@@ -654,11 +662,11 @@ export function PropEditor() {
               }}
               className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
             >
-              <option value="box">box</option>
-              <option value="cylinder">cylinder</option>
+              <option value="box">{t("editorShell.propEditor.boxShape")}</option>
+              <option value="cylinder">{t("editorShell.propEditor.cylinderShape")}</option>
             </select>
           </label>
-          <label className="flex items-center gap-1" title="Off: drag it in each view separately - its faces cut from there, wherever it stands">
+          <label className="flex items-center gap-1" title={t("editorShell.propEditor.viewsFollowHint")}>
             <input
               type="checkbox"
               checked={!picked.src}
@@ -668,10 +676,10 @@ export function PropEditor() {
                 changed();
               }}
             />
-            views follow the box
+            {t("editorShell.propEditor.viewsFollow")}
           </label>
           <span className="flex items-center gap-2">
-            faces
+            {t("editorBar.faces")}
             {FACES.map((f) => (
               <label key={f} className="flex items-center gap-0.5">
                 <input
@@ -685,7 +693,7 @@ export function PropEditor() {
                     changed();
                   }}
                 />
-                {f}
+                {t(FACE_KEYS[f])}
               </label>
             ))}
           </span>
@@ -693,10 +701,10 @@ export function PropEditor() {
       )}
       <div className="flex items-center gap-2">
         <button type="button" className="px-2 py-0.5 bg-neutral-800 border border-neutral-600 hover:bg-neutral-700" onClick={addPart}>
-          + box (copy of #{state.part})
+          {t("editorShell.propEditor.addPart", { n: state.part })}
         </button>
         <button type="button" className="px-2 py-0.5 bg-neutral-800 border border-neutral-600 hover:bg-neutral-700" onClick={removePart}>
-          − remove #{state.part}
+          {t("editorShell.propEditor.removePart", { n: state.part })}
         </button>
         <span className="text-neutral-400">{status}</span>
       </div>

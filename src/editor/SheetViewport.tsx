@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { t } from "../i18n";
 
 // CSS fits the canvas in both axes. Zoom changes only its on-screen transform,
 // so the drawing and editing tools keep their original pixel coordinates.
@@ -38,6 +39,6 @@ export function SheetViewport({children, height}: {children: ReactNode; height: 
   }, []);
   return <div className="min-w-0">
     <div ref={frame} style={{height}} className="grid place-items-center overflow-hidden bg-neutral-900 [&>canvas]:max-h-full [&>canvas]:max-w-full [&>canvas]:min-h-0 [&>canvas]:min-w-0" >{children}</div>
-    <div className="flex items-center gap-2 text-neutral-400"><button type="button" className="rounded border border-neutral-600 px-2" onClick={()=>reset.current()}>Fit</button>Wheel to zoom</div>
+    <div className="flex items-center gap-2 text-neutral-400"><button type="button" className="rounded border border-neutral-600 px-2" onClick={()=>reset.current()}>{t("editorShell.sheet.fit")}</button>{t("editorShell.sheet.wheelToZoom")}</div>
   </div>;
 }

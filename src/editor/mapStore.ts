@@ -6,6 +6,7 @@ import type { MapFile } from "../game/mapFormat";
 import type { GameMap } from "../game/types";
 import { formatMapJson, scanLayout } from "./mapJson";
 import type { JsonLayout } from "./mapJson";
+import { t } from "../i18n";
 
 // The map files being edited (see EDITOR.md): each deck's file as loaded
 // from src/maps/, then as edited - every edit re-parses it into MAPS, so
@@ -81,7 +82,7 @@ export function applyEdit(
   merge?: string,
 ): { map: GameMap } | { error: string } {
   const e = entry(id);
-  if (!e) return { error: `no map "${id}"` };
+  if (!e) return { error: t("editorShell.error.noMap", { id }) };
   let next: MapFile;
   let map: GameMap;
   try {
@@ -133,7 +134,7 @@ export function mapText(id: string): string | null {
 export async function saveMap(id: string): Promise<string> {
   const e = entry(id);
   const text = mapText(id);
-  if (!e || text === null) throw new Error(`no map "${id}"`);
+  if (!e || text === null) throw new Error(t("editorShell.error.noMap", { id }));
   const res = await fetch(`${import.meta.env.BASE_URL}__voidcrew/map?id=${encodeURIComponent(id)}&world=${worldOfMap(id)}`, {
     method: "POST",
     body: text,
@@ -164,8 +165,8 @@ export function mapIds(world?: WorldId): string[] {
 // A new map (made, or copied from another - `from` keeps that one's layout
 // of the file): its file not saved yet. Returns the deck, or why it can't be.
 export function createMap(id: string, file: MapFile, from?: string, world?: WorldId): { map: GameMap } | { error: string } {
-  if (!/^[\w-]+$/.test(id)) return { error: `"${id}" isn't a usable map id (letters, digits, - and _)` };
-  if (MAPS[id]) return { error: `there's a map "${id}" already` };
+  if (!/^[\w-]+$/.test(id)) return { error: t("editorShell.error.badMapId", { id }) };
+  if (MAPS[id]) return { error: t("editorShell.error.mapExists", { id }) };
   // (a new map belongs to the world it was made in)
   registerMapWorld(id, world ?? (from ? worldOfMap(from) : worldOfMap(Object.keys(MAPS)[0] ?? "")));
   let map: GameMap;
