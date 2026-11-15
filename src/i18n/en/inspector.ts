@@ -4,5 +4,6 @@ export const inspectorEn = {
   "inspector.logic": "Logic",
   "inspector.advanced": "Advanced",
   "inspector.cell": "Cell {x}, {y}",
-  "inspector.mapSettings": "Map settings"
+  "inspector.mapSettings": "Map settings",
+  "inspector.next": "Next {kind}",
 };

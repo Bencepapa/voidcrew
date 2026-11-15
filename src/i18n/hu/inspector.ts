@@ -4,5 +4,6 @@ export const inspectorHu = {
   "inspector.logic": "Logika",
   "inspector.advanced": "Haladó",
   "inspector.cell": "Cella: {x}, {y}",
-  "inspector.mapSettings": "Pályabeállítások"
+  "inspector.mapSettings": "Pályabeállítások",
+  "inspector.next": "Következő: {kind}",
 };

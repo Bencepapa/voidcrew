@@ -347,6 +347,22 @@ export default function App() {
   // if that is not walkable (a wall, a barrel, a cell too low), the nearest one that is; the thing
   // last worked on, when it is near the middle (within 6 cells), counts as the middle.
   const lastTouched = useRef<Vec2 | null>(null);
+  // The settings of the last thing of each kind that was set up (a slider moved, a colour picked): the next of
+  // that kind is put in with them - a row of the same torch, many alike. Where a tool puts things in and nothing
+  // is selected, the inspector shows and changes these (see placingKind).
+  const templates = useRef<Record<"smoke" | "light" | "prop" | "item" | "actor", Record<string, unknown>>>({ smoke: {}, light: {}, prop: {}, item: {}, actor: {} });
+  const TEMPLATE_KEYS = {
+    smoke: ["effect", "mistStyle", "sprite", "spread", "height", "density", "size", "color", "blow", "chance", "decorative"],
+    light: ["color", "intensity", "range", "effect", "bulb", "chance"],
+    prop: ["texture", "scale", "chance"],
+    item: ["count", "chance"],
+    actor: ["chance", "wake"],
+  } as const;
+  const remember = (kind: keyof typeof TEMPLATE_KEYS, patch: object) => {
+    for (const key of TEMPLATE_KEYS[kind]) if (key in patch) templates.current[kind][key] = (patch as Record<string, unknown>)[key];
+  };
+  const [, setTemplateTick] = useState(0);
+  // (chooseTool: defined below, where the selections are)
   const placePartyAt = (center: Vec2) => {
     const walkable = (c: Vec2) =>
       c.x >= 0 && c.y >= 0 && c.x < map.width && c.y < map.height && cellAt(map, c.x, c.y) !== "wall" && !propBlocks(map, c) && ceilingHeight(map, c.x, c.y) - floorHeight(map, c.x, c.y) >= MIN_HEADROOM;
@@ -689,14 +705,14 @@ export default function App() {
         return;
       } else if ((shift || lightPlace === "point") && target.spot) {
         const { cell: at, pos } = target.spot;
-        result = applyEdit(map.id, (file) => addLight(file, { x: at.x, y: at.y, pos }));
+        result = applyEdit(map.id, (file) => addLight(file, { ...(templates.current.light as object), x: at.x, y: at.y, pos }));
         setSelectedLight(count);
       } else if (target.kind !== "wall") {
         if (own >= 0) {
           setSelectedLight(own);
           return;
         }
-        result = applyEdit(map.id, (file) => addLight(file, { x: cell.x, y: cell.y }));
+        result = applyEdit(map.id, (file) => addLight(file, { ...(templates.current.light as object), x: cell.x, y: cell.y }));
         setSelectedLight(count);
       }
     } else if (editTool === "height") {
@@ -762,7 +778,7 @@ export default function App() {
             return;
           }
           const count = map.actors?.length ?? 0;
-          result = applyEdit(map.id, (file) => addActor(file, { actor: choice, x: cell.x, y: cell.y, facing: behindOf(dir) }));
+          result = applyEdit(map.id, (file) => addActor(file, { ...(templates.current.actor as object), actor: choice, x: cell.x, y: cell.y, facing: behindOf(dir) }));
           setSelectedActor(count);
         }
       }
@@ -855,6 +871,7 @@ export default function App() {
           const count = map.props?.length ?? 0;
           result = applyEdit(map.id, (file) => {
             addProp(file, propChoice, cell, anchor, propRotation);
+            if (Object.keys(templates.current.prop).length) updateProp(file, count, templates.current.prop as Parameters<typeof updateProp>[2]);
             const flame = flamePosition({ prop: propChoice, cell, at: anchor, rotation: propRotation });
             if (flame) addSmoke(file, { x: cell.x, y: cell.y, pos: flame, fire: true, decorative: true });
             return file;
@@ -877,7 +894,7 @@ export default function App() {
         if (alt || !target.spot) return;
         const { cell: at, pos } = target.spot;
         const count = map.smokes?.length ?? 0;
-        result = applyEdit(map.id, (file) => addSmoke(file, { x: at.x, y: at.y, pos }));
+        result = applyEdit(map.id, (file) => addSmoke(file, { ...(templates.current.smoke as object), x: at.x, y: at.y, pos }));
         setSelectedSmoke(count);
       }
     } else if (editTool === "exit") {
@@ -926,6 +943,7 @@ export default function App() {
         const count = map.items?.length ?? 0;
         result = applyEdit(map.id, (file) =>
           addItem(file, {
+            ...(templates.current.item as object),
             item: itemChoice,
             x: point.cell.x,
             y: point.cell.y,
@@ -995,6 +1013,9 @@ export default function App() {
   // the floor or ceiling, or paint the surfaces, all of its cells in one
   // undo step. The 3D view stays on the right, drawing the changes quickly
   // (see GameViewport's applyStructure) and fully a few seconds later.
+  // (the chart skips drawing when nothing it shows changed: its click goes through a ref, so it never acts on old state)
+  const minimapCell = useRef(onMinimapCell);
+  minimapCell.current = onMinimapCell;
   const [miniZoom, setMiniZoom] = useState(false);
   const [miniSel, setMiniSel] = useState<Rect | null>(null);
   const problems = useMemo(()=>editMode ? validateMap(map) : [],[editMode,map]);
@@ -1277,6 +1298,7 @@ export default function App() {
   })();
   const changeActor = (patch: Parameters<typeof updateActor>[2], merge?: string) => {
     if (selectedActor === null) return;
+    remember("actor", patch);
     const index = selectedActor;
     const result = applyEdit(map.id, (file) => updateActor(file, index, patch), merge && `actor ${index} ${merge}`);
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
@@ -1395,6 +1417,7 @@ export default function App() {
   // panel's Height slider moves it up and down only)
   const changeSmoke = (patch: Parameters<typeof updateSmoke>[2], merge?: string) => {
     if (selectedSmoke === null || !selectedSmokeSpec) return;
+    remember("smoke", patch);
     const index = selectedSmoke;
     const own = selectedSmokeSpec.pos;
     const fixed = patch.pos ? { ...patch, pos: patch.pos.map((v, i) => (Number.isNaN(v) ? own[i] : v)) as [number, number, number] } : patch;
@@ -1471,6 +1494,7 @@ export default function App() {
   })();
   const changeItem = (patch: Parameters<typeof updateItem>[2], merge?: string) => {
     if (selectedItem === null) return;
+    remember("item", patch);
     const index = selectedItem;
     const result = applyEdit(map.id, (file) => updateItem(file, index, patch), merge && `item ${index} ${merge}`);
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
@@ -1641,6 +1665,7 @@ export default function App() {
   })();
   const changeProp = (patch: Parameters<typeof updateProp>[2], merge?: string) => {
     if (selectedProp === null) return;
+    remember("prop", patch);
     const index = selectedProp;
     const result = applyEdit(
       map.id,
@@ -1768,6 +1793,7 @@ export default function App() {
   // a change from the panel (a slider dragged: one undo step per setting)
   const changeLight = (patch: Partial<MapLight>, merge = "") => {
     if (selectedLight === null) return;
+    remember("light", patch);
     const index = selectedLight;
     const result = applyEdit(map.id, (file) => updateLight(file, index, patch), `light ${index} ${Object.keys(patch).join()} ${merge}`);
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
@@ -1787,6 +1813,20 @@ export default function App() {
   // party; Delete removes the selected light
   const facingRef = useRef(dir);
   facingRef.current = dir;
+  // Choosing a tool lets go of what was selected (a light or a prop left selected while other kinds
+  // of thing are picked is just in the way): the inspector then shows the new thing's settings.
+  const chooseTool = (tool: EditTool) => {
+    setSelectedProp(null);
+    setSelectedDecal(null);
+    setSelectedItem(null);
+    setSelectedLight(null);
+    setSelectedActor(null);
+    setSelectedSmoke(null);
+    setSelectedExit(null);
+    setSelectedChanceWall(null);
+    setSelectedDoor(null);
+    setEditTool(tool);
+  };
   // Step 2 bridge: observe the existing independent selections without changing
   // their owners. Only a newly selected value wins; clearing it shows Map settings.
   const inspectorPicks = {prop:selectedProp, decal:selectedDecal, item:selectedItem,
@@ -1811,7 +1851,40 @@ export default function App() {
     smoke:selectedSmokeSpec?.cell, exit:selectedExit??undefined,
     chanceWall:selectedChanceWall===null?undefined:map.chanceWalls?.[selectedChanceWall]?.cell,
     door:selectedDoor??undefined};
-  const inspected=inspectedKind ? {kind:inspectedKind,cell:inspectedCells[inspectedKind]} : null;
+  // Where a tool puts things in and nothing is selected, the inspector shows the settings the next one gets (a kind
+  // of fog or fire, a light's colour...): changing them changes the template, the click puts the thing in.
+  const placingKind: "smoke" | "light" | null = editMode && !inspectedKind ? (editTool === "smoke" ? "smoke" : editTool === "light" ? "light" : null) : null;
+  const smokeTemplate = templates.current.smoke as Partial<NonNullable<GameMap["smokes"]>[number]>;
+  const smokeTemplateInfo: SmokeInfo = {
+    effect: smokeTemplate.effect,
+    mistStyle: smokeTemplate.mistStyle,
+    sprite: smokeTemplate.sprite,
+    spread: smokeTemplate.spread,
+    effectHeight: smokeTemplate.height,
+    density: smokeTemplate.density ?? 1,
+    size: smokeTemplate.size ?? 1,
+    color: smokeTemplate.color ?? "#b4b8bc",
+    height: 0.5,
+    roomHeight: 1,
+    blow: { speed: smokeTemplate.blow?.speed ?? 0, yaw: smokeTemplate.blow?.yaw ?? 0, pitch: smokeTemplate.blow?.pitch ?? 0 },
+    fire: false,
+    decorative: !!smokeTemplate.decorative,
+    petals: false,
+    chance: smokeTemplate.chance ?? 1,
+    links: {},
+  };
+  const lightTemplate = templates.current.light as Partial<MapLight>;
+  const lightTemplateInfo: LightInfo = {
+    color: lightTemplate.color ?? "#ffe9c0",
+    intensity: lightTemplate.intensity ?? 1,
+    range: lightTemplate.range ?? 4,
+    bulb: lightTemplate.bulb,
+    chance: lightTemplate.chance ?? 1,
+    effect: lightTemplate.effect,
+    links: {},
+    roomHeight: 1,
+  };
+  const inspected=placingKind ? {kind:placingKind,placing:true as const} : inspectedKind ? {kind:inspectedKind,cell:inspectedCells[inspectedKind]} : null;
 
   const lightKeys = useRef({ selectedLightInfo, changeLight, deleteLight });
   lightKeys.current = { selectedLightInfo, changeLight, deleteLight };
@@ -2039,7 +2112,7 @@ export default function App() {
           dock={editDock}
           toolbarDock={toolbarDock}
           tool={editTool}
-          onTool={setEditTool}
+          onTool={chooseTool}
           surface={editSurface}
           paint={paint}
           onPaint={(surface, setId) => setPaint((p) => ({ ...p, [surface]: setId }))}
@@ -2095,8 +2168,15 @@ export default function App() {
           onPropDelete={deleteProp}
           onPropDeselect={() => setSelectedProp(null)}
           linkIds={linkIds}
-          smoke={selectedSmokeInfo}
-          onSmokeChange={(patch, merge) => changeSmoke(patch, Object.keys(patch).join() + (merge ?? ""))}
+          smoke={placingKind === "smoke" ? smokeTemplateInfo : selectedSmokeInfo}
+          onSmokeChange={
+            placingKind === "smoke"
+              ? (patch) => {
+                  remember("smoke", patch);
+                  setTemplateTick((n) => n + 1);
+                }
+              : (patch, merge) => changeSmoke(patch, Object.keys(patch).join() + (merge ?? ""))
+          }
           onSmokeDelete={deleteSmoke}
           onSmokeDeselect={() => setSelectedSmoke(null)}
           exit={selectedExitInfo}
@@ -2137,8 +2217,8 @@ export default function App() {
           onChanceWallDeselect={() => setSelectedChanceWall(null)}
           lightPlace={lightPlace}
           onLightPlace={setLightPlace}
-          light={selectedLightInfo}
-          onLightChange={changeLight}
+          light={placingKind === "light" ? lightTemplateInfo : selectedLightInfo}
+          onLightChange={placingKind === "light" ? (patch: Partial<MapLight>) => { remember("light", patch); setTemplateTick((n) => n + 1); } : (patch, merge) => changeLight(patch, merge)}
           onLightDelete={deleteLight}
           onLightDeselect={() => setSelectedLight(null)}
           compact={compact}
@@ -2283,7 +2363,7 @@ export default function App() {
                     verb: editTool === "height" ? t("app.raiseVerb") : editTool === "texture" ? t("app.paintVerb") : editTool === "dig" || editTool === "fill" ? t("app.digVerb") : t("app.editVerb"),
                     surface: miniSurface,
                     onSurface: setMiniSurface,
-                    onCell: onMinimapCell,
+                    onCell: (cell: Vec2, alt: boolean) => minimapCell.current(cell, alt),
                     zoomed,
                     onZoom: () => {
                       setMiniZoom((z) => !z);

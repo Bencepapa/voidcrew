@@ -18,7 +18,8 @@ import { TEXTURE_SETS } from "../render/textureSets";
 import { t } from "../i18n";
 
 export type InspectedKind = "prop" | "decal" | "item" | "light" | "actor" | "smoke" | "exit" | "chanceWall" | "door";
-export interface Inspected { kind: InspectedKind; cell?: {x:number;y:number} }
+// (placing: nothing is selected and a tool puts things in - what is shown is the settings of the next one)
+export interface Inspected { kind: InspectedKind; cell?: {x:number;y:number}; placing?: boolean }
 const fields = {prop:PropFields,decal:DecalFields,item:ItemFields,light:LightFields,actor:ActorFields,smoke:SmokeFields,exit:ExitFields,chanceWall:ChanceWallFields,door:DoorFields};
 const icons = {prop:"◇",decal:"▧",item:"◆",light:"☼",actor:"♙",smoke:"≋",exit:"↗",chanceWall:"▦",door:"▯"};
 
@@ -42,7 +43,8 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
  const prop=kind==="prop"&&type?PROP_TYPES[type]:undefined;
  const texture=prop && ("texture" in prop?prop.texture:"side" in prop?prop.side:"views" in prop?`${prop.views}_front`:undefined);
  const thumbnail=kind==="decal"&&type?`${import.meta.env.BASE_URL}decals/${type}/diffuse.png`:texture?(TEXTURE_SETS[texture as keyof typeof TEXTURE_SETS]?.diffuse ?? `${import.meta.env.BASE_URL}textures/${texture}/diffuse.png`):undefined;
- const heading=kind&&selected?editorToolLabel(kind==="actor"?"robot":kind==="chanceWall"?"wall":kind):t("inspector.mapSettings");
+ const kindName=kind?editorToolLabel(kind==="actor"?"robot":kind==="chanceWall"?"wall":kind):"";
+ const heading=kind&&selected?(p.inspected?.placing?t("inspector.next",{kind:kindName}):kindName):t("inspector.mapSettings");
  const panel=<aside aria-label={t("editorShell.properties")} style={neutralStyle} className="voidcrew-editor-controls min-w-0 bg-neutral-900 text-[11px] text-neutral-300" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>{if(e.currentTarget.contains(e.target as Node))e.stopPropagation();}} onWheel={e=>e.stopPropagation()}>
   <style>{".theme-fantasy .voidcrew-editor-controls .border { box-shadow: none; }"}</style>
   <header className="sticky top-0 z-10 flex min-w-0 items-center gap-2 bg-neutral-950 p-2 border-b border-neutral-700">

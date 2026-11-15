@@ -81,11 +81,46 @@ export function NumberField({
     if (editing) input.current?.select();
   }, [editing]);
 
+  // A drag changes the value at most once a frame: a mouse reports faster than the screen draws, and every
+  // change is the whole editor drawn again (the map re-parsed, the view told). The last value of a drag is
+  // always sent (see flush), before it is committed.
+  const latestChange = useRef(onChange);
+  latestChange.current = onChange;
+  const frame = useRef<number | null>(null);
+  const queued = useRef<number | null>(null);
+  const flush = () => {
+    if (frame.current !== null) {
+      cancelAnimationFrame(frame.current);
+      frame.current = null;
+    }
+    if (queued.current !== null) {
+      const v = queued.current;
+      queued.current = null;
+      latestChange.current(v);
+    }
+  };
+  useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
   const set = (v: number, commit = false) => {
     const next = tidy(snap(v));
     if (drag.current) drag.current.last = next;
-    onChange(next);
-    if (commit) onCommit?.(next);
+    if (commit) {
+      flush();
+      onChange(next);
+      onCommit?.(next);
+      return;
+    }
+    queued.current = next;
+    if (frame.current === null) {
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null;
+        flush();
+      });
+    }
   };
 
   const pointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -122,8 +157,10 @@ export function NumberField({
     }
     setDragging(false);
     if (!d) return;
-    if (d.moved) onCommit?.(d.last);
-    else if (!disabled) {
+    if (d.moved) {
+      flush();
+      onCommit?.(d.last);
+    } else if (!disabled) {
       setText(formatNumber(value, shownDigits).replace(/\s/g, ""));
       typing.current = true;
       setEditing(true);

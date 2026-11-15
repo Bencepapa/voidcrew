@@ -589,6 +589,7 @@ function wallVariantRoll(x: number, z: number): number {
 const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
 // how long the editor leaves the quick flat preview of its structural edits before the scene's full build
 const EDIT_SETTLE_MS = 5000;
+const ORIGIN_NDC = new THREE.Vector2(0, 0);
 // The top-down view (editing; the O key or the button): the camera high above
 // the map looking down (tilted with Ctrl+wheel), the ceilings and the sight
 // culling and fog off - to survey and texture a large area, even across
@@ -4056,10 +4057,37 @@ export function GameViewport({
     // its props as boxes (not the 45-degree cuts: a box would close their
     // whole corner)
     function smokeWorld(m: GameMap): SmokeWorld {
+      // The cells' walls, floors and ceilings in flat arrays: every puff asks the world several times a frame, and a
+      // lookup through cellAt / floorHeight was a sixth of the editor's frame time.
+      const W = m.width;
+      const H = m.height;
+      const wallCell = new Uint8Array(W * H);
+      const floorCell = new Float32Array(W * H);
+      const ceilingCell = new Float32Array(W * H);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          wallCell[y * W + x] = cellAt(m, x, y) === "wall" ? 1 : 0;
+          floorCell[y * W + x] = floorY(x, y);
+          ceilingCell[y * W + x] = ceilingY(x, y);
+        }
+      }
       return {
-        wall: (x, z) => cellAt(m, Math.round(x), Math.round(z)) === "wall",
-        floor: (x, z) => floorY(Math.round(x), Math.round(z)),
-        ceiling: (x, z) => ceilingY(Math.round(x), Math.round(z)),
+        // (outside the map: a wall, as cellAt says; floor 0 and a ceiling one wall height up, as the heights say)
+        wall: (x, z) => {
+          const cx = Math.round(x);
+          const cz = Math.round(z);
+          return cx < 0 || cz < 0 || cx >= W || cz >= H || wallCell[cz * W + cx] === 1;
+        },
+        floor: (x, z) => {
+          const cx = Math.round(x);
+          const cz = Math.round(z);
+          return cx < 0 || cz < 0 || cx >= W || cz >= H ? 0 : floorCell[cz * W + cx];
+        },
+        ceiling: (x, z) => {
+          const cx = Math.round(x);
+          const cz = Math.round(z);
+          return cx < 0 || cz < 0 || cx >= W || cz >= H ? wallHeight : ceilingCell[cz * W + cx];
+        },
         boxes: (m.props ?? [])
           .filter((p) => PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "chamfer")
           .map((p) => {
@@ -6588,8 +6616,20 @@ export function GameViewport({
         selectBox.scale.set(0.5, 0.05, 0.5);
       }
     }
+    // What is under the pointer is found with a ray (through thousands of triangles); it only changes when the pointer,
+    // the view, the tool, the map or a drag does - not worked out again every frame while all of those stand still.
+    let hoverCache: { map: GameMap; tool: string; x: number; y: number; dragging: boolean; pos: THREE.Vector3; quat: THREE.Quaternion; target: EditTarget | null } | null = null;
+    function hoverTarget(): EditTarget | null {
+      const at = editHover ?? ORIGIN_NDC;
+      const dragging = !!dragItem?.moved;
+      const c = hoverCache;
+      if (c && c.map === latestMapRef.current && c.tool === editToolRef.current && c.x === at.x && c.y === at.y && c.dragging === dragging && c.pos.equals(camera.position) && c.quat.equals(camera.quaternion)) return c.target;
+      const target = editTargetAt(at);
+      hoverCache = { map: latestMapRef.current, tool: editToolRef.current, x: at.x, y: at.y, dragging, pos: camera.position.clone(), quat: camera.quaternion.clone(), target };
+      return target;
+    }
     function updateEditHighlight() {
-      const target = editModeRef.current ? editTargetAt(editHover ?? new THREE.Vector2(0, 0)) : null;
+      const target = editModeRef.current ? hoverTarget() : null;
       reportHover(target);
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
@@ -7039,7 +7079,12 @@ export function GameViewport({
         petals.update(pdt, t, camera);
         motes.update(pdt, t); mist.update(pdt, t, camera); flies.update(pdt, t, camera);
       }
-      for (const marker of smokeMarkers.values()) marker.visible = editModeRef.current;
+      for (const marker of smokeMarkers.values()) {
+        marker.visible = editModeRef.current;
+        // (a ground fog's area - ring and disc - shows only while its emitter is the one selected)
+        const picked = marker.userData.smokeIndex === selectedSmokeRef.current;
+        for (const child of marker.children) if (child.userData.fogShape) child.visible = picked;
+      }
       // the exits' plates throb
       exitMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
       updateTracers();

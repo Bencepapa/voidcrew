@@ -1,5 +1,5 @@
 import { t } from "../i18n";
-import { useId, useState, useRef } from "react";
+import { memo, useId, useState, useRef } from "react";
 import type { ReactElement } from "react";
 import { ceilingHeight, doorAt, floorHeight, windowPanels } from "../game/map";
 import { MIN_HEADROOM } from "../game/heights";
@@ -68,7 +68,7 @@ const LOCKED_COLOR = "#a8741a";
 // map sliding past), drawn as SVG in cell units: floors shaded by height,
 // doors, ladders (yellow) and windows (blue) on their cell's side, bridges
 // as a band along their axis, and the party as an arrow turning smoothly.
-export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, edit }: MinimapProps) {
+function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edit }: MinimapProps) {
   const uid = useId().replace(/:/g, "");
   // (the plain minimap stays the flat chart; textures are for the enlarged one, when textures are being set)
   const [textures, setTextures] = useState(false);
@@ -455,3 +455,47 @@ export function Minimap({ map, pos, dir, compact, loot, locked, showRestricted, 
     </div>
   );
 }
+
+// What of a map the chart shows - the cells' structure and where the placed things are (not their other settings:
+// a chance, a colour or an intensity being dragged does not change the chart). Worked out once for each map.
+const chartOf = new WeakMap<GameMap, string>();
+function chartKey(map: GameMap): string {
+  let key = chartOf.get(map);
+  if (key === undefined) {
+    const at = (c: Vec2 | undefined) => (c ? `${c.x},${c.y}` : "");
+    key = [
+      map.id,
+      map.structureKey ?? "",
+      map.props?.map((p) => `${p.prop}${at(p.cell)}${p.at}${p.offset?.join(",") ?? ""}`).join(";"),
+      map.decals?.map((d) => `${at(d.cell)}${d.surface}`).join(";"),
+      map.actors?.map((a) => `${at(a.cell)}${a.facing}`).join(";"),
+      map.items?.map((i) => `${at(i.cell)}${i.offset?.join(",") ?? ""}`).join(";"),
+      map.lights?.map((l) => `${l.x},${l.y}${l.pos?.join(",") ?? ""}`).join(";"),
+      map.smokes?.map((m) => `${at(m.cell)}${m.pos.join(",")}`).join(";"),
+      map.exits?.map((e) => at(e.cell)).join(";"),
+      map.chanceWalls?.map((w) => at(w.cell)).join(";"),
+      map.restricted?.map(at).join(";"),
+    ].join("|");
+    chartOf.set(map, key);
+  }
+  return key;
+}
+const rectKey = (r: Rect | null | undefined) => (r ? `${r.x0},${r.y0},${r.x1},${r.y1}` : "");
+// The chart is drawn again only when something it shows changed: it is a few hundred SVG elements, and the
+// editor changes the map on every step of a dragged slider. (The callbacks in `edit` are not compared: the
+// ones that look at changing state go through refs in the app.)
+function sameChart(a: MinimapProps, b: MinimapProps): boolean {
+  if (a.compact !== b.compact || a.showRestricted !== b.showRestricted || a.dir !== b.dir || a.pos.x !== b.pos.x || a.pos.y !== b.pos.y) return false;
+  if (a.locked?.join() !== b.locked?.join() || JSON.stringify(a.loot) !== JSON.stringify(b.loot)) return false;
+  if (a.map !== b.map && chartKey(a.map) !== chartKey(b.map)) return false;
+  const e = a.edit;
+  const f = b.edit;
+  if (!!e !== !!f) return false;
+  if (e && f) {
+    if (e.verb !== f.verb || e.surface !== f.surface || e.zoomed !== f.zoomed || rectKey(e.selection) !== rectKey(f.selection)) return false;
+    if ([...(e.hiddenCategories ?? [])].sort().join() !== [...(f.hiddenCategories ?? [])].sort().join()) return false;
+    if (!!e.onMarker !== !!f.onMarker || !!e.onSelect !== !!f.onSelect || !!e.onZoom !== !!f.onZoom) return false;
+  }
+  return true;
+}
+export const Minimap = memo(MinimapImpl, sameChart);
