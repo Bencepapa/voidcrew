@@ -3,6 +3,7 @@ import { Inspector, type InspectedKind } from "./editor/Inspector";
 import { ProblemsPanel } from "./editor/ProblemsPanel";
 import { validateMap, removeInWall, removeDuplicates } from "./editor/validate";
 import { EditorStatusBar } from "./editor/EditorStatusBar";
+import { ShortcutHelp } from "./editor/ShortcutHelp";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
@@ -146,6 +147,8 @@ export default function App() {
   // where the editor toolbar docks (the right column), when there is one
   const [toolbarDock, setToolbarDock] = useState<HTMLElement | null>(null);
   const [editorDebug, setEditorDebug] = useState(false);
+  // the keyboard shortcut help overlay (opened with ? or the top bar's ? button)
+  const [shortcutHelp, setShortcutHelp] = useState(false);
   const [editDock, setEditDock] = useState<HTMLElement | null>(null);
   // the Light tool: the selected hand-placed light (its index in the map's
   // lights), and what a plain click places - a ceiling lamp, or (as a
@@ -1154,6 +1157,11 @@ export default function App() {
       }
       if (!editMode) return;
       const key = e.key.toLowerCase();
+      if (key === "?") {
+        e.preventDefault();
+        if (!e.repeat) setShortcutHelp((open) => !open);
+        return;
+      }
       if (key === "s" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         editKeys.current.editSave();
@@ -1162,6 +1170,10 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [editMode]);
+  // leaving the editor puts the help away too
+  useEffect(() => {
+    if (!editMode) setShortcutHelp(false);
   }, [editMode]);
 
   // The Map tool: the grid grows or shrinks at an edge; other decks are
@@ -2230,6 +2242,7 @@ export default function App() {
           compact={compact}
         />
       )}
+      {editMode && <ShortcutHelp open={shortcutHelp} onClose={() => setShortcutHelp(false)} />}
     </>
   );
   // free movement: touch gets twin sticks; a mouse gets a hint until it's
@@ -2338,7 +2351,8 @@ export default function App() {
           <label className="text-xs">{t("editorShell.view")} <select className="border border-neutral-600 bg-neutral-800 p-1" value={settings.geometryView} onChange={e=>setSettings({...settings,geometryView:e.target.value as ViewportSettings["geometryView"]})}>
             {(["textured","faces","wireframe","normals","depth"] as const).map(mode=><option key={mode} value={mode}>{t(`editorShell.${mode}`)}</option>)}
           </select></label>
-          <button className="ml-auto rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setEditorDebug(!editorDebug)} aria-expanded={editorDebug}>{t("editorShell.debug")}</button>
+          <button className="ml-auto rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setShortcutHelp(true)} aria-label={t("editorShell.shortcutsOpen")} title={t("editorShell.shortcutsOpen")}>?</button>
+          <button className="rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setEditorDebug(!editorDebug)} aria-expanded={editorDebug}>{t("editorShell.debug")}</button>
         </div>
         <div ref={setToolbarDock} className="max-h-[25vh] overflow-auto"/>
       </header>}
