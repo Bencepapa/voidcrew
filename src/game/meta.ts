@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { ITEM_TYPES } from "./items";
+import { activeWorld } from "./worlds";
 import type { Weapon } from "./combat";
 
 // What lasts between runs - the base: credits, the stash (how many of each
@@ -153,6 +154,10 @@ export const WEAPON_TYPES: Record<string, WeaponType> = {
   healing_staff: { name: "Healing staff", blurb: "Mends wounds with warm light.", price: 220, kind: "heal", amount: [9, 15], cooldownMs: 9000 },
   trauma_kit: { name: "Trauma kit", blurb: "A bigger heal, slower.", price: 300, kind: "heal", amount: [16, 24], cooldownMs: 12000 },
 };
+
+// the weapons made for Void Fantasy (the rest are Void Crew's): the shop only offers a world its own
+const FANTASY_WEAPONS = new Set(["spear", "crossbow", "longbow", "arcane_staff", "healing_staff", "trauma_kit"]);
+export const weaponInWorld = (id: string, world: "scifi" | "fantasy"): boolean => FANTASY_WEAPONS.has(id) === (world === "fantasy");
 
 // an owned weapon: its type, and how far it's been upgraded (0..MAX_LEVEL)
 export interface OwnedWeapon {
@@ -352,7 +357,7 @@ export function sellItem(item: string, count: number) {
 
 export function buyWeapon(type: string): boolean {
   const price = WEAPON_TYPES[type]?.price;
-  if (price === undefined || meta.credits < price) return false;
+  if (price === undefined || meta.credits < price || !weaponInWorld(type, activeWorld())) return false;
   set({ ...meta, credits: meta.credits - price, weapons: [...meta.weapons, { id: meta.nextId, type, level: 0 }], nextId: meta.nextId + 1 });
   return true;
 }

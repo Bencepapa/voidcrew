@@ -2272,7 +2272,7 @@ export function GameViewport({
     // recess: a height map that doesn't tile exactly leaves slivers between
     // panels that would show what's behind the wall (the next room, the floor)
     const backingPositions: number[] = [];
-    const backingPanels: { x: number; z: number; y: number; rotY: number; width: number; height: number; floorTop: boolean }[] = [];
+    const backingPanels: { x: number; z: number; y: number; rotY: number; width: number; height: number; floorTop: boolean; deep?: boolean }[] = [];
     const backingMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, vertexColors: true });
     backingMat.visible = settings.wallBacking;
     let backingColorSerial = 0;
@@ -2619,6 +2619,7 @@ export function GameViewport({
                 y: ((span.bottom + span.top) / 2) * wallHeight,
                 height: (span.top - span.bottom) * wallHeight,
                 floorTop: cellAt(map, nx, ny) !== "wall" && span.top === floorHeight(map, nx, ny),
+                deep: windowFaces.has(face.key),
               });
             }
           }
@@ -2656,7 +2657,7 @@ export function GameViewport({
     });
     const backingModes = edgeModes(backingBands);
     backingBands.forEach((panel, i) => {
-      const back = reliefDepth + 0.02;
+      const back = panel.deep ? Math.max(reliefDepth, WINDOW_DEPTH) + 0.02 : reliefDepth + 0.02;
       const nx = Math.sin(panel.rotY), nz = Math.cos(panel.rotY);
       const tx = Math.cos(panel.rotY), tz = -Math.sin(panel.rotY);
       const cx = panel.x - nx * back, cz = panel.z - nz * back;

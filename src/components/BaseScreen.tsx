@@ -1,8 +1,10 @@
+import { activeWorld } from "../game/worlds";
 import { ITEM_TYPES } from "../game/items";
 import { initialCrew } from "../game/crew";
 import {
   MAX_LEVEL,
   WEAPON_TYPES,
+  weaponInWorld,
   buyWeapon,
   canAfford,
   equip,
@@ -95,7 +97,7 @@ export function BaseScreen({ onLaunch }: { onLaunch: () => void }) {
             )}
 
             <div className="text-neutral-500 mt-4 mb-1">SHOP</div>
-            {Object.entries(WEAPON_TYPES).map(([id, type]) => (
+            {Object.entries(WEAPON_TYPES).filter(([id]) => weaponInWorld(id, activeWorld())).map(([id, type]) => (
               <div key={id} className="flex items-center justify-between gap-2 py-0.5">
                 <span>
                   {type.name} <span className="text-neutral-500">{type.blurb}</span>
