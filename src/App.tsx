@@ -1152,7 +1152,7 @@ export default function App() {
   };
   const editSave = () => {
     saveMap(map.id)
-      .then((file) => pushLog(t("app.savedMap", { path: file }), "editor"))
+      .then((file) => pushLog(t("app.savedMap", { path: file }), "success"))
       .catch((err) => pushLog(t("app.saveFailed", { error: err instanceof Error ? err.message : err }), "error"))
       .finally(() => setEdits((n) => n + 1));
   };
@@ -1232,7 +1232,7 @@ export default function App() {
       const note = render ? "renderSaved" : "renderRemoved";
       if (import.meta.env.DEV) {
         saveMap(map.id)
-          .then((path) => pushLog(t(`app.${note}File`, { path }), "editor"))
+          .then((path) => pushLog(t(`app.${note}File`, { path }), "success"))
           .catch((err) => pushLog(t(`app.${note}Error`, { error: err instanceof Error ? err.message : err }), "error"));
       } else pushLog(t(`app.${note}Download`), "editor");
     }
@@ -1309,7 +1309,7 @@ export default function App() {
       // (straight to disk in dev: a copy is meant to be kept)
       if (import.meta.env.DEV) {
         saveMap(id)
-          .then((path) => pushLog(t("app.savedMap", { path: path }), "editor"))
+          .then((path) => pushLog(t("app.savedMap", { path: path }), "success"))
           .catch((err) => pushLog(t("app.saveFailed", { error: err instanceof Error ? err.message : err }), "error"));
       }
       pushLog(t("app.mapCopied", { source: map.id, id: id }), "editor");

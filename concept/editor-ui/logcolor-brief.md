@@ -1,0 +1,4 @@
+# Log line colours (branch feature/log-colors)
+Repo = your cwd. Small task. Find the editor/game message log (the green text list on the left in the game view and the status-bar message in the editor: look in src/App.tsx, src/components/ and src/editor/ for where log lines are rendered, and where editor messages like "Mentve", errors and edit confirmations are added; `app.editorError` / `app.saveFailed` i18n keys are used for some).
+Do: colour log lines by kind in the editor's message log/status line: errors red, warnings amber, success/saved green, plain info the current colour. Keep it minimal: derive the kind where the message is added if it is already known (error vs info), otherwise add an optional `kind` field with a default. Do not change message texts, the game's combat log colours, layout or logic. No new strings needed.
+Run `npx tsc --noEmit` (clean). Commit on this branch; do not push. Write 5 lines of notes to concept/editor-ui/NOTES-logcolor.md.

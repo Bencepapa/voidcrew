@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import type { LogEntry, LogKind } from "../game/useGameState";
 
 // the colour of each kind of line (the default is the log's own green)
-const KIND_COLOR: Record<LogKind, string> = {
+export const KIND_COLOR: Record<LogKind, string> = {
   info: "",
   editor: "text-sky-300",
   error: "text-red-400 font-semibold",
   warn: "text-amber-300",
+  success: "text-emerald-400",
   heal: "text-emerald-300",
   damage: "text-orange-400",
   danger: "text-red-500 font-semibold",
