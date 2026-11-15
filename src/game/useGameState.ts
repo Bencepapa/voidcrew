@@ -25,9 +25,9 @@ import { cellKey, visibleCells } from "./visibility";
 
 // What a log line is, which colours it (see LogPanel): ordinary news (the
 // default), the map editor's own lines, errors (an edit refused, a save that
-// failed), and - for the game's events, tagged as they are got to - healing,
+// failed), success (a save that worked), and - for the game's events, tagged as they are got to - healing,
 // damage taken or dealt, danger and warnings.
-export type LogKind = "info" | "editor" | "error" | "warn" | "heal" | "damage" | "danger";
+export type LogKind = "info" | "editor" | "error" | "warn" | "success" | "heal" | "damage" | "danger";
 
 export interface LogEntry {
   id: number;
