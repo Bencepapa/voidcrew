@@ -4,6 +4,7 @@ import { Inspector, type InspectedKind } from "./editor/Inspector";
 import { ProblemsPanel } from "./editor/ProblemsPanel";
 import { validateMap, removeInWall, removeDuplicates } from "./editor/validate";
 import { EditorStatusBar } from "./editor/EditorStatusBar";
+import { FloatToolbar } from "./editor/FloatToolbar";
 import { ShortcutHelp } from "./editor/ShortcutHelp";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
@@ -149,7 +150,6 @@ export default function App() {
   const [editMode, setEditMode] = useState(false);
   const [editTool, setEditTool] = useState<EditTool>("select");
   // where the editor toolbar docks (the right column), when there is one
-  const [toolbarDock, setToolbarDock] = useState<HTMLElement | null>(null);
   const [editorDebug, setEditorDebug] = useState(false);
   // the keyboard shortcut help overlay (opened with ? or the top bar's ? button)
   const [shortcutHelp, setShortcutHelp] = useState(false);
@@ -1127,49 +1127,6 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [miniSel]);
-  // "Clear all": everything of the current tool's layer off the map (one undo step)
-  const clearLayer = (tool: EditTool) => {
-    const layers: Partial<Record<EditTool, { key: keyof NonNullable<ReturnType<typeof mapFile>>; empty: Key; confirm: Key; removed: Key }>> = {
-      robot: { key: "actors", empty: "app.clearrobotEmpty", confirm: "app.clearrobotConfirm", removed: "app.clearrobotRemoved" },
-      smoke: { key: "smokes", empty: "app.clearsmokeEmpty", confirm: "app.clearsmokeConfirm", removed: "app.clearsmokeRemoved" },
-      prop: { key: "props", empty: "app.clearpropEmpty", confirm: "app.clearpropConfirm", removed: "app.clearpropRemoved" },
-      decal: { key: "decals", empty: "app.cleardecalEmpty", confirm: "app.cleardecalConfirm", removed: "app.cleardecalRemoved" },
-      item: { key: "items", empty: "app.clearitemEmpty", confirm: "app.clearitemConfirm", removed: "app.clearitemRemoved" },
-      light: { key: "lights", empty: "app.clearlightEmpty", confirm: "app.clearlightConfirm", removed: "app.clearlightRemoved" },
-      exit: { key: "exits", empty: "app.clearexitEmpty", confirm: "app.clearexitConfirm", removed: "app.clearexitRemoved" },
-      restricted: { key: "restricted", empty: "app.clearrestrictedEmpty", confirm: "app.clearrestrictedConfirm", removed: "app.clearrestrictedRemoved" },
-      wall: { key: "chanceWalls", empty: "app.clearwallEmpty", confirm: "app.clearwallConfirm", removed: "app.clearwallRemoved" },
-      bridge: { key: "bridges", empty: "app.clearbridgeEmpty", confirm: "app.clearbridgeConfirm", removed: "app.clearbridgeRemoved" },
-      ladder: { key: "ladders", empty: "app.clearladderEmpty", confirm: "app.clearladderConfirm", removed: "app.clearladderRemoved" },
-    };
-    const layer = layers[tool];
-    const file = mapFile(map.id);
-    if (!layer || !file) return;
-    const count = (file[layer.key] as unknown[] | undefined)?.length ?? 0;
-    if (!count) {
-      pushLog(t(layer.empty), "editor");
-      return;
-    }
-    if (!window.confirm(t(layer.confirm, { count }))) return;
-    const result = applyEdit(map.id, (f) => {
-      delete (f as unknown as Record<string, unknown>)[layer.key as string];
-      return f;
-    });
-    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
-    else {
-      replaceMap(result.map);
-      pushLog(t(layer.removed, { count }), "editor");
-    }
-    setSelectedLight(null);
-    setSelectedProp(null);
-    setSelectedDecal(null);
-    setSelectedSmoke(null);
-    setSelectedItem(null);
-    setSelectedActor(null);
-    setSelectedExit(null);
-    setSelectedChanceWall(null);
-    setEdits((n) => n + 1);
-  };
   // layers hidden from the view while editing (NPCs, particles, props, decals, items)
   const [hiddenLayers, setHiddenLayers] = useState<ReadonlySet<string>>(() => new Set());
   const toggleLayer = (layer: string) =>
@@ -2227,9 +2184,7 @@ export default function App() {
           assetDock={assetDock}
           onAssetEffect={(kind, effect) => { remember(kind, {effect, ...(kind === "smoke" ? {fire: undefined, petals: undefined} : {})}); setTemplateTick(n => n + 1); }}
           inspected={inspected}
-          shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>}
           dock={editDock}
-          toolbarDock={toolbarDock}
           tool={editTool}
           onTool={chooseTool}
           surface={editSurface}
@@ -2243,7 +2198,6 @@ export default function App() {
           onSave={editSave}
           onDownload={() => downloadMap(map.id)}
           onExit={() => setEditMode(false)}
-          onClearLayer={clearLayer}
           hiddenLayers={hiddenLayers}
           onToggleLayer={toggleLayer}
           lockedLayers={lockedLayers}
@@ -2496,7 +2450,6 @@ export default function App() {
           <button className="ml-auto rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setShortcutHelp(true)} aria-label={t("editorShell.shortcutsOpen")} title={t("editorShell.shortcutsOpen")}>?</button>
           <button className="rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setEditorDebug(!editorDebug)} aria-expanded={editorDebug}>{t("editorShell.debug")}</button>
         </div>
-        <div ref={setToolbarDock} className="max-h-[25vh] overflow-auto"/>
       </header>}
       <div className="flex-1 flex gap-2 min-h-0">
         <div className={`${zoomed ? "w-[40vw]" : editMode ? "w-40 xl:w-56" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0 ${editMode ? "max-md:hidden" : ""}`}>
@@ -2579,6 +2532,7 @@ export default function App() {
           {viewport}
           {joysticks}
           {overlays}
+          {editMode && <FloatToolbar tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>} compact={compact} />}
         </div>
 
         <div className={`${editMode ? "w-64 xl:w-80 max-md:w-44" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0`}>

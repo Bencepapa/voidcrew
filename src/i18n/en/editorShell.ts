@@ -179,4 +179,9 @@ export const editorShellEn = {
   "editorShell.error.badMapId": "\"{id}\" isn't a usable map id (letters, digits, - and _)",
   "editorShell.error.mapExists": "there's a map \"{id}\" already",
   "editorShell.error.invalidImage": "Invalid image file",
+  "floatBar.fileMenu": "File / Map menu",
+  "floatBar.mapProperties": "Map properties",
+  "traverse.group": "Traverse",
+  "events.group": "Events",
+  "floatBar.sharedLevels": "Shared levels",
 };

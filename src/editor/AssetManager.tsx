@@ -30,6 +30,7 @@ const displayKeys: Record<string,
   "wall": "assetManager.wallFilter",
   "floor": "assetManager.floorFilter",
   "ceiling": "assetManager.ceilingFilter",
+  "traverse": "traverse.group",
   "3D": "assetManager.threeD",
   "billboard": "assetManager.billboard",
   "decal": "assetManager.decal",
@@ -61,6 +62,8 @@ const displayKeys: Record<string,
 };
 const display = (value: string) => t(displayKeys[value]);
 const catalog = TEXTURE_SETS as Record<string, TextureSetPaths>;
+// the Traverse group's textures: the door leaf and its frame (ladders and bridges are built in code, no texture yet)
+const TRAVERSE_TEXTURES = new Set(["door1", "doorframe1"]);
 // the texture folder a prop shows (also the key of its tuning)
 function propTexture(id: string) {
   const p = PROP_TYPES[id];
@@ -105,7 +108,7 @@ export function AssetManager() {
   const [placement, setPlacement] = useState("Auto");
   const [decals,setDecals] = useState<Awaited<ReturnType<typeof fetchDecalManifest>>>({});
   useEffect(()=>{if(open) fetchDecalManifest(import.meta.env.BASE_URL,"").then(setDecals).catch(()=>setError(t("assetManager.loadDecals")));},[open]);
-  const entries = sample==="material" ? Object.entries(catalog).filter(([,v])=>[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:[v.kind].flat() as string[]}))
+  const entries = sample==="material" ? Object.entries(catalog).filter(([key,v])=>TRAVERSE_TEXTURES.has(key)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:TRAVERSE_TEXTURES.has(key)?["traverse"]:[v.kind].flat() as string[]}))
     : sample==="actor" ? Object.entries(ACTOR_TYPES).map(([key,v])=>({key,label:v.name,img:import.meta.env.BASE_URL+"actors/"+v.sheet+"/diffuse.png",groups:[] as string[]}))
     : sample==="item" ? Object.entries(ITEM_TYPES).map(([key,v])=>({key,label:v.name,img:textureFolder("item_"+key).diffuse,groups:[] as string[]}))
     : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:key,img:propImage(key),groups:[v.kind==="billboard"?"billboard":"3D"]})),...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"]}))];
@@ -551,7 +554,7 @@ export function AssetManager() {
             <div className="flex items-center justify-between gap-2"><strong>{t("assetManager.assets")}</strong><button aria-label={t("assetManager.collapseAssets")} title={t("assetManager.collapse")} className="px-2 hover:text-amber-400" onClick={()=>setListOpen(false)}>◀</button></div>
             <div className="flex flex-wrap gap-1">{(["material","prop","actor","item"] as const).map((tab,i)=><button key={tab} className={button+" !px-2 !py-1"} aria-pressed={sample===tab} onClick={()=>{setSample(tab);if(background==="Selected texture" && tab!=="material")setBackground("3×3");setSub("All");setPose(-1);setTurn(0);setPlacement("Auto");}}>{display(["Textures","Props","NPCs","Items"][i])}</button>)}</div>
             <label>{t("assetManager.world")} <select className={button+" !py-1"} value={world} onChange={e=>{setWorld(e.target.value as typeof world);setPose(-1);}}><option value="All">{display("All")}</option><option value="scifi">{display("scifi")}</option><option value="fantasy">{display("fantasy")}</option></select></label>
-            {["material","prop"].includes(sample) && <div className="flex flex-wrap gap-1">{["All",...(sample==="material"?["wall","floor","ceiling"]:["3D","billboard","decal"])].map(k=><button key={k} className={button+" !px-2 !py-1"} aria-pressed={sub===k} onClick={()=>setSub(k)}>{display(k)}</button>)}</div>}
+            {["material","prop"].includes(sample) && <div className="flex flex-wrap gap-1">{["All",...(sample==="material"?["wall","floor","ceiling","traverse"]:["3D","billboard","decal"])].map(k=><button key={k} className={button+" !px-2 !py-1"} aria-pressed={sub===k} onClick={()=>setSub(k)}>{display(k)}</button>)}</div>}
             <div className="grid min-h-0 flex-1 content-start grid-cols-2 gap-1 overflow-auto">{visible.map(e=>{
               const a=sample==="actor"?ACTOR_TYPES[e.key]:undefined;
               return <button key={e.key} className={button+" !p-1 text-xs"} aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>

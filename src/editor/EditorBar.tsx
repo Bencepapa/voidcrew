@@ -1,18 +1,11 @@
-import { neutralStyle } from "./inspector/parts";
 import type { SmokeSpec, Weather } from "../game/types";
 import { t, type Key } from "../i18n";
-// The map editor's toolbar, over the top of the game view while editing
-// (see EDITOR.md): what a click or tap does - dig a wall out, fill a floor
-// in (the right mouse button always fills), or set a floor's height - undo
-// and redo, saving to disk (dev server only), downloading the file, and
-// leaving edit mode. The Texture, Light, Prop, Decal, NPC, Item and Particles
-// tools are picked in the asset tree now (see AssetTree); their handlers and
-// labels stay here.
+// The map editor's props and info types, the tool labels and the tool help
+// line. The old top bar is gone: tools live in the floating strip (FloatToolbar)
+// and the asset tree (AssetTree); this file keeps what they share.
 
 import type { Lock } from "../game/story";
 import type { ActorWake } from "../game/types";
-
-import { createPortal } from "react-dom";
 
 import type { TextureSetId } from "../render/textureSets";
 import type { EditSurface, EditTool } from "./mapEdits";
@@ -34,13 +27,11 @@ export interface MapLook {
 // the deck's default texture sets: the slot, and which sets are offered for it
 
 export interface EditorBarProps {
-  shared?: React.ReactNode;
   assetDock?: HTMLElement | null;
   onAssetEffect: (kind: "smoke" | "light", effect: string | undefined) => void;
   // an element to draw the toolbar into (the right column) instead of over
   // the top of the view
   dock?: HTMLElement | null;
-  toolbarDock?: HTMLElement | null;
   tool: EditTool;
   onTool: (tool: EditTool) => void;
   // the Texture tool: the surface the pointer is on (its row is marked),
@@ -56,8 +47,6 @@ export interface EditorBarProps {
   onSave: () => void;
   onDownload: () => void;
   onExit: () => void;
-  // takes everything of the current tool's layer off the map (NPCs, particles, props...)
-  onClearLayer: (tool: EditTool) => void;
   // the layers hidden from the view, and hiding or showing one (the tool's)
   hiddenLayers: ReadonlySet<string>;
   onToggleLayer: (layer: string) => void;
@@ -287,8 +276,6 @@ export interface LightInfo {
   links: Linked;
 }
 
-const BUTTON = "px-2 py-1 border rounded-sm text-[11px] disabled:opacity-30";
-
 // an item's chance of being there in a variation (1: always - left out of
 // the map file)
 
@@ -297,30 +284,8 @@ const BUTTON = "px-2 py-1 border rounded-sm text-[11px] disabled:opacity-30";
 
 // a labeled slider with its value, for the light panel
 
-// the tools after Light, with their labels (see editorToolLabel)
-const MORE_TOOLS: { tool: EditTool; label: Key; title: Key }[] = [
-  { tool: "ladder", label: "editorBar.ladder", title: "editorBar.putALadderUpToAHigher" },
-  { tool: "bridge", label: "editorBar.bridge", title: "editorBar.spanACellWithABridge" },
-  { tool: "door", label: "editorBar.door", title: "editorBar.makeACellADoorOrBack" },
-  { tool: "prop", label: "editorBar.prop", title: "editorBar.putInOrTakeOutProps" },
-  { tool: "decal", label: "editorBar.decal", title: "editorBar.putDecalsOnWallsFloorsAndCeilings" },
-  { tool: "robot", label: "editorBar.npc", title: "editorBar.putInNPCsRobotsMonstersTheirFacing" },
-  { tool: "item", label: "editorBar.item", title: "editorBar.putLootOnFloorsTablesBedsAnd" },
-  { tool: "smoke", label: "editorBar.particles", title: "editorBar.smokeEmittersPuffsRisingFromAPoint" },
-  { tool: "exit", label: "editorBar.exit", title: "editorBar.waysOffTheShipStandingThereUse" },
-  { tool: "start", label: "editorBar.start", title: "editorBar.whereThePartyStartsTheDeckAnd" },
-  { tool: "restricted", label: "editorBar.restricted", title: "editorBar.whereTheCrewMustnTBeCameras" },
-  { tool: "wall", label: "editorBar.chanceWall", title: "editorBar.wallsLeftToChanceThereInSome" },
-  { tool: "map", label: "editorBar.map", title: "editorBar.theMapSSizeOpenMakeOr" },
-];
-// the tools the asset tree picks (see AssetTree): no button for them in the bar
-const TREE_TOOLS = new Set<EditTool>(["texture", "light", "prop", "decal", "robot", "item", "smoke"]);
-// the tools whose layer can be hidden from the view: the layer's name
-const HIDEABLE_LAYERS: Partial<Record<EditTool, string>> = { robot: "robot", smoke: "smoke", prop: "prop", decal: "decal", item: "item" };
-// the tools with a layer of their own that "Clear all" can empty
-const CLEARABLE_TOOLS = new Set<EditTool>(["robot", "smoke", "prop", "decal", "item", "light", "exit", "restricted", "wall", "bridge", "ladder"]);
-// what a click does with each (where the toolbar doesn't say otherwise)
-const TOOL_HELP: Partial<Record<EditTool, Key>> = {
+// what a click does with each tool (shown in the floating hint over the view)
+export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   select: "editorBar.clickAnObjectToSelectItDrag",
   height: "editorBar.clickAFloorOrCeilingUp0",
   ladder: "editorBar.clickNearAFloorSEdgeOr",
@@ -337,102 +302,17 @@ const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   wall: "editorBar.clickAWallOrAFloorA",
 };
 
+const TOOL_LABELS: Partial<Record<EditTool, Key>> = {
+  ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", decal: "editorBar.decal",
+  robot: "editorBar.npc", item: "editorBar.item", smoke: "editorBar.particles", exit: "editorBar.exit", start: "editorBar.start",
+  restricted: "editorBar.restricted", wall: "editorBar.chanceWall", map: "editorBar.map",
+};
 export function editorToolLabel(tool: EditTool): string {
   if(tool==="select")return t("editorBar.select");
   if(tool==="dig" || tool==="fill")return t("editorBar.digFill");
   if(tool==="height")return t("editorBar.height");
   if(tool==="texture")return t("editorBar.texture");
   if(tool==="light")return t("editorBar.light");
-  const item=MORE_TOOLS.find(item=>item.tool===tool);
-  return item ? t(item.label) : tool;
+  const label=TOOL_LABELS[tool];
+  return label ? t(label) : tool;
 }
-const idle = "border-neutral-600 bg-black/60 text-neutral-200 hover:bg-neutral-800";
-const active = "border-amber-400 bg-amber-400/20 text-amber-200";
-
-export function EditorBar(p: EditorBarProps) {
-  const docked = !!p.toolbarDock;
-  const toolbar = <div style={neutralStyle} className="voidcrew-editor-controls flex flex-wrap items-center gap-1 font-mono" onPointerDown={e=>e.stopPropagation()}>
-      {p.shared && <div className="flex flex-wrap gap-1 text-left">{p.shared}</div>}
-      <button
-        type="button"
-        className={`${BUTTON} ${p.tool === "select" ? active : idle}`}
-        onClick={() => p.onTool("select")}
-        title={t("editorBar.selectToolTitle")}
-      >{t("editorBar.select")}</button>
-      <button
-        type="button"
-        className={`${BUTTON} ${p.tool === "dig" || p.tool === "fill" ? active : idle}`}
-        onClick={() => p.onTool("dig")}
-        title={t("editorBar.leftClickDigAWallOutRight")}
-      >{t("editorBar.digFill")}</button>
-      <button
-        type="button"
-        className={`${BUTTON} ${p.tool === "height" ? active : idle}`}
-        onClick={() => p.onTool("height")}
-        title={t("editorBar.raiseLeftClickOrLowerRightClick")}
-      >{t("editorBar.height")}</button>
-      {MORE_TOOLS.filter(({ tool }) => !TREE_TOOLS.has(tool)).map(({ tool, label, title }) => (
-        <button
-          key={tool}
-          type="button"
-          className={`${BUTTON} ${p.tool === tool ? active : idle}`}
-          onClick={() => p.onTool(tool)}
-          title={t(title)}
-        >
-          {t(label)}
-        </button>
-      ))}
-      <span className="w-2" />
-      <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canUndo} onClick={p.onUndo} title="Z">{t("editorBar.undo")}</button>
-      <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canRedo} onClick={p.onRedo} title="Y">{t("editorBar.redo")}</button>
-      {HIDEABLE_LAYERS[p.tool] && (
-        <button
-          type="button"
-          className={`${BUTTON} ${p.hiddenLayers.has(HIDEABLE_LAYERS[p.tool]!) ? active : idle}`}
-          onClick={() => p.onToggleLayer(HIDEABLE_LAYERS[p.tool]!)}
-          title={t("editorBar.hideThisLayerFromTheViewTo")}
-        >
-          {p.hiddenLayers.has(HIDEABLE_LAYERS[p.tool]!) ? t("editorBar.show") : t("editorBar.hide")}
-        </button>
-      )}
-      {CLEARABLE_TOOLS.has(p.tool) && (
-        <button
-          type="button"
-          className={`${BUTTON} border-red-700/70 bg-black/60 text-red-300 hover:bg-red-900/30`}
-          onClick={() => p.onClearLayer(p.tool)}
-          title={t("editorBar.takeEverythingOfThisToolSLayer")}
-        >{t("editorBar.clearAll")}</button>
-      )}
-      <span className="w-2" />
-      {import.meta.env.DEV && (
-        <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSave} title="Ctrl+S">{t("editorBar.save", { v1: p.unsaved ? " •" : "" })}</button>
-      )}
-      <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDownload}>{t("editorBar.download")}</button>
-      <span className="w-2" />
-      <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExit} title="Tab">{t("editorBar.exitEditor")}</button>
-  </div>;
-  const bar = (
-    <div
-      style={neutralStyle}
-      className={docked ? "voidcrew-editor-controls flex flex-wrap gap-1 font-mono" : `voidcrew-editor-controls absolute ${p.compact ? "bottom-2" : "top-2"} inset-x-2 z-20 flex flex-wrap justify-center gap-1 font-mono`}
-      // the view underneath mustn't take these as peeks or steps
-      onPointerDown={(e) => e.stopPropagation()}
-      onPointerUp={(e) => {
-        // Portalled dialogs bubble through this React parent too. Their
-        // OrbitControls must receive pointerup on the native document.
-        if (e.currentTarget.contains(e.target as Node)) e.stopPropagation();
-      }}
-    >
-      {!p.toolbarDock && toolbar}
-      {TOOL_HELP[p.tool] && (
-        <>
-          <span className="basis-full" />
-          <span className="text-[10px] text-neutral-400 bg-black/60 px-2 py-0.5 rounded-sm">{t(TOOL_HELP[p.tool]!)}</span>
-        </>
-      )}
-
-    </div>
-  );
-  return p.toolbarDock ? createPortal(<>{toolbar}{bar}</>, p.toolbarDock) : bar;
-}
-

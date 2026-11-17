@@ -180,4 +180,9 @@ export const editorShellHu: Record<keyof typeof editorShellEn, string> = {
   "editorShell.error.badMapId": "A(z) „{id}” nem használható pályaazonosító (betűk, számok, - és _)",
   "editorShell.error.mapExists": "már van „{id}” pálya",
   "editorShell.error.invalidImage": "Érvénytelen képfájl",
+  "floatBar.fileMenu": "Fájl / Térkép menü",
+  "floatBar.mapProperties": "Térkép tulajdonságai",
+  "traverse.group": "Közlekedés",
+  "events.group": "Események",
+  "floatBar.sharedLevels": "Megosztott pályák",
 };
