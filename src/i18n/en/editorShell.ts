@@ -181,4 +181,7 @@ export const editorShellEn = {
   "editorShell.error.invalidImage": "Invalid image file",
   "floatBar.fileMenu": "File / Map menu",
   "floatBar.mapProperties": "Map properties",
+  "traverse.group": "Traverse",
+  "events.group": "Events",
+  "floatBar.sharedLevels": "Shared levels",
 };

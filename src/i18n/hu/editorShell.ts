@@ -182,4 +182,7 @@ export const editorShellHu: Record<keyof typeof editorShellEn, string> = {
   "editorShell.error.invalidImage": "Érvénytelen képfájl",
   "floatBar.fileMenu": "Fájl / Térkép menü",
   "floatBar.mapProperties": "Térkép tulajdonságai",
+  "traverse.group": "Közlekedés",
+  "events.group": "Események",
+  "floatBar.sharedLevels": "Megosztott pályák",
 };
