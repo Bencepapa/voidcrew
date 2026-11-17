@@ -1,5 +1,8 @@
 // Hungarian strings for editorBar.
 export const editorBarHu = {
+  "editorBar.select": "Kijelölés",
+  "editorBar.selectToolTitle": "Bármely elem kijelölése (V; az Esc ide visz vissza) - Alt tartása bármely eszközben ugyanezt adja",
+  "editorBar.clickAnObjectToSelectItDrag": "kattints egy elemre a kijelöléshez (NPC, tárgy, prop, matrica, fény, részecske) - húzd az áthelyezéshez; üres hely: kijelölés törlése",
   "editorBar.kind": "Fajta",
   "editorBar.wall": "Fal",
   "editorBar.floor": "Padló",

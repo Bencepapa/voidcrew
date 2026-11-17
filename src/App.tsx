@@ -147,7 +147,7 @@ export default function App() {
   // the map editor (see EDITOR.md): while it's on the world holds still,
   // walls don't stop the party and the headlamp is lit
   const [editMode, setEditMode] = useState(false);
-  const [editTool, setEditTool] = useState<EditTool>("dig");
+  const [editTool, setEditTool] = useState<EditTool>("select");
   // where the editor toolbar docks (the right column), when there is one
   const [toolbarDock, setToolbarDock] = useState<HTMLElement | null>(null);
   const [editorDebug, setEditorDebug] = useState(false);
@@ -181,6 +181,29 @@ export default function App() {
   const [selectedActor, setSelectedActor] = useState<number | null>(null);
   // the Item tool's pick (its index in the map's items; its palette further down)
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
+  // the Smoke tool's pick (its index in the map's smokes)
+  const [selectedSmoke, setSelectedSmoke] = useState<number | null>(null);
+  // The Select tool: a click picks the nearest object of any kind (see onEdit);
+  // the Alt key held in any tool does the same until it is let go
+  const [altHeld, setAltHeld] = useState(false);
+  const selecting = editTool === "select" || altHeld;
+  // one pick at a time: Select lets go of the other kinds, so the inspector and the keys follow the picked one
+  const selectOnly = (kind: "actor" | "item" | "prop" | "decal" | "light" | "smoke" | null, index: number | null = null) => {
+    setSelectedActor(kind === "actor" ? index : null);
+    setSelectedItem(kind === "item" ? index : null);
+    setSelectedProp(kind === "prop" ? index : null);
+    setSelectedDecal(kind === "decal" ? index : null);
+    setSelectedLight(kind === "light" ? index : null);
+    setSelectedSmoke(kind === "smoke" ? index : null);
+    setSelectedExit(null);
+    setSelectedChanceWall(null);
+    setSelectedDoor(null);
+  };
+  // The tool the arrows, R, Delete and the wheel work by: the one in hand, or (Select, or a thing picked with Alt in a
+  // placing tool) the kind that is selected
+  const pickedTools: [EditTool, number | null][] = [["robot", selectedActor], ["item", selectedItem], ["prop", selectedProp], ["decal", selectedDecal], ["light", selectedLight], ["smoke", selectedSmoke]];
+  const ownPick = pickedTools.find(([tool]) => tool === editTool);
+  const keyTool: EditTool = editTool === "select" || (ownPick && ownPick[1] === null) ? (pickedTools.find(([, index]) => index !== null)?.[0] ?? editTool) : editTool;
   // the deck variation played (see variation.ts): ?seed= in the URL, else
   // a new one; while editing there's none - everything shows
   const [seed, setSeed] = useState(() => Number(new URLSearchParams(location.search).get("seed")) || newSeed());
@@ -575,30 +598,33 @@ export default function App() {
       commit((f) => updateDecal(f, index, patch));
     }
     if (!applied) return false;
-    if (drag.first) ({ item: setSelectedItem, smoke: setSelectedSmoke, prop: setSelectedProp, light: setSelectedLight, actor: setSelectedActor, decal: setSelectedDecal })[drag.kind](index);
+    if (drag.first) {
+      if (selecting) selectOnly(drag.kind, index);
+      else ({ item: setSelectedItem, smoke: setSelectedSmoke, prop: setSelectedProp, light: setSelectedLight, actor: setSelectedActor, decal: setSelectedDecal })[drag.kind](index);
+    }
     setEdits((n) => n + 1);
     return index;
   };
   // the wheel (height, Ctrl: scale, Alt: turn) or Alt + drag on the selected prop or decal
   const onEditAdjust = (adjust: { what: "height" | "scale" | "rotate"; delta: number }) => {
     const round = (v: number) => Math.round(v * 100) / 100;
-    if (editTool === "light" && selectedLight !== null) {
+    if (keyTool === "light" && selectedLight !== null) {
       // a free-standing light: up or down over its floor
       const spec = map.lights?.[selectedLight];
       if (!spec?.pos || adjust.what !== "height") return;
       const room = ceilingHeight(map, spec.x, spec.y) - floorHeight(map, spec.x, spec.y);
       const pos: [number, number, number] = [spec.pos[0], round(Math.min(room - 0.02, Math.max(0.02, spec.pos[1] + adjust.delta))), spec.pos[2]];
       changeLight({ pos });
-    } else if (editTool === "item" && selectedItem !== null) {
+    } else if (keyTool === "item" && selectedItem !== null) {
       const spec = map.items?.[selectedItem];
       if (spec && adjust.what === "height") changeItem({ elevation: round(Math.max(0, (spec.elevation ?? 0) + adjust.delta)) || undefined }, "wheel-height");
-    } else if (editTool === "prop" && selectedProp !== null) {
+    } else if (keyTool === "prop" && selectedProp !== null) {
       const spec = map.props?.[selectedProp];
       if (!spec) return;
       if (adjust.what === "height") changeProp({ elevation: round(Math.max(-0.5, (spec.elevation ?? 0) + adjust.delta)) || undefined }, "wheel-height");
       else if (adjust.what === "scale") changeProp({ scale: round(Math.min(4, Math.max(0.25, (spec.scale ?? 1) + adjust.delta))) === 1 ? undefined : round(Math.min(4, Math.max(0.25, (spec.scale ?? 1) + adjust.delta))) }, "wheel-scale");
       else changeProp({ rotation: (((spec.rotation ?? 0) + adjust.delta) % 360 + 360) % 360 || undefined }, "wheel-rotate");
-    } else if (editTool === "decal" && selectedDecal !== null) {
+    } else if (keyTool === "decal" && selectedDecal !== null) {
       const spec = map.decals?.[selectedDecal];
       if (!spec) return;
       if (adjust.what === "scale") {
@@ -687,6 +713,17 @@ export default function App() {
   const onEdit = (target: EditTarget, alt: boolean, shift = false) => {
     let result: ReturnType<typeof applyEdit> | null = null;
     if (!(["dig", "fill", "height", "texture"] as EditTool[]).includes(editTool) && target.cell) lastTouched.current = { x: target.cell.x, y: target.cell.y };
+    if (selecting) {
+      // the nearest thing under the pointer (the view picked it: NPC, item, prop, decal, light, emitter); nothing: let go
+      if (target.actor !== undefined) selectOnly("actor", target.actor);
+      else if (target.item !== undefined) selectOnly("item", target.item);
+      else if (target.prop !== undefined) selectOnly("prop", target.prop);
+      else if (target.decal !== undefined) selectOnly("decal", target.decal);
+      else if (target.light !== undefined) selectOnly("light", target.light);
+      else if (target.smoke !== undefined) selectOnly("smoke", target.smoke);
+      else selectOnly(null);
+      return;
+    }
     if (editTool === "texture") {
       // a wall's texture set is the open cell its face is seen from
       const cell = target.kind === "wall" ? target.from : target.cell;
@@ -1425,8 +1462,6 @@ export default function App() {
   }, [editMode, editTool]);
 
   // The selected decal, as the panel shows it
-  // the Smoke tool's pick (its index in the map's smokes)
-  const [selectedSmoke, setSelectedSmoke] = useState<number | null>(null);
   const selectedSmokeSpec = selectedSmoke === null ? undefined : map.smokes?.[selectedSmoke];
   const selectedSmokeInfo: SmokeInfo | null = selectedSmokeSpec
     ? {
@@ -1477,7 +1512,7 @@ export default function App() {
   const smokeKeys = useRef({ selectedSmokeInfo, selectedSmokeSpec, changeSmoke, deleteSmoke });
   smokeKeys.current = { selectedSmokeInfo, selectedSmokeSpec, changeSmoke, deleteSmoke };
   useEffect(() => {
-    if (!editMode || editTool !== "smoke") return;
+    if (!editMode || keyTool !== "smoke") return;
     function onKey(e: KeyboardEvent) {
       const { selectedSmokeInfo: info, selectedSmokeSpec: spec, changeSmoke: change, deleteSmoke: remove } = smokeKeys.current;
       if (!info || !spec) return;
@@ -1510,7 +1545,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [editMode, editTool]);
+  }, [editMode, keyTool]);
 
   // the Exit tool's pick (its cell)
   const [selectedExit, setSelectedExit] = useState<Vec2 | null>(null);
@@ -1552,7 +1587,7 @@ export default function App() {
   const itemKeys = useRef({ selectedItemInfo, changeItem, deleteItem, items: map.items, selectedItem });
   itemKeys.current = { selectedItemInfo, changeItem, deleteItem, items: map.items, selectedItem };
   useEffect(() => {
-    if (!editMode || editTool !== "item") return;
+    if (!editMode || keyTool !== "item") return;
     function onKey(e: KeyboardEvent) {
       const { selectedItemInfo: info, changeItem: change, deleteItem: remove, items, selectedItem: index } = itemKeys.current;
       const spec = index === null ? undefined : items?.[index];
@@ -1591,7 +1626,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [editMode, editTool]);
+  }, [editMode, keyTool]);
 
   // the Chance wall tool's pick (its index in the map's chanceWalls)
   const [selectedChanceWall, setSelectedChanceWall] = useState<number | null>(null);
@@ -1645,7 +1680,7 @@ export default function App() {
   const decalKeys = useRef({ changeDecal, deleteDecal, decals: map.decals, selectedDecal });
   decalKeys.current = { changeDecal, deleteDecal, decals: map.decals, selectedDecal };
   useEffect(() => {
-    if (!editMode || editTool !== "decal") return;
+    if (!editMode || keyTool !== "decal") return;
     function onKey(e: KeyboardEvent) {
       const { changeDecal: change, deleteDecal: remove, decals, selectedDecal: index } = decalKeys.current;
       const spec = index === null ? undefined : decals?.[index];
@@ -1680,7 +1715,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [editMode, editTool]);
+  }, [editMode, keyTool]);
 
   // The selected prop, as the panel shows it
   const selectedPropInfo: PropInfo | null = (() => {
@@ -1762,7 +1797,7 @@ export default function App() {
   const propKeys = useRef({ selectedPropInfo, changeProp, deleteProp, props: map.props, selectedProp });
   propKeys.current = { selectedPropInfo, changeProp, deleteProp, props: map.props, selectedProp };
   useEffect(() => {
-    if (!editMode || editTool !== "prop") return;
+    if (!editMode || keyTool !== "prop") return;
     function onKey(e: KeyboardEvent) {
       const { selectedPropInfo: info, changeProp: change, deleteProp: remove, props, selectedProp: index } = propKeys.current;
       const spec = index === null ? undefined : props?.[index];
@@ -1808,7 +1843,7 @@ export default function App() {
     // before the movement keys' handlers (and the next prop's R)
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [editMode, editTool]);
+  }, [editMode, keyTool]);
 
   // The selected light, as the panel shows it: its own settings, or the
   // values it's lit with where it has none (see lights.ts)
@@ -1865,6 +1900,40 @@ export default function App() {
     setSelectedDoor(null);
     setEditTool(tool);
   };
+  // The editor opens with Select; Esc (a click on empty space too) returns to it, V picks it; Alt held acts as it
+  useEffect(() => {
+    if (editMode) chooseTool("select");
+    else setAltHeld(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode]);
+  useEffect(() => {
+    if (!editMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (isTextEntry(e.target)) return;
+      if (e.key === "Alt") {
+        // (the browser's own menu bar takes the key otherwise)
+        e.preventDefault();
+        setAltHeld(true);
+      } else if (e.ctrlKey || e.metaKey || e.altKey || shortcutHelp) return;
+      else if (e.key === "Escape") {
+        if (editTool !== "select") chooseTool("select");
+        else selectOnly(null);
+      } else if (e.key === "v" || e.key === "V") chooseTool("select");
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key === "Alt") setAltHeld(false);
+    };
+    const onBlur = () => setAltHeld(false);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", onBlur);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, editTool, shortcutHelp]);
   // Step 2 bridge: observe the existing independent selections without changing
   // their owners. Only a newly selected value wins; clearing it shows Map settings.
   const inspectorPicks = {prop:selectedProp, decal:selectedDecal, item:selectedItem,
@@ -1929,7 +1998,7 @@ export default function App() {
   const lightKeys = useRef({ selectedLightInfo, changeLight, deleteLight });
   lightKeys.current = { selectedLightInfo, changeLight, deleteLight };
   useEffect(() => {
-    if (!editMode || editTool !== "light") return;
+    if (!editMode || keyTool !== "light") return;
     function onKey(e: KeyboardEvent) {
       const { selectedLightInfo: info, changeLight: change, deleteLight: remove } = lightKeys.current;
       if (!info) return;
@@ -1965,7 +2034,7 @@ export default function App() {
     // before the movement keys' handlers
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [editMode, editTool]);
+  }, [editMode, keyTool]);
 
   // R: the Prop tool turns the next prop by 90 degrees
   useEffect(() => {
@@ -2051,7 +2120,7 @@ export default function App() {
       editMode={editMode}
       hiddenLayers={hiddenLayers}
       lockedLayers={lockedLayers}
-      editTool={editTool}
+      editTool={altHeld && editMode ? "select" : editTool}
       onEdit={onEdit}
       selectedLight={selectedLightInfo ? selectedLight : null}
       selectedProp={selectedPropInfo ? selectedProp : null}

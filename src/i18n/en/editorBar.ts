@@ -1,5 +1,8 @@
 // English strings for editorBar.
 export const editorBarEn = {
+  "editorBar.select": "Select",
+  "editorBar.selectToolTitle": "Select any object (V; Esc returns here) - hold Alt in any tool for the same",
+  "editorBar.clickAnObjectToSelectItDrag": "click an object to select it (NPC, item, prop, decal, light, emitter) - drag it to move it; empty space: deselect",
   "editorBar.kind": "Kind",
   "editorBar.wall": "Wall",
   "editorBar.floor": "Floor",

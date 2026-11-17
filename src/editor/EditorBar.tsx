@@ -321,6 +321,7 @@ const HIDEABLE_LAYERS: Partial<Record<EditTool, string>> = { robot: "robot", smo
 const CLEARABLE_TOOLS = new Set<EditTool>(["robot", "smoke", "prop", "decal", "item", "light", "exit", "restricted", "wall", "bridge", "ladder"]);
 // what a click does with each (where the toolbar doesn't say otherwise)
 const TOOL_HELP: Partial<Record<EditTool, Key>> = {
+  select: "editorBar.clickAnObjectToSelectItDrag",
   height: "editorBar.clickAFloorOrCeilingUp0",
   ladder: "editorBar.clickNearAFloorSEdgeOr",
   bridge: "editorBar.clickAFloorABridgeAcrossIt",
@@ -337,6 +338,7 @@ const TOOL_HELP: Partial<Record<EditTool, Key>> = {
 };
 
 export function editorToolLabel(tool: EditTool): string {
+  if(tool==="select")return t("editorBar.select");
   if(tool==="dig" || tool==="fill")return t("editorBar.digFill");
   if(tool==="height")return t("editorBar.height");
   if(tool==="texture")return t("editorBar.texture");
@@ -351,6 +353,12 @@ export function EditorBar(p: EditorBarProps) {
   const docked = !!p.toolbarDock;
   const toolbar = <div style={neutralStyle} className="voidcrew-editor-controls flex flex-wrap items-center gap-1 font-mono" onPointerDown={e=>e.stopPropagation()}>
       {p.shared && <div className="flex flex-wrap gap-1 text-left">{p.shared}</div>}
+      <button
+        type="button"
+        className={`${BUTTON} ${p.tool === "select" ? active : idle}`}
+        onClick={() => p.onTool("select")}
+        title={t("editorBar.selectToolTitle")}
+      >{t("editorBar.select")}</button>
       <button
         type="button"
         className={`${BUTTON} ${p.tool === "dig" || p.tool === "fill" ? active : idle}`}
