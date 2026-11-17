@@ -19,13 +19,11 @@ When ON, door panels and door frames are built by `createReliefWallGeometry` wit
     the original mask). The "majority holes" rule was rejected: with the alpha cutout doing the
     edge, dropping a quad that still holds a thin bar would delete the bar. Quads that are partly
     solid stay, and the cutout trims them;
-  - vertices where omitted and kept quads meet (the rim) are pulled back to `holeBackZ` (frames:
-    `-DOOR_FRAME_HALF_DEPTH`, so the two back-to-back halves meet at the centre plane; panels:
-    the lowest level). Vertices only holes used are dropped from the buffer;
-  - **jambs are not built**: the rim slopes back over one cell instead, a continuous surface with
-    no cracks (no T-junctions, no non-manifold edges; checked offline), so the opening gets its
-    thickness as a chamfer rather than as square jamb faces. Single group (front material only);
-    the side material is simply unused for these meshes;
+  - (first version, replaced: rim vertices sloped back to `holeBackZ` as a chamfer; that
+    produced the seam described in the follow-up below. Now: real jamb faces at pixel edges back
+    to `holeBackZ` (frames: `-DOOR_FRAME_HALF_DEPTH`, so the two halves meet at the centre
+    plane; panels: the lowest level) and skirts, group 1 = side material. Vertices only holes
+    used are dropped from the buffer);
   - `holeBounds` comes from the original mask at the height map's own resolution through the
     same function the stepped build now uses (`findHoleBounds`, extracted, no behaviour change).
     Result: identical to the stepped numbers at High (64) for every frame set; at Medium/Low the
@@ -101,13 +99,48 @@ Worse / different:
 - Different style: the stepped frame is a crisp voxel look (hard ledges, dark crevices), the
   hybrid is rounder and "puffier" at close range (stone blocks bulge, texture stretches on the
   chamfer). It is the smooth walls' look; against stepped walls it would be the odd one out.
-- Thickness is a bevel, not a square reveal: the opening's depth looks softer, and at Low it is
-  a wide 45 degree bevel (one 16th of the width).
+- (Original version: the opening's depth was a bevel, a wide 45 degree one at Low; replaced by
+  real jambs, see the follow-up below.)
 - Opaque door panels cost more triangles (8192 vs 4000 to 5900) at High.
 - Alpha test on mipmapped textures: far away the bars can thin a little and transparent-pixel
   colour can bleed a dark fringe (not noticeable in the captures).
-- Quads that are partly solid keep their full chamfer slope under the cutout, so a bar right at
-  a rim shows a slightly slanted face.
+
+## Follow-up: the seam in the door frame jamb (fixed)
+
+The user's close-up showed a vertical crack with a pixelated step down a stone jamb. Reproduced
+in the fantasy arch (reveal seen from the side, door open). It was **not** frame vs wall and not
+a missing `joinEdges` (the frame is a self-contained panel placed in the door cell; flush edges
+are off for it in both modes and the stepped build has no join either). It came from my own rim
+handling, at the frame's two halves:
+
+- the rim vertices were pulled back over one grid cell, so the opening's depth was a steep
+  chamfer, and the alpha cutout cut that slope along the mask's pixel edges. Each half's visible
+  reveal ended in a pixel stair at a different depth, and the two halves (back to back, meeting
+  at the centre plane) did not line up: a stepped dark line down the middle of the reveal;
+- the hole cells' height (the back plane) also leaked into the bilinear height of neighbouring
+  vertices, pulling the surface down beside the opening.
+
+Fix (hybrid path only, `createSmoothReliefGeometry`; the stepped build is untouched):
+
+- no sloping rim any more. Hole cells take the nearest solid cell's height for the surface (the
+  ambient occlusion still sees them at the back plane), so the surface runs right up to the hole;
+- real jamb faces, like the stepped build's: along every solid/hole pixel edge of the original
+  mask a vertical face runs from the mesh surface (read off the mesh triangles, 2 mm above) to
+  `holeBackZ`. Straight runs inside one mesh quad merge into one face; texture coordinates are
+  pinned to the edge texel across the depth. They are group 1 (side material), so the cutout's
+  edge and the jamb's top are the same pixel line, and both halves' jambs end on the centre plane;
+- skirts along the panel's own outline (not across the opening) where the surface stands off the
+  base plane, as the stepped build's outside-is-base closing faces do: a frame meets the walls
+  beside it without a gap.
+
+Checked in the browser, switch ON and OFF: fantasy arch reveal and pier (jamb band with a clean
+edge, no vertical crack, same structure as stepped but with smooth stone), the portcullis, a
+sci-fi frame and the opaque lift door panel at angles (no cracks between panel halves, or panel
+and frame). Cost, triangles per half (stepped in brackets): arch frame 3034 (7632), far 616
+(768); gate 5308 (3976), far 1288 (1170); sci-fi frame 4084 (3848), far 928 (1048); opaque panels
+unchanged, 8192 (far 512). So the gate and the sci-fi frame are now about as heavy as stepped (the
+arch is still 60% lighter); vertex counts stay lower and the geometry build is still several
+times faster. The earlier triangle table above is from the chamfer version.
 
 ## Recommendation: keep as an option (leaning adopt for frames and holey panels)
 

@@ -679,11 +679,36 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
       if (Math.abs(z) > maxAbsZ) maxAbsZ = Math.abs(z);
     }
   }
-  // what a rim's vertices sink to: the caller's back plane, else the lowest level
+  // what a hybrid one's jambs reach back to: the caller's back plane, else the lowest level
   const holeBackZ = opts.holeBackZ ?? minZ;
+  // the heights the ambient occlusion sees: hole cells at the back plane
+  let aoZ = cellZ;
   if (cellSolid) {
-    // (hole cells take it too, for the ambient occlusion)
-    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) if (!cellSolid[(r0 + y) * fullW + c0 + x]) cellZ[y * gw + x] = holeBackZ;
+    aoZ = cellZ.slice();
+    const isHoleCell = (i: number) => !cellSolid![(r0 + Math.floor(i / gw)) * fullW + c0 + (i % gw)];
+    for (let i = 0; i < aoZ.length; i++) if (isHoleCell(i)) aoZ[i] = holeBackZ;
+    // The surface itself: a hole cell takes its nearest solid cell's height
+    // (flood outward), so the vertices beside a hole stay on the surface -
+    // the jambs (below) make the opening's depth, not a sloping rim.
+    const filled = new Uint8Array(cellZ.length);
+    let frontier: number[] = [];
+    for (let i = 0; i < cellZ.length; i++) if (!isHoleCell(i)) { filled[i] = 1; frontier.push(i); }
+    while (frontier.length) {
+      const next: number[] = [];
+      for (const i of frontier) {
+        const x = i % gw;
+        const y = Math.floor(i / gw);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= gw || yy >= gh || filled[yy * gw + xx]) continue;
+          filled[yy * gw + xx] = 1;
+          cellZ[yy * gw + xx] = cellZ[i];
+          next.push(yy * gw + xx);
+        }
+      }
+      frontier = next;
+    }
   }
   // the margin the side edges ease over, as in the stepped build (none when
   // they're joined: see joinEdges)
@@ -764,11 +789,11 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   // HYBRID: which of the mesh's quads are holes (no solid pixel under them:
   // a summed-area table over the original grid's mask counts them; the
   // strict rule keeps every thin bar - what the quad keeps beyond its solid
-  // pixels the alpha cutout takes away), and from that each vertex's state:
-  // 0 unused (only holes around it), 1 rim (holes and kept quads meet),
-  // 2 interior
+  // pixels the alpha cutout takes away). The surface stays on its height
+  // right up to the holes; the opening's depth is real jamb faces at the
+  // mask's own pixel edges (below), so the cutout's edge and the jamb's top
+  // are the same line and the two halves of a frame meet cleanly.
   let quadHole: Uint8Array | null = null;
-  let vertexState: Uint8Array | null = null;
   if (holeSolid) {
     const W = grid.width;
     const H = grid.height;
@@ -791,19 +816,6 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
         quadHole[j * mw + i] = solidCount === 0 ? 1 : 0;
       }
     }
-    vertexState = new Uint8Array((mw + 1) * (mh + 1));
-    for (let j = 0; j <= mh; j++) {
-      for (let i = 0; i <= mw; i++) {
-        let holes = 0;
-        let kept = 0;
-        for (const [qi, qj] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) {
-          if (qi < 0 || qj < 0 || qi >= mw || qj >= mh) continue;
-          if (quadHole[qj * mw + qi]) holes++;
-          else kept++;
-        }
-        vertexState[j * (mw + 1) + i] = !kept ? 0 : holes ? 1 : 2;
-      }
-    }
   }
   // its columns of vertices, each with the rows they sit on (in height
   // cells): the coarse rows, or every row along a joined edge
@@ -812,10 +824,9 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   const columns = Array.from({ length: mw + 1 }, (_, i) => {
     const side = i === 0 ? 0 : i === mw ? 1 : -1;
     const rows = edgeZ && side >= 0 ? fineRows : coarseRows;
-    const ids = rows.map((fy, jj) => {
+    const ids = rows.map((fy) => {
       const fx = i * stepX;
-      let z = side >= 0 ? surfaceAt(side ? gw : 0, fy) : sample(fx, fy);
-      if (vertexState && vertexState[jj * (mw + 1) + i] === 1) z = holeBackZ;
+      const z = side >= 0 ? surfaceAt(side ? gw : 0, fy) : sample(fx, fy);
       const shift = (edgeZ?.(fy) ?? 0) * ((modes[0] + modes[1]) * fx / gw - modes[0]);
       pos.push(-opts.wallWidth / 2 + fx * cellW + shift, opts.wallHeight / 2 - fy * cellH, z);
       uv.push((fx + c0) / fullW, 1 - (fy + r0) / fullH);
@@ -871,6 +882,163 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
     positions = p2;
     uvs = uv2;
   }
+  // HYBRID jambs and skirts: vertical faces (group 1, the side material), like
+  // the stepped build's step faces. Along every edge between a solid and a hole
+  // pixel one runs from the surface (read off the mesh itself, a hair above) back
+  // to holeBackZ - straight runs that stay inside one mesh quad merge into one
+  // face; along the panel's own outline a skirt closes the surface to the base
+  // plane (z = 0) where it stands off it, so a frame meets the walls beside it
+  // without a gap. Their texture coordinates are pinned to the solid edge
+  // texel, across the depth.
+  const frontIndexCount = indices.length;
+  const jambPos: number[] = [];
+  const jambUv: number[] = [];
+  if (quadHole) {
+    const W = grid.width;
+    const H = grid.height;
+    const cropped = !!opts.rows || !!opts.cols;
+    const EPS = 0.002;
+    const fx2x = (fx: number) => -opts.wallWidth / 2 + fx * cellW;
+    const fy2y = (fy: number) => opts.wallHeight / 2 - fy * cellH;
+    const vz = (i: number, j: number) => pos[columns[i].ids[j] * 3 + 2];
+    // the mesh surface's height at (fx, fy) in quad (i, j)
+    const zq = (i: number, j: number, fx: number, fy: number) => {
+      const fu = Math.min(1, Math.max(0, (fx - i * stepX) / stepX));
+      const fv = Math.min(1, Math.max(0, (fy - j * stepY) / stepY));
+      const a = vz(i, j);
+      const b = vz(i + 1, j);
+      const c = vz(i, j + 1);
+      const d = vz(i + 1, j + 1);
+      return fv >= fu ? a + fu * (d - c) + fv * (c - a) : a + fu * (b - a) + fv * (d - b);
+    };
+    const face = (p: number[][], t: number[][], want: number[]) => {
+      const e1 = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
+      const e2 = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
+      const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+      if (n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0) {
+        p = [p[0], p[3], p[2], p[1]];
+        t = [t[0], t[3], t[2], t[1]];
+      }
+      const base = positions.length / 3 + jambPos.length / 3;
+      for (let k = 0; k < 4; k++) {
+        jambPos.push(p[k][0], p[k][1], p[k][2]);
+        jambUv.push(t[k][0], t[k][1]);
+      }
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    };
+    const quadOf = (fx: number, fy: number) => [
+      Math.min(mw - 1, Math.max(0, Math.floor(fx / stepX))),
+      Math.min(mh - 1, Math.max(0, Math.floor(fy / stepY))),
+    ];
+    if (!cropped) {
+      const sx = fullW / W;
+      const sy = fullH / H;
+      const solidAt = (px: number, py: number) => px >= 0 && py >= 0 && px < W && py < H && holeSolid![py * W + px] === 1;
+      const holeAt = (px: number, py: number) => px >= 0 && py >= 0 && px < W && py < H && holeSolid![py * W + px] === 0;
+      // edges between a solid and a hole pixel; along x lines (vertical edges), then along y lines
+      for (const vertical of [true, false]) {
+        const lines = vertical ? W : H;
+        const run = vertical ? H : W;
+        for (let e = 1; e < lines; e++) {
+          for (const dir of [1, -1]) {
+            // solid on the lower side of the line for dir 1, the upper for -1
+            const sIdx = dir === 1 ? e - 1 : e;
+            const hIdx = dir === 1 ? e : e - 1;
+            let start = -1;
+            let startQuad = -1;
+            const flush = (end: number) => {
+              if (start < 0) return;
+              const [qi, qj] = vertical
+                ? quadOf((sIdx + 0.5) * sx, (start + 0.5) * sy)
+                : quadOf((start + 0.5) * sx, (sIdx + 0.5) * sy);
+              const zb = holeBackZ;
+              if (vertical) {
+                const fx = e * sx;
+                const z0 = zq(qi, qj, fx, start * sy) + EPS;
+                const z1 = zq(qi, qj, fx, end * sy) + EPS;
+                const u = (sIdx + 0.5) / W;
+                const x = fx2x(fx);
+                face(
+                  [[x, fy2y(start * sy), z0], [x, fy2y(end * sy), z1], [x, fy2y(end * sy), zb], [x, fy2y(start * sy), zb]],
+                  [[u, 1 - start / H], [u, 1 - end / H], [u, 1 - end / H], [u, 1 - start / H]],
+                  [dir, 0, 0],
+                );
+              } else {
+                const fy = e * sy;
+                const z0 = zq(qi, qj, start * sx, fy) + EPS;
+                const z1 = zq(qi, qj, end * sx, fy) + EPS;
+                const v = 1 - (sIdx + 0.5) / H;
+                const y = fy2y(fy);
+                face(
+                  [[fx2x(start * sx), y, z0], [fx2x(end * sx), y, z1], [fx2x(end * sx), y, zb], [fx2x(start * sx), y, zb]],
+                  [[start / W, v], [end / W, v], [end / W, v], [start / W, v]],
+                  [0, -dir, 0],
+                );
+              }
+              start = -1;
+            };
+            for (let k = 0; k < run; k++) {
+              const edge = vertical ? solidAt(sIdx, k) && holeAt(hIdx, k) : solidAt(k, sIdx) && holeAt(k, hIdx);
+              if (edge) {
+                const q = vertical ? quadOf((sIdx + 0.5) * sx, (k + 0.5) * sy)[1] : quadOf((k + 0.5) * sx, (sIdx + 0.5) * sy)[0];
+                if (start >= 0 && q !== startQuad) flush(k);
+                if (start < 0) {
+                  start = k;
+                  startQuad = q;
+                }
+              } else flush(k);
+            }
+            flush(run);
+          }
+        }
+      }
+    }
+    // skirts along the outline, where a kept quad's surface stands off the base plane
+    const skirt = (ax: number, ay: number, za: number, bx: number, by: number, zb2: number, tu: number, tv: number[], outward: number[]) => {
+      if (Math.abs(za) < 1e-4 && Math.abs(zb2) < 1e-4) return;
+      // (the face looks toward the lower side, as a stepped step face does)
+      const sign = za + zb2 > 0 ? 1 : -1;
+      face(
+        [[ax, ay, za], [bx, by, zb2], [bx, by, 0], [ax, ay, 0]],
+        [[tu, tv[0]], [tu, tv[1]], [tu, tv[1]], [tu, tv[0]]],
+        outward.map((c) => c * sign),
+      );
+    };
+    for (let j = 0; j < mh; j++) {
+      for (const i of [0, mw - 1]) {
+        if (quadHole[j * mw + i]) continue;
+        const left = i === 0;
+        const col = left ? 0 : mw;
+        const fy0 = j * stepY;
+        const fy1 = (j + 1) * stepY;
+        const x = fx2x(col * stepX);
+        const tu = (c0 + (left ? 0.5 * stepX : fullW - c0 - 0.5 * stepX)) / fullW;
+        skirt(x, fy2y(fy0), vz(col, j), x, fy2y(fy1), vz(col, j + 1), tu, [1 - (fy0 + r0) / fullH, 1 - (fy1 + r0) / fullH], [left ? -1 : 1, 0, 0]);
+      }
+    }
+    for (let i = 0; i < mw; i++) {
+      for (const j of [0, mh - 1]) {
+        if (quadHole[j * mw + i]) continue;
+        const top = j === 0;
+        const row = top ? 0 : mh;
+        const fx0 = i * stepX;
+        const fx1 = (i + 1) * stepX;
+        const y = fy2y(row * stepY);
+        const tv = 1 - (r0 + (top ? 0.5 * stepY : fullH - r0 - 0.5 * stepY)) / fullH;
+        skirt(fx2x(fx0), y, vz(i, row), fx2x(fx1), y, vz(i + 1, row), (fx0 + c0) / fullW, [tv, tv], [0, top ? 1 : -1, 0]);
+      }
+    }
+  }
+  if (jambPos.length) {
+    const merged = new Float32Array(positions.length + jambPos.length);
+    merged.set(positions);
+    merged.set(jambPos, positions.length);
+    positions = merged;
+    const mergedUv = new Float32Array(uvs.length + jambUv.length);
+    mergedUv.set(uvs);
+    mergedUv.set(jambUv, uvs.length);
+    uvs = mergedUv;
+  }
   // A distant version's flat triangles cut across the detailed surface's
   // hollows - how far they rise above it at worst (checked at the detailed
   // mesh's own vertices: both are flat between them, the detailed mesh's
@@ -905,13 +1073,15 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   geometry.setAttribute("uv1", new THREE.BufferAttribute(uvs.slice(), 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  geometry.addGroup(0, indices.length, 0);
+  // (a hybrid one's jambs and skirts are group 1: the side material)
+  geometry.addGroup(0, frontIndexCount, 0);
+  if (indices.length > frontIndexCount) geometry.addGroup(frontIndexCount, indices.length - frontIndexCount, 1);
 
   // (a distant version uses its detailed one's AO map: none of its own)
   const aoMap =
     lod > 1
       ? createAoTexture(new Float32Array([1]), 1, 1)
-      : createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
+      : createAoTexture(computeAmbientOcclusion(aoZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
   // The opening comes from the mask itself, at the height map's own
   // resolution and exactly as the stepped build finds it (for the uncropped
   // map: a door's collision and its panel's size don't depend on the look)
