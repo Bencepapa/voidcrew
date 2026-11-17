@@ -812,6 +812,8 @@ function makeSkyMaterial(): THREE.ShaderMaterial {
 // a spill's timing (ms): out of the container, lying there until, drawn in
 const ITEM_HEIGHT = 0.2;
 const ITEM_LIFT = 0.005;
+// how much bigger a loose item is drawn lying flat in the top-down view
+const ITEM_TOPDOWN_GROW = 1.4;
 // how much they glow (see itemTemplate)
 const ITEM_GLOW = 0.1;
 // how their normals are bent (see itemTemplate): how much of the relief's
@@ -2212,7 +2214,18 @@ export function GameViewport({
         lieFlat(entry.mesh, undefined);
         entry.mesh.position.y = floorY(Math.round(entry.mesh.position.x), Math.round(entry.mesh.position.z)) + 0.05;
       }
-      for (const item of looseItems.values()) if (!item.taken) lieFlat(item.obj, undefined, 2.4);
+      for (const item of looseItems.values()) {
+        if (item.taken) continue;
+        // (the relief mesh is the template's child: centered on the item, then raised by its own
+        // depth, so the back of the relief doesn't sink into the floor)
+        const mesh = item.obj.children[0] as THREE.Mesh | undefined;
+        lieFlat(item.obj, mesh, ITEM_TOPDOWN_GROW);
+        if (mesh?.geometry) {
+          if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+          const box = mesh.geometry.boundingBox;
+          if (box) mesh.position.set(0, 0, -box.min.z + 0.01);
+        }
+      }
     }
     // The debug normal / depth views draw a material's own map as its colour
     // (unlit: black base, the map as its emissive); the feature switches for
