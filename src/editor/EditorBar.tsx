@@ -314,7 +314,7 @@ const MORE_TOOLS: { tool: EditTool; label: Key; title: Key }[] = [
   { tool: "map", label: "editorBar.map", title: "editorBar.theMapSSizeOpenMakeOr" },
 ];
 // the tools the asset tree picks (see AssetTree): no button for them in the bar
-const TREE_TOOLS = new Set<EditTool>(["texture", "light", "prop", "decal", "robot", "item", "smoke"]);
+const TREE_TOOLS = new Set<EditTool>(["map", "texture", "light", "prop", "decal", "robot", "item", "smoke"]);
 // the tools whose layer can be hidden from the view: the layer's name
 const HIDEABLE_LAYERS: Partial<Record<EditTool, string>> = { robot: "robot", smoke: "smoke", prop: "prop", decal: "decal", item: "item" };
 // the tools with a layer of their own that "Clear all" can empty
@@ -353,24 +353,6 @@ export function EditorBar(p: EditorBarProps) {
   const docked = !!p.toolbarDock;
   const toolbar = <div style={neutralStyle} className="voidcrew-editor-controls flex flex-wrap items-center gap-1 font-mono" onPointerDown={e=>e.stopPropagation()}>
       {p.shared && <div className="flex flex-wrap gap-1 text-left">{p.shared}</div>}
-      <button
-        type="button"
-        className={`${BUTTON} ${p.tool === "select" ? active : idle}`}
-        onClick={() => p.onTool("select")}
-        title={t("editorBar.selectToolTitle")}
-      >{t("editorBar.select")}</button>
-      <button
-        type="button"
-        className={`${BUTTON} ${p.tool === "dig" || p.tool === "fill" ? active : idle}`}
-        onClick={() => p.onTool("dig")}
-        title={t("editorBar.leftClickDigAWallOutRight")}
-      >{t("editorBar.digFill")}</button>
-      <button
-        type="button"
-        className={`${BUTTON} ${p.tool === "height" ? active : idle}`}
-        onClick={() => p.onTool("height")}
-        title={t("editorBar.raiseLeftClickOrLowerRightClick")}
-      >{t("editorBar.height")}</button>
       {MORE_TOOLS.filter(({ tool }) => !TREE_TOOLS.has(tool)).map(({ tool, label, title }) => (
         <button
           key={tool}
@@ -382,9 +364,6 @@ export function EditorBar(p: EditorBarProps) {
           {t(label)}
         </button>
       ))}
-      <span className="w-2" />
-      <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canUndo} onClick={p.onUndo} title="Z">{t("editorBar.undo")}</button>
-      <button type="button" className={`${BUTTON} ${idle}`} disabled={!p.canRedo} onClick={p.onRedo} title="Y">{t("editorBar.redo")}</button>
       {HIDEABLE_LAYERS[p.tool] && (
         <button
           type="button"
@@ -403,13 +382,6 @@ export function EditorBar(p: EditorBarProps) {
           title={t("editorBar.takeEverythingOfThisToolSLayer")}
         >{t("editorBar.clearAll")}</button>
       )}
-      <span className="w-2" />
-      {import.meta.env.DEV && (
-        <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSave} title="Ctrl+S">{t("editorBar.save", { v1: p.unsaved ? " •" : "" })}</button>
-      )}
-      <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDownload}>{t("editorBar.download")}</button>
-      <span className="w-2" />
-      <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onExit} title="Tab">{t("editorBar.exitEditor")}</button>
   </div>;
   const bar = (
     <div

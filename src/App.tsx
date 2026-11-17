@@ -4,6 +4,7 @@ import { Inspector, type InspectedKind } from "./editor/Inspector";
 import { ProblemsPanel } from "./editor/ProblemsPanel";
 import { validateMap, removeInWall, removeDuplicates } from "./editor/validate";
 import { EditorStatusBar } from "./editor/EditorStatusBar";
+import { FloatToolbar } from "./editor/FloatToolbar";
 import { ShortcutHelp } from "./editor/ShortcutHelp";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
@@ -2579,6 +2580,7 @@ export default function App() {
           {viewport}
           {joysticks}
           {overlays}
+          {editMode && <FloatToolbar tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} compact={compact} />}
         </div>
 
         <div className={`${editMode ? "w-64 xl:w-80 max-md:w-44" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0`}>
