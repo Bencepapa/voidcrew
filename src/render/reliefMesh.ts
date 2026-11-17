@@ -53,10 +53,18 @@ export interface ReliefOptions {
   holeLevels?: number;
   // a smooth height field (slopes between the heights) instead of stepped
   // levels - for stone, hedges, trees. Not for maps with holes or cut-out
-  // levels: those stay stepped.
+  // levels: those stay stepped - unless `smoothHoles` (below) asks for the
+  // hybrid build.
   smooth?: boolean;
   // for a smooth one: how many cells along its long side (the graphics setting; default 64)
   smoothCells?: number;
+  // HYBRID mode (an experiment, see createSmoothReliefGeometry): lets a
+  // smooth relief take a map with holes. Grid quads that cover no solid pixel
+  // are left out, the vertices on their rim sink back to `holeBackZ`, and the
+  // pixel-precise edge is left to an alpha cutout on the front material
+  // (alphaTest on the diffuse). Without it a smooth request for a map with
+  // holes falls back to the stepped build.
+  smoothHoles?: boolean;
   // for a smooth one: a distant, low-detail version of the same surface -
   // this many times fewer cells along each side. Its vertices are picked
   // off the detailed one (heights worked out at smoothCells, then sampled),
@@ -202,7 +210,7 @@ export function downsampleHeightGrid(grid: HeightGrid, factor: number): HeightGr
 }
 
 export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
-  if (opts.smooth && !grid.solid && !opts.holeLevels) return createSmoothReliefGeometry(grid, opts);
+  if (opts.smooth && !opts.holeLevels && (!grid.solid || opts.smoothHoles)) return createSmoothReliefGeometry(grid, opts);
   const { width: fullW, height: fullH } = grid;
 
   const { q: quantized, heights, baked } = quantizeHeights(grid.data, opts.levels);
@@ -529,28 +537,7 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
   // opening can reach higher at the sides than in the middle (a plate hanging
   // from the header). Stray transparent pixels elsewhere, like a sliver along
   // the image's edge, aren't part of it.
-  let holeBounds: HoleBounds | null = null;
-  const cx = Math.floor(gw / 2);
-  const cy = Math.floor(gh / 2);
-  const isHole = (x: number, y: number) => key[y * gw + x] === HOLE;
-  if (isHole(cx, cy)) {
-    let rowTop = cy;
-    let rowBottom = cy;
-    while (rowTop > 0 && isHole(cx, rowTop - 1)) rowTop--;
-    while (rowBottom < gh - 1 && isHole(cx, rowBottom + 1)) rowBottom++;
-    let x0 = cx;
-    let x1 = cx;
-    while (x0 > 0 && isHole(x0 - 1, cy)) x0--;
-    while (x1 < gw - 1 && isHole(x1 + 1, cy)) x1++;
-    let top = rowTop;
-    for (let x = x0; x <= x1; x++) {
-      if (!isHole(x, cy)) continue;
-      let y = cy;
-      while (y > 0 && isHole(x, y - 1)) y--;
-      top = Math.min(top, y);
-    }
-    holeBounds = { minX: X(x0), maxX: X(x1 + 1), minY: Y(rowBottom + 1), maxY: Y(top) };
-  }
+  const holeBounds = findHoleBounds((x, y) => key[y * gw + x] === HOLE, gw, gh, X, Y);
 
   return {
     geometry,
@@ -562,6 +549,41 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
     holeBounds,
     edge,
   };
+}
+
+// The central opening (a door frame's): its width is the run of hole cells
+// through the middle row (the jambs can flare out near the floor); its top
+// is the highest hole cell straight above any of those columns - the
+// opening can reach higher at the sides than in the middle (a plate hanging
+// from the header). Stray transparent pixels elsewhere, like a sliver along
+// the image's edge, aren't part of it. Shared by the stepped and the hybrid
+// smooth build, so both give a door the same opening.
+function findHoleBounds(
+  isHole: (x: number, y: number) => boolean,
+  gw: number,
+  gh: number,
+  X: (x: number) => number,
+  Y: (y: number) => number,
+): HoleBounds | null {
+  const cx = Math.floor(gw / 2);
+  const cy = Math.floor(gh / 2);
+  if (!isHole(cx, cy)) return null;
+  let rowTop = cy;
+  let rowBottom = cy;
+  while (rowTop > 0 && isHole(cx, rowTop - 1)) rowTop--;
+  while (rowBottom < gh - 1 && isHole(cx, rowBottom + 1)) rowBottom++;
+  let x0 = cx;
+  let x1 = cx;
+  while (x0 > 0 && isHole(x0 - 1, cy)) x0--;
+  while (x1 < gw - 1 && isHole(x1 + 1, cy)) x1++;
+  let top = rowTop;
+  for (let x = x0; x <= x1; x++) {
+    if (!isHole(x, cy)) continue;
+    let y = cy;
+    while (y > 0 && isHole(x, y - 1)) y--;
+    top = Math.min(top, y);
+  }
+  return { minX: X(x0), maxX: X(x1 + 1), minY: Y(rowBottom + 1), maxY: Y(top) };
 }
 
 // The smooth variant: one vertex grid over the panel (at most SMOOTH_CELLS
@@ -576,14 +598,51 @@ export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions):
 const SMOOTH_CELLS = 64;
 
 function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
+  // HYBRID (grid.solid + opts.smoothHoles): transparent pixels are holes. The
+  // heights are averaged over the solid pixels only (a transparent pixel's
+  // color is junk), the base level and stretch are worked out over solid
+  // cells only, grid quads covering no solid pixel are left out, and the
+  // vertices on their rim sink back to holeBackZ. The pixel-precise edge is
+  // the front material's alpha cutout. Closing jambs: not built - the rim
+  // slopes back to holeBackZ instead (one cell wide), which is a continuous
+  // surface, so there are no cracks; a door frame's two halves meet there.
+  const holeSolid = opts.smoothHoles ? grid.solid : undefined;
   const factor = Math.max(1, Math.ceil(Math.max(grid.width, grid.height) / (opts.smoothCells ?? SMOOTH_CELLS)));
-  const src = factor > 1 ? downsampleHeightGrid(grid, factor) : grid;
+  let cellSolid: Uint8Array | undefined;
+  let src: HeightGrid;
+  if (holeSolid) {
+    const sw = Math.max(1, Math.floor(grid.width / factor));
+    const sh = Math.max(1, Math.floor(grid.height / factor));
+    const data = new Float32Array(sw * sh);
+    cellSolid = new Uint8Array(sw * sh);
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        let sum = 0;
+        let n = 0;
+        for (let sy = 0; sy < factor; sy++) {
+          for (let sx = 0; sx < factor; sx++) {
+            const i = (y * factor + sy) * grid.width + x * factor + sx;
+            if (!holeSolid[i]) continue;
+            sum += grid.data[i];
+            n++;
+          }
+        }
+        data[y * sw + x] = n ? sum / n : 0;
+        cellSolid[y * sw + x] = n ? 1 : 0;
+      }
+    }
+    src = { width: sw, height: sh, data };
+  } else {
+    src = factor > 1 ? downsampleHeightGrid(grid, factor) : grid;
+  }
   const { width: fullW, height: fullH } = src;
+  // the heights that count: the solid cells' (all of them without holes)
+  const statData = cellSolid ? Float32Array.from(src.data.filter((_, i) => cellSolid![i])) : src.data;
 
   // heights 0..1: absolute for a baked map, stretched for a continuous one
-  const sorted = Float32Array.from(src.data).sort();
+  const sorted = Float32Array.from(statData).sort();
   const distinct = new Set<number>();
-  for (let i = 0; i < src.data.length && distinct.size <= 32; i++) distinct.add(Math.round(src.data[i] * 255));
+  for (let i = 0; i < statData.length && distinct.size <= 32; i++) distinct.add(Math.round(statData[i] * 255));
   const stretch = distinct.size > MAX_BAKED_LEVELS;
   const lo = stretch ? sorted[Math.floor(sorted.length * 0.005)] : 0;
   const hi = stretch ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.995))] : 1;
@@ -591,7 +650,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   const norm = (v: number) => Math.min(1, Math.max(0, (v - lo) / range));
   // the base: the most common 8-bit gray
   const counts = new Uint32Array(256);
-  for (const v of src.data) counts[Math.min(255, Math.round(norm(v) * 255))]++;
+  for (const v of statData) counts[Math.min(255, Math.round(norm(v) * 255))]++;
   let baseGray = 0;
   for (let g = 1; g < 256; g++) if (counts[g] > counts[baseGray]) baseGray = g;
   const base = baseGray / 255;
@@ -609,18 +668,29 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   const cellZ = new Float32Array(gw * gh);
   let maxZ = 0;
   let maxAbsZ = 0;
+  let minZ = 0;
   for (let y = 0; y < gh; y++) {
     for (let x = 0; x < gw; x++) {
+      if (cellSolid && !cellSolid[(r0 + y) * fullW + c0 + x]) continue;
       const z = (norm(src.data[(r0 + y) * fullW + c0 + x]) - base) * opts.depth;
       cellZ[y * gw + x] = z;
       if (z > maxZ) maxZ = z;
+      if (z < minZ) minZ = z;
       if (Math.abs(z) > maxAbsZ) maxAbsZ = Math.abs(z);
     }
   }
+  // what a rim's vertices sink to: the caller's back plane, else the lowest level
+  const holeBackZ = opts.holeBackZ ?? minZ;
+  if (cellSolid) {
+    // (hole cells take it too, for the ambient occlusion)
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) if (!cellSolid[(r0 + y) * fullW + c0 + x]) cellZ[y * gw + x] = holeBackZ;
+  }
   // the margin the side edges ease over, as in the stepped build (none when
   // they're joined: see joinEdges)
+  // (a hybrid one has no joined edges: it's for doors)
+  const joinEdges = holeSolid ? undefined : opts.joinEdges;
   const margin =
-    opts.flushEdges === false || opts.joinEdges ? 0 : Math.min(Math.floor(gw / 2), Math.ceil(maxAbsZ / cellW - 1e-6));
+    opts.flushEdges === false || joinEdges ? 0 : Math.min(Math.floor(gw / 2), Math.ceil(maxAbsZ / cellW - 1e-6));
   if (margin > 0) {
     for (let y = 0; y < gh; y++) {
       for (let x = 0; x < gw; x++) {
@@ -656,7 +726,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   // neighbours at different distances still meet vertex on vertex.
   let edgeZ: ((fy: number) => number) | null = null;
   let edge: EdgeSegment[] | undefined;
-  if (opts.joinEdges) {
+  if (joinEdges) {
     const ez = new Float32Array(gh + 1);
     for (let k = 0; k <= gh; k++) ez[k] = (sample(0, k) + sample(gw, k)) / 2;
     edgeZ = (fy) => {
@@ -691,6 +761,50 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   const stepY = gh / mh;
   const pos: number[] = [];
   const uv: number[] = [];
+  // HYBRID: which of the mesh's quads are holes (no solid pixel under them:
+  // a summed-area table over the original grid's mask counts them; the
+  // strict rule keeps every thin bar - what the quad keeps beyond its solid
+  // pixels the alpha cutout takes away), and from that each vertex's state:
+  // 0 unused (only holes around it), 1 rim (holes and kept quads meet),
+  // 2 interior
+  let quadHole: Uint8Array | null = null;
+  let vertexState: Uint8Array | null = null;
+  if (holeSolid) {
+    const W = grid.width;
+    const H = grid.height;
+    const sat = new Uint32Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) {
+      let row = 0;
+      for (let x = 0; x < W; x++) {
+        row += holeSolid[y * W + x];
+        sat[(y + 1) * (W + 1) + x + 1] = sat[y * (W + 1) + x + 1] + row;
+      }
+    }
+    quadHole = new Uint8Array(mw * mh);
+    for (let j = 0; j < mh; j++) {
+      const py0 = Math.max(0, Math.floor(((r0 + j * stepY) / fullH) * H + 1e-6));
+      const py1 = Math.min(H, Math.max(py0 + 1, Math.ceil(((r0 + (j + 1) * stepY) / fullH) * H - 1e-6)));
+      for (let i = 0; i < mw; i++) {
+        const px0 = Math.max(0, Math.floor(((c0 + i * stepX) / fullW) * W + 1e-6));
+        const px1 = Math.min(W, Math.max(px0 + 1, Math.ceil(((c0 + (i + 1) * stepX) / fullW) * W - 1e-6)));
+        const solidCount = sat[py1 * (W + 1) + px1] - sat[py0 * (W + 1) + px1] - sat[py1 * (W + 1) + px0] + sat[py0 * (W + 1) + px0];
+        quadHole[j * mw + i] = solidCount === 0 ? 1 : 0;
+      }
+    }
+    vertexState = new Uint8Array((mw + 1) * (mh + 1));
+    for (let j = 0; j <= mh; j++) {
+      for (let i = 0; i <= mw; i++) {
+        let holes = 0;
+        let kept = 0;
+        for (const [qi, qj] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) {
+          if (qi < 0 || qj < 0 || qi >= mw || qj >= mh) continue;
+          if (quadHole[qj * mw + qi]) holes++;
+          else kept++;
+        }
+        vertexState[j * (mw + 1) + i] = !kept ? 0 : holes ? 1 : 2;
+      }
+    }
+  }
   // its columns of vertices, each with the rows they sit on (in height
   // cells): the coarse rows, or every row along a joined edge
   const fineRows = Array.from({ length: gh + 1 }, (_, j) => j);
@@ -698,9 +812,10 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   const columns = Array.from({ length: mw + 1 }, (_, i) => {
     const side = i === 0 ? 0 : i === mw ? 1 : -1;
     const rows = edgeZ && side >= 0 ? fineRows : coarseRows;
-    const ids = rows.map((fy) => {
+    const ids = rows.map((fy, jj) => {
       const fx = i * stepX;
-      const z = side >= 0 ? surfaceAt(side ? gw : 0, fy) : sample(fx, fy);
+      let z = side >= 0 ? surfaceAt(side ? gw : 0, fy) : sample(fx, fy);
+      if (vertexState && vertexState[jj * (mw + 1) + i] === 1) z = holeBackZ;
       const shift = (edgeZ?.(fy) ?? 0) * ((modes[0] + modes[1]) * fx / gw - modes[0]);
       pos.push(-opts.wallWidth / 2 + fx * cellW + shift, opts.wallHeight / 2 - fy * cellH, z);
       uv.push((fx + c0) / fullW, 1 - (fy + r0) / fullH);
@@ -714,6 +829,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
     const R = columns[i + 1];
     if (L.rows === R.rows) {
       for (let j = 0; j < L.rows.length - 1; j++) {
+        if (quadHole && quadHole[j * mw + i]) continue;
         const a = L.ids[j];
         const b = R.ids[j];
         const c = L.ids[j + 1];
@@ -736,15 +852,33 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
       }
     }
   }
-  const positions = new Float32Array(pos);
-  const uvs = new Float32Array(uv);
+  let positions = new Float32Array(pos);
+  let uvs = new Float32Array(uv);
+  if (quadHole) {
+    // drop the vertices only holes used
+    const remap = new Int32Array(positions.length / 3).fill(-1);
+    let kept = 0;
+    for (let k = 0; k < indices.length; k++) if (remap[indices[k]] < 0) remap[indices[k]] = kept++;
+    const p2 = new Float32Array(kept * 3);
+    const uv2 = new Float32Array(kept * 2);
+    for (let v = 0; v < remap.length; v++) {
+      const to = remap[v];
+      if (to < 0) continue;
+      p2.set(positions.subarray(v * 3, v * 3 + 3), to * 3);
+      uv2.set(uvs.subarray(v * 2, v * 2 + 2), to * 2);
+    }
+    for (let k = 0; k < indices.length; k++) indices[k] = remap[indices[k]];
+    positions = p2;
+    uvs = uv2;
+  }
   // A distant version's flat triangles cut across the detailed surface's
   // hollows - how far they rise above it at worst (checked at the detailed
   // mesh's own vertices: both are flat between them, the detailed mesh's
   // triangles split the same way, so the gap peaks at one; a joined edge's
-  // fans, on the detailed surface's own edge rows, are left out)
+  // fans, on the detailed surface's own edge rows, are left out). (Not for
+  // a hybrid one: doors have no decals.)
   let lodRise = 0;
-  if (lod > 1) {
+  if (lod > 1 && !quadHole) {
     const at = (i: number, j: number) => positions[columns[i].ids[Math.round(columns[i].rows === fineRows ? j * stepY : j)] * 3 + 2];
     for (let y = 0; y <= gh; y++) {
       for (let x = 0; x <= gw; x++) {
@@ -778,7 +912,28 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
     lod > 1
       ? createAoTexture(new Float32Array([1]), 1, 1)
       : createAoTexture(computeAmbientOcclusion(cellZ, gw, gh, cellW, cellH, opts.aoRadius), gw, gh);
-  return { geometry, aoMap, triangles: indices.length / 3, levelCount: 0, baked: false, maxZ, holeBounds: null, lodRise, edge };
+  // The opening comes from the mask itself, at the height map's own
+  // resolution and exactly as the stepped build finds it (for the uncropped
+  // map: a door's collision and its panel's size don't depend on the look)
+  let holeBounds: HoleBounds | null = null;
+  if (holeSolid) {
+    const W = grid.width;
+    const H = grid.height;
+    const gr0 = opts.rows ? Math.round(opts.rows[0] * H) : 0;
+    const gr1 = opts.rows ? Math.max(gr0 + 1, Math.round(opts.rows[1] * H)) : H;
+    const gc0 = opts.cols ? Math.round(opts.cols[0] * W) : 0;
+    const gc1 = opts.cols ? Math.max(gc0 + 1, Math.round(opts.cols[1] * W)) : W;
+    const hw = gc1 - gc0;
+    const hh = gr1 - gr0;
+    holeBounds = findHoleBounds(
+      (x, y) => !holeSolid[(gr0 + y) * W + gc0 + x],
+      hw,
+      hh,
+      (x) => -opts.wallWidth / 2 + (x * opts.wallWidth) / hw,
+      (y) => opts.wallHeight / 2 - (y * opts.wallHeight) / hh,
+    );
+  }
+  return { geometry, aoMap, triangles: indices.length / 3, levelCount: 0, baked: false, maxZ, holeBounds, lodRise, edge };
 }
 
 // Horizon-based ambient occlusion over the relief's height field: for each

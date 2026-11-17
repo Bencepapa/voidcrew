@@ -93,6 +93,7 @@ export const debugEn = {
   "debug.low512TrianglesAWall": "low (512 triangles a wall)",
   "debug.medium2048": "medium (2 048)",
   "debug.high8192": "high (8 192)",
+  "debug.hybridDoors": "Doors and frames: smooth hybrid relief",
   "debug.resolutionDevicePixelsPerPixel": "Resolution (device pixels per pixel)",
   "debug.05xBlurryLightest": "0.5x (blurry, lightest)",
   "debug.075xSoft": "0.75x (soft)",

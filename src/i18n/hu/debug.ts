@@ -93,6 +93,7 @@ export const debugHu = {
   "debug.low512TrianglesAWall": "alacsony (512 háromszög falanként)",
   "debug.medium2048": "közepes (2 048)",
   "debug.high8192": "magas (8 192)",
+  "debug.hybridDoors": "Ajtók és keretek: sima hibrid dombormű",
   "debug.resolutionDevicePixelsPerPixel": "Felbontás (eszközpixel képpontonként)",
   "debug.05xBlurryLightest": "0,5x (elmosott, leggyorsabb)",
   "debug.075xSoft": "0,75x (lágy)",
