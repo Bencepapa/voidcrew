@@ -4,7 +4,7 @@ The Pages build can connect to a Supabase project for shared maps and PNG textur
 
 ## Set up a dedicated Free project
 
-1. Create a project at [Supabase Dashboard](https://supabase.com/dashboard). Run [shared-editor.sql](./shared-editor.sql), then [shared-map-authors.sql](./shared-map-authors.sql) in its SQL Editor. For an existing trial, run only the latter to record the author and time of new saves.
+1. Create a project at [Supabase Dashboard](https://supabase.com/dashboard). Run [shared-editor.sql](./shared-editor.sql), then [shared-map-authors.sql](./shared-map-authors.sql), then [shared-texture-folders.sql](./shared-texture-folders.sql) in its SQL Editor. For an existing trial, run only the ones it hasn't had yet: the second records the author and time of new saves, the third lets the texture bucket take the `meta.json` files of the Assets window's textures.
 2. Under **Authentication → Users**, create and confirm two test accounts with passwords. Turn off public signups for this private trial. Grant editor access to those accounts by running the following SQL with their actual email addresses.
 
    ```sql
@@ -15,12 +15,24 @@ The Pages build can connect to a Supabase project for shared maps and PNG textur
 
 3. In the GitHub repository under **Settings → Secrets and variables → Actions → Variables**, set `VITE_SUPABASE_URL` to the project URL and `VITE_SUPABASE_PUBLISHABLE_KEY` to the public project key. Run **Deploy to GitHub Pages** again. For local development the same variable names can go in Vite's local environment file. The browser bundle includes these values. Use only a publishable or legacy anon key.
 
-Shared maps require editor access. Uploaded texture images have public read URLs, so use assets suitable for public distribution. PNG uploads are limited to 8 MiB per file. Each upload gets a new ID.
+Shared maps require editor access. Uploaded texture images have public read URLs, so use assets suitable for public distribution. PNG uploads are limited to 8 MiB per file.
+
+### Textures
+
+Shared textures are made and published in the editor's **Assets** window (**+ New texture**, then **Publish** in the yellow bar), not in the Shared maps dialog. The store is append-only (editors can insert and select, nothing is updated or deleted):
+
+```
+void-textures/<world>/<uuid>-name.png              old flat files: still read as before (flat normal and depth, floor and wall)
+void-textures/<world>/<uuid>/r<rev>/meta.json      name, kinds (wall/floor/ceiling), pixelArt, rev, transparency, the mode of every map, the Auto recipe
+void-textures/<world>/<uuid>/r<rev>/diffuse.png    plus normal.png, depth.png, surface.png (gloss in green, metal in blue), emissive.png: only the uploaded ones
+```
+
+`meta.json` is uploaded last and the loader uses the highest `r<rev>` folder that has one, so a half-published folder is never shown. Publishing again adds the next `r<rev>` folder, which replaces the old one in the game; the old one stays in storage, unlisted. Auto maps are not stored: the browser makes them from the diffuse. Publishing needs [shared-texture-folders.sql](./shared-texture-folders.sql) to have been run (it adds `application/json` to the bucket's allowed types; the policies already cover the folders).
 
 ## Try it from two browsers
 
 1. Open the same game world in two browser profiles. Enter the editor with **Tab**, click **Shared maps** and sign in with different accounts.
-2. Make two differently named maps with the Map tool. In the first browser, upload a PNG using **Shared maps → Add wall / floor PNG**, close the dialog and paint it onto the first map. Use **Shared maps → Save** in each browser.
+2. Make two differently named maps with the Map tool. In the first browser, make a texture in the **Assets** window (**+ New texture**, a diffuse PNG, **Publish**), then paint it onto the first map. Use **Shared maps → Save** in each browser.
 3. Reload both pages, sign in and open **Shared maps**. Both maps should appear. Open the textured map from the second browser and check the painted surface.
 4. For the conflict test, open the same shared revision in both browsers. Save an edit in the first. Saving from the second must show a conflict. Use **Save as separate copy**, refresh the list and check both versions.
 
