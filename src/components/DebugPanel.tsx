@@ -372,6 +372,7 @@ export function DebugPanel({
               <option value={1}>{t("debug.on")}</option>
             </select>,
           )}
+          {check("hybridDoors", t("debug.hybridDoors"))}
           {/* (past VIEW_DISTANCE_HIGH only when the limit above allows) */}
           {slider({
             key: "viewDistance",

@@ -147,6 +147,10 @@ export interface ViewportSettings {
   reliefMinIsland: number;
   // stepped levels, or a smooth height field with slopes
   reliefMode: ReliefMode;
+  // EXPERIMENT: door panels and frames as a smooth hybrid relief (a smooth
+  // mesh with the holes' quads left out, the pixel edge from an alpha cutout
+  // on the diffuse) instead of the stepped one - see createSmoothReliefGeometry
+  hybridDoors: boolean;
   // the floors' own relief depth (world units) and normal strength; 0: as the walls'
   floorReliefDepth: number;
   floorNormalStrength: number;
@@ -333,6 +337,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   reliefLevels: 6,
   reliefMinIsland: 3,
   reliefMode: "steps",
+  hybridDoors: false,
   floorReliefDepth: 0,
   floorNormalStrength: 0,
   ...DEVICE_GRAPHICS,
@@ -2753,6 +2758,9 @@ export function GameViewport({
         // a smooth relief's distant version: this many times fewer cells each
         // way (see SMOOTH_LODS) - the grid isn't made coarser for it then
         smoothLod?: number;
+        // a door part's hybrid build (settings.hybridDoors): smooth whatever
+        // the wall relief mode, with the holes' quads left out
+        hybrid?: boolean;
         // side edges left for corner joins (ReliefOptions.joinEdges), and
         // the corners they land on (ReliefOptions.edgeModes)
         joinEdges?: number;
@@ -2791,7 +2799,7 @@ export function GameViewport({
           tick("height map load (wait)", gridFrom);
           // (a map with holes or cut-out levels is never built smooth - see
           // ReliefOptions.smooth - so its distant version gets the coarser grid)
-          const smooth = settings.reliefMode === "smooth" && !grid.solid && !shape.holeLevels;
+          const smooth = shape.hybrid || (settings.reliefMode === "smooth" && !grid.solid && !shape.holeLevels);
           const smoothLod = smooth ? shape.smoothLod : undefined;
           let edgeProfile: EdgeSegment[] | undefined;
           if (shape.coarse && shape.coarse > 1 && !smoothLod) {
@@ -2823,7 +2831,8 @@ export function GameViewport({
             depth: (shape.depth ?? reliefDepth) * (textureTuning(kit.id)?.relief ?? 1),
             levels: settings.reliefLevels,
             minIsland: settings.reliefMinIsland,
-            smooth: settings.reliefMode === "smooth",
+            smooth: shape.hybrid || settings.reliefMode === "smooth",
+            smoothHoles: shape.hybrid,
             smoothCells: settings.wallDetail,
             smoothLod,
             aoRadius: settings.aoRadius,
@@ -3217,6 +3226,27 @@ export function GameViewport({
       lod.addLevel(new THREE.Mesh(far, mat), LOD_DISTANCE * lodScale);
       return lod;
     };
+    // The hybrid experiment (settings.hybridDoors): doors and frames as
+    // smooth meshes with the holes' quads left out and the pixel edge cut by
+    // the diffuse's alpha - the same mesh builder for near and far, the far
+    // one with fewer cells (never below 8).
+    const hybrid = settings.hybridDoors;
+    const hybridFarLod = Math.max(1, Math.min(LOD_FACTOR, Math.floor(settings.wallDetail / 8)));
+    // (the door kits are the doors' own: no wall shares their materials)
+    const cutout = (mat: THREE.Material) => {
+      mat.alphaTest = 0.5;
+      mat.needsUpdate = true;
+    };
+    if (hybrid) {
+      cutout(frameKit.wallMat);
+      for (const kit of panelKits.values()) cutout(kit.wallMat);
+    }
+    // a door part's relief shape: stepped (a grid made coarser with the graphics
+    // setting, and a still coarser one far) or hybrid
+    const doorShape = <S extends object>(shape: S, far: boolean) =>
+      hybrid
+        ? { ...shape, hybrid: true, ...(far ? { lodOnly: true, smoothLod: hybridFarLod } : {}) }
+        : { ...shape, coarse: far ? doorFarCoarse : doorCoarse, ...(far ? { lodOnly: true } : {}) };
     if (doorCells.length) {
       track(async () => {
         const frameShape = {
@@ -3226,10 +3256,10 @@ export function GameViewport({
           // meet the other half's
           holeBackZ: -DOOR_FRAME_HALF_DEPTH,
         };
-        const frame = await buildRelief(frameKit, { ...frameShape, coarse: doorCoarse });
+        const frame = await buildRelief(frameKit, doorShape(frameShape, false));
         if (!frame) return;
         // (none when the graphics setting asks for no distant versions)
-        const frameFar = lodScale ? await buildRelief(frameKit, { ...frameShape, coarse: doorFarCoarse, lodOnly: true }) : null;
+        const frameFar = lodScale && !(hybrid && hybridFarLod <= 1) ? await buildRelief(frameKit, doorShape(frameShape, true)) : null;
         const hole = frame.holeBounds ?? { minX: -0.35, maxX: 0.35, minY: -wallHeight / 2, maxY: wallHeight * 0.3 };
         const panelWidth = hole.maxX - hole.minX + 2 * DOOR_PANEL_OVERLAP;
         // from the floor up behind the frame's header - its foot just clear
@@ -3242,9 +3272,10 @@ export function GameViewport({
         const panelGeos = new Map<DoorSpec["kind"], { near: THREE.BufferGeometry; far: THREE.BufferGeometry | null }>();
         for (const [kind, kit] of panelKits) {
           const panelShape = { width: panelWidth, height: panelHeight - panelLift, flushEdges: false };
-          const panel = await buildRelief(kit, { ...panelShape, coarse: doorCoarse });
+          if (hybrid) cutout(kit.wallMat);
+          const panel = await buildRelief(kit, doorShape(panelShape, false));
           if (!panel) return;
-          const far = lodScale ? await buildRelief(kit, { ...panelShape, coarse: doorFarCoarse, lodOnly: true }) : null;
+          const far = lodScale && !(hybrid && hybridFarLod <= 1) ? await buildRelief(kit, doorShape(panelShape, true)) : null;
           panelGeos.set(kind, { near: panel.geometry, far: far?.geometry ?? null });
         }
 
@@ -4444,6 +4475,8 @@ export function GameViewport({
         aoMap: kit.wallMat.aoMap,
         roughness: settingsRef.current.roughness,
         metalness: settingsRef.current.metalness,
+        // (the hybrid doors' pixel edge: see settings.hybridDoors)
+        alphaTest: settings.hybridDoors ? 0.5 : 0,
       });
       addDirectLightOcclusion(material, cavity);
       // (a door panel is the deck's own: it takes the ship's livery)
@@ -7447,6 +7480,7 @@ export function GameViewport({
     settings.reliefLevels,
     settings.reliefMinIsland,
     settings.reliefMode,
+    settings.hybridDoors,
     settings.wallDetail,
     settings.lodScale,
     settings.pixelRatioCap,
