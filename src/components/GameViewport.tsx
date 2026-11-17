@@ -6104,7 +6104,8 @@ export function GameViewport({
       editRaycaster.setFromCamera(ndc, camera);
       dragPlane.set(new THREE.Vector3(0, 1, 0), -y);
       const p = editRaycaster.ray.intersectPlane(dragPlane, dragPoint);
-      return p && p.distanceTo(editRaycaster.ray.origin) <= EDIT_REACH ? p : null;
+      // (the top-down camera floats high above the map: its reach is its own)
+      return p && p.distanceTo(editRaycaster.ray.origin) <= (topdown.on ? TOPDOWN_REACH : EDIT_REACH) ? p : null;
     }
     const onPress = (e: PointerEvent) => {
       press = { x: e.clientX, y: e.clientY, at: performance.now() };
@@ -6463,6 +6464,7 @@ export function GameViewport({
     };
     function editTargetAt(ndc: THREE.Vector2): EditTarget | null {
       editRaycaster.setFromCamera(ndc, camera);
+      editRaycaster.far = topdown.on ? TOPDOWN_REACH : EDIT_REACH;
       // (the Select tool points at any kind: the nearest thing under the pointer)
       const selecting = editToolRef.current === "select";
       const lightTool = editToolRef.current === "light" || selecting;
