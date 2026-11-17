@@ -6179,8 +6179,8 @@ export function GameViewport({
       if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
       d.moved = true;
       e.stopPropagation();
-      if (e.altKey) {
-        // Alt + drag: up and down raises or lowers
+      if (e.shiftKey) {
+        // Shift + drag: up and down raises or lowers
         onEditAdjustRef.current?.({ what: "height", delta: -e.movementY * 0.004 });
         return;
       }

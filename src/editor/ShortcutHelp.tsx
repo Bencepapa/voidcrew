@@ -48,7 +48,7 @@ const SELECTION: Group = {
     ["R / Shift + R", "editorShell.scTurn"],
     ["Delete", "editorShell.scDelete"],
     ["Ctrl + drag", "editorShell.scCopyDrag"],
-    ["Alt + drag", "editorShell.scAltDrag"],
+    ["Shift + drag", "editorShell.scAltDrag"],
     ["Wheel", "editorShell.scWheelSel"],
     ["Ctrl / Alt + wheel", "editorShell.scScaleRotate"],
   ],
