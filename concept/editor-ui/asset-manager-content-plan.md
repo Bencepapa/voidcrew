@@ -12,8 +12,13 @@ void-textures/<világ>/<típus>/<uuid>/
 ```
 
 - A csatornák ugyanúgy **Feltöltött / Auto / Nincs** módúak (Auto: a normalMap-mag, lásd a textúra-terv 4. pontját).
-- **Átlátszó szín** (diffuse-ban): alapérték magenta (`#ff00ff`), de textúránként állítható (van, ahol fehér) vagy „nincs”;
-  a `meta.json`-ban `transparentColor`. A feldolgozás ebből készít átlátszó pixelt és lyukat a mélységtérképben.
+- **Átlátszóság forrása** (textúránként, a `meta.json`-ban `transparency`): **alfa csatorna** (ha a PNG-nek van, és van benne
+  átlátszó pixel: ez az automatikus alapérték), **színkulcs** (`transparentColor`: alapérték magenta `#ff00ff`, állítható, pl. fehér)
+  vagy **nincs**. A feltöltéskor a kód felismeri az alfa csatornát (van-e benne 255-nél kisebb érték), és ezt ajánlja; a két
+  forrás együtt is megadható (a színkulcsos pixelek is alfa 0-ra kerülnek). A feldolgozás az átlátszó pixelből készít lyukat a
+  mélységtérképben; a félig átlátszó pixelek (a kulcs és az élsimítás szélén) küszöbölve (`alphaCutoff`, alap 0,5) vagy
+  szegély-eltávolítással (a színkulcs maradék pereme) kezelendők. A generált normal/depth a lyukakat megtartja.
+  Fontos eset: a mai magentás textúrák és az alfás PNG-k ugyanúgy működjenek, és a kettőt a felület egyértelműen jelezze.
 - Betöltéskor a típus szerint kerül a megfelelő katalógusba (`TEXTURE_SETS`, `ITEM_TYPES`, `PROP_TYPES`, `ACTOR_TYPES`, ajtótípusok,
   matrica-jegyzék). A beépített bejegyzések csak olvashatók (zárolt jelzés), a feltöltöttek szerkeszthetők.
 - A fa és az Asset Manager ugyanazokból a katalógusokból épül, a feltöltött elem **felhasználói** jelzést kap (mint az AUTO).
