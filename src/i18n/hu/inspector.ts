@@ -5,5 +5,11 @@ export const inspectorHu = {
   "inspector.advanced": "Haladó",
   "inspector.cell": "Cella: {x}, {y}",
   "inspector.mapSettings": "Pályabeállítások",
+  "inspector.walls": "Falak",
+  "inspector.floors": "Padló",
+  "inspector.material": "Anyag",
+  "inspector.light": "Fény",
+  "inspector.skyLight": "Égfény",
+  "inspector.gameplay": "Játék",
   "inspector.next": "Következő: {kind}",
 };

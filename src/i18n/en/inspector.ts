@@ -5,5 +5,11 @@ export const inspectorEn = {
   "inspector.advanced": "Advanced",
   "inspector.cell": "Cell {x}, {y}",
   "inspector.mapSettings": "Map settings",
+  "inspector.walls": "Walls",
+  "inspector.floors": "Floors",
+  "inspector.material": "Material",
+  "inspector.light": "Light",
+  "inspector.skyLight": "Sky light",
+  "inspector.gameplay": "Gameplay",
   "inspector.next": "Next {kind}",
 };

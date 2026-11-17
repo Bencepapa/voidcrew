@@ -2231,6 +2231,11 @@ export default function App() {
           onSaveMapAs={saveMapAs}
           mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures }}
           onMapLook={changeMapLook}
+          renderSettings={settings}
+          onRenderSettings={setSettings}
+          mapHasRender={!!map.render}
+          onSaveRender={() => saveRender()}
+          onClearRender={() => saveRender(true)}
           decalChoice={decalChoice?.name ?? null}
           onDecalChoice={setDecalChoice}
           decalRotation={decalRotation}
@@ -2426,12 +2431,9 @@ export default function App() {
                 mood={mood}
                 moodOverride={moodOverride}
                 onMood={setMoodOverride}
-                mapHasRender={!!map.render}
                 world={map.world}
                 mapTextures={map.textures}
                 onMapTexture={changeMapTexture}
-                onSaveRender={() => saveRender()}
-                onClearRender={() => saveRender(true)}
                 compact
               />
             </div>
@@ -2546,12 +2548,10 @@ export default function App() {
               mood={mood}
               moodOverride={moodOverride}
               onMood={setMoodOverride}
-              mapHasRender={!!map.render}
               world={map.world}
               mapTextures={map.textures}
               onMapTexture={changeMapTexture}
-              onSaveRender={() => saveRender()}
-              onClearRender={() => saveRender(true)}
+              inEditor
             />
           </div>}
         </div>
