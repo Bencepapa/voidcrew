@@ -150,7 +150,6 @@ export default function App() {
   const [editMode, setEditMode] = useState(false);
   const [editTool, setEditTool] = useState<EditTool>("select");
   // where the editor toolbar docks (the right column), when there is one
-  const [toolbarDock, setToolbarDock] = useState<HTMLElement | null>(null);
   const [editorDebug, setEditorDebug] = useState(false);
   // the keyboard shortcut help overlay (opened with ? or the top bar's ? button)
   const [shortcutHelp, setShortcutHelp] = useState(false);
@@ -2185,9 +2184,7 @@ export default function App() {
           assetDock={assetDock}
           onAssetEffect={(kind, effect) => { remember(kind, {effect, ...(kind === "smoke" ? {fire: undefined, petals: undefined} : {})}); setTemplateTick(n => n + 1); }}
           inspected={inspected}
-          shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>}
           dock={editDock}
-          toolbarDock={toolbarDock}
           tool={editTool}
           onTool={chooseTool}
           surface={editSurface}
@@ -2453,7 +2450,6 @@ export default function App() {
           <button className="ml-auto rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setShortcutHelp(true)} aria-label={t("editorShell.shortcutsOpen")} title={t("editorShell.shortcutsOpen")}>?</button>
           <button className="rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setEditorDebug(!editorDebug)} aria-expanded={editorDebug}>{t("editorShell.debug")}</button>
         </div>
-        <div ref={setToolbarDock} className="max-h-[25vh] overflow-auto"/>
       </header>}
       <div className="flex-1 flex gap-2 min-h-0">
         <div className={`${zoomed ? "w-[40vw]" : editMode ? "w-40 xl:w-56" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0 ${editMode ? "max-md:hidden" : ""}`}>
@@ -2536,7 +2532,7 @@ export default function App() {
           {viewport}
           {joysticks}
           {overlays}
-          {editMode && <FloatToolbar tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} compact={compact} />}
+          {editMode && <FloatToolbar tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>} compact={compact} />}
         </div>
 
         <div className={`${editMode ? "w-64 xl:w-80 max-md:w-44" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0`}>
