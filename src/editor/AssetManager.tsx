@@ -64,7 +64,7 @@ const catalog = TEXTURE_SETS as Record<string, TextureSetPaths>;
 // the texture folder a prop shows (also the key of its tuning)
 function propTexture(id: string) {
   const p = PROP_TYPES[id];
-  return p.kind==="views" ? p.views+"_front" : p.kind==="box" ? p.side : p.kind==="cabin" ? p.door : ("texture" in p && p.texture) || "wall1";
+  return p.kind==="views" ? p.views+"_front" : p.kind==="box" ? p.side : p.kind==="cabin" ? p.door : ("texture" in p && p.texture) || "wall4";
 }
 function propImage(id: string) {
   const tex = propTexture(id);
@@ -264,7 +264,7 @@ export function AssetManager() {
     const n = background==="5×5" ? 5 : 3;
     const half = n/2;
     const fantasy = (world==="All" ? assetWorld(id.replace(/^decal:/,"")) : world)==="fantasy";
-    const roomSets = fantasy ? ["fantasyfloor1","fantasywall1","fantasywall1"] : ["floor1","wall1","ceiling1"];
+    const roomSets = fantasy ? ["fantasyfloor1","fantasywall1","fantasywall1"] : ["floor1","wall4","ceiling1"];
     if(background!=="Empty" && !(sample==="material" && background==="Selected texture")) {
       const surfaces = [[0,0,0,-Math.PI/2,0,n,n,0],[0,1,0,Math.PI/2,0,n,n,2],[0,.5,-half,0,0,n,1,1],[0,.5,half,0,Math.PI,n,1,1],[-half,.5,0,0,Math.PI/2,n,1,1],[half,.5,0,0,-Math.PI/2,n,1,1]];
       for(const [x,y,z,rx,ry,w,h,kind] of surfaces){

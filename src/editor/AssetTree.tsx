@@ -31,7 +31,7 @@ export function AssetTree(p: EditorBarProps) {
   const props: Entry[] = Object.entries(PROP_TYPES).filter(([id])=>assetInWorld(id)).flatMap(([id,v])=>{
     const kind = ["pillar","chamfer"].includes(v.kind) ? "pillar" : ["billboard","cross"].includes(v.kind) ? "billboard" : "3D";
     if (!query && kind!==propTab) return [];
-    const tex = v.kind==="views" ? v.views+"_front" : v.kind==="box" ? v.side : v.kind==="cabin" ? v.door : "texture" in v && v.texture || p.mapLook.textures?.wall || "wall1";
+    const tex = v.kind==="views" ? v.views+"_front" : v.kind==="box" ? v.side : v.kind==="cabin" ? v.door : "texture" in v && v.texture || p.mapLook.textures?.wall || "wall4";
     return [{id,label:id,kind:kind==="pillar"?t("assetTree.pillar"):kind,image:(TEXTURE_SETS[tex as keyof typeof TEXTURE_SETS] ?? textureFolder(tex)).diffuse,active:p.propChoice===id,pick:()=>choose("prop",()=>p.onPropChoice(id)),manager:"prop" as const}];
   });
   const groups: {id:string; label:string; entries:Entry[]}[] = [

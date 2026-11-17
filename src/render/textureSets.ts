@@ -42,29 +42,6 @@ export const TEXTURE_SETS = {
   // import.meta.env.BASE_URL matches Vite's `base` config (e.g. "/voidcrew/"
   // on GitHub Pages) - a hardcoded "/textures/..." would 404 there since the
   // app isn't served from the domain root.
-  wall1: {
-    kind: "wall", label: "Wall 1",
-    diffuse: `${import.meta.env.BASE_URL}textures/wall1/diffuse.jpeg`,
-    normal: `${import.meta.env.BASE_URL}textures/wall1/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/wall1/depth.png`,
-    pixelArt: false,
-  },
-  wall2: {
-    kind: "wall", label: "Wall 2",
-    diffuse: `${import.meta.env.BASE_URL}textures/wall2/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/wall2/normal.png`,
-    // wall2 has no real depth map from the Sprite Lamp pass - flat/neutral
-    // fallback so displacement is just a no-op instead of erroring.
-    depth: `${import.meta.env.BASE_URL}textures/wall2/depth.png`,
-    pixelArt: true,
-  },
-  wall3: {
-    kind: "wall", label: "Wall 3",
-    diffuse: `${import.meta.env.BASE_URL}textures/wall3/diffuse.png`,
-    normal: `${import.meta.env.BASE_URL}textures/wall3/normal.png`,
-    depth: `${import.meta.env.BASE_URL}textures/wall3/depth.png`,
-    pixelArt: true,
-  },
   // Gemini 1254px diffuse + depth run through scripts/process-texture.ts
   // (256px, 32 colors, baked height levels, normal derived from depth)
   wall4: {

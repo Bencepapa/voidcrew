@@ -42,7 +42,7 @@ async function textures(world: GameMap["world"]) {
       (TEXTURE_SETS as Record<string, TextureSetPaths>)[id] = {
         kind: ["floor","wall"], label: name.slice(37,-4) || "Shared texture",
         diffuse: project + "/storage/v1/object/public/void-textures/" + world + "/" + name,
-        normal: TEXTURE_SETS.wall2.normal, depth: TEXTURE_SETS.wall2.depth, pixelArt: true,
+        normal: `${import.meta.env.BASE_URL}textures/flat/normal.png`, depth: `${import.meta.env.BASE_URL}textures/flat/depth.png`, pixelArt: true,
       };
     }
     if (files.length < 100) break;
