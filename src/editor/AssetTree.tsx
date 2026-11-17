@@ -35,7 +35,9 @@ export function AssetTree(p: EditorBarProps) {
     const tex = v.kind==="views" ? v.views+"_front" : v.kind==="box" ? v.side : v.kind==="cabin" ? v.door : "texture" in v && v.texture || p.mapLook.textures?.wall || "wall4";
     return [{id,label:id,kind:kind==="pillar"?t("assetTree.pillar"):kind,image:(TEXTURE_SETS[tex as keyof typeof TEXTURE_SETS] ?? textureFolder(tex)).diffuse,active:p.propChoice===id,pick:()=>choose("prop",()=>p.onPropChoice(id)),manager:"prop" as const}];
   });
-  const traverse: Entry[] = [toolEntry("ladder",t("editorBar.ladder"),<ArrowUpFromLine size={28}/>), toolEntry("bridge",t("editorBar.bridge"),<AlignJustify size={28}/>), {...toolEntry("door",t("editorBar.door"),null,TEXTURE_SETS.door1.diffuse),managerId:"door1"}];
+  // the door entry shows the map's own door (a fantasy map's gate, a ship's sliding door), else the default one
+  const doorSet = (TEXTURE_SETS as Record<string,{diffuse:string}>)[p.mapLook.textures?.door ?? ""] ? p.mapLook.textures!.door! : "door1";
+  const traverse: Entry[] = [toolEntry("ladder",t("editorBar.ladder"),<ArrowUpFromLine size={28}/>), toolEntry("bridge",t("editorBar.bridge"),<AlignJustify size={28}/>), {...toolEntry("door",t("editorBar.door"),null,(TEXTURE_SETS as Record<string,{diffuse:string}>)[doorSet].diffuse),managerId:doorSet}];
   const events: Entry[] = [toolEntry("exit",t("editorBar.exit"),<LogOut size={28}/>), toolEntry("start",t("editorBar.start"),<Flag size={28}/>), toolEntry("restricted",t("editorBar.restricted"),<Ban size={28}/>), toolEntry("wall",t("editorBar.chanceWall"),<Dices size={28}/>)];
   const groups: {id:string; label:string; entries:Entry[]; bare?:boolean}[] = [
     {id:"traverse",label:t("traverse.group"),entries:traverse,bare:true},

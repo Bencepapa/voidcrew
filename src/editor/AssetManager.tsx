@@ -64,8 +64,8 @@ const display = (value: string) => t(displayKeys[value]);
 // the dev server can write textureTuning.json; a production build can only download it
 const dev = import.meta.env.DEV;
 const catalog = TEXTURE_SETS as Record<string, TextureSetPaths>;
-// the Traverse group's textures: the door leaf and its frame (ladders and bridges are built in code, no texture yet)
-const TRAVERSE_TEXTURES = new Set(["door1", "doorframe1"]);
+// the Traverse group's textures: every door set (leaf, frame, lift door; per world), see isTraverse
+// (ladders and bridges are built in code, no texture yet)
 // the texture folder a prop shows (also the key of its tuning)
 function propTexture(id: string) {
   const p = PROP_TYPES[id];
@@ -110,7 +110,8 @@ export function AssetManager() {
   const [placement, setPlacement] = useState("Auto");
   const [decals,setDecals] = useState<Awaited<ReturnType<typeof fetchDecalManifest>>>({});
   useEffect(()=>{if(open) fetchDecalManifest(import.meta.env.BASE_URL,"").then(setDecals).catch(()=>setError(t("assetManager.loadDecals")));},[open]);
-  const entries = sample==="material" ? Object.entries(catalog).filter(([key,v])=>TRAVERSE_TEXTURES.has(key)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:TRAVERSE_TEXTURES.has(key)?["traverse"]:[v.kind].flat() as string[]}))
+  const isTraverse = (v: TextureSetPaths) => [v.kind].flat().includes("door");
+  const entries = sample==="material" ? Object.entries(catalog).filter(([,v])=>isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[]}))
     : sample==="actor" ? Object.entries(ACTOR_TYPES).map(([key,v])=>({key,label:v.name,img:import.meta.env.BASE_URL+"actors/"+v.sheet+"/diffuse.png",groups:[] as string[]}))
     : sample==="item" ? Object.entries(ITEM_TYPES).map(([key,v])=>({key,label:v.name,img:textureFolder("item_"+key).diffuse,groups:[] as string[]}))
     : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:key,img:propImage(key),groups:[v.kind==="billboard"?"billboard":"3D"]})),...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"]}))];
