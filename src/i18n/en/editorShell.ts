@@ -27,6 +27,8 @@ export const editorShellEn = {
   "editorShell.scUndo": "Undo / redo",
   "editorShell.scCopy": "Copy / paste the selection",
   "editorShell.scHelp": "This help",
+  "editorShell.scSelect": "Select tool: click any object to pick it, drag to move it",
+  "editorShell.scAltSelect": "Hold: pick any object with any tool (a drag then raises / lowers)",
   "editorShell.scEscape": "Close this help or a panel",
   "editorShell.scDragView": "Turn the view (up and down too)",
   "editorShell.scMove": "Move forward / back",

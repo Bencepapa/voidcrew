@@ -55,6 +55,13 @@ const SELECTION: Group = {
 };
 
 const TOOLS: Group[] = [
+  {
+    title: "editorBar.select",
+    rows: [
+      ["V / Esc", "editorShell.scSelect"],
+      ["Alt (hold)", "editorShell.scAltSelect"],
+    ],
+  },
   { title: "editorBar.digFill", rows: [["Left / right click", "editorShell.scDig"]] },
   { title: "editorBar.height", rows: [["Left / right click", "editorShell.scHeight"]] },
   { title: "editorBar.texture", rows: [["Left / right click", "editorShell.scTexture"]] },

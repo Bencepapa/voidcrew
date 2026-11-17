@@ -28,6 +28,8 @@ export const editorShellHu: Record<keyof typeof editorShellEn, string> = {
   "editorShell.scUndo": "Visszavonás / újra",
   "editorShell.scCopy": "Kijelölés másolása / beillesztése",
   "editorShell.scHelp": "Ez a súgó",
+  "editorShell.scSelect": "Kijelölő eszköz: kattints bármely elemre a kijelöléshez, húzd az áthelyezéshez",
+  "editorShell.scAltSelect": "Tartsd nyomva: bármely elem kijelölhető bármely eszközzel (húzás ekkor emel / süllyeszt)",
   "editorShell.scEscape": "A súgó vagy egy panel bezárása",
   "editorShell.scDragView": "Nézet forgatása (föl-le is)",
   "editorShell.scMove": "Előre / hátra",

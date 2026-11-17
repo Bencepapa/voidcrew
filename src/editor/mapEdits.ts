@@ -11,6 +11,7 @@ import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
 // change / remove a light, raise or lower a floor or ceiling, or put in /
 // take out a ladder, a bridge, a door or a prop.
 export type EditTool =
+  | "select"
   | "dig"
   | "fill"
   | "texture"

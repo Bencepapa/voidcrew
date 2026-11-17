@@ -6112,16 +6112,19 @@ export function GameViewport({
       if (!editModeRef.current || e.button !== 0) return;
       const tool = editToolRef.current;
       if (toolLocked()) return;
-      // each tool grabs only its own kind of thing
-      const kind: EditDragKind | null =
+      // each tool grabs only its own kind of thing; Select any kind, the nearest
+      let kind: EditDragKind | null =
         tool === "prop" || tool === "decal" || tool === "item" || tool === "smoke" || tool === "light" || tool === "door"
           ? tool
           : tool === "robot"
             ? "actor"
             : null;
-      if (!kind) return;
+      if (!kind && tool !== "select") return;
       const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
       if (!hit) return;
+      if (tool === "select")
+        kind = hit.actor !== undefined ? "actor" : hit.item !== undefined ? "item" : hit.prop !== undefined ? "prop" : hit.decal !== undefined ? "decal" : hit.light !== undefined ? "light" : hit.smoke !== undefined ? "smoke" : null;
+      if (!kind) return;
       let index: number | undefined;
       let door: Vec2 | undefined;
       if (kind === "prop") index = hit.prop;
@@ -6253,8 +6256,11 @@ export function GameViewport({
     const onWheel = (e: WheelEvent) => {
       if (!editModeRef.current || !onEditAdjustRef.current) return;
       const tool = editToolRef.current;
-      const pointLight = tool === "light" && selectedLightRef.current !== null && !!latestMapRef.current.lights?.[selectedLightRef.current]?.pos;
-      if (tool !== "prop" && tool !== "decal" && tool !== "item" && !pointLight) return;
+      // (Select: the selected one, whatever its kind)
+      const sel = tool === "select";
+      const pointLight = (tool === "light" || sel) && selectedLightRef.current !== null && !!latestMapRef.current.lights?.[selectedLightRef.current]?.pos;
+      const selected = (kind: EditTool, picked: number | null) => tool === kind || (sel && picked !== null);
+      if (!selected("prop", selectedPropRef.current) && !selected("decal", selectedDecalRef.current) && !selected("item", selectedItemRef.current) && !pointLight) return;
       e.preventDefault();
       const dir = e.deltaY < 0 ? 1 : -1;
       if (e.ctrlKey || e.metaKey) onEditAdjustRef.current({ what: "scale", delta: dir * 0.05 });
@@ -6457,7 +6463,9 @@ export function GameViewport({
     };
     function editTargetAt(ndc: THREE.Vector2): EditTarget | null {
       editRaycaster.setFromCamera(ndc, camera);
-      const lightTool = editToolRef.current === "light";
+      // (the Select tool points at any kind: the nearest thing under the pointer)
+      const selecting = editToolRef.current === "select";
+      const lightTool = editToolRef.current === "light" || selecting;
       const locked = lockedLayersRef.current;
       const hits = editRaycaster
         .intersectObjects(group.children, true)
@@ -6466,11 +6474,11 @@ export function GameViewport({
           const layer = objectLayer(h.object);
           if (locked.size && layer && locked.has(layer)) return false;
           return (
-            (h.object.userData.actorId === undefined || editToolRef.current === "robot") &&
+            (h.object.userData.actorId === undefined || editToolRef.current === "robot" || selecting) &&
             (lightTool || h.object.userData.mapLight === undefined) &&
             drawnChain(h.object) &&
             // (the loose items are see-through sprites, but the Item tool can point at them)
-            (!seeThrough(h.object) || (editToolRef.current === "item" && isItemObject(h.object))) &&
+            (!seeThrough(h.object) || ((editToolRef.current === "item" || selecting) && isItemObject(h.object))) &&
             // (the thing being dragged is looked through: what's behind it is
             // where it goes)
             !(dragItem?.moved && ownedByDrag(h.object))
@@ -6481,7 +6489,7 @@ export function GameViewport({
       // the Decal tool: a decal lies on its surface - it counts if it's as
       // near as the nearest hit
       const decalHit =
-        editToolRef.current === "decal"
+        editToolRef.current === "decal" || selecting
           ? hits.find((h) => h.object.userData.decalIndex !== undefined && h.distance <= hit.distance + 0.02)
           : undefined;
       // the Robot tool: an actor pointed at
@@ -6498,13 +6506,13 @@ export function GameViewport({
         }
       }
       // the Smoke tool: an emitter's marker pointed at
-      if (editToolRef.current === "smoke") {
+      if (editToolRef.current === "smoke" || (selecting && hit.object.userData.smokeIndex !== undefined)) {
         const at = hits.find((h) => h.object.userData.smokeIndex !== undefined);
         const spec = at && latestMapRef.current.smokes?.[at.object.userData.smokeIndex as number];
         if (at && spec) return { kind: "floor", cell: { ...spec.cell }, smoke: at.object.userData.smokeIndex as number };
       }
       // the Item tool: an item pointed at
-      if (editToolRef.current === "item") {
+      if (editToolRef.current === "item" || selecting) {
         for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
           if (o.userData.itemIndex === undefined) continue;
           const spec = latestMapRef.current.items?.[o.userData.itemIndex as number];
@@ -6512,7 +6520,7 @@ export function GameViewport({
         }
       }
       // the Prop tool: a prop pointed at (any part of it)
-      if (editToolRef.current === "prop") {
+      if (editToolRef.current === "prop" || selecting) {
         for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
           if (o.userData.propIndex === undefined) continue;
           const spec = latestMapRef.current.props?.[o.userData.propIndex as number];
@@ -6705,7 +6713,11 @@ export function GameViewport({
       let mode: "wall" | "plate" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | "smoke" | null = null;
       let color = EDIT_FILL_COLOR;
       if (target) {
-        if (tool === "texture") {
+        if (tool === "select") {
+          // any kind pointed at: the nearest, as a click would pick it
+          mode = target.actor !== undefined ? "actor" : target.item !== undefined ? "item" : target.prop !== undefined ? "prop" : target.decal !== undefined ? "decal" : target.light !== undefined ? "bulb" : target.smoke !== undefined ? "smoke" : null;
+          color = EDIT_LIGHT_ADD_COLOR;
+        } else if (tool === "texture") {
           mode = target.kind === "wall" ? "wall" : "plate";
           color = EDIT_PAINT_COLOR;
         } else if (tool === "robot" && target.actor !== undefined) {
