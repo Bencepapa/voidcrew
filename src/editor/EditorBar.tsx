@@ -56,8 +56,6 @@ export interface EditorBarProps {
   onSave: () => void;
   onDownload: () => void;
   onExit: () => void;
-  // takes everything of the current tool's layer off the map (NPCs, particles, props...)
-  onClearLayer: (tool: EditTool) => void;
   // the layers hidden from the view, and hiding or showing one (the tool's)
   hiddenLayers: ReadonlySet<string>;
   onToggleLayer: (layer: string) => void;
@@ -315,10 +313,6 @@ const MORE_TOOLS: { tool: EditTool; label: Key; title: Key }[] = [
 ];
 // the tools the asset tree picks (see AssetTree): no button for them in the bar
 const TREE_TOOLS = new Set<EditTool>(["map", "texture", "light", "prop", "decal", "robot", "item", "smoke"]);
-// the tools whose layer can be hidden from the view: the layer's name
-const HIDEABLE_LAYERS: Partial<Record<EditTool, string>> = { robot: "robot", smoke: "smoke", prop: "prop", decal: "decal", item: "item" };
-// the tools with a layer of their own that "Clear all" can empty
-const CLEARABLE_TOOLS = new Set<EditTool>(["robot", "smoke", "prop", "decal", "item", "light", "exit", "restricted", "wall", "bridge", "ladder"]);
 // what a click does with each (where the toolbar doesn't say otherwise)
 const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   select: "editorBar.clickAnObjectToSelectItDrag",
@@ -364,24 +358,6 @@ export function EditorBar(p: EditorBarProps) {
           {t(label)}
         </button>
       ))}
-      {HIDEABLE_LAYERS[p.tool] && (
-        <button
-          type="button"
-          className={`${BUTTON} ${p.hiddenLayers.has(HIDEABLE_LAYERS[p.tool]!) ? active : idle}`}
-          onClick={() => p.onToggleLayer(HIDEABLE_LAYERS[p.tool]!)}
-          title={t("editorBar.hideThisLayerFromTheViewTo")}
-        >
-          {p.hiddenLayers.has(HIDEABLE_LAYERS[p.tool]!) ? t("editorBar.show") : t("editorBar.hide")}
-        </button>
-      )}
-      {CLEARABLE_TOOLS.has(p.tool) && (
-        <button
-          type="button"
-          className={`${BUTTON} border-red-700/70 bg-black/60 text-red-300 hover:bg-red-900/30`}
-          onClick={() => p.onClearLayer(p.tool)}
-          title={t("editorBar.takeEverythingOfThisToolSLayer")}
-        >{t("editorBar.clearAll")}</button>
-      )}
   </div>;
   const bar = (
     <div

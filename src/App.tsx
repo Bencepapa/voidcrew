@@ -1128,49 +1128,6 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [miniSel]);
-  // "Clear all": everything of the current tool's layer off the map (one undo step)
-  const clearLayer = (tool: EditTool) => {
-    const layers: Partial<Record<EditTool, { key: keyof NonNullable<ReturnType<typeof mapFile>>; empty: Key; confirm: Key; removed: Key }>> = {
-      robot: { key: "actors", empty: "app.clearrobotEmpty", confirm: "app.clearrobotConfirm", removed: "app.clearrobotRemoved" },
-      smoke: { key: "smokes", empty: "app.clearsmokeEmpty", confirm: "app.clearsmokeConfirm", removed: "app.clearsmokeRemoved" },
-      prop: { key: "props", empty: "app.clearpropEmpty", confirm: "app.clearpropConfirm", removed: "app.clearpropRemoved" },
-      decal: { key: "decals", empty: "app.cleardecalEmpty", confirm: "app.cleardecalConfirm", removed: "app.cleardecalRemoved" },
-      item: { key: "items", empty: "app.clearitemEmpty", confirm: "app.clearitemConfirm", removed: "app.clearitemRemoved" },
-      light: { key: "lights", empty: "app.clearlightEmpty", confirm: "app.clearlightConfirm", removed: "app.clearlightRemoved" },
-      exit: { key: "exits", empty: "app.clearexitEmpty", confirm: "app.clearexitConfirm", removed: "app.clearexitRemoved" },
-      restricted: { key: "restricted", empty: "app.clearrestrictedEmpty", confirm: "app.clearrestrictedConfirm", removed: "app.clearrestrictedRemoved" },
-      wall: { key: "chanceWalls", empty: "app.clearwallEmpty", confirm: "app.clearwallConfirm", removed: "app.clearwallRemoved" },
-      bridge: { key: "bridges", empty: "app.clearbridgeEmpty", confirm: "app.clearbridgeConfirm", removed: "app.clearbridgeRemoved" },
-      ladder: { key: "ladders", empty: "app.clearladderEmpty", confirm: "app.clearladderConfirm", removed: "app.clearladderRemoved" },
-    };
-    const layer = layers[tool];
-    const file = mapFile(map.id);
-    if (!layer || !file) return;
-    const count = (file[layer.key] as unknown[] | undefined)?.length ?? 0;
-    if (!count) {
-      pushLog(t(layer.empty), "editor");
-      return;
-    }
-    if (!window.confirm(t(layer.confirm, { count }))) return;
-    const result = applyEdit(map.id, (f) => {
-      delete (f as unknown as Record<string, unknown>)[layer.key as string];
-      return f;
-    });
-    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
-    else {
-      replaceMap(result.map);
-      pushLog(t(layer.removed, { count }), "editor");
-    }
-    setSelectedLight(null);
-    setSelectedProp(null);
-    setSelectedDecal(null);
-    setSelectedSmoke(null);
-    setSelectedItem(null);
-    setSelectedActor(null);
-    setSelectedExit(null);
-    setSelectedChanceWall(null);
-    setEdits((n) => n + 1);
-  };
   // layers hidden from the view while editing (NPCs, particles, props, decals, items)
   const [hiddenLayers, setHiddenLayers] = useState<ReadonlySet<string>>(() => new Set());
   const toggleLayer = (layer: string) =>
@@ -2244,7 +2201,6 @@ export default function App() {
           onSave={editSave}
           onDownload={() => downloadMap(map.id)}
           onExit={() => setEditMode(false)}
-          onClearLayer={clearLayer}
           hiddenLayers={hiddenLayers}
           onToggleLayer={toggleLayer}
           lockedLayers={lockedLayers}
