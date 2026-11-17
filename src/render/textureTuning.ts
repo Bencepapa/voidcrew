@@ -46,11 +46,16 @@ export function onTextureTuningSaved(listener: () => void) {
   return () => void listeners.delete(listener);
 }
 
+// the whole table as textureTuning.json (also what the dev save writes)
+export function textureTuningJson(): string {
+  return JSON.stringify(table, null, 2) + "\n";
+}
+
 // writes the whole table (dev server only)
 export async function saveTextureTuning(): Promise<string> {
   const res = await fetch(`${import.meta.env.BASE_URL}__voidcrew/texture-tuning`, {
     method: "POST",
-    body: JSON.stringify(table, null, 2) + "\n",
+    body: textureTuningJson(),
   });
   if (!res.ok) throw new Error(await res.text());
   for (const listener of listeners) listener();

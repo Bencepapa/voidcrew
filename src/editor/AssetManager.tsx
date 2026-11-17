@@ -17,7 +17,7 @@ import { assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { fetchDecalManifest } from "../render/decals";
 import { propEdit } from "./propEditState";
 import { textureFolder } from "../render/textureSets";
-import { saveTextureTuning, setTextureTuning, textureTuning, type TextureTuning } from "../render/textureTuning";
+import { saveTextureTuning, setTextureTuning, textureTuning, textureTuningJson, type TextureTuning } from "../render/textureTuning";
 const displayKeys: Record<string,
   Key> = {
   "All": "assetManager.all",
@@ -61,6 +61,8 @@ const displayKeys: Record<string,
   "metal": "assetManager.metal"
 };
 const display = (value: string) => t(displayKeys[value]);
+// the dev server can write textureTuning.json; a production build can only download it
+const dev = import.meta.env.DEV;
 const catalog = TEXTURE_SETS as Record<string, TextureSetPaths>;
 // the Traverse group's textures: the door leaf and its frame (ladders and bridges are built in code, no texture yet)
 const TRAVERSE_TEXTURES = new Set(["door1", "doorframe1"]);
@@ -167,6 +169,7 @@ export function AssetManager() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [tuneStamp, setTuneStamp] = useState(0);
   const [saveNote, setSaveNote] = useState("");
+  const [copyNote, setCopyNote] = useState("");
   // the texture whose look the sliders tune (an NPC's normal strength is set in the NPC editor, a decal has none)
   const tuneId = !entry || sample==="actor" || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : propTexture(id);
   void tuneStamp;
@@ -177,10 +180,25 @@ export function AssetManager() {
     setTextureTuning(tuneId, { ...tuneRef.current, [key]: value });
     setTuneStamp(n => n + 1);
     setSaveNote("");
+    setCopyNote("");
   }
   async function saveTune() {
     try { setSaveNote(t("assetManager.saved", { path: await saveTextureTuning() })); }
     catch { setSaveNote(t("assetManager.saveError")); }
+  }
+  function downloadTune() {
+    const url = URL.createObjectURL(new Blob([textureTuningJson()], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "textureTuning.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+  async function copyTune() {
+    try {
+      await navigator.clipboard.writeText(textureTuningJson());
+      setCopyNote(t("assetManager.copied"));
+    } catch { setCopyNote(t("assetManager.copyError")); }
   }
   const lights = useRef({ keyLight, rimLight, turn });
   lights.current = { keyLight, rimLight, turn };
@@ -577,8 +595,10 @@ export function AssetManager() {
               {tune ? <>
                 <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>
                 {TUNING.map(({key,label,max,hint})=><label key={key} className="my-1 block text-sm" title={t(hint)}>{t(label)}: <strong>{(tune[key]??1).toFixed(2)}×</strong><input className="block w-full" type="range" min="0" max={max} step=".05" value={tune[key]??1} onChange={e=>changeTune(key,+e.target.value)}/></label>)}
-                <div className="mt-2 flex flex-wrap items-center gap-2"><button className={button+" !py-1"} onClick={saveTune}>{t("assetManager.save")}</button><button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);setTuneStamp(n=>n+1);setSaveNote("");}}>{t("assetManager.reset")}</button></div>
+                <div className="mt-2 flex flex-wrap items-center gap-2"><button className={button+" !py-1"} onClick={dev ? saveTune : downloadTune}>{t(dev ? "assetManager.save" : "assetManager.download")}</button>{!dev && <button className={button+" !py-1"} onClick={copyTune}>{t("assetManager.copy")}</button>}<button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);setTuneStamp(n=>n+1);setSaveNote("");setCopyNote("");}}>{t("assetManager.reset")}</button></div>
                 {saveNote && <p className="mt-1 text-xs text-neutral-300">{saveNote}</p>}
+                {copyNote && <p className="mt-1 text-xs text-neutral-300">{copyNote}</p>}
+                {!dev && <p className="mt-1 text-xs text-neutral-400">{t("assetManager.downloadHint")}</p>}
               </> : <p className="my-1 text-xs text-neutral-400">{sample==="actor" ? t("assetManager.actorTuning") : t("assetManager.noTuningHint")}</p>}
             </details>
             <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.roomLights")}</summary>
