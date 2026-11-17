@@ -1,5 +1,6 @@
 export const assetManagerEn = {
-  "assetManager.title": "Asset Manager",
+  "assetManager.title": "Assets",
+  "assetManager.open": "Asset Manager",
   "assetManager.assets": "Assets",
   "assetManager.close": "Close Asset Manager",
   "assetManager.collapseAssets": "Collapse the asset list",

@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Lock, LockOpen, LogOut } from "lucide-react";
+import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Library, Lock, LockOpen, LogOut } from "lucide-react";
 import { t, type Key } from "../i18n";
 import { assetInWorld } from "../game/worlds";
 import { PROP_TYPES } from "../game/props";
@@ -53,7 +53,10 @@ export function AssetTree(p: EditorBarProps) {
     <button type="button" className="shrink-0 p-2 text-left font-semibold" aria-expanded={!collapsed.has("panel")} onClick={()=>collapse(prev=>{const next=new Set(prev);next.has("panel")?next.delete("panel"):next.add("panel");return next;})}>{t("assetTree.title")}</button>
     {!collapsed.has("panel")&&
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <input type="search" value={query} onChange={e=>search(e.target.value)} placeholder={t("assetTree.search")} aria-label={t("assetTree.search")} className="m-1 min-w-0 shrink-0 border border-neutral-600 bg-neutral-950 p-1" onKeyDown={e=>{e.stopPropagation();if(e.key==="Escape"||e.key==="Enter")e.currentTarget.blur();}}/>
+      <div className="flex items-center gap-1 pr-1">
+        <input type="search" value={query} onChange={e=>search(e.target.value)} placeholder={t("assetTree.search")} aria-label={t("assetTree.search")} className="m-1 min-w-0 flex-1 border border-neutral-600 bg-neutral-950 p-1" onKeyDown={e=>{e.stopPropagation();if(e.key==="Escape"||e.key==="Enter")e.currentTarget.blur();}}/>
+        <button type="button" className="shrink-0 rounded border border-neutral-600 p-1 text-neutral-300 hover:border-amber-400 hover:text-amber-300" title={t("assetManager.open")} aria-label={t("assetManager.open")} onClick={()=>openAssetManager("material","")}><Library size={16} aria-hidden="true"/></button>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
       {groups.map(group=>{const entries=group.entries.filter(e=>!term||`${e.label} ${e.search??""} ${e.id} ${e.kind} ${group.label}`.toLocaleLowerCase().includes(term));return <section key={group.id} className={group.id==="events"?"mt-2 border-t-2 border-neutral-600":undefined}>
         <div className="flex items-center border-y border-neutral-800 bg-neutral-950">

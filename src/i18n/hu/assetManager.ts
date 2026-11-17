@@ -1,6 +1,7 @@
 export const assetManagerHu = {
-  "assetManager.title": "Eszközkezelő",
-  "assetManager.assets": "Eszközök",
+  "assetManager.title": "Assetek",
+  "assetManager.open": "Asset menedzser",
+  "assetManager.assets": "Assetek",
   "assetManager.close": "Eszközkezelő bezárása",
   "assetManager.collapseAssets": "Eszközlista összecsukása",
   "assetManager.collapse": "Összecsukás",
