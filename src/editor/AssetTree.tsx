@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Library, Lock, LockOpen, LogOut } from "lucide-react";
 import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld } from "../game/worlds";
@@ -9,15 +9,18 @@ import { TEXTURE_SETS, textureFolder, textureSetsOfKind } from "../render/textur
 import { fetchDecalManifest } from "../render/decals";
 import { neutralStyle } from "./inspector/parts";
 import { openAssetManager, type Sample } from "./AssetManager";
+import { useTextureVersion } from "./textureLibrary";
 import type { EditorBarProps } from "./EditorBar";
 import type { EditSurface, EditTool } from "./mapEdits";
 
-const assetName = (name: string) => t(("assetTree.name."+name) as Key);
+// (a shared texture has no translated name: its own name shows)
+const assetName = (name: string) => t(("assetTree.name."+name) as Key) ?? name;
 // a prop's translated name, when it has one (else its id)
 const propName = (id: string) => hasKey("assetTree.name."+id) ? assetName(id) : id;
 
 type Entry = {search?: string; id: string; label: string; kind: string; image?: string; icon?: ReactNode; tool?: EditTool; style?: CSSProperties; active?: boolean; pick: (button: HTMLButtonElement) => void; manager?: Sample; managerId?: string};
 export function AssetTree(p: EditorBarProps) {
+  useTextureVersion();
   const [query, search] = useState("");
   const [surface, setSurface] = useState<EditSurface>("wall");
   const [propTab, setPropTab] = useState("3D");

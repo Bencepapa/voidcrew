@@ -7,13 +7,21 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PROP_TYPES, propEditable } from "../game/props";
 import { ACTOR_TYPES } from "../game/actors";
 import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
-import { baseMaps, channels, importImage, type Channel, type MaterialMaps } from "./materialMaps";
+import { baseMaps, channels, type Channel, type MaterialMaps } from "./materialMaps";
+import { decode } from "./imageTools";
+import { AutoBadge, errorText, SignInPopover, TexturePanel, UnsavedBar } from "./TexturePanel";
+import { draftCounts, draftId, newDraft, useDrafts } from "./textureDrafts";
+import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
+import { loadSharedTextures } from "./sharedTextures";
+import { sharedConfigured, sharedToken } from "./sharedAuth";
+import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
+import { Lock } from "lucide-react";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 
 const button = "rounded border border-neutral-500 bg-neutral-800 px-3 py-2 text-left hover:border-amber-400 aria-pressed:border-amber-400 aria-pressed:bg-neutral-700";
 export type Sample = "material" | "actor" | "prop" | "item";
 import { ITEM_TYPES } from "../game/items";
-import { assetInWorld, assetWorld, type WorldId } from "../game/worlds";
+import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { fetchDecalManifest } from "../render/decals";
 import { propEdit } from "./propEditState";
 import { textureFolder } from "../render/textureSets";
@@ -94,6 +102,8 @@ export function AssetManager() {
   const [selected, select] = useState("fantasywall1");
   const [world, setWorld] = useState<WorldId | "All">("All");
   const [sub, setSub] = useState("All");
+  const drafts = useDrafts();
+  useTextureVersion();
   useEffect(() => {
     const openAsset = (event: Event) => {
       const {sample, id} = (event as CustomEvent<{sample: Sample; id: string}>).detail;
@@ -112,6 +122,8 @@ export function AssetManager() {
   useEffect(()=>{if(open) fetchDecalManifest(import.meta.env.BASE_URL,"").then(setDecals).catch(()=>setError(t("assetManager.loadDecals")));},[open]);
   const isTraverse = (v: TextureSetPaths) => [v.kind].flat().includes("door");
   const entries = sample==="material" ? Object.entries(catalog).filter(([,v])=>isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[]}))
+      // (a new draft with no diffuse yet isn't in the registry)
+      .concat(drafts.filter(d=>!catalog[draftId(d)]).map(d=>({key:draftId(d),label:d.name || t("assetManager.untitled"),img:"",groups:d.kinds as string[]})))
     : sample==="actor" ? Object.entries(ACTOR_TYPES).map(([key,v])=>({key,label:v.name,img:import.meta.env.BASE_URL+"actors/"+v.sheet+"/diffuse.png",groups:[] as string[]}))
     : sample==="item" ? Object.entries(ITEM_TYPES).map(([key,v])=>({key,label:v.name,img:textureFolder("item_"+key).diffuse,groups:[] as string[]}))
     : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:key,img:propImage(key),groups:[v.kind==="billboard"?"billboard":"3D"]})),...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"]}))];
@@ -131,10 +143,26 @@ export function AssetManager() {
   const [edits, setEdits] = useState<MaterialMaps>({});
   const primary = prop ? propTexture(id) : id;
   const maskKey = (group:string, channel:Channel) => [sample,id,group,channel].join(":");
+  // the files of the selected texture (they change when a draft changes a map)
+  const texSig = sample==="material" && catalog[id] ? [catalog[id].diffuse,catalog[id].normal,catalog[id].depth,catalog[id].surface,catalog[id].emissive].join("|") : "";
+  // a built-in or old shared texture can't be edited: a map imported there is a local preview, kept in IndexedDB
+  const previewBlobs = useRef<PreviewMaps>({});
+  const previewUrls = useRef<string[]>([]);
+  function showPreview(blobs: PreviewMaps) {
+    previewBlobs.current = blobs;
+    previewUrls.current.forEach(u=>URL.revokeObjectURL(u));
+    previewUrls.current = [];
+    const urls: MaterialMaps = {};
+    for(const [channel,blob] of Object.entries(blobs)){
+      if(blob===""){urls[channel as Channel]="";}
+      else if(blob){const url=URL.createObjectURL(blob);previewUrls.current.push(url);urls[channel as Channel]=url;}
+    }
+    setEdits(urls);
+  }
   useEffect(() => {
     if(!open || !id)return;
     let active=true;
-    setGroups({}); setEdits({});
+    setGroups({}); showPreview({});
     async function read(){
       let result:Record<string,MaterialMaps>={};
       if(sample==="actor"){
@@ -147,25 +175,46 @@ export function AssetManager() {
         const names=prop?.kind==="views"?["front","side","top"].map(v=>prop.views+"_"+v)
           : prop?.kind==="box"?[prop.side,prop.top]
           : prop?.kind==="cabin"?[prop.door,prop.inside,prop.views+"_side",prop.views+"_top"]:[primary];
-        result=Object.fromEntries(await Promise.all(names.map(async name=>[name,await baseMaps(catalog[name] ?? textureFolder(sample==="item"?"item_"+id:name))])));
+        // (a new draft without a diffuse has no files yet)
+        result=sample==="material" && !catalog[id] ? {[id]:{}} : Object.fromEntries(await Promise.all(names.map(async name=>[name,await baseMaps(catalog[name] ?? textureFolder(sample==="item"?"item_"+id:name))])));
       }
       if(active)setGroups(result);
     }
-    if(sample==="material")try {setEdits(JSON.parse(localStorage.getItem("asset-preview:"+id) || "{}"));} catch {setError(t("assetManager.readPreview"));}
+    if(sample==="material" && !isEditable(id)) migrateLegacyPreviews().then(()=>readPreview(id)).then(blobs=>{if(active)showPreview(blobs);}).catch(()=>{if(active)setError(t("assetManager.readPreview"));});
     read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
-  },[open,id,sample,primary,prop,decals]);
-  function edit(channel: Channel, url?: string) {
-    const next = { ...edits, [channel]: url };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[open,id,sample,primary,prop,decals,texSig]);
+  async function edit(channel: Channel, file?: Blob | "") {
+    const next: PreviewMaps = { ...previewBlobs.current, [channel]: file };
+    if (file === undefined) delete next[channel];
     try {
-      localStorage.setItem("asset-preview:" + id, JSON.stringify(next));
-      setEdits(next);
-    } catch { setError(t("assetManager.storageFull")); }
+      await writePreview(id, next);
+      showPreview(next);
+    } catch (error) { setError(errorText(error)); }
   }
   const [keyLight, setKeyLight] = useState(true);
   const [rimLight, setRimLight] = useState(true);
   const [turn, setTurn] = useState(0);
   const [error, setError] = useState("");
+  const [signIn, setSignIn] = useState(false);
+  // the shared textures are listed when the window opens (if signed in); the old local previews are moved over once
+  async function refreshShared() {
+    try { await Promise.all((["scifi","fantasy"] as const).map(loadSharedTextures)); } catch (e) { setError(errorText(e)); }
+  }
+  useEffect(() => { if(!open)return; void migrateLegacyPreviews(); if(sharedToken())void refreshShared(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function createTexture() {
+    try {
+      const draft = await newDraft(world==="All" ? activeWorld() : world, t("assetManager.newTextureName"));
+      setSample("material"); setSub("All"); setPose(-1); setTurn(0); setPlacement("Auto");
+      select(draftId(draft));
+    } catch (e) { setError(errorText(e)); }
+  }
+  // closing with local drafts left asks first (the drafts stay on this computer either way)
+  function requestClose() {
+    const c = draftCounts(drafts);
+    if (!drafts.length || window.confirm(t("assetManager.closeWarning", { n: c.added, m: c.changed }))) setOpen(false);
+  }
   const [listOpen, setListOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
   const [tuneStamp, setTuneStamp] = useState(0);
@@ -565,19 +614,25 @@ export function AssetManager() {
   },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief]);
   const strip = "grid w-8 shrink-0 place-items-start rounded border border-neutral-600 bg-neutral-900 py-2 text-lg hover:border-amber-400";
   return <><button className={button} onClick={()=>{if(document.pointerLockElement)document.exitPointerLock();setOpen(true);}}>{t("assetManager.title")}</button>{open && createPortal(
-    <div role="dialog" aria-label={t("assetManager.title")} aria-modal="true" className="fixed inset-0 z-[2147483647] bg-black/75 p-2 text-white pointer-events-auto" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation(); if(e.key==="Escape")setOpen(false);}}>
+    <div role="dialog" aria-label={t("assetManager.title")} aria-modal="true" className="fixed inset-0 z-[2147483647] bg-black/75 p-2 text-white pointer-events-auto" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation(); if(e.key==="Escape")requestClose();}}>
       <section className="flex h-full w-full flex-col rounded-lg border border-neutral-500 bg-neutral-950 p-3">
-        <header className="mb-2 flex shrink-0 items-center justify-between gap-3"><strong>{t("assetManager.title")}</strong><span className="min-w-0 flex-1 truncate text-sm text-neutral-300">{error || t("assetManager.orbitHint")}</span><button aria-label={t("assetManager.close")} className={button} onClick={()=>setOpen(false)}>×</button></header>
+        <header className="mb-2 flex shrink-0 items-center justify-between gap-3"><strong>{t("assetManager.title")}</strong><span className="min-w-0 flex-1 truncate text-sm text-neutral-300">{error || t("assetManager.orbitHint")}</span><button aria-label={t("assetManager.close")} className={button} onClick={requestClose}>×</button></header>
+        <UnsavedBar onError={setError}/>
+        {signIn && <SignInPopover className="fixed left-1/2 top-24 -translate-x-1/2" onDone={()=>{setSignIn(false);void refreshShared();}} onCancel={()=>setSignIn(false)} onError={setError}/>}
         <div className="flex min-h-0 flex-1 gap-2">
           {listOpen ? <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-hidden rounded border border-neutral-700 p-2">
             <div className="flex items-center justify-between gap-2"><strong>{t("assetManager.assets")}</strong><button aria-label={t("assetManager.collapseAssets")} title={t("assetManager.collapse")} className="px-2 hover:text-amber-400" onClick={()=>setListOpen(false)}>◀</button></div>
+            <div className="flex flex-wrap gap-1"><button className={button+" !px-2 !py-1"} title={t("assetManager.newTextureTitle")} onClick={()=>void createTexture()}>+ {t("assetManager.newTexture")}</button>{sharedConfigured && <button className={button+" !px-2 !py-1"} title={t("assetManager.refreshShared")} aria-label={t("assetManager.refreshShared")} onClick={()=>{if(sharedToken())void refreshShared();else setSignIn(true);}}>↻</button>}</div>
             <div className="flex flex-wrap gap-1">{(["material","prop","actor","item"] as const).map((tab,i)=><button key={tab} className={button+" !px-2 !py-1"} aria-pressed={sample===tab} onClick={()=>{setSample(tab);if(background==="Selected texture" && tab!=="material")setBackground("3×3");setSub("All");setPose(-1);setTurn(0);setPlacement("Auto");}}>{display(["Textures","Props","NPCs","Items"][i])}</button>)}</div>
             <label>{t("assetManager.world")} <select className={button+" !py-1"} value={world} onChange={e=>{setWorld(e.target.value as typeof world);setPose(-1);}}><option value="All">{display("All")}</option><option value="scifi">{display("scifi")}</option><option value="fantasy">{display("fantasy")}</option></select></label>
             {["material","prop"].includes(sample) && <div className="flex flex-wrap gap-1">{["All",...(sample==="material"?["wall","floor","ceiling","traverse"]:["3D","billboard","decal"])].map(k=><button key={k} className={button+" !px-2 !py-1"} aria-pressed={sub===k} onClick={()=>setSub(k)}>{display(k)}</button>)}</div>}
             <div className="grid min-h-0 flex-1 content-start grid-cols-2 gap-1 overflow-auto">{visible.map(e=>{
               const a=sample==="actor"?ACTOR_TYPES[e.key]:undefined;
-              return <button key={e.key} className={button+" !p-1 text-xs"} aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>
-                {a?<span className="block h-12 w-12" style={{backgroundImage:"url("+e.img+")",backgroundSize:a.cols*100+"% "+a.rows*100+"%",backgroundPosition:"0 "+a.idleRow/Math.max(1,a.rows-1)*100+"%"}}/>:<img src={e.img} loading="lazy" alt="" className="h-14 w-full object-contain"/>}{e.label}</button>;
+              const status=sample==="material" ? textureStatus(e.key) : undefined;
+              const auto=sample==="material" ? autoChannels(e.key) : [];
+              return <button key={e.key} className={button+" relative !p-1 text-xs"+(status==="new"||status==="changed" ? " !border-yellow-500" : "")} aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>
+                {status && <span className="absolute right-1 top-1 z-10 flex items-center gap-1">{(status==="new"||status==="changed") && <span role="img" aria-label={t("assetManager.draftTitle")} title={t("assetManager.draftTitle")} className="h-2.5 w-2.5 rounded-full bg-yellow-400"/>}{status==="builtin" && <span title={t("assetManager.lockedTitle")} aria-label={t("assetManager.lockedTitle")} className="text-neutral-400"><Lock size={11}/></span>}</span>}
+                {a?<span className="block h-12 w-12" style={{backgroundImage:"url("+e.img+")",backgroundSize:a.cols*100+"% "+a.rows*100+"%",backgroundPosition:"0 "+a.idleRow/Math.max(1,a.rows-1)*100+"%"}}/>:e.img?<img src={e.img} loading="lazy" alt="" className="h-14 w-full object-contain"/>:<span className="grid h-14 w-full place-items-center text-neutral-500">…</span>}{e.label}{auto.length>0 && <AutoBadge className="ml-1"/>}</button>;
             })}</div>
           </aside> : <button aria-label={t("assetManager.showAssets")} title={t("assetManager.assets")} className={strip} onClick={()=>setListOpen(true)}>▶</button>}
           <main className="flex min-w-0 flex-1 flex-col gap-2">
@@ -592,6 +647,9 @@ export function AssetManager() {
           </main>
           {panelOpen ? <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-auto rounded border border-neutral-700 p-2">
             <div className="flex items-center justify-between gap-2"><strong>{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 hover:text-amber-400" onClick={()=>setPanelOpen(false)}>▶</button></div>
+            {sample==="material" && entry && <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.textureSection")}</summary>
+              <TexturePanel id={id} maps={groups[id] ?? {}} onError={setError} onSelect={select}/>
+            </details>}
             <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.look", { texture: tuneId || t("assetManager.noTuning") })}</summary>
               {tune ? <>
                 <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>
@@ -617,10 +675,10 @@ export function AssetManager() {
               const url=(sample==="material"?edits[channel]:undefined) ?? layers[channel];
               if(!url && sample!=="material")return null;
               const key=maskKey(group,channel);
-              return <div key={channel} className="border border-neutral-700 p-2 text-sm"><strong>{display(channel)}</strong>{url && <button className="float-right px-1" title={t(hidden[key] ? "assetManager.enableMap" : "assetManager.disableMap", { map: display(channel) })} aria-label={t(hidden[key] ? "assetManager.enableGroupMap" : "assetManager.disableGroupMap", { group, map: display(channel) })} aria-pressed={!hidden[key]} onClick={()=>setHidden(old=>({...old,[key]:!old[key]}))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12Q12 -2 22 12Q12 26 2 12Z"/><circle cx="12" cy="12" r="3"/>{hidden[key] && <path d="M2 2L22 22"/>}</svg></button>}{url ? <img src={url} alt={display(channel)} className="h-14 w-full object-contain"/> : <p className="h-14">{t("assetManager.empty")}</p>}
-                {sample==="material" && <><label className="cursor-pointer underline">{t("assetManager.import")}<input type="file" accept="image/*" className="sr-only" onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(file)try{edit(channel,await importImage(file));}catch{setError(t("assetManager.importError"));}}}/></label>
-                {url && <button className="ml-1 underline" onClick={()=>edit(channel,"")}>{t("assetManager.clear")}</button>}
-                {edits[channel]!==undefined && <button className="underline" onClick={()=>edit(channel)}>{t("assetManager.restore")}</button>}</>}
+              return <div key={channel} className="border border-neutral-700 p-2 text-sm"><strong>{display(channel)}</strong>{sample==="material" && (autoChannels(id) as string[]).includes(channel) && <AutoBadge className="ml-1"/>}{url &&<button className="float-right px-1" title={t(hidden[key] ? "assetManager.enableMap" : "assetManager.disableMap", { map: display(channel) })} aria-label={t(hidden[key] ? "assetManager.enableGroupMap" : "assetManager.disableGroupMap", { group, map: display(channel) })} aria-pressed={!hidden[key]} onClick={()=>setHidden(old=>({...old,[key]:!old[key]}))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12Q12 -2 22 12Q12 26 2 12Z"/><circle cx="12" cy="12" r="3"/>{hidden[key] && <path d="M2 2L22 22"/>}</svg></button>}{url ? <img src={url} alt={display(channel)} className="h-14 w-full object-contain"/> : <p className="h-14">{t("assetManager.empty")}</p>}
+                {sample==="material" && !isEditable(id) && <><label className="cursor-pointer underline">{t("assetManager.import")}<input type="file" accept="image/*" className="sr-only" onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(file)try{await decode(file);await edit(channel,file);}catch{setError(t("assetManager.importError"));}}}/></label>
+                {url && <button className="ml-1 underline" onClick={()=>void edit(channel,"")}>{t("assetManager.clear")}</button>}
+                {edits[channel]!==undefined && <button className="underline" onClick={()=>void edit(channel)}>{t("assetManager.restore")}</button>}</>}
               </div>;
             })}</div></section>)}</details>}
           </aside> : <button aria-label={t("assetManager.showProperties")} title={t("assetManager.properties")} className={strip} onClick={()=>setPanelOpen(true)}>◀</button>}

@@ -1,43 +1,18 @@
-﻿import { useRef, useState } from "react";
+import { useState } from "react";
 import { createMap, hasUnsavedEdits, mapFile } from "./mapStore";
 import { t } from "../i18n";
 import type { GameMap } from "../game/types";
 import type { MapFile } from "../game/mapFormat";
-import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { SharedLoginForm, sharedButton as button, sharedProject, sharedRequest, useSharedAuth } from "./sharedAuth";
+import { loadSharedTextures } from "./sharedTextures";
+import { openAssetManager } from "./AssetManager";
 
 interface Head { id: string; revision: number; title: string; saved_by?: string; saved_at?: string }
 const origins = new Map<string, Head>();
 
-async function textures(world: GameMap["world"]) {
-  const listed = new Set<string>();
-  for (let offset = 0; ; offset += 100) {
-    const files = await sharedRequest<{ name: string }[]>("/storage/v1/object/list/void-textures", {
-      method: "POST", body: JSON.stringify({ prefix: world, limit: 100, offset, sortBy: {column: "name", order: "asc"} }),
-    });
-    for (const {name} of files) {
-      if (!/^[a-z0-9-]+\.png$/.test(name)) continue;
-      const id = world + "_shared_" + name.slice(0,-4);
-      listed.add(id);
-      (TEXTURE_SETS as Record<string, TextureSetPaths>)[id] = {
-        kind: ["floor","wall"], label: name.slice(37,-4) || "Shared texture",
-        diffuse: sharedProject + "/storage/v1/object/public/void-textures/" + world + "/" + name,
-        normal: `${import.meta.env.BASE_URL}textures/flat/normal.png`, depth: `${import.meta.env.BASE_URL}textures/flat/depth.png`, pixelArt: true,
-      };
-    }
-    if (files.length < 100) break;
-  }
-  const registry = TEXTURE_SETS as Record<string, TextureSetPaths>;
-  for (const id of Object.keys(registry)) {
-    if (id.startsWith(world + "_shared_") && !listed.has(id)) delete registry[id];
-  }
-}
-
 export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m: GameMap) => void; changed: () => void}) {
   const auth = useSharedAuth();
   const [open, setOpen] = useState(false);
-  const picker = useRef<HTMLInputElement>(null);
-  const [upload, setUpload] = useState<File | null>(null);
   const [heads, setHeads] = useState<Head[]>([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -57,7 +32,7 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     try { await fn(); } catch (error) { setMessage(String(error)); } finally { setBusy(false); }
   }
   async function refresh() {
-    await textures(map.world);
+    await loadSharedTextures(map.world);
     const latest = await sharedRequest<Head[]>("/rest/v1/void_map_heads?world=eq." + map.world + "&order=title,id");
     setHeads(latest.sort((a, b) => (b.saved_at ?? "").localeCompare(a.saved_at ?? "")));
     changed();
@@ -106,20 +81,7 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
           <p className="text-xs text-neutral-300">{t("editorShell.shared.publishHint")}</p>
           <button className={button} onClick={()=>void run(()=>save(true))}>{t("editorShell.shared.saveAsNew")}</button>
           <p className="text-xs text-neutral-300">{t("editorShell.shared.copyHint")}</p>
-          <label className="mt-2 block">{t("editorShell.shared.sharedTexture")}<input ref={picker} className="block file:mr-2 file:rounded file:border file:border-neutral-500 file:bg-neutral-800 file:px-3 file:py-1 file:text-white" type="file" accept="image/png" onChange={e=>setUpload(e.target.files?.[0] ?? null)} /></label>
-          <p className="text-xs text-neutral-300">{t("editorShell.shared.uploadHint")}</p>
-          <button className={button} disabled={!upload} onClick={()=>{
-            const f = upload;
-            if (!f) return;
-            void run(async()=>{
-              if(f.type!=="image/png" || f.size>8388608) throw new Error(t("editorShell.shared.pngTooBig"));
-              const name=crypto.randomUUID()+"-"+(f.name.slice(0,-4).toLowerCase().replace(/[^a-z0-9-]/g,"-") || "texture")+".png";
-              await sharedRequest("/storage/v1/object/void-textures/"+map.world+"/"+name,{method:"POST",headers:{"Content-Type":"image/png"},body:f});
-              setUpload(null);
-              if (picker.current) picker.current.value = "";
-              await refresh(); setMessage(t("editorShell.shared.uploaded"));
-            });
-          }}>{t("editorShell.shared.uploadButton")}</button>
+          <button type="button" className="mt-2 text-left underline hover:text-amber-300" onClick={()=>{setOpen(false);openAssetManager("material","");}}>{t("editorShell.shared.texturesInAssets")}</button>
           <strong className="mt-2">{t("editorShell.shared.latestSaves")}</strong>
           <button className={button} onClick={()=>void run(refresh)}>{t("editorShell.shared.refreshList")}</button>
           <p className="text-xs text-neutral-300">{t("editorShell.shared.refreshHint")}</p>

@@ -49,6 +49,20 @@ export async function sharedRequest<T>(path: string, init: RequestInit = {}): Pr
   return JSON.parse(text || "null");
 }
 
+export class SharedHttpError extends Error {
+  constructor(message: string, readonly status: number) { super(message); this.name = "SharedHttpError"; }
+}
+
+// One storage upload (append-only: never overwrites; an existing object is a 409).
+export async function sharedUpload(path: string, body: Blob | string, contentType: string): Promise<void> {
+  const res = await fetch(project + path, { method: "POST", body, headers: {
+    apikey: key, ...(token ? { Authorization: "Bearer " + token } : {}), "Content-Type": contentType, "x-upsert": "false",
+  } });
+  if (res.ok) return;
+  if (res.status === 401) setToken("");
+  const detail = await res.json().catch(() => ({}));
+  throw new SharedHttpError(detail.message || detail.msg || detail.error || res.statusText, res.status);
+}
 export interface SharedAuth {
   token: string;
   signedInName: string;
