@@ -7,6 +7,7 @@ import type { Direction } from "../../game/types";
 import { TEXTURE_SETS, textureSetsOfKind } from "../../render/textureSets";
 
 import { WeatherFields } from "../WeatherFields";
+import { MapRenderSettings } from "../../components/MapRenderSettings";
 const TEXTURE_SLOTS: { slot: string; label: Key; kind: "wall" | "floor" | "ceiling" | "door" | "window" }[] = [
   { slot: "wall", label: "editorBar.wall", kind: "wall" },
   { slot: "floor", label: "editorBar.floor", kind: "floor" },
@@ -70,6 +71,6 @@ return <>
             ))}
 <OptionalNumber label={t("editorBar.relief")} title={t("editorBar.howDeepTheWallsReliefIsRebuilds")} value={p.mapLook.reliefDepth} min={0.01} max={0.12} step={0.01} defaultValue={0.04} onChange={v=>p.onMapLook({reliefDepth:v})}/>
 </Section>
-
+<MapRenderSettings settings={p.renderSettings} onChange={p.onRenderSettings} mapId={p.mapId} mapHasRender={p.mapHasRender} onSaveRender={p.onSaveRender} onClearRender={p.onClearRender}/>
 </>;
 }

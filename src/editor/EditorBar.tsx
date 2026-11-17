@@ -8,6 +8,7 @@ import type { Lock } from "../game/story";
 import type { ActorWake } from "../game/types";
 
 import type { TextureSetId } from "../render/textureSets";
+import type { ViewportSettings } from "../components/GameViewport";
 import type { EditSurface, EditTool } from "./mapEdits";
 import type { Direction, LightEffect, Linked, MapLight } from "../game/types";
 
@@ -85,6 +86,14 @@ export interface EditorBarProps {
   // viewer's default)
   mapLook: MapLook;
   onMapLook: (patch: MapLook, merge?: string) => void;
+  // the render values saved with the map (see renderLook.ts): the viewer's
+  // current ones, their changes, and writing them into or clearing them from
+  // the map
+  renderSettings: ViewportSettings;
+  onRenderSettings: (settings: ViewportSettings) => void;
+  mapHasRender: boolean;
+  onSaveRender: () => void;
+  onClearRender: () => void;
   // the Decal tool: the decal a click puts on, the turn it gets, and the
   // selected one
   decalChoice: string | null;

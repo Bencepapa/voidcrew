@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { LIVERY_HUES, MOOD_LEVELS, moodOf } from "../game/variation";
 import type { ShipMood } from "../game/variation";
-import type { ViewportSettings, ViewportStats, WallProfileId } from "./GameViewport";
+import type { ViewportSettings, ViewportStats } from "./GameViewport";
 import { downloadMap } from "../editor/mapStore";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { LOCKED_WORLD, WORLDS, switchWorld } from "../game/worlds";
@@ -31,24 +31,14 @@ interface DebugPanelProps {
   mood?: ShipMood;
   moodOverride?: Partial<ShipMood>;
   onMood?: (override: Partial<ShipMood>) => void;
-  // the map's own render values (see renderLook.ts): whether it has any,
-  // writing the current ones into it, and removing them
-  mapHasRender?: boolean;
   // the world the map belongs to (switching reopens the game in another)
   world?: WorldId;
-  onSaveRender?: () => void;
-  onClearRender?: () => void;
+  // inside the map editor the map's own tab is one click away already
+  inEditor?: boolean;
   // the map's default texture sets (MapFile.textures) and changing one
   mapTextures?: Record<string, string | undefined>;
   onMapTexture?: (slot: string, setId: string | undefined) => void;
 }
-
-const WALL_PROFILE_OPTIONS: { id: WallProfileId; label: Key }[] = [
-  { id: "relief", label: "debug.reliefMeshFromDepthMap" },
-  { id: "flat", label: "debug.flat" },
-  { id: "convex", label: "debug.beveledConvexBulgesOut" },
-  { id: "concave", label: "debug.beveledConcaveRecedesIn" },
-];
 
 interface SliderConfig {
   key: keyof ViewportSettings;
@@ -63,12 +53,6 @@ const VIEW_SLIDERS: SliderConfig[] = [
   { key: "moveDurationMs", label: "debug.stepDurationMs", min: 60, max: 600, step: 10 },
 ];
 
-const LIGHT_SLIDERS: SliderConfig[] = [
-  { key: "mapLightIntensity", label: "debug.mapLights", min: 0, max: 3, step: 0.05 },
-  { key: "pointLightIntensity", label: "debug.headlamp", min: 0, max: 8, step: 0.1 },
-  { key: "ambientIntensity", label: "debug.ambientLight", min: 0, max: 2, step: 0.05 },
-];
-
 const ACCENT_RATIO_SLIDER: SliderConfig = { key: "accentRatio", label: "debug.accentShareOfWalls", min: 0, max: 1, step: 0.05 };
 
 // how vivid a texture's pixel must be to count as accent (see accent.ts)
@@ -80,51 +64,6 @@ const CAMERA_SLIDERS: SliderConfig[] = [
   { key: "cameraPullback", label: "debug.cameraPullback", min: 0, max: 0.49, step: 0.01 },
 ];
 
-const RELIEF_SLIDERS: SliderConfig[] = [
-  { key: "reliefDepth", label: "debug.reliefDepthUnlessTheMapSetsIt", min: 0.005, max: 0.12, step: 0.005 },
-  { key: "reliefMinIsland", label: "debug.minFeatureSizePx1Off", min: 1, max: 16, step: 1 },
-  { key: "aoIntensity", label: "debug.aOStrengthAmbient", min: 0, max: 1.5, step: 0.05 },
-  { key: "aoDirect", label: "debug.aOOnDirectLight", min: 0, max: 1, step: 0.05 },
-  { key: "aoRadius", label: "debug.aORadiusPx", min: 1, max: 16, step: 1 },
-];
-
-// the floors' own relief depth and normal strength (0: as the walls')
-const FLOOR_SLIDERS: SliderConfig[] = [
-  { key: "floorReliefDepth", label: "debug.floorReliefDepth", min: 0, max: 0.12, step: 0.005 },
-  { key: "floorNormalStrength", label: "debug.floorNormalStrength", min: 0, max: 3, step: 0.1 },
-];
-
-const BEVEL_SLIDERS: SliderConfig[] = [
-  { key: "bevelFraction", label: "debug.bevelFraction", min: 0.05, max: 0.45, step: 0.01 },
-  { key: "bevelAngleDeg", label: "debug.bevelAngleDegFromFloor", min: 15, max: 75, step: 1 },
-];
-
-// (non-relief walls only)
-const DISPLACEMENT_SLIDER: SliderConfig = {
-  key: "displacementScale",
-  label: "debug.depthDisplacement",
-  min: 0,
-  max: 0.06,
-  step: 0.005,
-};
-
-const MATERIAL_SLIDERS: SliderConfig[] = [
-  { key: "roughness", label: "debug.roughness", min: 0.05, max: 1, step: 0.05 },
-  { key: "metalness", label: "debug.metalness", min: 0, max: 1, step: 0.05 },
-  { key: "normalStrength", label: "debug.normalMapStrength", min: 0, max: 3, step: 0.1 },
-];
-
-// times of day for the sky's light: strength, colour, where from, how high
-const SKY_PRESETS: Record<string, Partial<ViewportSettings>> = {
-  "Night (moon)": { skyLightIntensity: 0.6, skyLightColor: "#8fa8ff", skyLightAzimuth: 200, skyLightElevation: 45 },
-  "Dawn": { skyLightIntensity: 1.0, skyLightColor: "#ffc08a", skyLightAzimuth: 95, skyLightElevation: 12 },
-  "Noon": { skyLightIntensity: 1.6, skyLightColor: "#fff4d6", skyLightAzimuth: 180, skyLightElevation: 75 },
-  "Afternoon": { skyLightIntensity: 1.3, skyLightColor: "#ffe6b0", skyLightAzimuth: 235, skyLightElevation: 40 },
-  "Dusk": { skyLightIntensity: 1.0, skyLightColor: "#ff8f5a", skyLightAzimuth: 265, skyLightElevation: 10 },
-  "Off": { skyLightIntensity: 0 },
-};
-
-const SKY_LABELS: Record<string, Key> = {"Night (moon)":"debug.sky.Nightmoon","Dawn":"debug.sky.Dawn","Noon":"debug.sky.Noon","Afternoon":"debug.sky.Afternoon","Dusk":"debug.sky.Dusk","Off":"debug.sky.Off"};
 const GRAPHICS_LABELS: Record<string, Key> = {"Low":"debug.preset.Low","Medium":"debug.preset.Medium","High":"debug.preset.High","Ultra":"debug.preset.Ultra","Custom":"debug.preset.Custom"};
 const MOOD_LABELS: Record<string, Key> = {"light":"debug.mood.light","threat":"debug.mood.threat","clutter":"debug.mood.clutter","smoke":"debug.mood.smoke","fire":"debug.mood.fire","doors":"debug.mood.doors","locks":"debug.mood.locks","robots":"debug.mood.robots","bright":"debug.mood.bright","dim":"debug.mood.dim","dark":"debug.mood.dark","low":"debug.mood.low","medium":"debug.mood.medium","high":"debug.mood.high","sparse":"debug.mood.sparse","normal":"debug.mood.normal","cluttered":"debug.mood.cluttered","clear":"debug.mood.clear","hazy":"debug.mood.hazy","smoky":"debug.mood.smoky","cold":"debug.mood.cold","smouldering":"debug.mood.smouldering","burning":"debug.mood.burning","few":"debug.mood.few","some":"debug.mood.some","many":"debug.mood.many","dormant":"debug.mood.dormant","fooled":"debug.mood.fooled","hostile":"debug.mood.hostile"};
 const SELECT = "bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm";
@@ -141,10 +80,8 @@ export function DebugPanel({
   mood,
   moodOverride,
   onMood,
-  mapHasRender,
   world,
-  onSaveRender,
-  onClearRender,
+  inEditor,
   mapTextures,
   onMapTexture,
 }: DebugPanelProps) {
@@ -185,9 +122,6 @@ export function DebugPanel({
     );
   }
 
-  const heading = (text: string) => (
-    <div className="text-[10px] font-semibold text-neutral-300 uppercase tracking-wide pt-1">{text}</div>
-  );
   const select = (label: string, control: ReactNode) => (
     <label className="flex flex-col gap-1">
       <span className="text-[10px] text-neutral-300">{label}</span>
@@ -221,7 +155,6 @@ export function DebugPanel({
       </select>,
     );
 
-  const beveled = settings.wallProfile === "convex" || settings.wallProfile === "concave";
   const relief = settings.wallProfile === "relief";
 
   // a collapsible category, closed until opened
@@ -257,103 +190,15 @@ export function DebugPanel({
           </select>,
         )}
 
-      {section(
-        t("debug.mapAttributes"),
-        <>
-          <div className="text-[10px] text-neutral-300">{t("debug.valuesSavedWithTheMapJsonApplied", { v1: mapId ?? "map" })}</div>
-          {select(
-            t("debug.wallType"),
-            <select
-              value={settings.wallProfile}
-              onChange={(e) => set("wallProfile", e.target.value as WallProfileId)}
-              className={SELECT}
-            >
-              {WALL_PROFILE_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {t(opt.label)}
-                </option>
-              ))}
-            </select>,
-          )}
-          {relief &&
-            select(
-              t("debug.reliefShapePropsFollowTheWallType"),
-              <select
-                value={settings.reliefMode}
-                onChange={(e) => set("reliefMode", e.target.value as ViewportSettings["reliefMode"])}
-                className={SELECT}
-              >
-                <option value="steps">{t("debug.stepsDistinctLevelsMachineryPanels")}</option>
-                <option value="smooth">{t("debug.smoothSlopesStoneHedgesTrees")}</option>
-              </select>,
-            )}
-          {heading(t("debug.walls"))}
-          {relief && RELIEF_SLIDERS.map(slider)}
-          {beveled && BEVEL_SLIDERS.map(slider)}
-          {!relief && slider(DISPLACEMENT_SLIDER)}
-          {slider({ key: "wallHeight", label: "debug.wallHeight", min: 0.6, max: 2, step: 0.05 })}
-          {heading(t("debug.floors0AsTheWalls"))}
-          {FLOOR_SLIDERS.map(slider)}
-          {heading(t("debug.material"))}
-          {MATERIAL_SLIDERS.map(slider)}
-          {heading(t("debug.light"))}
-          {LIGHT_SLIDERS.map(slider)}
-          <label className="flex items-center justify-between gap-2 text-[11px]">
-            {t("debug.distanceFadesToFogColourSavedWith")}<input
-              type="color"
-              value={settings.fogColor}
-              onChange={(e) => set("fogColor", e.target.value)}
-              className="w-8 h-6 bg-transparent border border-neutral-600"
-            />
-          </label>
-          {heading(t("debug.skyLightUnderOpenCeilings"))}
-          {select(
-            t("debug.timeOfDay"),
-            <select
-              value=""
-              onChange={(e) => {
-                const p = SKY_PRESETS[e.target.value];
-                if (p) onChange({ ...settings, ...p });
-              }}
-              className={SELECT}
-            >
-              <option value="">{t("debug.setFromAPreset")}</option>
-              {Object.keys(SKY_PRESETS).map((name) => (
-                <option key={name} value={name}>
-                  {t(SKY_LABELS[name])}
-                </option>
-              ))}
-            </select>,
-          )}
-          {slider({ key: "skyLightIntensity", label: "debug.skyLightStrength0None", min: 0, max: 3, step: 0.05 })}
-          {slider({ key: "skyLightAzimuth", label: "debug.skyLightFromCompass0North", min: 0, max: 359, step: 1 })}
-          {slider({ key: "skyLightElevation", label: "debug.skyLightHeightDegrees", min: 5, max: 90, step: 1 })}
-          <label className="flex items-center justify-between gap-2 text-[11px]">
-            {t("debug.skyLightColour")}<input
-              type="color"
-              value={settings.skyLightColor}
-              onChange={(e) => set("skyLightColor", e.target.value)}
-              className="w-8 h-6 bg-transparent border border-neutral-600"
-            />
-          </label>
-          {check("headlamp", t("debug.headlampOnLSavedWithTheMap"))}
-          {check("bobEnabled", t("debug.idleHeadBobSavedWithTheMap"))}
-          {onSaveRender && (
-            <div className="flex gap-1">
-              <button type="button" onClick={onSaveRender} className={`${button} flex-1 border-amber-500/60 text-amber-200`}>{t("debug.saveToMap")}</button>
-              {mapHasRender && onClearRender && (
-                <button type="button" onClick={onClearRender} className={button} title={t("debug.removeTheMapSRenderValues")}>{t("debug.clear")}</button>
-              )}
-            </div>
-          )}
+      {!inEditor && (onEditMap || mapId) && (
+        <div className="flex flex-col gap-1 pt-1">
           {onEditMap && (
             <button type="button" onClick={onEditMap} className={`${button} border-amber-500/60 text-amber-200`}>{t("debug.editMapTab")}</button>
           )}
           {mapId && (
             <button type="button" onClick={() => downloadMap(mapId)} className={button}>{t("debug.downloadMapJson", { v1: mapId })}</button>
           )}
-        </>,
-        t("debug.materialAOReliefWallHeightAmbient"),
+        </div>
       )}
 
       {section(
