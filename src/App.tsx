@@ -2442,15 +2442,6 @@ export default function App() {
 
   return (
     <div className="relative h-[100dvh] w-screen flex flex-col p-2 gap-2 overflow-hidden bg-neutral-950 font-sans">
-      {editMode && <header className="shrink-0 border border-neutral-700 bg-neutral-900 p-2 text-neutral-200">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <label className="text-xs">{t("editorShell.view")} <select className="border border-neutral-600 bg-neutral-800 p-1" value={settings.geometryView} onChange={e=>setSettings({...settings,geometryView:e.target.value as ViewportSettings["geometryView"]})}>
-            {(["textured","faces","wireframe","normals","depth"] as const).map(mode=><option key={mode} value={mode}>{t(`editorShell.${mode}`)}</option>)}
-          </select></label>
-          <button className="ml-auto rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setShortcutHelp(true)} aria-label={t("editorShell.shortcutsOpen")} title={t("editorShell.shortcutsOpen")}>?</button>
-          <button className="rounded border border-neutral-600 px-3 py-1 text-xs" onClick={()=>setEditorDebug(!editorDebug)} aria-expanded={editorDebug}>{t("editorShell.debug")}</button>
-        </div>
-      </header>}
       <div className="flex-1 flex gap-2 min-h-0">
         <div className={`${zoomed ? "w-[40vw]" : editMode ? "w-40 xl:w-56" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0 ${editMode ? "max-md:hidden" : ""}`}>
           {editMode && !zoomed ? (
@@ -2532,7 +2523,7 @@ export default function App() {
           {viewport}
           {joysticks}
           {overlays}
-          {editMode && <FloatToolbar tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>} compact={compact} />}
+          {editMode && <FloatToolbar view={settings.geometryView} onView={(v) => setSettings({ ...settings, geometryView: v })} onHelp={() => setShortcutHelp(true)} debugOpen={editorDebug} onDebug={() => setEditorDebug(!editorDebug)} tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager /></div>} compact={compact} />}
         </div>
 
         <div className={`${editMode ? "w-64 xl:w-80 max-md:w-44" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0`}>

@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUpDown, Download, FilePlus, FolderOpen, LogOut, MousePointer2, Pickaxe, Redo2, Save, SlidersHorizontal, Undo2 } from "lucide-react";
+import { ArrowUpDown, Bug, Download, FilePlus, FolderOpen, HelpCircle, LogOut, MousePointer2, Pickaxe, Redo2, Save, SlidersHorizontal, Undo2 } from "lucide-react";
 import { t } from "../i18n";
 import { TOOL_HELP } from "./EditorBar";
 import type { EditTool } from "./mapEdits";
+import type { ViewportSettings } from "../components/GameViewport";
 import { neutralStyle } from "./inspector/parts";
 
 // The floating tool strip and File/Map menu over the 3D view while editing
 // (see concept/editor-ui/topbar-removal-plan.md, steps 1-2): Select, Dig/Fill,
 // Height, Undo and Redo, and one menu button for the map's file actions.
 export interface FloatToolbarProps {
+  // the view mode select, the shortcut help and the debug panel: a small cluster at the top right
+  view: ViewportSettings["geometryView"];
+  onView: (view: ViewportSettings["geometryView"]) => void;
+  onHelp: () => void;
+  debugOpen: boolean;
+  onDebug: () => void;
   tool: EditTool;
   onTool: (tool: EditTool) => void;
   canUndo: boolean;
@@ -55,6 +62,25 @@ export function FloatToolbar(p: FloatToolbarProps) {
   return (
     <>
     {help && <div className={`pointer-events-none absolute left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-sm bg-black/60 px-2 py-0.5 text-center font-mono text-[10px] text-neutral-300 ${p.compact ? "bottom-12" : "bottom-2"}`}>{t(help)}</div>}
+    <div
+      style={neutralStyle}
+      className="voidcrew-editor-controls absolute right-2 top-2 z-20 flex items-center gap-1 font-mono"
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => { if (e.currentTarget.contains(e.target as Node)) e.stopPropagation(); }}
+      onWheel={(e) => e.stopPropagation()}
+    >
+      <select
+        className="h-8 rounded-sm border border-neutral-600 bg-black/60 px-1 text-[11px] text-neutral-200"
+        value={p.view}
+        title={t("editorShell.view")}
+        aria-label={t("editorShell.view")}
+        onChange={(e) => { p.onView(e.target.value as FloatToolbarProps["view"]); e.currentTarget.blur(); }}
+      >
+        {(["textured", "faces", "wireframe", "normals", "depth"] as const).map((mode) => <option key={mode} value={mode}>{t(`editorShell.${mode}`)}</option>)}
+      </select>
+      <button type="button" className={`${BTN} ${idle}`} title={t("editorShell.shortcutsOpen")} aria-label={t("editorShell.shortcutsOpen")} onClick={(e) => { p.onHelp(); e.currentTarget.blur(); }}><HelpCircle size={16} aria-hidden="true" /></button>
+      <button type="button" className={`${BTN} ${p.debugOpen ? active : idle}`} title={t("editorShell.debug")} aria-label={t("editorShell.debug")} aria-expanded={p.debugOpen} onClick={(e) => { p.onDebug(); e.currentTarget.blur(); }}><Bug size={16} aria-hidden="true" /></button>
+    </div>
     <div
       style={neutralStyle}
       className={`voidcrew-editor-controls absolute z-20 flex items-center gap-1 font-mono ${p.compact ? "bottom-2 left-2 right-2 flex-row justify-center" : "left-2 top-2 flex-col"}`}
