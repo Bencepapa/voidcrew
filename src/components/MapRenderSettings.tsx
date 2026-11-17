@@ -260,9 +260,9 @@ function Group({ id, title, children }: { id: string; title: Key; children: Reac
   const [open, setOpen] = useState(() => {
     try {
       const saved = localStorage.getItem(key);
-      return saved === null ? true : saved === "true";
+      return saved === "true";
     } catch {
-      return true;
+      return false;
     }
   });
   return (
