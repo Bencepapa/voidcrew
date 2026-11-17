@@ -92,6 +92,30 @@ A 3–5 egy ágon, egymás után (ugyanazt az `AssetManager.tsx`-et érintik).
 1. Név: **Műhely / Workshop** jó, vagy más?
 2. A generált (nem feltöltött) normal/depth feltöltődjön a tárba, vagy mindig a kliens generálja le betöltéskor?
    (Javaslat: csak a feltöltött csatornák kerülnek fel; a hiányzót a kliens generálja. Így kisebb a tár és a generátor javulhat.)
+> **Döntések (2026-11-17):** a név **Assets** (hu: „Assetek”; az Asset Manager név marad, a gomb kis ikon az asset-fa
+> fölött, a felső sáv később megszűnik, lebegő ikonok maradnak); a beépített textúrák csak olvashatók, nem törölhetők;
+> a generálás a `C:\dev\js\normalMap` mag portolásával (8. pont); **minden autogenerált csatorna jelölve van** (8. pont).
+
+## 8. Csatornák: Auto / Feltöltött / Nincs (normal- és depth-generálás)
+
+Minden csatorna (depth, normal, gloss, metal, emissive) három módban van, soronként kapcsolható:
+
+- **Feltöltött** – a felhasználó saját képe (mint most).
+- **Auto** – a kliens generálja a diffuse-ból. **Jelölés:** a sor és a csatorna bélyegképe `AUTO` címkét kap (halvány
+  kerettel), a Műhelyben/Assetekben a textúra során is ott a címke, ha bármelyik csatornája generált; a generált csatorna
+  az előnézetben is `AUTO`. A generálás receptje (beállítások) a `meta.json`-ba kerül (`"gen": { "depth": {...} }`), így
+  reprodukálható és később újraállítható; a szerkesztő bármikor **„Felülírás sajátjával”** gombbal feltölthet sajátot.
+- **Nincs** – a csatorna nem kell (tárgyak, papírok, lapos dolgok): nem generálódik, a motor lapos/semleges értéket vesz.
+
+Új textúrán az alapérték: **Auto** depth és normal (a felhasználó átkapcsolhatja Nincs-re vagy Feltöltöttre).
+
+**Generátor:** a `C:\dev\js\normalMap\src\core.js` (404 sor, függőségmentes): luma → Kuwahara olaj-szűrő (több kör) →
+Gauss-elmosás → szintek (auto/fekete/fehér/gamma/invert) → elő-elmosás → Sobel → normal (OpenGL Y+, *Flip Y* kapcsoló;
+az erősség felbontásfüggetlen). Beépítése: verziózott modul a buildbe (`src/render/depthNormal.ts`), Web Workerben,
+kis felbontású élő előnézettel, jóváhagyáskor teljes felbontás. A Műhely csatorna-során „Haladó” nyitható panel:
+oilRadius/passes, smooth, szintek, erősség, Flip Y (ugyanazok a csúszkák, mint a normalMap UI-ban), egy „Alaphelyzet” gomb.
+Mentett recept = a `meta.json`-ban lévő `gen` blokk.
+
 3. Beépített textúrák (wall1, wall2, ...) használat-jelölői: **a kódban kell maradniuk** (git), vagy a megosztott tárba is
    kerülhetnek felülírásként? (Javaslat: csak a megosztott textúrákra szerkeszthető; a beépítetteknél csak olvasható, mert
    a git-es fájl a forrás.)
