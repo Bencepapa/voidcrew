@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Library, Lock, LockOpen, LogOut } from "lucide-react";
-import { t, type Key } from "../i18n";
+import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld } from "../game/worlds";
 import { PROP_TYPES } from "../game/props";
 import { ITEM_TYPES } from "../game/items";
@@ -13,6 +13,8 @@ import type { EditorBarProps } from "./EditorBar";
 import type { EditSurface, EditTool } from "./mapEdits";
 
 const assetName = (name: string) => t(("assetTree.name."+name) as Key);
+// a prop's translated name, when it has one (else its id)
+const propName = (id: string) => hasKey("assetTree.name."+id) ? assetName(id) : id;
 
 type Entry = {search?: string; id: string; label: string; kind: string; image?: string; icon?: ReactNode; tool?: EditTool; style?: CSSProperties; active?: boolean; pick: (button: HTMLButtonElement) => void; manager?: Sample; managerId?: string};
 export function AssetTree(p: EditorBarProps) {
@@ -33,7 +35,7 @@ export function AssetTree(p: EditorBarProps) {
     const kind = ["pillar","chamfer"].includes(v.kind) ? "pillar" : ["billboard","cross"].includes(v.kind) ? "billboard" : "3D";
     if (!query && kind!==propTab) return [];
     const tex = v.kind==="views" ? v.views+"_front" : v.kind==="box" ? v.side : v.kind==="cabin" ? v.door : "texture" in v && v.texture || p.mapLook.textures?.wall || "wall4";
-    return [{id,label:id,kind:kind==="pillar"?t("assetTree.pillar"):kind,image:(TEXTURE_SETS[tex as keyof typeof TEXTURE_SETS] ?? textureFolder(tex)).diffuse,active:p.propChoice===id,pick:()=>choose("prop",()=>p.onPropChoice(id)),manager:"prop" as const}];
+    return [{id,label:propName(id),kind:kind==="pillar"?t("assetTree.pillar"):kind,image:(TEXTURE_SETS[tex as keyof typeof TEXTURE_SETS] ?? textureFolder(tex)).diffuse,active:p.propChoice===id,pick:()=>choose("prop",()=>p.onPropChoice(id)),manager:"prop" as const}];
   });
   // the door entry shows the map's own door (a fantasy map's gate, a ship's sliding door), else the default one
   const doorSet = (TEXTURE_SETS as Record<string,{diffuse:string}>)[p.mapLook.textures?.door ?? ""] ? p.mapLook.textures!.door! : "door1";

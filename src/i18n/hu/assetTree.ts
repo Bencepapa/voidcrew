@@ -59,5 +59,7 @@ export const assetTreeHu = {"assetTree.title": "Assetek", "assetTree.search": "K
 "assetTree.name.Wall 2": "Fal 2",
 "assetTree.name.Wall 3": "Fal 3",
 "assetTree.name.Wall 4": "Fal 4",
-"assetTree.name.Wall 5": "Fal 5"
+"assetTree.name.Wall 5": "Fal 5",
+"assetTree.name.fence1": "Vasker\u00edt\u00e9s",
+"assetTree.name.arch1": "K\u0151bolt\u00edv"
 } as const;
