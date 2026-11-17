@@ -1,121 +1,126 @@
-# Új textúra az Asset Managerben (terv)
+# Új textúra az Asset Managerben (terv, v2)
 
-Cél: a megosztott textúra feltöltése kikerül a „Megosztott pályák” ablakból. Az Asset Managerben (új nevet kap, lásd 1.)
-egy `+` gombbal új textúrát lehet létrehozni, a térképeit (diffuse, normal, depth, ...) egyenként feltölteni, megadni, hogy fal,
-padló és/vagy plafon lehet-e, és a megosztott tárba mentés itt, látható jelzéssel történik.
+Döntések (2026-11-17): a név **Assets** (hu: „Assetek”; az „Asset Manager” név a kódban és a beszédben marad); a beépített
+textúrák **csak olvashatók**, nem törölhetők, a használat-jelölőik nem szerkeszthetők; a normal és depth generálása
+a `C:\dev\js\normalMap` mag portolásával megy; **minden autogenerált csatorna jelölve van**; a wall1–wall3 textúrák
+kikerültek (kész), a `floor2` marad.
 
-## Ma (a kódból)
+Cél: a megosztott textúra feltöltése kikerül a „Megosztott pályák” ablakból. Az Asset Managerben egy `+` gombbal új
+textúrát lehet létrehozni, a térképeit (diffuse, normal, depth, ...) egyenként feltölteni vagy generáltatni, megadni, hogy
+fal, padló és/vagy plafon lehet-e, és a megosztott tárba mentés itt, látható jelzéssel történik.
 
-- `src/editor/SharedEditor.tsx`: bejelentkezés után egy PNG feltölthető a Supabase `void-textures/<világ>/<uuid>-<név>.png`
-  helyre. Betöltéskor mindegyik `kind: ["floor","wall"]`, a normal és depth a `wall2`-é (kölcsönzött), `pixelArt: true`,
-  a címke a fájlnévből jön. Se plafon, se saját normal/depth, se átnevezés.
+## 0. Ma (a kódból)
+
+- `src/editor/SharedEditor.tsx`: bejelentkezés után egy PNG tölthető fel a Supabase `void-textures/<világ>/<uuid>-<név>.png`
+  helyre. Betöltéskor mindegyik `kind: ["floor","wall"]`, `pixelArt: true`, a címke a fájlnévből jön, a normal és depth a
+  semleges lapos `textures/flat/` pár (a régi `wall2` pótlékát ez váltotta). Se plafon, se saját normal/depth, se átnevezés.
 - `src/editor/AssetManager.tsx` + `materialMaps.ts`: már tud képet importálni egy anyag csatornáihoz (helyi piszkozat,
-  IndexedDB), előnézet a próbaszobában. A tervezet (`ASSET-MANAGER.md`, „Egy munkamenet”, „Tartalom és mentés”) már leír
-  piszkozatot + Közzététel gombot és fal/padló/plafon címkéket: ezt valósítjuk meg textúrákra.
-- Textúra-hangolás (`textureTuning.json`): csak helyi fejlesztői fájl, a megosztott textúrákat nem érinti.
+  IndexedDB), előnézet a próbaszobában. Az `ASSET-MANAGER.md` már leír piszkozatot + Közzététel gombot és
+  fal/padló/plafon címkéket: ezt valósítjuk meg textúrákra.
+- Normal a depth-ből: csak offline (`scripts/normalMap.ts`, a fejlesztői szerver texture-watchere). Normal a diffuse-ból:
+  csak a matricáknál, futásidőben. **Depth a diffuse-ból: nincs** (csak konstans lapos depth sprite-vágáskor).
+- Textúra-hangolás (`textureTuning.json`): helyi fejlesztői fájl, a megosztott textúrákat nem érinti.
 
-## 1. Új név az Asset Managernek
+## 1. Név és hely
 
-Javaslat: **Műhely** (angolul *Workshop*): textúrát, NPC-t, propot, matricát készítesz és szerkesztesz benne, nem csak
-„kezelsz” valamit. Alternatívák: *Könyvtár / Library* (inkább böngészés), *Asset-stúdió / Asset Studio* (jó, de idegen).
-Csak a kiírt szöveg változik (`assetManager.title`, a gomb és a bezárás címkéje en+hu), a kódnevek maradnak.
+- Név: **Assets** / **Assetek** (a fával egyező szó). A gomb **kis ikon az asset-fa fölött** (nem szöveges gomb a felső
+  sávban); felirat/tooltip: „Asset Manager” / „Asset menedzser”.
+- A felső sáv később megszűnik, csak pár lebegő ikon marad. Az ajtó/híd/létra egy közös eszköztárba kerül (külön terv).
+  Ez a terv ezekhez nem nyúl.
 
 ## 2. Új textúra folyamata
 
-1. A bal könyvtár fejlécében `+ Új textúra` gomb. Létrehoz egy **üres** piszkozat-textúrát (helyi, IndexedDB, mint az import),
-   azonnal kijelöli, a neve szerkeszthető mező (alapérték: „Új textúra”).
-2. Az üres textúrának csatorna-sorai vannak: **Diffuse** (kötelező), **Normal**, **Depth**, **Roughness/Gloss**,
-   **Metalness**, **Emissive**. Mindegyik soron `Fájl kiválasztása` / húzás, bélyegkép, `Eltávolítás`. A hiányzó
-   normal/depth/stb. **generálható** a diffuse-ból (a már meglévő előnézeti generátor: lapos depth, Sobel-normal), és a sor
-   jelzi: *feltöltött* vagy *generált*. A generált csatorna csak akkor kerül feltöltésre, ha a kapcsoló rajta van.
-3. **Használat** jelölőnégyzetek: ☐ Fal ☐ Padló ☐ Plafon (legalább egy kötelező; új textúrán alapból mind a három be,
-   mert a legtöbb fal padlóra és plafonra is jó). A meglévő beépített textúrákra ugyanezek a jelölők megjelennek, az
-   alapértékük a mai `kind` mezőjük (a `TextureSetPaths.kind` tömb), így a tárolt adat nem változik, csak szerkeszthetővé válik.
-4. Egyéb tulajdonságok: *pixel art* kapcsoló (kikapcsolva szűrt), a `world` (fantasy / sci-fi), `normal erősség` marad az
-   Asset Manager már meglévő csúszkáin.
-5. A szobában azonnal látszik, minden módosítás frissít (a meglévő próbaszoba).
+1. A könyvtár fejlécében `+ Új textúra`. Létrehoz egy **üres** piszkozat-textúrát (helyi, IndexedDB), kijelöli, a neve
+   szerkeszthető mező (alapérték: „Új textúra”).
+2. Csatorna-sorok: **Diffuse** (kötelező), **Normal**, **Depth**, **Roughness/Gloss**, **Metalness**, **Emissive**.
+   Minden sorban: bélyegkép, `Fájl kiválasztása` / húzás, mód (lásd 4.), `Eltávolítás`.
+3. **Használat** jelölőnégyzetek: ☐ Fal ☐ Padló ☐ Plafon (legalább egy). Új textúrán alapból mind a három be, mert a
+   legtöbb fal padlóra és plafonra is jó.
+4. **Pixel art** kapcsoló (kikapcsolva szűrt), a világ (fantasy / sci-fi).
+5. Minden módosítás azonnal látszik a próbaszobában.
 
 ## 3. Tárolás a megosztott tárban
 
-A mai lapos fájlok (`<világ>/<uuid>-név.png`) **olvashatók maradnak** (régi azonosítók, normal/depth a wall2-ből, fal+padló).
+A mai lapos fájlok (`<világ>/<uuid>-név.png`) **olvashatók maradnak** (régi azonosítók, lapos normal/depth, fal+padló).
 Új textúra mappát kap:
 
 ```
 void-textures/<világ>/<uuid>/
-  meta.json        { "name": "...", "kinds": ["wall","floor","ceiling"], "pixelArt": true, "rev": 3, "maps": ["diffuse","normal","depth"] }
-  diffuse.png  normal.png  depth.png  surface.png  emissive.png
+  meta.json   { "name", "kinds": ["wall","floor","ceiling"], "pixelArt", "rev",
+                "maps": { "diffuse": "uploaded", "normal": "auto", "depth": "auto", "gloss": "none" },
+                "gen":  { "depth": {...recept...}, "normal": {...} } }
+  diffuse.png  normal.png  depth.png  surface.png  emissive.png    (csak a feltöltöttek)
 ```
 
-- `meta.json` a *forrása* a névnek és a használatnak, így nincs szükség új Postgres-táblára az első változathoz (az
-  `ASSET-MANAGER.md` Postgres-tervezete későbbi lépés marad; a `meta.json` ráfordítható). `rev` minden közzététellel nő.
-- A `textures()` betöltő (SharedEditor.tsx) kibővül: listázza a mappákat, beolvassa a `meta.json`-t, és a
-  `TEXTURE_SETS`-be a valós `kind` tömbbel, a saját normal/depth útvonallal regisztrálja (ha hiányzik a térkép: a mai
-  wall2-fallback).
-- Közzététel sorrendje: térképek feltöltése → ellenőrzés (méret, PNG, 8 MB) → **utoljára** a `meta.json`; amíg nincs
-  `meta.json`, a mappa nem jelenik meg a palettán (megszakadt feltöltés nem hagy fél textúrát).
-- Név változtatása, használat jelölők módosítása = új `meta.json` (a képek érintetlenek). Törlés/archiválás: a `meta.json`
-  `"archived": true` mezője kiveszi a palettáról; a már használó térképek tovább működnek.
+- Nincs új Postgres-tábla az első változathoz; a `meta.json` a forrás (az `ASSET-MANAGER.md` Postgres-terve később rá
+  fordítható). `rev` minden közzététellel nő.
+- Betöltés (`textures()` a SharedEditor.tsx-ben): mappák listázása, `meta.json` olvasása, `TEXTURE_SETS` bejegyzés a valós
+  `kind` tömbbel; az `auto` csatornát a kliens generálja (4.), a `none` lapos/semleges.
+- Közzététel sorrendje: térképek feltöltése → ellenőrzés (PNG, ≤ 8 MB) → **utoljára** a `meta.json`; amíg nincs
+  `meta.json`, a mappa nem látszik a palettán.
+- Átnevezés, használat-jelölők = új `meta.json` (a képek érintetlenek). Archiválás: `"archived": true` kiveszi a palettáról,
+  a már használó térképek tovább működnek.
 - Ütközés: ha a `meta.json` `rev` értéke közben nőtt, a közzététel megáll és kérdez (mint a térképmentés 409-je).
+- **Beépített textúrák:** csak olvashatók (kód/git a forrás), a szerkesztőben zárolt jelzéssel, nem törölhetők, a
+  használat-jelölőik nem szerkeszthetők és nincs rajtuk Közzététel.
 
-## 4. Mentetlen módosítások jelzése és Közzététel
+## 4. Csatornák: Auto / Feltöltött / Nincs
 
-- A Műhely fejlécében és az érintett textúra sorában **sárga keret** és pont, ha helyi piszkozat eltér a megosztott
-  állapottól. A szerkesztő felületén sárga sáv: *„Mentetlen módosítások a megosztott könyvtárhoz: 1 új textúra, 2 változott”*
-  + **[Közzététel]** gomb (mellette **[Elvetés]**).
-- A Közzététel, ha nincs bejelentkezve, **megnyitja a bejelentkezés ablakot**, siker után folytatja a közzétételt
-  (a bejelentkezést külön modulba kell emelni a `SharedEditor.tsx`-ből: `sharedAuth.ts`: token, `request`, belépés).
-- Kilépéskor a Műhelyből a meglévő „maradt helyi piszkozat” figyelmeztetés marad, a sárga sávval egyezően.
-- Csak a bejelentkezett szerkesztő publikálhat; a nem bejelentkezett felhasználó is szerkeszthet piszkozatot
-  (a `+` és a feltöltés helyi, a Közzététel kér belépést).
+Minden csatorna soronként három módban:
 
-## 5. A „Megosztott pályák” ablak
+- **Feltöltött:** a felhasználó saját képe.
+- **Auto:** a kliens generálja a diffuse-ból. **Jelölés (mindenütt, ahol a csatorna látszik):** `AUTO` címke a soron és a
+  bélyegképen, halvány kerettel; a textúra összegzésében is ott van, ha bármelyik csatornája generált; az előnézetben is.
+  A recept a `meta.json`-ban (`gen`), így reprodukálható; „Felülírás sajátjával” gombbal bármikor feltölthető saját.
+- **Nincs:** a csatorna nem kell (tárgyak, papírok, lapos dolgok): nem generálódik, a motor lapos/semleges értéket vesz.
 
-A „Megosztott textúra (PNG)” blokk (mező, súgó, gomb) **kikerül**, helyette egy sor: *„Textúra feltöltése: a Műhelyben”*
-(link, ami megnyitja). A „Lista és textúrák frissítése” gomb marad (a textúralista frissítése változatlanul szükséges
-más szerkesztők munkájához); a szövege „Lista és textúrák frissítése” maradhat.
+Új textúrán az alapérték: **Auto** depth és normal. A generált csatorna **nem kerül a tárba**, csak a recept (kisebb tár,
+a generátor később javulhat); ha a felhasználó azt akarja, hogy a kép pontosan megmaradjon, **„Befagyasztás”** feltölti
+a generált csatornát Feltöltöttként.
 
-## 6. Lépések (építési sorrend)
+### Generátor: a `normalMap` mag portolása
+
+`C:\dev\js\normalMap\src\core.js` (404 sor, függőségmentes). Lépések: luma → Kuwahara olajszűrő (több kör) →
+Gauss-elmosás → szintek (auto/fekete/fehér/gamma/invert) → elő-elmosás → Sobel → normal (OpenGL Y+, *Flip Y* kapcsoló;
+az erősség felbontásfüggetlen). A depth a közbülső eredmény (a diffuse fényességéből), ez ma a motorból hiányzik.
+
+- Beépítés: verziózott modul a buildbe (`src/render/depthNormal.ts`), Web Workerben, kis felbontású élő előnézettel,
+  jóváhagyáskor teljes felbontás (a normalMap UI is így dolgozik: ≤ 640 px előnézet).
+- **Haladó panel** a csatorna-soron: oilRadius/passes, elmosás, szintek, erősség, Flip Y (ugyanazok a csúszkák, mint a
+  normalMap UI-ban) + „Alaphelyzet”. Az automata alapbeállítás elég a legtöbb textúrához.
+- Az offline `scripts/normalMap.ts` (dev szerver watcher) marad; később ugyanarra a magra állítható.
+
+## 5. Mentetlen módosítások és Közzététel
+
+- Az Assets ablak fejlécében és az érintett textúra sorában **sárga keret** és pont, ha a helyi piszkozat eltér a megosztott
+  állapottól. Sárga sáv: *„Mentetlen módosítások a megosztott könyvtárhoz: 1 új textúra, 2 változott”*
+  + **[Közzététel]** és **[Elvetés]**.
+- Bejelentkezés nélkül a Közzététel **megnyitja a bejelentkezés ablakot**, siker után folytatja
+  (a belépés külön modulba kerül: `sharedAuth.ts`: token, `request`, belépő űrlap).
+- Piszkozat bejelentkezés nélkül is szerkeszthető; csak a Közzététel kér belépést.
+- Az ablak bezárásakor a meglévő „maradt helyi piszkozat” figyelmeztetés a sárga sávval egyezik.
+
+## 6. A „Megosztott pályák” ablak
+
+A „Megosztott textúra (PNG)” blokk (mező, súgó, gomb) kikerül, helyette egy sor: *„Textúra feltöltése: az Assetekben”*
+(link, megnyitja az Asset Managert). A „Lista és textúrák frissítése” gomb marad.
+
+## 7. Építési sorrend
 
 | # | Lépés | Méret | Ki |
 | --- | --- | --- | --- |
-| 1 | Átnevezés (en+hu szövegek) | kicsi | OpenCode free |
-| 2 | `sharedAuth.ts` kiemelése (token, `request`, belépő űrlap) a `SharedEditor.tsx`-ből, viselkedés változatlan | kicsi–közepes | OpenCode free |
-| 3 | `+ Új textúra`, üres piszkozat, csatorna-sorok (feltöltés, generálás), név, Fal/Padló/Plafon jelölők, a beépítettekre is | nagy | Claude |
-| 4 | Tár: mappa + `meta.json` írás/olvasás, régi lapos fájlok kompatibilitása, `textures()` betöltő | közepes | Claude |
-| 5 | Sárga „mentetlen” sáv + Közzététel belépéssel + Elvetés, ütközéskezelés | közepes | Claude |
-| 6 | A „Megosztott textúra” blokk eltávolítása a pályák ablakából + hivatkozás | kicsi | OpenCode free |
+| 1 | Átnevezés „Assets”-re (en+hu), a gomb kis ikon az asset-fa fölé | kicsi | OpenCode free |
+| 2 | `sharedAuth.ts` kiemelése a `SharedEditor.tsx`-ből, viselkedés változatlan | kicsi–közepes | OpenCode free |
+| 3 | `depthNormal.ts` + Worker: a `normalMap` mag portolása, tesztek (egy kép → depth + normal), élő előnézet | közepes | Claude |
+| 4 | `+ Új textúra`, üres piszkozat, csatorna-sorok (Feltöltött/Auto/Nincs, `AUTO` jelölés, Haladó panel), név, Fal/Padló/Plafon jelölők | nagy | Claude |
+| 5 | Tár: mappa + `meta.json`, régi lapos fájlok kompatibilitása, betöltő, beépítettek csak olvashatók | közepes | Claude |
+| 6 | Sárga „mentetlen” sáv + Közzététel belépéssel + Elvetés + ütközéskezelés | közepes | Claude |
+| 7 | A „Megosztott textúra” blokk eltávolítása a pályák ablakából + hivatkozás | kicsi | OpenCode free |
 
-A 3–5 egy ágon, egymás után (ugyanazt az `AssetManager.tsx`-et érintik).
+A 3–6 egymás után, egy ágon (ugyanazt az `AssetManager.tsx`-et érintik).
 
-## 7. Nyitott kérdések
+## 8. Nyitott kérdések
 
-1. Név: **Műhely / Workshop** jó, vagy más?
-2. A generált (nem feltöltött) normal/depth feltöltődjön a tárba, vagy mindig a kliens generálja le betöltéskor?
-   (Javaslat: csak a feltöltött csatornák kerülnek fel; a hiányzót a kliens generálja. Így kisebb a tár és a generátor javulhat.)
-> **Döntések (2026-11-17):** a név **Assets** (hu: „Assetek”; az Asset Manager név marad, a gomb kis ikon az asset-fa
-> fölött, a felső sáv később megszűnik, lebegő ikonok maradnak); a beépített textúrák csak olvashatók, nem törölhetők;
-> a generálás a `C:\dev\js\normalMap` mag portolásával (8. pont); **minden autogenerált csatorna jelölve van** (8. pont).
-
-## 8. Csatornák: Auto / Feltöltött / Nincs (normal- és depth-generálás)
-
-Minden csatorna (depth, normal, gloss, metal, emissive) három módban van, soronként kapcsolható:
-
-- **Feltöltött** – a felhasználó saját képe (mint most).
-- **Auto** – a kliens generálja a diffuse-ból. **Jelölés:** a sor és a csatorna bélyegképe `AUTO` címkét kap (halvány
-  kerettel), a Műhelyben/Assetekben a textúra során is ott a címke, ha bármelyik csatornája generált; a generált csatorna
-  az előnézetben is `AUTO`. A generálás receptje (beállítások) a `meta.json`-ba kerül (`"gen": { "depth": {...} }`), így
-  reprodukálható és később újraállítható; a szerkesztő bármikor **„Felülírás sajátjával”** gombbal feltölthet sajátot.
-- **Nincs** – a csatorna nem kell (tárgyak, papírok, lapos dolgok): nem generálódik, a motor lapos/semleges értéket vesz.
-
-Új textúrán az alapérték: **Auto** depth és normal (a felhasználó átkapcsolhatja Nincs-re vagy Feltöltöttre).
-
-**Generátor:** a `C:\dev\js\normalMap\src\core.js` (404 sor, függőségmentes): luma → Kuwahara olaj-szűrő (több kör) →
-Gauss-elmosás → szintek (auto/fekete/fehér/gamma/invert) → elő-elmosás → Sobel → normal (OpenGL Y+, *Flip Y* kapcsoló;
-az erősség felbontásfüggetlen). Beépítése: verziózott modul a buildbe (`src/render/depthNormal.ts`), Web Workerben,
-kis felbontású élő előnézettel, jóváhagyáskor teljes felbontás. A Műhely csatorna-során „Haladó” nyitható panel:
-oilRadius/passes, smooth, szintek, erősség, Flip Y (ugyanazok a csúszkák, mint a normalMap UI-ban), egy „Alaphelyzet” gomb.
-Mentett recept = a `meta.json`-ban lévő `gen` blokk.
-
-3. Beépített textúrák (wall1, wall2, ...) használat-jelölői: **a kódban kell maradniuk** (git), vagy a megosztott tárba is
-   kerülhetnek felülírásként? (Javaslat: csak a megosztott textúrákra szerkeszthető; a beépítetteknél csak olvasható, mert
-   a git-es fájl a forrás.)
+1. Az `AUTO` címke szövege: „AUTO” / „Auto” / „generált”? (Javaslat: **AUTO**, hu-ban is.)
+2. A „Befagyasztás” (a generált csatorna feltöltése Feltöltöttként) kell az első változatba, vagy később?
+3. A régi lapos megosztott textúrák (fal+padló) átalakíthatók-e mappás formára egy gombbal (plafon jelölő hozzáadásához)?
