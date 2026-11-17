@@ -13,7 +13,8 @@ import { pickRender, renderDefaults } from "./game/renderLook";
 import { saveGraphics } from "./render/graphics";
 import type { AimFocus, AimFrame, EditDrag, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { editorToolLabel } from "./editor/EditorBar";
-import { SharedEditor, sharedConfigured } from "./editor/SharedEditor";
+import { SharedEditor } from "./editor/SharedEditor";
+import { sharedConfigured } from "./editor/sharedAuth";
 import { AssetManager } from "./editor/AssetManager";
 import { PropEditor } from "./editor/PropEditor";
 import {
