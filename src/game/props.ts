@@ -230,6 +230,11 @@ export const PROP_TYPES: Record<string, PropType> = {
     relief: 0.3,
   },
   curtain_open: { kind: "panel", texture: "curtain_open", size: [0.85, 0.75, 0.04], wall: true, elevation: 0.12, relief: 0.3 },
+  // the fantasy gate's portcullis as a free-standing iron fence: it fills the
+  // cell (the bars' gaps are transparent) and closes it to walking
+  fence1: { kind: "panel", texture: "fantasygate1", size: [1, 1, 0.08], blocks: true },
+  // the fantasy doorway's stone arch, standing free: its opening is walkable
+  arch1: { kind: "panel", texture: "fantasydoorframe1", size: [1, 1, 0.08] },
   plant1: { kind: "cross", texture: "plant1", size: [0.3, 0.58, 0.3] },
   // a big oak (two crossed cutouts): it stands taller than a room is high, so
   // use it in the open (a sky ceiling)

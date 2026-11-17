@@ -36,6 +36,8 @@ const en = { ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...
 const hu: Partial<Record<Key, string>> = { ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...minimapHu };
 
 export type Key = keyof typeof en;
+// whether a key has a string (for optional, data-driven names)
+export const hasKey = (key: string): key is Key => key in en;
 export type Lang = "en" | "hu";
 export const LANGS: Lang[] = ["hu", "en"];
 

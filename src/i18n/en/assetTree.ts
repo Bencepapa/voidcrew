@@ -59,5 +59,7 @@ export const assetTreeEn = {"assetTree.title": "Assets", "assetTree.search": "Se
 "assetTree.name.Wall 2": "Wall 2",
 "assetTree.name.Wall 3": "Wall 3",
 "assetTree.name.Wall 4": "Wall 4",
-"assetTree.name.Wall 5": "Wall 5"
+"assetTree.name.Wall 5": "Wall 5",
+"assetTree.name.fence1": "Iron fence",
+"assetTree.name.arch1": "Stone arch"
 } as const;

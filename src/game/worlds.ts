@@ -96,6 +96,7 @@ const FANTASY_ASSETS = new Set([
   "ogre1", "goblin1", "goblin2", "wolf1", "necromancer1", "mage1", "thief1", "skeleton1",
   "potion_red", "potion_blue", "scroll", "purse", "sword", "skull", "coins", "dagger", "arrows", "gem",
   "torch1", "pedestal1", "tree1", "tree2", "pine1", "bush1", "bush2", "fern1", "barrel1", "deadtree1",
+  "fence1", "arch1",
   "fantasy_bokor_kerek", "fantasy_bokor_bogyos", "fantasy_bokor_pazsit",
   "grass_small", "grass_medium", "grass_large", "grass_white", "grass_yellow", "grass_blades",
   "fern_big", "bush_leafy", "grass_tall", "leaves_pile", "mushrooms", "wildflowers",
