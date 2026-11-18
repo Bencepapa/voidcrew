@@ -6,7 +6,10 @@
 import { useSyncExternalStore } from "react";
 import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { t } from "../i18n";
+import type { GameMap } from "../game/types";
 import type { WorldId } from "../game/worlds";
+import { sharedTexturesChanged } from "../render/sharedTextureEvents";
+import { setSharedTuning, textureTuning, type TextureTuning } from "../render/textureTuning";
 import { autoRecipe, generateAutoMaps } from "./autoMaps";
 import { idb } from "./idb";
 import { applyTransparency, composeSurface, decode, encode, hasAlpha, splitSurface, type Transparency } from "./imageTools";
@@ -25,6 +28,10 @@ export interface SharedMeta {
   transparency: Transparency;
   maps: Record<MapKey, MapMode>;
   gen?: { normal?: typeof autoRecipe; depth?: typeof autoRecipe };
+  // relief built smooth (see TextureSetFiles.smooth)
+  smooth?: boolean;
+  // the texture's own look tuning (normal strength, relief depth, roughness, metalness)
+  tuning?: TextureTuning;
 }
 export interface SharedInfo {
   id: string;
@@ -48,7 +55,22 @@ const baselines = new Map<string, TextureSetPaths>();
 let version = 0;
 const listeners = new Set<() => void>();
 const subscribe = (l: () => void) => { listeners.add(l); return () => void listeners.delete(l); };
-const bump = () => { version++; for (const l of listeners) l(); };
+const fileKeys = new Map<string, string>();
+const bump = () => {
+  version++;
+  for (const l of listeners) l();
+  // the game builds its scene from the table once: tell it when a shared texture's files (not just its name) changed
+  let filesChanged = false;
+  const now = new Set<string>();
+  for (const [id, set] of Object.entries(registry)) {
+    if (!id.includes("_shared_")) continue;
+    now.add(id);
+    const key = [set.diffuse, set.normal, set.depth, set.surface, set.emissive, set.pixelArt, set.smooth, JSON.stringify(textureTuning(id))].join("|");
+    if (fileKeys.get(id) !== key) { fileKeys.set(id, key); filesChanged = true; }
+  }
+  for (const id of [...fileKeys.keys()]) if (!now.has(id)) { fileKeys.delete(id); filesChanged = true; }
+  if (filesChanged) sharedTexturesChanged();
+};
 export const useTextureVersion = () => useSyncExternalStore(subscribe, () => version);
 
 // ---- what a texture is ----
@@ -151,7 +173,7 @@ async function draftPaths(d: TextureDraft): Promise<TextureSetPaths | null> {
   const surface = gloss || metal ? await surfaceOf(gloss, metal) : undefined;
   const normal = pick("normal"), depth = pick("depth");
   return {
-    kind: d.kinds, label: label(d.name), pixelArt: d.pixelArt,
+    kind: d.kinds, label: label(d.name), pixelArt: d.pixelArt, ...(d.smooth ? { smooth: true } : {}),
     diffuse: urlFor(d.uuid, derived.diffuse ?? raw),
     normal: normal ? urlFor(d.uuid, normal) : flat.normal,
     depth: depth ? urlFor(d.uuid, depth) : flat.depth,
@@ -161,6 +183,7 @@ async function draftPaths(d: TextureDraft): Promise<TextureSetPaths | null> {
 }
 
 function restore(id: string) {
+  setSharedTuning(id, infos.get(id)?.meta?.tuning);
   const base = baselines.get(id);
   if (base) registry[id] = base; else delete registry[id];
 }
@@ -174,6 +197,7 @@ async function applyDraft(d: TextureDraft) {
   try {
     const paths = await draftPaths(d);
     if (applying.get(d.uuid) !== ticket) return;
+    setSharedTuning(id, d.tuning);
     if (paths) registry[id] = paths; else restoreOrHide(id);
   } catch {
     if (applying.get(d.uuid) === ticket) restoreOrHide(id);
@@ -205,6 +229,40 @@ function syncDrafts() {
 }
 subscribeDrafts(syncDrafts);
 
+// the texture's own name (never its id)
+export const catalogLabel = (id: string) => registry[id]?.label ?? draftById(id)?.name ?? "";
+
+// ---- which textures the map being edited uses (a delete asks first) ----
+
+let currentMap: GameMap | undefined;
+export const registerMap = (map: GameMap | undefined) => { currentMap = map; };
+export function mapUses(id: string): boolean {
+  const m = currentMap;
+  if (!m) return false;
+  if (m.textures && Object.values(m.textures).includes(id)) return true;
+  for (let y = 0; y < m.height; y++) for (let x = 0; x < m.width; x++) {
+    if (m.floorAt?.(x, y) === id || m.wallTextureAt?.(x, y) === id || m.ceilingTextureAt?.(x, y) === id) return true;
+  }
+  return false;
+}
+
+// An editable copy of an old flat shared PNG: a new draft texture (new id) with that image as its diffuse, whose
+// Publish makes a rev-folder texture. Returns the draft's id.
+export async function convertLegacy(id: string): Promise<string> {
+  const info = infos.get(id);
+  if (!info?.legacy || !info.file) throw new Error(t("assetManager.err.notEditable"));
+  const res = await fetch(info.file);
+  if (!res.ok) throw new Error(t("assetManager.err.fetch", { url: info.file }));
+  const blob = await res.blob();
+  const draft: TextureDraft = {
+    uuid: crypto.randomUUID(), world: info.world, name: registry[id]?.label ?? t("assetManager.untitled"), kinds: ["wall", "floor"], pixelArt: true, smooth: true,
+    transparency: { source: (await hasAlpha(blob)) ? "alpha" : "none", colorKey: "#ff00ff" }, diffuseAlpha: await hasAlpha(blob),
+    maps: { diffuse: { mode: "uploaded", blob }, normal: { mode: "auto" }, depth: { mode: "auto" }, gloss: { mode: "none" }, metal: { mode: "none" }, emissive: { mode: "none" } },
+    baseRev: 0, updated: Date.now(),
+  };
+  await saveDraft(draft);
+  return draftId(draft);
+}
 // ---- shared textures (published) ----
 
 function fileUrls(info: SharedInfo) {
@@ -225,7 +283,7 @@ function sharedBaseline(info: SharedInfo): TextureSetPaths {
   }
   const meta = info.meta!, f = fileUrls(info);
   return {
-    kind: meta.kinds, label: meta.name, pixelArt: meta.pixelArt, diffuse: f.diffuse,
+    kind: meta.kinds, label: meta.name, pixelArt: meta.pixelArt, diffuse: f.diffuse, ...(meta.smooth ? { smooth: true } : {}),
     normal: f.normal ?? flat.normal, depth: f.depth ?? flat.depth,
     ...(f.surface ? { surface: f.surface } : {}), ...(f.emissive ? { emissive: f.emissive } : {}),
   };
@@ -239,14 +297,14 @@ export function setSharedTextures(world: WorldId, list: SharedInfo[]) {
     if (!id.startsWith(prefix) || keep.has(id)) continue;
     infos.delete(id);
     baselines.delete(id);
-    if (!draftById(id)) delete registry[id];
+    if (!draftById(id)) { delete registry[id]; setSharedTuning(id, undefined); }
   }
   for (const info of list) {
     const old = infos.get(info.id);
     infos.set(info.id, info);
     const base = sharedBaseline(info);
     baselines.set(info.id, base);
-    if (!draftById(info.id)) registry[info.id] = base;
+    if (!draftById(info.id)) { registry[info.id] = base; setSharedTuning(info.id, info.meta?.tuning); }
     if (!old || old.rev !== info.rev) void upgradeShared(info);
   }
   bump();
@@ -289,7 +347,7 @@ export function ensureDraft(id: string): Promise<TextureDraft> {
       const split = surface ? await splitSurface(surface) : undefined;
       const slot = (mode: MapMode, blob?: Blob): MapSlot => mode === "uploaded" && blob ? { mode, blob } : { mode: mode === "uploaded" ? "none" : mode };
       const draft: TextureDraft = {
-        uuid: info.uuid, world: info.world, name: meta.name, kinds: [...meta.kinds], pixelArt: meta.pixelArt,
+        uuid: info.uuid, world: info.world, name: meta.name, kinds: [...meta.kinds], pixelArt: meta.pixelArt, smooth: !!meta.smooth, tuning: meta.tuning ? { ...meta.tuning } : undefined,
         transparency: { ...meta.transparency }, diffuseAlpha: diffuse ? await hasAlpha(diffuse) : false,
         maps: {
           diffuse: slot("uploaded", diffuse), normal: slot(meta.maps.normal, normal), depth: slot(meta.maps.depth, depth),

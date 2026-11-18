@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createMap, hasUnsavedEdits, mapFile } from "./mapStore";
 import { t } from "../i18n";
 import type { GameMap } from "../game/types";
@@ -6,12 +6,15 @@ import type { MapFile } from "../game/mapFormat";
 import { SharedLoginForm, sharedButton as button, sharedProject, sharedRequest, useSharedAuth } from "./sharedAuth";
 import { loadSharedTextures } from "./sharedTextures";
 import { openAssetManager } from "./AssetManager";
+import { registerMap } from "./textureLibrary";
 
 interface Head { id: string; revision: number; title: string; saved_by?: string; saved_at?: string }
 const origins = new Map<string, Head>();
 
 export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m: GameMap) => void; changed: () => void}) {
   const auth = useSharedAuth();
+  // (the Assets window warns before it deletes a texture this map uses)
+  useEffect(() => { registerMap(map); return () => registerMap(undefined); }, [map]);
   const [open, setOpen] = useState(false);
   const [heads, setHeads] = useState<Head[]>([]);
   const [message, setMessage] = useState("");

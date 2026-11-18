@@ -11,9 +11,9 @@ import { t } from "../i18n";
 import type { WorldId } from "../game/worlds";
 import { autoRecipe } from "./autoMaps";
 import { MAX_PNG_BYTES, isPng } from "./imageTools";
-import { SharedHttpError, sharedConfigured, sharedProject, sharedRequest, sharedUpload } from "./sharedAuth";
+import { SharedHttpError, sharedConfigured, sharedProject, sharedRequest, sharedToken, sharedUpload } from "./sharedAuth";
 import { draftId, discardDraft, MAP_KEYS, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
-import { setSharedTextures, surfaceOf, uploaded, type SharedInfo, type SharedMeta } from "./textureLibrary";
+import { setSharedTextures, sharedInfo, surfaceOf, uploaded, type SharedInfo, type SharedMeta } from "./textureLibrary";
 
 const LIST = "/storage/v1/object/list/void-textures";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -32,6 +32,17 @@ async function list(prefix: string): Promise<{ name: string }[]> {
 
 const revNumbers = (entries: { name: string }[]) => entries.map(e => /^r(\d+)$/.exec(e.name)).filter(Boolean).map(m => Number(m![1])).sort((a, b) => b - a);
 
+// (only the four known multipliers, finite numbers)
+function parseTuning(raw: unknown): SharedMeta["tuning"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: NonNullable<SharedMeta["tuning"]> = {};
+  for (const k of ["normal", "relief", "rough", "metal"] as const) {
+    const v = (raw as Record<string, unknown>)[k];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 10) out[k] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function parseMeta(raw: unknown, rev: number): SharedMeta | null {
   const m = raw as Partial<SharedMeta> | null;
   if (!m || typeof m !== "object" || typeof m.name !== "string") return null;
@@ -40,6 +51,8 @@ function parseMeta(raw: unknown, rev: number): SharedMeta | null {
   const src = m.transparency?.source;
   return {
     v: 1, name: m.name, kinds: kinds.length ? kinds : ["wall", "floor"], pixelArt: m.pixelArt !== false, rev,
+    smooth: m.smooth === true,
+    tuning: parseTuning(m.tuning),
     transparency: { source: src === "colorKey" || src === "none" ? src : "alpha", colorKey: typeof m.transparency?.colorKey === "string" ? m.transparency.colorKey : "#ff00ff" },
     maps: Object.fromEntries(MAP_KEYS.map(k => [k, k === "diffuse" ? "uploaded" : mode(m.maps?.[k], k === "normal" || k === "depth" ? "auto" : "none")])) as Record<MapKey, MapMode>,
     gen: m.gen,
@@ -113,7 +126,7 @@ function metaOf(d: TextureDraft, rev: number): SharedMeta {
   const gen: SharedMeta["gen"] = {};
   if (maps.normal === "auto") gen.normal = autoRecipe;
   if (maps.depth === "auto") gen.depth = autoRecipe;
-  return { v: 1, name: d.name.trim() || t("assetManager.untitled"), kinds: d.kinds, pixelArt: d.pixelArt, rev, transparency: d.transparency, maps, ...(Object.keys(gen).length ? { gen } : {}) };
+  return { v: 1, name: d.name.trim() || t("assetManager.untitled"), kinds: d.kinds, pixelArt: d.pixelArt, rev, smooth: !!d.smooth, transparency: d.transparency, maps, ...(Object.keys(gen).length ? { gen } : {}), ...(d.tuning && Object.keys(d.tuning).length ? { tuning: d.tuning } : {}) };
 }
 
 export interface PublishReport { published: string[]; skipped: string[] }
@@ -142,4 +155,28 @@ export async function publishDrafts(list: TextureDraft[], ask: (d: TextureDraft,
     await discardDraft(d.uuid);
   }
   return report;
+}
+
+// ---- deleting (a shared texture, for everyone: needs the Storage delete policy, see shared-texture-folders.sql) ----
+
+export async function deleteSharedTexture(id: string): Promise<void> {
+  const info = sharedInfo(id);
+  if (!info) throw new Error(t("assetManager.err.notEditable"));
+  if (!sharedToken()) throw new Error(t("assetManager.err.signInFirst"));
+  const paths: string[] = [];
+  if (info.legacy) paths.push(`${info.world}/${id.slice((info.world + "_shared_").length)}.png`);
+  else {
+    const folder = `${info.world}/${info.uuid}`;
+    for (const entry of await list(folder)) {
+      // (a revision folder: its files; a stray file straight in the texture's folder too)
+      if (/^r\d+$/.test(entry.name)) for (const file of await list(`${folder}/${entry.name}`)) paths.push(`${folder}/${entry.name}/${file.name}`);
+      else paths.push(`${folder}/${entry.name}`);
+    }
+  }
+  if (!paths.length) throw new Error(t("assetManager.err.nothingToDelete"));
+  const removed = await sharedRequest<unknown[]>("/storage/v1/object/void-textures", { method: "DELETE", body: JSON.stringify({ prefixes: paths }) });
+  // (without a delete policy the store answers 200 and removes nothing)
+  if (!Array.isArray(removed) || removed.length < paths.length) throw new Error(t("assetManager.err.needDeleteSql"));
+  await discardDraft(info.uuid);
+  await loadSharedTextures(info.world);
 }

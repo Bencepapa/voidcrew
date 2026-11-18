@@ -1,6 +1,5 @@
-// The Assets window's texture editor: the properties of one shared texture (a
-// local draft of a new one, or of a published one) with a row per channel, and
-// the yellow "unsaved changes" bar with Publish and Discard.
+// The Assets window's texture editing: the settings of one shared texture (a local draft of a new one, or of a
+// published one), the controls of its channel cards, and the yellow "unsaved changes" bar with Publish and Discard.
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Lock } from "lucide-react";
@@ -8,11 +7,11 @@ import { t, type Key } from "../i18n";
 import type { WorldId } from "../game/worlds";
 import { StorageFullError } from "./idb";
 import { hasAlpha, validatePng, type TransparencySource } from "./imageTools";
-import type { MaterialMaps } from "./materialMaps";
 import { SharedLoginForm, sharedConfigured, sharedToken, useSharedAuth } from "./sharedAuth";
-import { publishDrafts } from "./sharedTextures";
+import { deleteSharedTexture, publishDrafts } from "./sharedTextures";
 import { draftById, draftCounts, draftId, discardAllDrafts, discardDraft, MAP_KEYS, saveDraft, useDrafts, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
-import { ensureDraft, sharedInfo, textureStatus, useTextureVersion } from "./textureLibrary";
+import type { TextureTuning } from "../render/textureTuning";
+import { catalogLabel, convertLegacy, ensureDraft, mapUses, sharedInfo, textureStatus, useTextureVersion } from "./textureLibrary";
 
 const small = "rounded border border-neutral-500 bg-neutral-800 px-2 py-1 text-xs hover:border-amber-400 aria-pressed:border-amber-400 aria-pressed:bg-neutral-700 disabled:opacity-50";
 const rowKey = (k: MapKey) => ("assetManager.row." + k) as Key;
@@ -27,33 +26,29 @@ export const errorText = (error: unknown) => error instanceof StorageFullError ?
 
 // a copy to edit (the Blobs stay the same objects, so what was derived from them is kept)
 function cloneDraft(d: TextureDraft): TextureDraft {
-  return { ...d, kinds: [...d.kinds], transparency: { ...d.transparency }, maps: Object.fromEntries(MAP_KEYS.map(k => [k, { ...d.maps[k] }])) as TextureDraft["maps"] };
+  return { ...d, kinds: [...d.kinds], transparency: { ...d.transparency }, tuning: d.tuning ? { ...d.tuning } : undefined, maps: Object.fromEntries(MAP_KEYS.map(k => [k, { ...d.maps[k] }])) as TextureDraft["maps"] };
 }
 
-// ---- the panel for one texture ----
+// ---- editing one texture (shared by its settings and by the channel cards of the maps panel) ----
 
-export function TexturePanel({ id, maps, onError, onSelect }: { id: string; maps: MaterialMaps; onError: (message: string) => void; onSelect: (id: string) => void }) {
+export type TextureEditor = ReturnType<typeof useTextureEditor>;
+
+export function useTextureEditor(id: string, onError: (message: string) => void, onSelect: (id: string) => void) {
   const drafts = useDrafts();
   useTextureVersion();
-  const status = textureStatus(id);
+  const status = id ? textureStatus(id) : "builtin";
   const draft = drafts.find(d => draftId(d) === id);
   const info = sharedInfo(id);
   const meta = info?.meta;
   const [busy, setBusy] = useState(false);
-  const [dragKey, setDragKey] = useState<MapKey | null>(null);
 
   // the state to show: the draft, or the published texture
   const view = draft
-    ? { name: draft.name, kinds: draft.kinds, pixelArt: draft.pixelArt, transparency: draft.transparency, diffuseAlpha: draft.diffuseAlpha, world: draft.world,
+    ? { name: draft.name, kinds: draft.kinds, pixelArt: draft.pixelArt, smooth: !!draft.smooth, transparency: draft.transparency, diffuseAlpha: draft.diffuseAlpha, world: draft.world,
         slot: (k: MapKey) => ({ mode: draft.maps[k].mode, has: !!draft.maps[k].blob }) }
-    : meta && info ? { name: meta.name, kinds: meta.kinds, pixelArt: meta.pixelArt, transparency: meta.transparency, diffuseAlpha: undefined, world: info.world,
+    : meta && info ? { name: meta.name, kinds: meta.kinds, pixelArt: meta.pixelArt, smooth: !!meta.smooth, transparency: meta.transparency, diffuseAlpha: undefined, world: info.world,
         slot: (k: MapKey) => ({ mode: meta.maps[k], has: meta.maps[k] === "uploaded" }) }
     : undefined;
-
-  const [nameText, setNameText] = useState(view?.name ?? "");
-  const nameTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => { setNameText(view?.name ?? ""); }, [id, view?.name]);
-  useEffect(() => () => clearTimeout(nameTimer.current), [id]);
 
   // changes a draft (making one from the published texture first)
   async function change(fn: (d: TextureDraft) => TextureDraft | Promise<TextureDraft>) {
@@ -83,20 +78,42 @@ export function TexturePanel({ id, maps, onError, onSelect }: { id: string; maps
   }
 
   function setMode(key: MapKey, mode: MapMode, open?: () => void) {
-    const has = view?.slot(key).has;
-    if (mode === "uploaded" && !has) { open?.(); return; }
+    if (mode === "uploaded" && !view?.slot(key).has) { open?.(); return; }
     void change(d => { d.maps[key] = { ...d.maps[key], mode }; return d; });
   }
+  const remove = (key: MapKey) => change(d => { d.maps[key] = { mode: key === "diffuse" ? "uploaded" : "none" }; return d; });
+  // the texture's own look tuning (the sliders): kept in the draft, published with the texture
+  const setTuning = (tuning: TextureTuning | undefined) => change(d => { d.tuning = tuning; return d; });
 
-  function drop(key: MapKey, event: DragEvent) {
-    event.preventDefault();
-    setDragKey(null);
-    const file = event.dataTransfer.files[0];
-    if (file) void chooseFile(key, file);
+  return { id, status, draft, info, view, busy, change, chooseFile, setMode, remove, setTuning, onError, onSelect };
+}
+
+// ---- the texture's settings: above the channel cards ----
+
+export function TextureFields({ editor }: { editor: TextureEditor }) {
+  const { id, status, draft, info, view, change, onError, onSelect } = editor;
+  const [nameText, setNameText] = useState(view?.name ?? "");
+  const nameTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => { setNameText(view?.name ?? ""); }, [id, view?.name]);
+  useEffect(() => () => clearTimeout(nameTimer.current), [id]);
+  const [deleting, setDeleting] = useState(false);
+
+  async function convert() {
+    try { onSelect(await convertLegacy(id)); } catch (error) { onError(errorText(error)); }
   }
+  async function remove() {
+    const name = view?.name || catalogLabel(id);
+    const used = mapUses(id);
+    if (!window.confirm(t("assetManager.confirmDeleteShared", { name }) + (used ? "\n\n" + t("assetManager.confirmDeleteUsed") : ""))) return;
+    setDeleting(true);
+    try { await deleteSharedTexture(id); onError(t("assetManager.deleted", { name })); } catch (error) { onError(errorText(error)); }
+    finally { setDeleting(false); }
+  }
+  const deleteButton = (status === "shared" || status === "changed" || status === "legacy") && <button className={small + " self-start"} disabled={deleting} onClick={() => void remove()}>{t("assetManager.deleteShared")}</button>;
 
   if (status === "builtin") return <p className="my-1 flex items-center gap-1 text-xs text-neutral-300"><Lock size={14} aria-hidden="true"/>{t("assetManager.builtinHint")}</p>;
-  if (status === "legacy") return <p className="my-1 text-xs text-neutral-300">{t("assetManager.legacyHint")}</p>;
+  if (status === "legacy") return <div className="my-1 flex flex-col gap-2 text-xs text-neutral-300"><p>{t("assetManager.legacyHint")}</p>
+    <button className={small + " self-start"} onClick={() => void convert()}>{t("assetManager.convertLegacy")}</button>{deleteButton}</div>;
   if (!view) return null;
 
   const isNew = status === "new";
@@ -104,7 +121,7 @@ export function TexturePanel({ id, maps, onError, onSelect }: { id: string; maps
   const colorOk = /^#[0-9a-f]{6}$/i.test(view.transparency.colorKey);
   const setSource = (source: TransparencySource) => void change(d => { d.transparency.source = source; return d; });
 
-  return <div className="mt-1 flex flex-col gap-2 text-sm" aria-busy={busy}>
+  return <div className="mb-2 flex flex-col gap-2 text-sm">
     <p className={"text-xs " + (draft ? "text-yellow-300" : "text-neutral-300")}>
       {isNew ? t("assetManager.statusNew") : draft ? t("assetManager.statusChanged", { rev: draft.baseRev }) : t("assetManager.statusShared", { rev: info?.rev ?? 0 })}
       {autoKeys.length > 0 && <> · <AutoBadge/> {autoKeys.map(k => t(rowKey(k))).join(", ")}</>}
@@ -122,6 +139,7 @@ export function TexturePanel({ id, maps, onError, onSelect }: { id: string; maps
       })}
     </fieldset>
     <label><input type="checkbox" checked={view.pixelArt} onChange={e => void change(d => { d.pixelArt = e.target.checked; return d; })}/> {t("assetManager.pixelArt")}</label>
+    <label title={t("assetManager.smoothHint")}><input type="checkbox" checked={view.smooth} onChange={e => void change(d => { d.smooth = e.target.checked; return d; })}/> {t("assetManager.smooth")}</label>
     <label>{t("assetManager.world")} {isNew
       ? <select className={small} value={view.world} onChange={e => { const world = e.target.value as WorldId; void change(d => { d.world = world; return d; }).then(() => { if (draft) onSelect(world + "_shared_" + draft.uuid); }); }}><option value="fantasy">{t("assetManager.fantasy")}</option><option value="scifi">{t("assetManager.scifi")}</option></select>
       : <strong>{t(view.world === "fantasy" ? "assetManager.fantasy" : "assetManager.scifi")}</strong>}</label>
@@ -141,40 +159,33 @@ export function TexturePanel({ id, maps, onError, onSelect }: { id: string; maps
         <label><input type="radio" name={"tr-" + id} checked={view.transparency.source === "none"} onChange={() => setSource("none")}/> {t("assetManager.tr.none")}</label>
       </div>
     </fieldset>
-
-    <div className="flex flex-col gap-2">{MAP_KEYS.map(key => <ChannelRow key={key} k={key} slot={view.slot(key)} url={maps[key]}
-      required={key === "diffuse"} dragging={dragKey === key} onDragState={s => setDragKey(s ? key : null)} onDrop={e => drop(key, e)}
-      onFile={f => void chooseFile(key, f)} onMode={(m, open) => setMode(key, m, open)}
-      onRemove={() => void change(d => { d.maps[key] = { mode: key === "diffuse" ? "uploaded" : "none" }; return d; })}/>)}</div>
-    {draft && <button className={small + " self-start"} onClick={() => { if (!isNew || window.confirm(t("assetManager.confirmDeleteDraft"))) void discardDraft(draft.uuid); }}>{isNew ? t("assetManager.deleteDraft") : t("assetManager.discardChanges")}</button>}
+    <div className="flex flex-wrap gap-2">
+      {draft && <button className={small} onClick={() => { if (!isNew || window.confirm(t("assetManager.confirmDeleteDraft"))) void discardDraft(draft.uuid); }}>{isNew ? t("assetManager.deleteDraft") : t("assetManager.discardChanges")}</button>}
+      {deleteButton}
+    </div>
   </div>;
 }
 
-function ChannelRow({ k, slot, url, required, dragging, onDragState, onDrop, onFile, onMode, onRemove }: {
-  k: MapKey; slot: { mode: MapMode; has: boolean }; url?: string; required: boolean; dragging: boolean;
-  onDragState: (on: boolean) => void; onDrop: (e: DragEvent) => void; onFile: (f: File) => void; onMode: (m: MapMode, open: () => void) => void; onRemove: () => void;
-}) {
+// ---- the controls of one channel card (Upload / Auto / None / Remove), under its thumbnail ----
+
+export function ChannelControls({ editor, channel }: { editor: TextureEditor; channel: MapKey }) {
   const input = useRef<HTMLInputElement>(null);
-  const showThumb = !!url && (slot.mode === "auto" || (slot.mode === "uploaded" && slot.has));
-  const auto = slot.mode === "auto";
-  return <div className={"flex gap-2 rounded border p-1 " + (dragging ? "border-amber-400 bg-neutral-800" : "border-neutral-700")}
-    onDragOver={e => { e.preventDefault(); onDragState(true); }} onDragLeave={() => onDragState(false)} onDrop={onDrop} data-channel={k}>
-    <div className={"relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded bg-neutral-900 " + (auto ? "border border-dashed border-amber-500/70 opacity-80" : "border border-neutral-700")}>
-      {showThumb ? <img src={url} alt={t(rowKey(k))} className="h-full w-full object-contain"/> : <span className="text-[10px] text-neutral-500">{t("assetManager.empty")}</span>}
-      {auto && <AutoBadge className="absolute bottom-0 left-0"/>}
+  const { view } = editor;
+  if (!view) return null;
+  const slot = view.slot(channel);
+  const required = channel === "diffuse";
+  return <div className="mt-1 flex flex-col gap-1" onDragOver={e => e.preventDefault()}
+    onDrop={(e: DragEvent) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void editor.chooseFile(channel, f); }}>
+    {modesOf(channel).length > 1 && <div className="flex flex-wrap gap-1" role="group" aria-label={t(rowKey(channel))}>{modesOf(channel).map(m =>
+      <button key={m} className={small} aria-pressed={slot.mode === m} title={m === "auto" ? t("assetManager.autoHint") : undefined} onClick={() => editor.setMode(channel, m, () => input.current?.click())}>{t(modeKey(m))}</button>)}</div>}
+    <div className="flex flex-wrap gap-1">
+      <button className={small} onClick={() => input.current?.click()}>{t("assetManager.chooseFile")}</button>
+      {(slot.has || (!required && slot.mode !== "none")) && <button className={small} onClick={() => void editor.remove(channel)}>{t("assetManager.remove")}</button>}
+      <input ref={input} type="file" accept="image/png" className="sr-only" aria-label={t("assetManager.chooseFileFor", { map: t(rowKey(channel)) })} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void editor.chooseFile(channel, f); }}/>
     </div>
-    <div className="flex min-w-0 flex-1 flex-col gap-1">
-      <strong className="text-xs">{t(rowKey(k))}{required && <span className="text-red-300" title={t("assetManager.required")}> *</span>}{auto && <> <AutoBadge/></>}</strong>
-      {modesOf(k).length > 1 && <div className="flex gap-1" role="group" aria-label={t(rowKey(k))}>{modesOf(k).map(m => <button key={m} className={small} aria-pressed={slot.mode === m} onClick={() => onMode(m, () => input.current?.click())}>{t(modeKey(m))}</button>)}</div>}
-      <div className="flex flex-wrap gap-1">
-        <button className={small} onClick={() => input.current?.click()}>{t(auto ? "assetManager.overrideOwn" : "assetManager.chooseFile")}</button>
-        {(slot.has || (!required && slot.mode !== "none")) && <button className={small} onClick={onRemove}>{t("assetManager.remove")}</button>}
-        <input ref={input} type="file" accept="image/png" className="sr-only" aria-label={t("assetManager.chooseFileFor", { map: t(rowKey(k)) })} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onFile(f); }}/>
-      </div>
-    </div>
+    {required && !slot.has && <p className="text-[10px] text-red-300">{t("assetManager.required")}</p>}
   </div>;
 }
-
 // ---- the yellow bar ----
 
 export function UnsavedBar({ onError }: { onError: (message: string) => void }) {

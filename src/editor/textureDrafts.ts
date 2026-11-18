@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from "react";
 import type { WorldId } from "../game/worlds";
 import { idb } from "./idb";
+import type { TextureTuning } from "../render/textureTuning";
 import { defaultTransparency, type Transparency } from "./imageTools";
 
 export type MapKey = "diffuse" | "normal" | "depth" | "gloss" | "metal" | "emissive";
@@ -19,6 +20,10 @@ export interface TextureDraft {
   name: string;
   kinds: SurfaceKind[];
   pixelArt: boolean;
+  // relief built smooth (slopes): for a continuous depth map; undefined in older drafts = false
+  smooth?: boolean;
+  // the texture's own look tuning (normal strength, relief depth, roughness, metalness), published with it
+  tuning?: TextureTuning;
   transparency: Transparency;
   // whether the uploaded diffuse has any alpha < 255 (found when it was chosen)
   diffuseAlpha: boolean;
@@ -82,7 +87,7 @@ export async function saveDraft(next: TextureDraft): Promise<void> {
 
 export async function newDraft(world: WorldId, name: string): Promise<TextureDraft> {
   const draft: TextureDraft = {
-    uuid: crypto.randomUUID(), world, name, kinds: ["wall", "floor", "ceiling"], pixelArt: true,
+    uuid: crypto.randomUUID(), world, name, kinds: ["wall", "floor", "ceiling"], pixelArt: true, smooth: true,
     transparency: defaultTransparency(), diffuseAlpha: false, maps: emptyMaps(), baseRev: 0, updated: Date.now(),
   };
   await saveDraft(draft);

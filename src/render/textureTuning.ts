@@ -19,7 +19,9 @@ export interface TextureTuning {
 export type TextureTuningTable = Record<string, TextureTuning>;
 
 // what the game uses; the Asset Manager changes it live before it's saved
-let table: TextureTuningTable = { ...(saved as TextureTuningTable) };
+// (a shared texture's tuning lives with the texture in the shared store, never in this file: stale entries are ignored)
+const isShared = (id: string) => id.includes("_shared_");
+let table: TextureTuningTable = Object.fromEntries(Object.entries(saved as TextureTuningTable).filter(([id]) => !isShared(id)));
 
 export function textureTuning(id: string): TextureTuning | undefined {
   return table[id];
@@ -48,7 +50,12 @@ export function onTextureTuningSaved(listener: () => void) {
 
 // the whole table as textureTuning.json (also what the dev save writes)
 export function textureTuningJson(): string {
-  return JSON.stringify(table, null, 2) + "\n";
+  return JSON.stringify(Object.fromEntries(Object.entries(table).filter(([id]) => !isShared(id))), null, 2) + "\n";
+}
+
+// A shared texture's tuning as the store (or a local draft) has it: live in the table, not part of the saved file.
+export function setSharedTuning(id: string, value: TextureTuning | undefined) {
+  setTextureTuning(id, value);
 }
 
 // writes the whole table (dev server only)

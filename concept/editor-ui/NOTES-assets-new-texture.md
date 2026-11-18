@@ -116,3 +116,68 @@ the project that strips it would reproduce this. In the browser's Network tab th
 Also noticed, not changed: `GameViewport` appends `?v=<n>` to texture URLs after a dev texture hot reload; that would break a `blob:`
 URL (a draft texture painted on a map). It only happens after a hot-reload event in the dev server. And Publish stops with a message if
 any draft has no diffuse yet; delete or fill the empty draft first.
+## Second round (user's real test): game flat, one panel, names, tuning, delete
+
+**1. Flat in the game.** I could not make a freshly published texture render flat in the game on the mock: the depth loads, and the
+game's own relief parameters (steps, 6 levels, island 3, depth 0.04) build real relief from both a rock-like and an Auto-generated
+depth map (checked numerically and on screen). What I found, and fixed, are the things that make a shared texture look flat or stale
+in the game while the Assets preview looks right:
+- *The scene reads the texture table once.* The game builds its kits when the map is built; a draft edited afterwards (a depth or
+  normal uploaded or removed, a publish, the store listed after sign-in) never reached it, so it kept the maps it was built with (often
+  the flat placeholder). Now `textureLibrary.ts` tells the game (`src/render/sharedTextureEvents.ts`) when a shared texture's files, smooth
+  flag or tuning change, and the game rebuilds ~0.8 s after the edits settle (the same rebuild the dev texture hot reload does).
+- *`?v=<n>` on blob: URLs.* The rebuild (and the tuning save, and the dev hot reload) appends a cache-buster to every texture URL; a
+  draft's or an Auto map's `blob:` URL can't take a query string, so those maps failed to load and the floor went flat. The game now
+  leaves `blob:` and `data:` URLs alone.
+- *The preview was not the game.* The Assets preview built relief at depth 0.08 in smooth mode, levels 5; the game builds floors at
+  0.04 (walls 0.04) in the viewer's mode (steps by default). So a depth map tuned in the preview came out about half as deep, and
+  terraced, in the game. The preview now uses the game's own values (`FLOOR_BASE_DEPTH`, `DEFAULT_SETTINGS`), so relief 1.0 looks the same in both.
+- *Tuning in a local file keyed by a shared id.* The user's saved tuning for the new texture was Relief depth 0.25x, which in the game
+  is a floor depth of 0.04 x 0.25 = 0.01 (invisible). Stale tuning entries for shared ids in `textureTuning.json` are now ignored (and
+  never written again); see point 4.
+- *New per-texture "Smooth relief"* (`smooth` in meta.json, a checkbox in the texture settings, default on for new textures, off for
+  existing ones): the game builds that texture's relief as slopes whatever the viewer's relief mode. Generated and photographic depth maps
+  are continuous; the default "steps" mode turns them into terraces.
+If the user still sees a flat floor: check the Relief depth tuning slider of that texture (1.00x), the "Floor relief depth" /
+"Floor normal strength" sliders in the map's Floor section, and whether the map paints that floor cell with the texture.
+
+**2. One panel.** The separate "Texture" section and its channel rows are gone. The "Texture and maps" panel (the old "Asset maps")
+now shows, for an editable texture, the settings above the cards (status, name, Wall / Floor / Ceiling, Pixel art, Smooth relief, world,
+transparency source, Discard / Delete) and each existing channel card gets Uploaded / Auto / None, Upload and Remove (delete the
+map), drag and drop, the AUTO badge and the eye toggle. Built-in and old flat textures keep the same cards as a local-preview import
+(with the lock hint above). `TexturePanel.tsx` now exports `useTextureEditor`, `TextureFields` and `ChannelControls`.
+
+**3. No ids in the UI.** The "Look" section title shows the texture's name; the library tooltip, the eye-toggle labels and the cards
+use the name too.
+
+**4. Tuning is saved with the texture.** For a shared texture the sliders (normal strength, relief depth, roughness, metalness) write
+into its draft (`tuning`), which makes it a "changed" draft: the yellow bar's Publish writes it to meta.json `tuning` (new rev). The
+loader puts `meta.tuning` into the in-memory tuning table for that id, so everyone and the game see it. The local-file buttons (Save to
+project / Download / Copy) are hidden for shared textures (a hint explains); built-in textures keep them. Nothing publishes
+silently: the change shows in the bar and Publish stays the one explicit step. `textureTuning.json` no longer holds or reads shared ids.
+
+**5. Delete.** "Delete texture..." on a published texture (rev-folder or old flat): a confirm ("Delete <name> for everyone? Maps that
+use it will lose it. This is permanent.", plus a line when the map being edited uses it), then every object under
+`<world>/<uuid>/` (all revs) or the flat file is removed. The store answers a delete without the policy with success and removes
+nothing, so the window compares the removed count and says what to run. "Make an editable copy" on an old flat texture creates a new
+draft texture from its PNG (diffuse; normal and depth Auto), which Publish turns into a rev-folder texture; delete the old one after.
+
+### SQL to run (Supabase SQL editor; idempotent; the whole of `supabase/shared-texture-folders.sql` is safe to run again)
+
+New in this round, for Delete:
+
+```sql
+drop policy if exists delete_textures on storage.objects;
+create policy delete_textures on storage.objects for delete to authenticated
+using (bucket_id = 'void-textures' and exists(select 1 from public.void_editors));
+```
+
+(The first part, `update storage.buckets set allowed_mime_types = array['image/png','application/json'] where id = 'void-textures';`,
+the user has already run.)
+
+### Verified (mock Supabase on another origin, CORS)
+Merged panel and cards; no id anywhere in the Properties panel; tuning slider -> changed draft -> Publish -> `meta.json` has
+`"tuning":{"relief":0.5}` and `"smooth":false`; delete without the policy (the SQL message) and with it (r1 and r2 files gone, row
+gone); legacy flat texture listed read-only, "Make an editable copy" gives a new draft; the game still renders, no relief errors in the
+console. Not verified: the real Supabase (delete policy, list), the actual game rebuild timing after an upload (the event path is
+simple but I only checked the game renders), the user's own depth map.

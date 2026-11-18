@@ -19,7 +19,7 @@ Shared maps require editor access. Uploaded texture images have public read URLs
 
 ### Textures
 
-Shared textures are made and published in the editor's **Assets** window (**+ New texture**, then **Publish** in the yellow bar), not in the Shared maps dialog. The store is append-only (editors can insert and select, nothing is updated or deleted):
+Shared textures are made and published in the editor's **Assets** window (**+ New texture**, then **Publish** in the yellow bar), not in the Shared maps dialog. Publishing only ever adds files (editors can insert and select; nothing is updated). Deleting a whole texture from the Assets window needs the delete policy in [shared-texture-folders.sql](./shared-texture-folders.sql):
 
 ```
 void-textures/<world>/<uuid>-name.png              old flat files: still read as before (flat normal and depth, floor and wall)
@@ -27,7 +27,7 @@ void-textures/<world>/<uuid>/r<rev>/meta.json      name, kinds (wall/floor/ceili
 void-textures/<world>/<uuid>/r<rev>/diffuse.png    plus normal.png, depth.png, surface.png (gloss in green, metal in blue), emissive.png: only the uploaded ones
 ```
 
-`meta.json` is uploaded last and the loader uses the highest `r<rev>` folder that has one, so a half-published folder is never shown. Publishing again adds the next `r<rev>` folder, which replaces the old one in the game; the old one stays in storage, unlisted. Auto maps are not stored: the browser makes them from the diffuse. Publishing needs [shared-texture-folders.sql](./shared-texture-folders.sql) to have been run (it adds `application/json` to the bucket's allowed types; the policies already cover the folders).
+`meta.json` is uploaded last and the loader uses the highest `r<rev>` folder that has one, so a half-published folder is never shown. Publishing again adds the next `r<rev>` folder, which replaces the old one in the game; the old one stays in storage, unlisted. Auto maps are not stored: the browser makes them from the diffuse. Publishing needs [shared-texture-folders.sql](./shared-texture-folders.sql) to have been run (it adds `application/json` to the bucket's allowed types and a Storage delete policy for editors; the insert and select policies already cover the folders). A texture's look tuning (normal strength, relief depth, roughness, metalness) and its smooth-relief flag are part of its `meta.json`.
 
 ## Try it from two browsers
 

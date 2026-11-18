@@ -9,13 +9,14 @@ import { ACTOR_TYPES } from "../game/actors";
 import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { baseMaps, channels, type Channel, type MaterialMaps } from "./materialMaps";
 import { decode } from "./imageTools";
-import { AutoBadge, errorText, SignInPopover, TexturePanel, UnsavedBar } from "./TexturePanel";
+import { AutoBadge, ChannelControls, errorText, SignInPopover, TextureFields, UnsavedBar, useTextureEditor } from "./TexturePanel";
 import { draftCounts, draftId, newDraft, useDrafts } from "./textureDrafts";
 import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
 import { loadSharedTextures } from "./sharedTextures";
 import { sharedConfigured, sharedToken } from "./sharedAuth";
 import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
 import { Lock } from "lucide-react";
+import { DEFAULT_SETTINGS, FLOOR_BASE_DEPTH } from "../components/GameViewport";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 
 const button = "rounded border border-neutral-500 bg-neutral-800 px-3 py-2 text-left hover:border-amber-400 aria-pressed:border-amber-400 aria-pressed:bg-neutral-700";
@@ -198,6 +199,9 @@ export function AssetManager() {
   const [turn, setTurn] = useState(0);
   const [error, setError] = useState("");
   const [signIn, setSignIn] = useState(false);
+  // editing the selected texture (drafts of shared textures): its settings and the channel cards of the maps panel
+  const editor = useTextureEditor(sample==="material" && entry ? id : "", setError, select);
+  const editable = sample==="material" && !!entry && isEditable(id);
   // the shared textures are listed when the window opens (if signed in); the old local previews are moved over once
   async function refreshShared() {
     try { await Promise.all((["scifi","fantasy"] as const).map(loadSharedTextures)); } catch (e) { setError(errorText(e)); }
@@ -227,7 +231,10 @@ export function AssetManager() {
   const tuneRef = useRef(tune);
   tuneRef.current = tune;
   function changeTune(key: keyof TextureTuning, value: number) {
-    setTextureTuning(tuneId, { ...tuneRef.current, [key]: value });
+    const next = { ...tuneRef.current, [key]: value };
+    setTextureTuning(tuneId, next);
+    // a shared texture keeps its tuning with itself (a draft, published with the texture), not in the project file
+    if (editable) void editor.setTuning(Object.fromEntries(Object.entries(next).filter(([,v]) => typeof v==="number" && v!==1)) as TextureTuning);
     setTuneStamp(n => n + 1);
     setSaveNote("");
     setCopyNote("");
@@ -345,7 +352,7 @@ export function AssetManager() {
         const map = background!=="Gray" && src ? texture(src) : null;
         if(map){map.wrapS=map.wrapT=THREE.RepeatWrapping;map.repeat.set(w,h);}
         // Fit the backing behind the full relief range, including at max tuning.
-        const clearance = horizontalSample ? .08 * (tune?.relief ?? 1) + .01 : 0;
+        const clearance = horizontalSample ? FLOOR_BASE_DEPTH * (tune?.relief ?? 1) + .01 : 0;
         const wall=new THREE.Mesh(keep(new THREE.PlaneGeometry(w,h)),keep(new THREE.MeshStandardMaterial({map,color:map?0xffffff:0x73706a})));
         wall.rotation.set(rx,ry,0);wall.position.set(x,y+(kind===2?clearance:-clearance),z);scene.add(wall);
       }
@@ -398,7 +405,9 @@ export function AssetManager() {
       height.then(grid=>{
         if(disposed)return;
         const joined = joinEdges && layout!=="Single";
-        const options={wallWidth:1,wallHeight:1,depth:depthScale*.08*(tuneRef.current?.relief ?? 1),levels:5,minIsland:2,aoRadius:2,smooth:true};
+        // (the game's own relief: a floor's base depth is its own, and its relief mode, levels and island size are the viewer's defaults,
+        // unless the texture asks for smooth - so what shows here at relief 1.0 is what the game builds)
+        const options={wallWidth:1,wallHeight:1,depth:depthScale*(orientation==="Floor" ? FLOOR_BASE_DEPTH : DEFAULT_SETTINGS.reliefDepth)*(tuneRef.current?.relief ?? 1),levels:DEFAULT_SETTINGS.reliefLevels,minIsland:DEFAULT_SETTINGS.reliefMinIsland,aoRadius:2,smooth:!!catalog[primary]?.smooth || DEFAULT_SETTINGS.reliefMode==="smooth"};
         const surface=createReliefWallGeometry(grid,{...options,flushEdges:!joined && layout==="Block",
           joinEdges:joined && orientation==="Wall" ? 1 : undefined,
           edgeModes:joined && layout==="Block" ? [1,1] : undefined,
@@ -649,17 +658,15 @@ export function AssetManager() {
           </main>
           {panelOpen ? <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-auto rounded border border-neutral-700 p-2">
             <div className="flex items-center justify-between gap-2"><strong>{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 hover:text-amber-400" onClick={()=>setPanelOpen(false)}>▶</button></div>
-            {sample==="material" && entry && <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.textureSection")}</summary>
-              <TexturePanel id={id} maps={groups[id] ?? {}} onError={setError} onSelect={select}/>
-            </details>}
-            <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.look", { texture: tuneId || t("assetManager.noTuning") })}</summary>
+            <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.look", { texture: sample==="material" ? (entry?.label ?? "") : (tuneId || t("assetManager.noTuning")) })}</summary>
               {tune ? <>
                 <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>
                 {TUNING.map(({key,label,max,hint})=><label key={key} className="my-1 block text-sm" title={t(hint)}>{t(label)}: <strong>{(tune[key]??1).toFixed(2)}×</strong><input className="block w-full" type="range" min="0" max={max} step=".05" value={tune[key]??1} onChange={e=>changeTune(key,+e.target.value)}/></label>)}
-                <div className="mt-2 flex flex-wrap items-center gap-2"><button className={button+" !py-1"} onClick={dev ? saveTune : downloadTune}>{t(dev ? "assetManager.save" : "assetManager.download")}</button>{!dev && <button className={button+" !py-1"} onClick={copyTune}>{t("assetManager.copy")}</button>}<button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);setTuneStamp(n=>n+1);setSaveNote("");setCopyNote("");}}>{t("assetManager.reset")}</button></div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">{!editable && <button className={button+" !py-1"} onClick={dev ? saveTune : downloadTune}>{t(dev ? "assetManager.save" : "assetManager.download")}</button>}{!editable && !dev && <button className={button+" !py-1"} onClick={copyTune}>{t("assetManager.copy")}</button>}<button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);if(editable)void editor.setTuning(undefined);setTuneStamp(n=>n+1);setSaveNote("");setCopyNote("");}}>{t("assetManager.reset")}</button></div>
+                {editable && <p className="mt-1 text-xs text-neutral-300">{t("assetManager.tuningShared")}</p>}
                 {saveNote && <p className="mt-1 text-xs text-neutral-300">{saveNote}</p>}
                 {copyNote && <p className="mt-1 text-xs text-neutral-300">{copyNote}</p>}
-                {!dev && <p className="mt-1 text-xs text-neutral-400">{t("assetManager.downloadHint")}</p>}
+                {!dev && !editable && <p className="mt-1 text-xs text-neutral-400">{t("assetManager.downloadHint")}</p>}
               </> : <p className="my-1 text-xs text-neutral-400">{sample==="actor" ? t("assetManager.actorTuning") : t("assetManager.noTuningHint")}</p>}
             </details>
             <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.roomLights")}</summary>
@@ -673,12 +680,14 @@ export function AssetManager() {
                 <label>{t("assetManager.rotation")} <input className="block w-full" type="range" min="-180" max="180" value={turn} onChange={e=>setTurn(+e.target.value)}/></label>
               </div>
             </details>
-            {<details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.maps")}</summary>{Object.entries(groups).map(([group,layers])=><section key={group}>{Object.keys(groups).length>1 && <strong>{group}</strong>}<div className="mt-1 grid grid-cols-2 gap-2">{channels.map(channel=>{
+            {<details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t(editable ? "assetManager.mapsEditable" : "assetManager.maps")}</summary>{sample==="material" && entry && <div className="mt-1"><TextureFields editor={editor}/></div>}{Object.entries(groups).map(([group,layers])=><section key={group}>{Object.keys(groups).length>1 && <strong>{sample==="material" ? (entry?.label ?? "") : group}</strong>}<div className="mt-1 grid grid-cols-2 gap-2">{channels.map(channel=>{
               const url=(sample==="material"?edits[channel]:undefined) ?? layers[channel];
               if(!url && sample!=="material")return null;
+              if(editable && channel==="glow" && !url)return null;
               const key=maskKey(group,channel);
-              return <div key={channel} className="border border-neutral-700 p-2 text-sm"><strong>{display(channel)}</strong>{sample==="material" && (autoChannels(id) as string[]).includes(channel) && <AutoBadge className="ml-1"/>}{url &&<button className="float-right px-1" title={t(hidden[key] ? "assetManager.enableMap" : "assetManager.disableMap", { map: display(channel) })} aria-label={t(hidden[key] ? "assetManager.enableGroupMap" : "assetManager.disableGroupMap", { group, map: display(channel) })} aria-pressed={!hidden[key]} onClick={()=>setHidden(old=>({...old,[key]:!old[key]}))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12Q12 -2 22 12Q12 26 2 12Z"/><circle cx="12" cy="12" r="3"/>{hidden[key] && <path d="M2 2L22 22"/>}</svg></button>}{url ? <img src={url} alt={display(channel)} className="h-14 w-full object-contain"/> : <p className="h-14">{t("assetManager.empty")}</p>}
-                {sample==="material" && !isEditable(id) && <><label className="cursor-pointer underline">{t("assetManager.import")}<input type="file" accept="image/*" className="sr-only" onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(file)try{await decode(file);await edit(channel,file);}catch{setError(t("assetManager.importError"));}}}/></label>
+              return <div key={channel} className="border border-neutral-700 p-2 text-sm"><strong>{display(channel)}</strong>{sample==="material" && (autoChannels(id) as string[]).includes(channel) && <AutoBadge className="ml-1"/>}{url &&<button className="float-right px-1" title={t(hidden[key] ? "assetManager.enableMap" : "assetManager.disableMap", { map: display(channel) })} aria-label={t(hidden[key] ? "assetManager.enableGroupMap" : "assetManager.disableGroupMap", { group: sample==="material" ? (entry?.label ?? "") : group, map: display(channel) })} aria-pressed={!hidden[key]} onClick={()=>setHidden(old=>({...old,[key]:!old[key]}))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12Q12 -2 22 12Q12 26 2 12Z"/><circle cx="12" cy="12" r="3"/>{hidden[key] && <path d="M2 2L22 22"/>}</svg></button>}{url ? <img src={url} alt={display(channel)} className="h-14 w-full object-contain"/> : <p className="h-14">{t("assetManager.empty")}</p>}
+                {editable && channel!=="glow" && <ChannelControls editor={editor} channel={channel}/>}
+                {sample==="material" && !editable && <><label className="cursor-pointer underline">{t("assetManager.import")}<input type="file" accept="image/*" className="sr-only" onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(file)try{await decode(file);await edit(channel,file);}catch{setError(t("assetManager.importError"));}}}/></label>
                 {url && <button className="ml-1 underline" onClick={()=>void edit(channel,"")}>{t("assetManager.clear")}</button>}
                 {edits[channel]!==undefined && <button className="underline" onClick={()=>void edit(channel)}>{t("assetManager.restore")}</button>}</>}
               </div>;
