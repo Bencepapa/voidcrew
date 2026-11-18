@@ -32,8 +32,11 @@ import { debugHu } from "./hu/debug";
 import { editorBarHu } from "./hu/editorBar";
 import { minimapHu } from "./hu/minimap";
 
-const en = { ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...minimapEn };
-const hu: Partial<Record<Key, string>> = { ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...minimapHu };
+import { mapDialogEn } from "./en/mapDialog";
+import { mapDialogHu } from "./hu/mapDialog";
+
+const en = { ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...minimapEn };
+const hu: Partial<Record<Key, string>> = { ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...minimapHu };
 
 export type Key = keyof typeof en;
 // whether a key has a string (for optional, data-driven names)

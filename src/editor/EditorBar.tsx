@@ -21,6 +21,8 @@ export interface MapLook {
   textures?: Record<string, string | undefined>;
   // the deck's accent hue (see GameMap.accent)
   accent?: { hue: number; range?: number };
+  // the "Place – Name" caption on entering (undefined: by default, on when the map has a place)
+  showTitle?: boolean;
 }
 // what a prop can wear (see PropSpec.texture): the wall and prop face sets
 // (a box's top comes with its side)
@@ -82,6 +84,7 @@ export interface EditorBarProps {
   onOpenMap: (id: string) => void;
   onNewMap: () => void;
   onSaveMapAs: () => void;
+  onRenameMap: () => void;
   // how the map is drawn (see MapFile.lightGridDensity; undefined: the
   // viewer's default)
   mapLook: MapLook;

@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* the "Place – Name" caption on entering a map (MapTitle) */
+@keyframes map-title {
+  0% { opacity: 0; }
+  20%, 75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* the red flash when the crew is hit (App) */
 @keyframes hurt-flash {
   from {

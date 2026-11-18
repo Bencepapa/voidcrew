@@ -1,7 +1,9 @@
 import { useContext } from "react";
 import { t, type Key } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
-import { KindChoice, OptionalNumber, CommitContext, Section, slider, BUTTON, idle } from "./parts";
+import { KindChoice, OptionalNumber, CommitContext, Section, slider, BUTTON, idle, active } from "./parts";
+import { MAPS } from "../../game/map";
+import { MapList } from "../MapList";
 import type { Direction } from "../../game/types";
 
 import { TEXTURE_SETS, textureSetsOfKind } from "../../render/textureSets";
@@ -35,17 +37,20 @@ return <>
             ))}</div>
 </Section>
 <Section kind="map" section="look">
-<label className="flex items-center gap-1">
-              {t("editorBar.map")}<select value={p.mapId} onChange={(e) => p.onOpenMap(e.target.value)} className="bg-neutral-800 border border-neutral-700 px-1 py-0.5">
-                {p.mapIds.map((id) => (
-                  <option key={id} value={id}>
-                    {id}
-                  </option>
-                ))}
-              </select>
-            </label>
+<span className="text-neutral-400">{t("editorBar.map")}</span>
+<MapList
+  itemClass={`${BUTTON} ${idle}`}
+  activeClass={active}
+  items={p.mapIds.filter((id) => MAPS[id]).map((id) => ({ key: id, place: MAPS[id].place, name: MAPS[id].name, active: id === p.mapId, onPick: () => p.onOpenMap(id) }))}
+/>
+<div className="flex flex-wrap gap-1">
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onNewMap}>{t("editorBar.newMap")}</button>
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onSaveMapAs}>{t("editorBar.saveAs")}</button>
+<button type="button" className={`${BUTTON} ${idle}`} onClick={p.onRenameMap}>{t("mapDialog.rename")}</button>
+</div>
+<label className="flex items-center gap-1" title={t("mapDialog.showTitleHint")}>
+  <input type="checkbox" checked={p.mapLook.showTitle ?? false} onChange={(e) => p.onMapLook({ showTitle: e.target.checked })} />
+  {t("mapDialog.showTitle")}</label>
 <WeatherFields onCommit={commit} value={p.mapLook.weather} onChange={weather=>p.onMapLook({weather})}/>
 <OptionalNumber label={t("editorBar.bakedLight")} title={t("editorBar.fewSofterLightSpillsToTheCells")} value={p.mapLook.lightGridDensity} min={2} max={12} step={1} defaultValue={3} onChange={v=>p.onMapLook({lightGridDensity:v})}/>
 <OptionalNumber label={t("editorBar.ambient")} title={t("editorBar.theAmbientPartOfTheBakedLight")} value={p.mapLook.lightGridAmbient} min={2} max={4} step={1} defaultValue={3} onChange={v=>p.onMapLook({lightGridAmbient:v})}/>
