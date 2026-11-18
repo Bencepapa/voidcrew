@@ -51,6 +51,7 @@ import type { Direction, MapLight, PropAnchor, PropSpec, Vec2 } from "./game/typ
 import { DIR_VECTOR, behindOf, rightOf } from "./game/movement";
 import { generateLights, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, Rect, TextureLayer } from "./editor/mapEdits";
+import { paintFace } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
 import { bankHaul, crewWeapon, failRun, getMeta, payRevival, revivalBill, switchWeapon, useMeta } from "./game/meta";
@@ -361,12 +362,36 @@ export default function App() {
   // The surface under the pointer, for the palette (see EditorBar).
   const hoverTargetRef = useRef<EditTarget | null>(null);
   const onEditHover = (target: EditTarget | null) => {
-    if (target) setEditSurface(target.kind);
+    if (target) setEditSurface(target.face ? "wall" : target.kind);
     hoverTargetRef.current = target;
   };
   // Where a prop lands for a target: a wall prop on the nearest wall side of the
   // cell, else the point pointed at on its floor
+  // How high (wall heights above the cell's floor) a wall prop hangs on a step face when put where the
+  // pointer is: centered on that spot, kept within the face
+  const faceElevation = (name: string, target: EditTarget) => {
+    const f = target.face;
+    const sp = target.surfacePoint;
+    if (!f || !sp) return undefined;
+    const v = DIR_VECTOR[f.side];
+    const floor = floorHeight(map, f.cell.x, f.cell.y);
+    const ceiling = ceilingHeight(map, f.cell.x, f.cell.y);
+    const far = { x: f.cell.x + v.x, y: f.cell.y + v.y };
+    const bottom = f.part === "riser" ? 0 : Math.max(floor, ceilingHeight(map, far.x, far.y)) - floor;
+    const top = (f.part === "riser" ? Math.min(ceiling, floorHeight(map, far.x, far.y)) : ceiling) - floor;
+    const type = PROP_TYPES[name];
+    const size = type?.size[1] ?? 0;
+    // (a mounted prop's own height - its type's elevation - is added to the spec's)
+    const base = type && (type.kind === "panel" || type.kind === "views") ? (type.elevation ?? 0) : 0;
+    // (the spot's height from its surface pixels: the first panel is 256 tall)
+    const wanted = 1 - sp.v / 256 - size / 2;
+    return Math.round((Math.min(Math.max(bottom, top - size), Math.max(bottom, wanted)) - base) * 20) / 20;
+  };
   const propPlace = (name: string, target: EditTarget) => {
+    // (a wall prop on a step face: that side of the open cell in front of it, at the height pointed at)
+    if (target.face && PROP_TYPES[name]?.wall) {
+      return { x: target.face.cell.x, y: target.face.cell.y, at: target.face.side as PropAnchor, offset: undefined, elevation: faceElevation(name, target) };
+    }
     // (a wall prop can be dragged along the walls: on the wall pointed at)
     if (target.kind === "wall" && PROP_TYPES[name]?.wall && target.surfacePoint && target.surfacePoint.surface !== "floor" && target.surfacePoint.surface !== "ceiling") {
       return { x: target.surfacePoint.cell.x, y: target.surfacePoint.cell.y, at: target.surfacePoint.surface as PropAnchor, offset: undefined };
@@ -732,7 +757,16 @@ export default function App() {
       else selectOnly(null);
       return;
     }
-    if (editTool === "texture") {
+    if (editTool === "texture" && target.face) {
+      // a step face (a riser or header) has a texture of its own: the open cell
+      // it's seen from and its side (the right button: back to the cell's)
+      const { cell, side } = target.face;
+      const setId = alt ? null : paint.wall;
+      result = applyEdit(map.id, (file) => paintFace(file, cell, side, setId));
+      if (!("error" in result)) {
+        pushLog(t("app.faceTextureAt", { side, x: cell.x, y: cell.y, texture: setId ?? t("app.ownTexture") }), "editor");
+      }
+    } else if (editTool === "texture") {
       // a wall's texture set is the open cell its face is seen from
       const cell = target.kind === "wall" ? target.from : target.cell;
       const layer: TextureLayer =
@@ -907,9 +941,12 @@ export default function App() {
         const wallProp = !!PROP_TYPES[propChoice]?.wall;
         // a prop hung on a wall: a click on the wall itself puts it there (on
         // the open cell in front of it, at that side)
-        const onWall = target.kind === "wall" && wallProp && !alt ? target.surfacePoint : undefined;
+        // (or on a step face - a riser or header - at the height pointed at)
+        const onFace = target.face && wallProp && !alt ? target.face : undefined;
+        const onWall = onFace ? { cell: onFace.cell, surface: onFace.side } : target.kind === "wall" && wallProp && !alt ? target.surfacePoint : undefined;
         if (target.kind === "wall" && !(onWall && onWall.surface !== "floor" && onWall.surface !== "ceiling")) return;
         const cell = onWall ? onWall.cell : target.cell;
+        const elevation = onFace ? faceElevation(propChoice, target) : undefined;
         const [dx, , dz] = target.spot && target.spot.cell.x === cell.x && target.spot.cell.y === cell.y ? target.spot.pos : [0, 0, 0];
         // (on a floor: the nearest side that really is a wall)
         const wallSide = (): PropAnchor => {
@@ -925,9 +962,9 @@ export default function App() {
           const anchor: PropAnchor = onWall ? (onWall.surface as Direction) : wallProp ? wallSide() : anchorAt(dx, dz);
           const count = map.props?.length ?? 0;
           result = applyEdit(map.id, (file) => {
-            addProp(file, propChoice, cell, anchor, propRotation);
+            addProp(file, propChoice, cell, anchor, propRotation, elevation === undefined ? {} : { elevation });
             if (Object.keys(templates.current.prop).length) updateProp(file, count, templates.current.prop as Parameters<typeof updateProp>[2]);
-            const flame = flamePosition({ prop: propChoice, cell, at: anchor, rotation: propRotation });
+            const flame = flamePosition({ prop: propChoice, cell, at: anchor, rotation: propRotation, elevation });
             if (flame) addSmoke(file, { x: cell.x, y: cell.y, pos: flame, fire: true, decorative: true });
             return file;
           });

@@ -95,6 +95,7 @@ export const appHu = {
   "app.editorError": "Szerkesztő: {error}",
   "app.doorAtParty": "Szerkesztő: nem tehetsz ajtót a csapat helyére.",
   "app.textureAt": "Szerkesztő: {surface} itt: {x},{y} – {texture}.",
+  "app.faceTextureAt": "Szerkesztő: lépcsőoldal ({side}) itt: {x},{y} – {texture}.",
   "app.ceilingAt": "Szerkesztő: plafon itt: {x},{y} – {height}.",
   "app.floorAt": "Szerkesztő: padló itt: {x},{y} – {height}.",
   "app.pickActor": "Szerkesztő: előbb válassz NPC-típust a palettán.",

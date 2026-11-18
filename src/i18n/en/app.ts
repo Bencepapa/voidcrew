@@ -95,6 +95,7 @@ export const appEn = {
   "app.editorError": "Editor: {error}",
   "app.doorAtParty": "Editor: can't put a door where the party stands.",
   "app.textureAt": "Editor: {surface} at {x},{y} - {texture}.",
+  "app.faceTextureAt": "Editor: step face {side} of {x},{y} - {texture}.",
   "app.ceilingAt": "Editor: ceiling at {x},{y} - {height}.",
   "app.floorAt": "Editor: floor at {x},{y} - {height}.",
   "app.pickActor": "Editor: pick an NPC type in the palette first.",

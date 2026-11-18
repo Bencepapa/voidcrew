@@ -270,6 +270,11 @@ export interface EditTarget {
   // side, and the point on it in surface pixels (0..255 across a panel;
   // from its top left, a wall's first panel)
   surfacePoint?: { cell: Vec2; surface: Direction | "floor" | "ceiling"; u: number; v: number };
+  // The step face pointed at (kind is "floor" then: it isn't a wall to dig):
+  // a riser (the side of a higher floor) or a header (a lower ceiling's
+  // strip), addressed like a wall face - by the open cell it's seen from
+  // (the lower floor's / higher ceiling's) and the side toward the other.
+  face?: { cell: Vec2; side: Direction; part: "riser" | "header" };
 }
 
 export interface ViewportStats {
@@ -6625,6 +6630,31 @@ export function GameViewport({
           const side: Direction = sx > 0 ? "W" : sx < 0 ? "E" : sz > 0 ? "N" : "S";
           return { kind: "wall", cell: behind, from, spot, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(from, side, p) };
         }
+        // A step face: the plane between two open cells where the far one's floor
+        // is higher (a riser, up to that floor) or its ceiling lower (a header,
+        // from that ceiling up). It's seen from the near cell, and is addressed
+        // like a wall face: that cell and the side toward the far one. (The
+        // point has to be on the plane itself: the sides of a relief's steps
+        // face sideways too, and mustn't count.)
+        const from = { x: behind.x + sx, y: behind.y + sz };
+        const planeAt = sx ? (behind.x + from.x) / 2 : (behind.y + from.y) / 2;
+        if (
+          cellAt(liveMap, behind.x, behind.y) !== "wall" &&
+          cellAt(liveMap, from.x, from.y) !== "wall" &&
+          Math.abs((sx ? p.x : p.z) - planeAt) <= reliefDepth + 0.08
+        ) {
+          const side: Direction = sx > 0 ? "W" : sx < 0 ? "E" : sz > 0 ? "N" : "S";
+          const slack = 0.05;
+          const part: "riser" | "header" | null =
+            floorHeight(liveMap, behind.x, behind.y) > floorHeight(liveMap, from.x, from.y) && p.y <= floorY(behind.x, behind.y) + slack
+              ? "riser"
+              : ceilingHeight(liveMap, behind.x, behind.y) < ceilingHeight(liveMap, from.x, from.y) && p.y >= ceilingY(behind.x, behind.y) - slack
+                ? "header"
+                : null;
+          if (part) {
+            return { kind: "floor", cell: from, spot, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(from, side, p), face: { cell: from, side, part } };
+          }
+        }
       }
       const cell = { x: Math.round(p.x), y: Math.round(p.z) };
       if (cellAt(liveMap, cell.x, cell.y) === "wall") return null;
@@ -6654,7 +6684,7 @@ export function GameViewport({
     let hoverSince = 0;
     const HOVER_SETTLE_MS = 150;
     function reportHover(target: EditTarget | null) {
-      const key = target ? `${target.kind} ${target.cell.x},${target.cell.y} ${target.from?.x},${target.from?.y}` : "";
+      const key = target ? `${target.kind} ${target.cell.x},${target.cell.y} ${target.from?.x},${target.from?.y} ${target.face?.side ?? ""}` : "";
       if (key === lastHover) return;
       if (key !== hoverKey) {
         hoverKey = key;
@@ -6777,7 +6807,7 @@ export function GameViewport({
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
       const tool = editToolRef.current;
-      let mode: "wall" | "plate" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | "smoke" | null = null;
+      let mode: "wall" | "plate" | "face" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | "smoke" | null = null;
       let color = EDIT_FILL_COLOR;
       if (target) {
         if (tool === "select") {
@@ -6785,7 +6815,7 @@ export function GameViewport({
           mode = target.actor !== undefined ? "actor" : target.item !== undefined ? "item" : target.prop !== undefined ? "prop" : target.decal !== undefined ? "decal" : target.light !== undefined ? "bulb" : target.smoke !== undefined ? "smoke" : null;
           color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "texture") {
-          mode = target.kind === "wall" ? "wall" : "plate";
+          mode = target.face ? "face" : target.kind === "wall" ? "wall" : "plate";
           color = EDIT_PAINT_COLOR;
         } else if (tool === "robot" && target.actor !== undefined) {
           mode = "actor";
@@ -6794,10 +6824,10 @@ export function GameViewport({
           mode = "door";
           color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "decal") {
-          mode = target.decal !== undefined ? "decal" : null;
+          mode = target.decal !== undefined ? "decal" : target.face ? "face" : null;
           color = EDIT_LIGHT_ADD_COLOR;
-        } else if (tool === "prop" && target.prop !== undefined) {
-          mode = "prop";
+        } else if (tool === "prop" && (target.prop !== undefined || target.face)) {
+          mode = target.prop !== undefined ? "prop" : "face";
           color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "item") {
           mode = target.item !== undefined ? "item" : null;
@@ -6864,6 +6894,15 @@ export function GameViewport({
         const l = mapLights.find((m) => m.source === target.light);
         if (l) editBox.position.set(l.x, l.y * wallHeight, l.z);
         editBox.scale.setScalar(0.1);
+      } else if (mode === "face") {
+        // the step face: a thin slab on its plane, as tall as the step
+        const { cell, side, part } = target.face!;
+        const v = DIR_VECTOR[side];
+        const far = { x: cell.x + v.x, y: cell.y + v.y };
+        const bottom = part === "riser" ? floorY(cell.x, cell.y) : Math.max(floorY(cell.x, cell.y), ceilingY(far.x, far.y));
+        const top = part === "riser" ? Math.min(ceilingY(cell.x, cell.y), floorY(far.x, far.y)) : ceilingY(cell.x, cell.y);
+        editBox.position.set(cell.x + v.x * 0.5, (bottom + top) / 2, cell.y + v.y * 0.5);
+        editBox.scale.set(v.x ? 0.06 : 0.98, Math.max(0.02, top - bottom - 0.02), v.y ? 0.06 : 0.98);
       } else if (mode === "wall") {
         // the wall block, as tall as the room it's dug from
         const from = target.from!;
