@@ -4,6 +4,7 @@ import { Inspector, type InspectedKind } from "./editor/Inspector";
 import { ProblemsPanel } from "./editor/ProblemsPanel";
 import { validateMap, removeInWall, removeDuplicates } from "./editor/validate";
 import { EditorStatusBar } from "./editor/EditorStatusBar";
+import { useMapDrafts } from "./editor/DraftNotice";
 import { FloatToolbar } from "./editor/FloatToolbar";
 import { ShortcutHelp } from "./editor/ShortcutHelp";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -240,6 +241,7 @@ export default function App() {
   const [paint, setPaint] = useState<Record<EditSurface, TextureSetId | null>>({ wall: null, floor: null, ceiling: null });
   // bumped by every edit, undo, redo and save, to redraw the toolbar
   const [, setEdits] = useState(0);
+  const draftNotice = useMapDrafts(map.id, replaceMap, () => setEdits((n) => n + 1), pushLog);
   // the graphics choices belong to the device: kept in this browser
   useEffect(() => saveGraphics(settings), [settings.particleQuality, settings.wallDetail, settings.pixelRatioCap, settings.particleEvery, settings.viewDistanceCap, settings.lodScale, settings.antialias, settings.lightPool, settings.normalMaps]);
   const [editLamp, setEditLamp] = useState(true);
@@ -2557,6 +2559,7 @@ export default function App() {
         </div>
       </div>
 
+      {draftNotice}
       {editMode && <EditorStatusBar log={log} mapName={map.name} unsaved={hasUnsavedEdits(map.id)} tool={editorToolLabel(editTool)}/>}
       {!editMode && (
         <div className="flex gap-2 items-end">

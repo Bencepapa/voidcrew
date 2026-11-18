@@ -58,6 +58,55 @@ export function hasUnsavedEdits(id: string): boolean {
   return !!e && e.file !== e.saved;
 }
 
+// the map as loaded or saved last (what a draft is made against)
+export function savedFile(id: string): MapFile | null {
+  return entry(id)?.saved ?? null;
+}
+
+export function anyUnsavedEdits(): boolean {
+  for (const id of entries.keys()) if (hasUnsavedEdits(id)) return true;
+  return false;
+}
+
+// Listeners (the autosave, see mapDrafts.ts): "edit" - the map changed;
+// "saved" - written to disk or shared; "downloaded"; "reverted" - back to the saved map
+export type MapChange = "edit" | "saved" | "downloaded" | "reverted";
+const listeners = new Set<(id: string, kind: MapChange) => void>();
+export function onMapChange(fn: (id: string, kind: MapChange) => void) {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+}
+function changed(id: string, kind: MapChange) {
+  for (const fn of listeners) {
+    try { fn(id, kind); } catch { /* a listener must not break editing */ }
+  }
+}
+
+// the shared-levels save: what's in the map now counts as saved
+export function markSaved(id: string) {
+  const e = entries.get(id);
+  if (!e) return;
+  e.saved = e.file;
+  changed(id, "saved");
+}
+
+// a restored draft: the map as drafted, one undo step away from the loaded one
+export function restoreFile(id: string, file: MapFile): { map: GameMap } | { error: string } {
+  return applyEdit(id, () => structuredClone(file));
+}
+
+// back to the saved map (the history goes with the discarded edits)
+export function revertToSaved(id: string): GameMap | null {
+  const e = entries.get(id);
+  if (!e) return null;
+  e.undo = [];
+  e.redo = [];
+  e.lastMerge = undefined;
+  const map = use(id, e, e.saved);
+  changed(id, "reverted");
+  return map;
+}
+
 export function canUndo(id: string): boolean {
   return !!entries.get(id)?.undo.length;
 }
@@ -103,6 +152,7 @@ export function applyEdit(
   e.redo = [];
   e.file = next;
   MAPS[id] = map;
+  changed(id, "edit");
   return { map };
 }
 
@@ -112,7 +162,9 @@ export function undo(id: string): GameMap | null {
   const prev = e?.undo.pop();
   if (!e || !prev) return null;
   e.redo.push(e.file);
-  return use(id, e, prev);
+  const map = use(id, e, prev);
+  changed(id, "edit");
+  return map;
 }
 
 export function redo(id: string): GameMap | null {
@@ -121,7 +173,9 @@ export function redo(id: string): GameMap | null {
   const next = e?.redo.pop();
   if (!e || !next) return null;
   e.undo.push(e.file);
-  return use(id, e, next);
+  const map = use(id, e, next);
+  changed(id, "edit");
+  return map;
 }
 
 // the file's text, laid out as it was loaded (see mapJson)
@@ -141,6 +195,7 @@ export async function saveMap(id: string): Promise<string> {
   });
   if (!res.ok) throw new Error(await res.text());
   e.saved = e.file;
+  changed(id, "saved");
   return res.text();
 }
 
@@ -153,6 +208,7 @@ export function downloadMap(id: string) {
   a.download = `${id}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  changed(id, "downloaded");
 }
 
 // the maps of a world (the repo's, and any made in this session)

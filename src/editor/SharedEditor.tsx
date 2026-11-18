@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createMap, hasUnsavedEdits, mapFile } from "./mapStore";
+import { createMap, hasUnsavedEdits, mapFile, markSaved } from "./mapStore";
 import { t } from "../i18n";
 import type { GameMap } from "../game/types";
 import type { MapFile } from "../game/mapFormat";
@@ -48,6 +48,7 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     const head = { id: previous?.id ?? (copy ? "copy-" + crypto.randomUUID() : map.id), title: map.name, revision: (previous?.revision ?? 0) + 1 };
     await sharedRequest("/rest/v1/void_maps", {method: "POST", body: JSON.stringify({...head, world: map.world, body})});
     remember(map.id, head);
+    if (!copy) markSaved(map.id);
     await refresh(); setMessage(t("editorShell.shared.savedVersion", { n: head.revision }));
   }
   async function load(head: Head) {
