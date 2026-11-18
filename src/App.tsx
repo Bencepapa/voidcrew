@@ -23,6 +23,8 @@ import {
   canRedo,
   canUndo,
   createMap,
+  deriveMapId,
+  renameMap,
   downloadMap,
   hasUnsavedEdits,
   mapFile,
@@ -31,6 +33,9 @@ import {
   saveMap,
   undo,
 } from "./editor/mapStore";
+import { MapTitle } from "./components/MapTitle";
+import { MapDialog } from "./editor/MapDialog";
+import type { MapDialogMode, MapDialogValues } from "./editor/MapDialog";
 import { MAPS, START_MAP } from "./game/map";
 import { WORLDS, assetInWorld, setActiveWorld, startWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
@@ -1288,27 +1293,35 @@ export default function App() {
     setSelectedDecal(null);
     setEdits((n) => n + 1);
   };
-  const newMap = () => {
-    const id = prompt(t("app.newId"))?.trim();
-    if (!id) return;
-    const name = prompt(t("app.name"), t("app.deckName", { deck: map.deck }))?.trim() || id;
-    const size = prompt(t("app.size"), "16x10") ?? "";
-    const [w, h] = size.split(/[x, ]+/).map(Number);
-    const result = createMap(id, blankMap(name, map.deck, w || 16, h || 10, mapFile(map.id) ?? undefined), undefined, map.world);
-    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
-    else {
+  // new map / save as / rename: one in-app dialog (place + name; the id is derived)
+  const [mapDialog, setMapDialog] = useState<MapDialogMode | null>(null);
+  const newMap = () => setMapDialog("new");
+  const saveMapAs = () => setMapDialog("saveAs");
+  const renameCurrentMap = () => setMapDialog("rename");
+  const submitMapDialog = (mode: MapDialogMode, v: MapDialogValues): string | null => {
+    if (mode === "rename") {
+      const result = renameMap(map.id, v.place, v.name);
+      if ("error" in result) return result.error;
+      replaceMap(result.map);
+      setEdits((n) => n + 1);
+      pushLog(t("mapDialog.renamed", { place: v.place, name: v.name }), "editor");
+    } else if (mode === "new") {
+      const id = deriveMapId(v.place, v.name);
+      const like = map.world === v.world ? mapFile(map.id) ?? undefined : undefined;
+      const result = createMap(id, blankMap(v.name, map.deck, v.width || 16, v.height || 10, like, v.place), undefined, v.world);
+      if ("error" in result) return result.error;
       openMap(result.map);
       pushLog(t("app.mapCreated", { id: id }), "editor");
-    }
+    } else saveMapAsCopy(v.place, v.name);
+    setMapDialog(null);
+    return null;
   };
-  const saveMapAs = () => {
-    const id = prompt(t("app.copyId"))?.trim();
-    if (!id) return;
-    const name = prompt(t("app.name"), map.name)?.trim() || map.name;
+  const saveMapAsCopy = (place: string, name: string) => {
+    const id = deriveMapId(place, name);
     const file = structuredClone(mapFile(map.id));
     if (!file) return;
-    file.name = name;
-    const result = createMap(id, file, map.id);
+    const { name: _n, place: _p, ...rest } = file;
+    const result = createMap(id, { name, place, ...rest }, map.id);
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else {
       openMap(result.map);
@@ -2112,6 +2125,16 @@ export default function App() {
   const revival = { down, crew: crew.length, ...revivalBill(down, homeStash, meta.credits) };
   const overlays = (
     <>
+      {mapDialog && editMode && (
+        <MapDialog
+          key={mapDialog}
+          mode={mapDialog}
+          initial={{ place: mapDialog === "new" && !map.hasPlace ? "" : map.place, name: mapDialog === "rename" ? map.name : "", world: map.world, width: 16, height: 10 }}
+          onSubmit={(v) => submitMapDialog(mapDialog, v)}
+          onClose={() => setMapDialog(null)}
+        />
+      )}
+      {!editMode && phase === "run" && !runEnd && <MapTitle key={map.id} map={map} />}
       {haulOpen && !editMode && !runEnd && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
       {!editMode && phase === "run" && !runEnd && WORLDS[map.world].loop === "ship" && <AlertMeter alert={alert} compact={compact} powerOn={powerOn} />}
       {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
@@ -2231,7 +2254,8 @@ export default function App() {
           onOpenMap={(id) => MAPS[id] && openMap(MAPS[id])}
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
-          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures }}
+          onRenameMap={renameCurrentMap}
+          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle }}
           onMapLook={changeMapLook}
           renderSettings={settings}
           onRenderSettings={setSettings}

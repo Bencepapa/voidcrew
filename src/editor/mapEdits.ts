@@ -399,7 +399,7 @@ export function resizeMap(file: MapFile, edge: Direction, grow: boolean): MapFil
 
 // A new, empty deck: all wall but a small room at the start (with a lamp),
 // in the look of `like` (its textures and colors).
-export function blankMap(name: string, deck: number, width: number, height: number, like?: MapFile): MapFile {
+export function blankMap(name: string, deck: number, width: number, height: number, like?: MapFile, place?: string): MapFile {
   const w = Math.max(7, Math.round(width));
   const h = Math.max(7, Math.round(height));
   const layout = Array.from({ length: h }, (_, y) =>
@@ -407,6 +407,7 @@ export function blankMap(name: string, deck: number, width: number, height: numb
   );
   return {
     name,
+    ...(place ? { place } : {}),
     deck,
     ...(like?.textures ? { textures: structuredClone(like.textures) } : {}),
     ...(like?.labelColor ? { labelColor: like.labelColor } : {}),

@@ -24,6 +24,13 @@ export interface GameMap {
   height: number;
   cells: CellType[][];
   name: string;
+  // the place it is in ("Mualdeb"; the name is then a level, quarter or
+  // building of it). Maps without one in their file get their id, prettified.
+  place: string;
+  // whether the place was written in the file (not the id fallback)
+  hasPlace: boolean;
+  // show the "Place - Name" caption on entering (default: when it has a place)
+  showTitle: boolean;
   // the world it belongs to (its folder under src/maps/, see worlds.ts)
   world: WorldId;
   // where the player arrives

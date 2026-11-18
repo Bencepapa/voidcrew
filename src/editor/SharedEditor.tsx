@@ -8,7 +8,16 @@ import { loadSharedTextures } from "./sharedTextures";
 import { openAssetManager } from "./AssetManager";
 import { registerMap } from "./textureLibrary";
 
+import { ConfirmDialog } from "./Dialog";
+import { MapList } from "./MapList";
+
 interface Head { id: string; revision: number; title: string; saved_by?: string; saved_at?: string }
+// a shared head's title is "Place – Name" (the head table has no place column)
+const SEP = " – ";
+const splitTitle = (title: string): { place?: string; name: string } => {
+  const i = title.indexOf(SEP);
+  return i > 0 ? { place: title.slice(0, i), name: title.slice(i + SEP.length) } : { name: title };
+};
 const origins = new Map<string, Head>();
 
 export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m: GameMap) => void; changed: () => void}) {
@@ -19,6 +28,8 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
   const [heads, setHeads] = useState<Head[]>([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  // the newest shared version, offered while the open map has unsaved edits
+  const [ask, setAsk] = useState<Head | null>(null);
   const originKey = (id: string) => JSON.stringify([sharedProject, map.world, id]);
   function origin(id: string): Head | undefined {
     const key = originKey(id);
@@ -45,7 +56,8 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     const body = mapFile(map.id);
     if (!body) throw new Error(t("editorShell.shared.mapFileUnavailable"));
     const previous = copy ? undefined : origin(map.id);
-    const head = { id: previous?.id ?? (copy ? "copy-" + crypto.randomUUID() : map.id), title: map.name, revision: (previous?.revision ?? 0) + 1 };
+    // (the title is "Place – Name": the place travels with it in the head list, the body has it too)
+    const head = { id: previous?.id ?? (copy ? "copy-" + crypto.randomUUID() : map.id), title: map.hasPlace ? `${map.place}${SEP}${map.name}` : map.name, revision: (previous?.revision ?? 0) + 1 };
     await sharedRequest("/rest/v1/void_maps", {method: "POST", body: JSON.stringify({...head, world: map.world, body})});
     remember(map.id, head);
     if (!copy) markSaved(map.id);
@@ -55,7 +67,15 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     const rows = await sharedRequest<{body: MapFile}[]>("/rest/v1/void_maps?select=body&world=eq." + map.world + "&id=eq." + encodeURIComponent(head.id) + "&revision=eq." + head.revision);
     if (!rows.length) throw new Error(t("editorShell.shared.mapVersionUnavailable"));
     const id = "shared-" + crypto.randomUUID();
-    const result = createMap(id, rows[0].body, undefined, map.world);
+    // (a version saved before places existed: the place comes from the title, else "Shared")
+    const body = { ...rows[0].body };
+    if (!body.place) {
+      const { place, name } = splitTitle(head.title);
+      body.place = place ?? t("mapDialog.sharedPlace");
+      body.name = name;
+      body.showTitle ??= false;
+    }
+    const result = createMap(id, body, undefined, map.world);
     if ("error" in result) throw new Error(result.error);
     remember(id, head); openMap(result.map); setOpen(false);
   }
@@ -73,14 +93,11 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
           const current = origin(map.id);
           const head = latest.find(h => h.id === (current?.id ?? map.id)) ?? latest[0];
           if (head && (head.id !== current?.id || head.revision !== current?.revision)) {
-            if (!hasUnsavedEdits(map.id) || window.confirm(t("editorShell.shared.confirmOpenLatest"))) {
-              await load(head);
-            } else {
-              setMessage(t("editorShell.shared.localEditsKept"));
-            }
+            if (!hasUnsavedEdits(map.id)) await load(head);
+            else setAsk(head);
           }
         })} /> : <>
-          <strong>{map.name}</strong>
+          <strong>{map.hasPlace ? `${map.place}${SEP}${map.name}` : map.name}</strong>
           <button className={button} onClick={()=>void run(()=>save(false))}>{t("editorShell.shared.saveShared")}</button>
           <p className="text-xs text-neutral-300">{t("editorShell.shared.publishHint")}</p>
           <button className={button} onClick={()=>void run(()=>save(true))}>{t("editorShell.shared.saveAsNew")}</button>
@@ -90,13 +107,19 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
           <button className={button} onClick={()=>void run(refresh)}>{t("editorShell.shared.refreshList")}</button>
           <p className="text-xs text-neutral-300">{t("editorShell.shared.refreshHint")}</p>
           {!busy && !heads.length && <p>{t("editorShell.shared.noShared")}</p>}
-          {heads.map(h=><button className={button + " w-full"} key={h.id} onClick={()=>void run(()=>load(h))}>
-            <strong>{t("editorShell.shared.open", { title: h.title })}</strong> · v{h.revision}
-            <span className="block text-xs text-neutral-300">{h.saved_by ?? t("editorShell.shared.authorUnrecorded")}{h.saved_at && " · " + new Date(h.saved_at).toLocaleString()} · {h.id.slice(-8)}</span>
-          </button>)}
+          <MapList itemClass={button + " w-full"} activeClass="" items={heads.map(h => {
+            const { place, name } = splitTitle(h.title);
+            return { key: h.id, place: place ?? t("mapDialog.noPlace"), name, onPick: () => void run(() => load(h)), node: <>
+              <strong>{t("editorShell.shared.open", { title: name })}</strong> · v{h.revision}
+              <span className="block text-xs text-neutral-300">{h.saved_by ?? t("editorShell.shared.authorUnrecorded")}{h.saved_at && " · " + new Date(h.saved_at).toLocaleString()} · {h.id.slice(-8)}</span>
+            </> };
+          })} />
           <button className={button} onClick={()=>{auth.signOut();setHeads([]);setMessage("");}}>{t("editorShell.shared.signOut")}</button>
         </>}
         <output aria-live="polite">{busy ? t("editorShell.shared.working") : message}</output>
       </fieldset></section></div>}
+    {ask && <ConfirmDialog title={t("editorShell.shared.title", { world: map.world })} message={t("editorShell.shared.confirmOpenLatest")} yes={t("dialog.yes")} no={t("dialog.no")}
+      onYes={() => { const h = ask; setAsk(null); void run(() => load(h)); }}
+      onNo={() => { setAsk(null); setMessage(t("editorShell.shared.localEditsKept")); }} />}
   </>;
 }

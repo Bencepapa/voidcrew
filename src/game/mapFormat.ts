@@ -31,8 +31,19 @@ interface LayerFile<T> {
   rows: string[];
 }
 
+// "deck2-engineering" -> "Deck2 engineering": the place of a map that has none
+export function prettifyId(id: string): string {
+  const s = id.replace(/[-_]+/g, " ").trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export interface MapFile {
   name: string;
+  // the place the map is in (a town, a forest, a ship); optional: older maps
+  // use their id, prettified
+  place?: string;
+  // show the "Place - Name" caption on entering (default: on when `place` is set)
+  showTitle?: boolean;
   // deck number (lower = higher up the ship)
   deck: number;
   // default texture sets for the deck (see GameMap.textures)
@@ -296,6 +307,9 @@ export function parseMap(id: string, file: MapFile): GameMap {
     reliefDepth: file.reliefDepth,
     render: cleanRenderLook(file.render),
     name: file.name,
+    place: file.place?.trim() || prettifyId(id),
+    hasPlace: !!file.place?.trim(),
+    showTitle: file.showTitle ?? !!file.place?.trim(),
     world: worldOfMap(id),
     width,
     height,

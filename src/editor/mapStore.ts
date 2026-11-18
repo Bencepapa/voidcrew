@@ -218,6 +218,31 @@ export function mapIds(world?: WorldId): string[] {
     .sort();
 }
 
+const slug = (s: string) =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+// The technical id of a map, made from its place and name ("Mualdeb városa" +
+// "Tolvajok céhe" -> "mualdeb-varosa-tolvajok-cehe"); -2, -3... when taken
+export function deriveMapId(place: string, name: string): string {
+  const base = [slug(place), slug(name)].filter(Boolean).join("-") || "map";
+  let id = base;
+  for (let n = 2; MAPS[id]; n++) id = `${base}-${n}`;
+  return id;
+}
+
+// the places of the maps (of a world), sorted
+export function placesOf(world?: WorldId): string[] {
+  return [...new Set(mapIds(world).map((id) => MAPS[id].place))].sort((a, b) => a.localeCompare(b));
+}
+
+// the place and name of a map changed (its id stays)
+export function renameMap(id: string, place: string, name: string): { map: GameMap } | { error: string } {
+  return applyEdit(id, (file) => {
+    const { name: _n, place: _p, ...rest } = file;
+    return { name, place, ...rest };
+  });
+}
+
 // A new map (made, or copied from another - `from` keeps that one's layout
 // of the file): its file not saved yet. Returns the deck, or why it can't be.
 export function createMap(id: string, file: MapFile, from?: string, world?: WorldId): { map: GameMap } | { error: string } {
