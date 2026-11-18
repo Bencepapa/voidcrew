@@ -65,6 +65,9 @@ export interface ReliefOptions {
   // (alphaTest on the diffuse). Without it a smooth request for a map with
   // holes falls back to the stepped build.
   smoothHoles?: boolean;
+  // Crossed reliefs have a front and back on the same plane. Keep each
+  // face on its own side, with the shallowest depth at the plane.
+  outwardRelief?: boolean;
   // for a smooth one: a distant, low-detail version of the same surface -
   // this many times fewer cells along each side. Its vertices are picked
   // off the detailed one (heights worked out at smoothCells, then sampled),
@@ -656,7 +659,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   for (const v of statData) counts[Math.min(255, Math.round(norm(v) * 255))]++;
   let baseGray = 0;
   for (let g = 1; g < 256; g++) if (counts[g] > counts[baseGray]) baseGray = g;
-  const base = baseGray / 255;
+  const base = opts.outwardRelief && sorted.length ? norm(sorted[0]) : baseGray / 255;
 
   const r0 = opts.rows ? Math.round(opts.rows[0] * fullH) : 0;
   const r1 = opts.rows ? Math.max(r0 + 1, Math.round(opts.rows[1] * fullH)) : fullH;
@@ -937,12 +940,13 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
       const sx = fullW / W;
       const sy = fullH / H;
       const solidAt = (px: number, py: number) => px >= 0 && py >= 0 && px < W && py < H && holeSolid![py * W + px] === 1;
-      const holeAt = (px: number, py: number) => px >= 0 && py >= 0 && px < W && py < H && holeSolid![py * W + px] === 0;
-      // edges between a solid and a hole pixel; along x lines (vertical edges), then along y lines
+      // Treat the space beyond the image as transparent too. A coarse quad
+      // can touch the image border even when its solid pixels do not reach it.
       for (const vertical of [true, false]) {
         const lines = vertical ? W : H;
         const run = vertical ? H : W;
-        for (let e = 1; e < lines; e++) {
+        for (let e = 0; e <= lines; e++) {
+          const perimeter = e === 0 || e === lines;
           for (const dir of [1, -1]) {
             // solid on the lower side of the line for dir 1, the upper for -1
             const sIdx = dir === 1 ? e - 1 : e;
@@ -954,11 +958,15 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
               const [qi, qj] = vertical
                 ? quadOf((sIdx + 0.5) * sx, (start + 0.5) * sy)
                 : quadOf((start + 0.5) * sx, (sIdx + 0.5) * sy);
-              const zb = holeBackZ;
+              const zb = perimeter ? 0 : holeBackZ;
               if (vertical) {
                 const fx = e * sx;
                 const z0 = zq(qi, qj, fx, start * sy) + EPS;
                 const z1 = zq(qi, qj, fx, end * sy) + EPS;
+                if (perimeter && Math.abs(z0 - EPS) < 1e-4 && Math.abs(z1 - EPS) < 1e-4) {
+                  start = -1;
+                  return;
+                }
                 const u = (sIdx + 0.5) / W;
                 const x = fx2x(fx);
                 face(
@@ -970,6 +978,10 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
                 const fy = e * sy;
                 const z0 = zq(qi, qj, start * sx, fy) + EPS;
                 const z1 = zq(qi, qj, end * sx, fy) + EPS;
+                if (perimeter && Math.abs(z0 - EPS) < 1e-4 && Math.abs(z1 - EPS) < 1e-4) {
+                  start = -1;
+                  return;
+                }
                 const v = 1 - (sIdx + 0.5) / H;
                 const y = fy2y(fy);
                 face(
@@ -981,7 +993,7 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
               start = -1;
             };
             for (let k = 0; k < run; k++) {
-              const edge = vertical ? solidAt(sIdx, k) && holeAt(hIdx, k) : solidAt(k, sIdx) && holeAt(k, hIdx);
+              const edge = vertical ? solidAt(sIdx, k) && !solidAt(hIdx, k) : solidAt(k, sIdx) && !solidAt(k, hIdx);
               if (edge) {
                 const q = vertical ? quadOf((sIdx + 0.5) * sx, (k + 0.5) * sy)[1] : quadOf((k + 0.5) * sx, (sIdx + 0.5) * sy)[0];
                 if (start >= 0 && q !== startQuad) flush(k);
@@ -996,39 +1008,42 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
         }
       }
     }
-    // skirts along the outline, where a kept quad's surface stands off the base plane
-    const skirt = (ax: number, ay: number, za: number, bx: number, by: number, zb2: number, tu: number, tv: number[], outward: number[]) => {
-      if (Math.abs(za) < 1e-4 && Math.abs(zb2) < 1e-4) return;
-      // (the face looks toward the lower side, as a stepped step face does)
-      const sign = za + zb2 > 0 ? 1 : -1;
-      face(
-        [[ax, ay, za], [bx, by, zb2], [bx, by, 0], [ax, ay, 0]],
-        [[tu, tv[0]], [tu, tv[1]], [tu, tv[1]], [tu, tv[0]]],
-        outward.map((c) => c * sign),
-      );
-    };
-    for (let j = 0; j < mh; j++) {
-      for (const i of [0, mw - 1]) {
-        if (quadHole[j * mw + i]) continue;
-        const left = i === 0;
-        const col = left ? 0 : mw;
-        const fy0 = j * stepY;
-        const fy1 = (j + 1) * stepY;
-        const x = fx2x(col * stepX);
-        const tu = (c0 + (left ? 0.5 * stepX : fullW - c0 - 0.5 * stepX)) / fullW;
-        skirt(x, fy2y(fy0), vz(col, j), x, fy2y(fy1), vz(col, j + 1), tu, [1 - (fy0 + r0) / fullH, 1 - (fy1 + r0) / fullH], [left ? -1 : 1, 0, 0]);
+    // A crop still closes along its cuts; an uncropped panel already used
+    // the actual image perimeter above.
+    if (cropped) {
+      const skirt = (ax: number, ay: number, za: number, bx: number, by: number, zb2: number, tu: number, tv: number[], outward: number[]) => {
+        if (Math.abs(za) < 1e-4 && Math.abs(zb2) < 1e-4) return;
+        // (the face looks toward the lower side, as a stepped step face does)
+        const sign = za + zb2 > 0 ? 1 : -1;
+        face(
+          [[ax, ay, za], [bx, by, zb2], [bx, by, 0], [ax, ay, 0]],
+          [[tu, tv[0]], [tu, tv[1]], [tu, tv[1]], [tu, tv[0]]],
+          outward.map((c) => c * sign),
+        );
+      };
+      for (let j = 0; j < mh; j++) {
+        for (const i of [0, mw - 1]) {
+          if (quadHole[j * mw + i]) continue;
+          const left = i === 0;
+          const col = left ? 0 : mw;
+          const fy0 = j * stepY;
+          const fy1 = (j + 1) * stepY;
+          const x = fx2x(col * stepX);
+          const tu = (c0 + (left ? 0.5 * stepX : fullW - c0 - 0.5 * stepX)) / fullW;
+          skirt(x, fy2y(fy0), vz(col, j), x, fy2y(fy1), vz(col, j + 1), tu, [1 - (fy0 + r0) / fullH, 1 - (fy1 + r0) / fullH], [left ? -1 : 1, 0, 0]);
+        }
       }
-    }
-    for (let i = 0; i < mw; i++) {
-      for (const j of [0, mh - 1]) {
-        if (quadHole[j * mw + i]) continue;
-        const top = j === 0;
-        const row = top ? 0 : mh;
-        const fx0 = i * stepX;
-        const fx1 = (i + 1) * stepX;
-        const y = fy2y(row * stepY);
-        const tv = 1 - (r0 + (top ? 0.5 * stepY : fullH - r0 - 0.5 * stepY)) / fullH;
-        skirt(fx2x(fx0), y, vz(i, row), fx2x(fx1), y, vz(i + 1, row), (fx0 + c0) / fullW, [tv, tv], [0, top ? 1 : -1, 0]);
+      for (let i = 0; i < mw; i++) {
+        for (const j of [0, mh - 1]) {
+          if (quadHole[j * mw + i]) continue;
+          const top = j === 0;
+          const row = top ? 0 : mh;
+          const fx0 = i * stepX;
+          const fx1 = (i + 1) * stepX;
+          const y = fy2y(row * stepY);
+          const tv = 1 - (r0 + (top ? 0.5 * stepY : fullH - r0 - 0.5 * stepY)) / fullH;
+          skirt(fx2x(fx0), y, vz(i, row), fx2x(fx1), y, vz(i + 1, row), (fx0 + c0) / fullW, [tv, tv], [0, top ? 1 : -1, 0]);
+        }
       }
     }
   }

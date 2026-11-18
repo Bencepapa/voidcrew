@@ -41,7 +41,7 @@ import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type 
 import { generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
-import { PROP_TYPES, propPlacement, propHeight } from "../game/props";
+import { PROP_TYPES, PROP_RELIEF_SCALE, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
 import { onTextureTuningSaved, textureTuning } from "../render/textureTuning";
@@ -758,8 +758,6 @@ const DOOR_FRAME_SET: TextureSetId = "doorframe1";
 // (the glass sits at the back), and the glass's slight cool tint
 const WINDOW_SET: TextureSetId = "window1";
 const WINDOW_DEPTH = 0.1;
-// props are small: a shallower relief than the walls'
-const PROP_RELIEF_SCALE = 0.6;
 const NO_LAYERS: ReadonlySet<string> = new Set();
 
 // The starry sky behind open walls and ceilings (a map's "sky" texture set): a
@@ -2369,6 +2367,56 @@ export function GameViewport({
     >();
     let materialViewApplied = "";
     let materialViewTick = 0;
+    const cutoutFaceMaterials = new Map<THREE.Material, THREE.MeshNormalMaterial>();
+    function cutoutFaceMaterial(material: THREE.Material): THREE.Material {
+      const { map } = material as THREE.MeshStandardMaterial;
+      if (!map || !material.alphaTest) return material;
+      let faces = cutoutFaceMaterials.get(material);
+      if (!faces) {
+        // MeshNormalMaterial has no diffuse map. Keep just the alpha mask so
+        // the geometry view shows the same silhouette as the textured view.
+        faces = new THREE.MeshNormalMaterial({ side: material.side });
+        faces.allowOverride = false;
+        faces.onBeforeCompile = (shader) => {
+          if (map.matrixAutoUpdate) map.updateMatrix();
+          shader.uniforms.cutoutMap = { value: map };
+          shader.uniforms.cutoutTransform = { value: map.matrix };
+          shader.uniforms.cutoutThreshold = { value: material.alphaTest };
+          shader.vertexShader = shader.vertexShader
+            .replace("#include <uv_pars_vertex>", "#include <uv_pars_vertex>\nvarying vec2 cutoutUv;\nuniform mat3 cutoutTransform;")
+            .replace("#include <uv_vertex>", "#include <uv_vertex>\ncutoutUv = (cutoutTransform * vec3(uv, 1.0)).xy;");
+          shader.fragmentShader = shader.fragmentShader
+            .replace("#include <uv_pars_fragment>", "#include <uv_pars_fragment>\nvarying vec2 cutoutUv;\nuniform sampler2D cutoutMap;\nuniform float cutoutThreshold;")
+            .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (texture2D(cutoutMap, cutoutUv).a < cutoutThreshold) discard;");
+        };
+        cutoutFaceMaterials.set(material, faces);
+      }
+      return faces;
+    }
+    function renderGeometryView(view: GeometryViewId) {
+      scene.overrideMaterial = geometryViewMaterial(view);
+      if (view !== "faces") {
+        renderer.render(scene, camera);
+        return;
+      }
+      const originals: { mesh: THREE.Mesh; material: THREE.Mesh["material"] }[] = [];
+      scene.traverseVisible((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const material = mesh.material;
+        const replacement = Array.isArray(material)
+          ? material.some((face) => face.alphaTest) ? material.map(cutoutFaceMaterial) : material
+          : cutoutFaceMaterial(material);
+        if (replacement === material) return;
+        originals.push({ mesh, material });
+        mesh.material = replacement;
+      });
+      try {
+        renderer.render(scene, camera);
+      } finally {
+        for (const { mesh, material } of originals) mesh.material = material;
+      }
+    }
     function applyMaterialViews(s: ViewportSettings) {
       const mapView = s.geometryView === "normals" || s.geometryView === "depth";
       const active = mapView || !s.showNormals || !s.showMetal;
@@ -2885,9 +2933,11 @@ export function GameViewport({
         // a smooth relief's distant version: this many times fewer cells each
         // way (see SMOOTH_LODS) - the grid isn't made coarser for it then
         smoothLod?: number;
-        // a door part's hybrid build (the map's relief mode: smooth): smooth whatever
+        // a cutout's hybrid build: smooth whatever
         // the wall relief mode, with the holes' quads left out
         hybrid?: boolean;
+        smoothCells?: number;
+        outwardRelief?: boolean;
         // side edges left for corner joins (ReliefOptions.joinEdges), and
         // the corners they land on (ReliefOptions.edgeModes)
         joinEdges?: number;
@@ -2961,7 +3011,8 @@ export function GameViewport({
             minIsland: settings.reliefMinIsland,
             smooth: shape.hybrid || kit.smooth || settings.reliefMode === "smooth",
             smoothHoles: shape.hybrid,
-            smoothCells: settings.wallDetail,
+            smoothCells: Math.min(settings.wallDetail, shape.smoothCells ?? (shape.hybrid && !grid.solid ? 32 : Infinity)),
+            outwardRelief: shape.outwardRelief,
             smoothLod,
             aoRadius: settings.aoRadius,
             flushEdges: shape.flushEdges,
@@ -3010,7 +3061,8 @@ export function GameViewport({
       if (!lodScale) return [];
       const levels: { distance: number; smoothLod?: number }[] = [];
       if (settings.reliefMode === "smooth") {
-        const most = Math.max(1, Math.floor(settings.wallDetail / SMOOTH_LOD_MIN_CELLS));
+        const cells = Math.min(settings.wallDetail, shape.smoothCells ?? Infinity);
+        const most = Math.max(1, Math.floor(cells / SMOOTH_LOD_MIN_CELLS));
         let last = 1;
         for (const { distance, divisor } of SMOOTH_LODS) {
           const d = Math.min(divisor, most);
@@ -3365,6 +3417,13 @@ export function GameViewport({
       mat.alphaTest = 0.5;
       mat.needsUpdate = true;
     };
+    // Prop and item kits are separate from the walls. A smooth cutout
+    // keeps the original silhouette, even on a small relief grid.
+    function buildPropRelief(kit: WallKit, shape: Parameters<typeof buildRelief>[1], cells = 32) {
+      if (!hybrid) return buildRelief(kit, shape);
+      if (!kit.wallMat.alphaTest) cutout(kit.wallMat);
+      return buildRelief(kit, { ...shape, coarse: undefined, hybrid: true, smoothCells: cells });
+    }
     if (hybrid) {
       cutout(frameKit.wallMat);
       for (const kit of panelKits.values()) cutout(kit.wallMat);
@@ -3482,7 +3541,7 @@ export function GameViewport({
       // takes the ship's livery like the walls)
       const setId = type.texture ?? cellSet;
       const kit = isTextureSetId(setId) ? wallKitFor(setId) : sharedPropKitFor(setId);
-      const relief = propReliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
+      const relief = propReliefAmount(propReliefDepth, type, hybrid);
       const foot = type.size[0];
       const shaft = type.shaft;
       const slope = (foot - shaft) / 2;
@@ -3647,7 +3706,7 @@ export function GameViewport({
         kit.wallMat.normalScale.set(normal, normal);
         return kit;
       };
-      const relief = propReliefDepth * PROP_RELIEF_SCALE * (type.relief ?? 1);
+      const relief = propReliefAmount(propReliefDepth, type, hybrid);
       const template = new THREE.Group();
       const face = (
         geo: THREE.BufferGeometry,
@@ -3667,8 +3726,8 @@ export function GameViewport({
         const sideKit = propKitFor(type.side);
         const topKit = propKitFor(type.top);
         const h = height * wallHeight;
-        const side = await buildRelief(sideKit, { width: length, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE });
-        const top = await buildRelief(topKit, { width: length, height: depth, flushEdges: false, depth: relief, coarse: PROP_COARSE });
+        const side = await buildPropRelief(sideKit, { width: length, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE });
+        const top = await buildPropRelief(topKit, { width: length, height: depth, flushEdges: false, depth: relief, coarse: PROP_COARSE });
         if (!side || !top) return null;
         for (let i = 0; i < 4; i++) {
           const a = (i * Math.PI) / 2;
@@ -3712,7 +3771,10 @@ export function GameViewport({
         // front and back (the back mirrored), crossed for a cross
         const kit = propKitFor(type.texture);
         const h = height * wallHeight;
-        const panel = await buildRelief(kit, { width: length, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE });
+        const panel = await buildPropRelief(kit, {
+          width: length, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE,
+          outwardRelief: type.kind === "cross",
+        }, propReliefCells(type));
         if (!panel) return null;
         const y = (type.kind === "panel" ? (type.elevation ?? 0) * wallHeight : 0) + h / 2;
         for (const turn of type.kind === "cross" ? [0, Math.PI / 2] : [0]) {
@@ -3726,7 +3788,7 @@ export function GameViewport({
         const [door, inside, side, top] = propSets(type).map((id) => propKitFor(id));
         const h = height * wallHeight;
         const panel = (kit: WallKit, w: number, ph: number) =>
-          buildRelief(kit, { width: w, height: ph, flushEdges: false, depth: relief, coarse: PROP_COARSE });
+          buildPropRelief(kit, { width: w, height: ph, flushEdges: false, depth: relief, coarse: PROP_COARSE });
         const d = await panel(door, length, h);
         const b = await panel(inside, length, h);
         const s = await panel(side, depth, h);
@@ -3791,10 +3853,10 @@ export function GameViewport({
         [side, sideZ, sideY * wallHeight],
         [top, topX, topZ],
       ] as const) {
-        if (!(await buildRelief(kit, { width: w, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE }))) return null;
+        if (!(await buildPropRelief(kit, { width: w, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE }))) return null;
       }
       const cut = (kit: WallKit, w: number, h: number, cols: [number, number], rows: [number, number]) =>
-        buildRelief(kit, {
+        buildPropRelief(kit, {
           width: w,
           height: h,
           flushEdges: false,
@@ -4396,7 +4458,7 @@ export function GameViewport({
           const grid = await gridPromise;
           const h = ITEM_HEIGHT;
           const w = (h * grid.width) / grid.height;
-          const relief = await buildRelief(kit, { width: w, height: h, flushEdges: false, depth: propReliefDepth * PROP_RELIEF_SCALE * 0.6 });
+          const relief = await buildPropRelief(kit, { width: w, height: h, flushEdges: false, depth: propReliefDepth * PROP_RELIEF_SCALE * 0.6 }, 24);
           if (!relief) return null;
           for (const mat of kitMaterials(kit)) useLightGrid(mat, lightGrid);
           // a faint glow of their own: loot reads even in a dark room
@@ -7502,8 +7564,7 @@ export function GameViewport({
       }
       layFlatSprites();
       applyMaterialViews(s);
-      scene.overrideMaterial = geometryViewMaterial(s.geometryView);
-      renderer.render(scene, camera);
+      renderGeometryView(s.geometryView);
 
       fpsFrames++;
       if (now - lastStatsAt > 500) {
@@ -7639,6 +7700,7 @@ export function GameViewport({
         kit.litMat?.dispose();
       }
       for (const mat of ownMaterials) mat.dispose();
+      for (const mat of cutoutFaceMaterials.values()) mat.dispose();
       if (propWiresRef.current === refreshPropWires) propWiresRef.current = null;
       for (const prop of propObjects.values()) prop.getObjectByName("propEditWires")?.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
       for (const mat of Object.values(wireMats)) mat.dispose();

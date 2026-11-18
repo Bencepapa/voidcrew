@@ -36,6 +36,8 @@ export type PropType = {
   wall?: boolean;
   // its relief's depth, relative to props' usual (softer for fabric)
   relief?: number;
+  // Optional depth multiplier for a prop's smooth mesh.
+  smoothRelief?: number;
   // its normal maps' strength, relative to the viewer's (Normal strength)
   normal?: number;
   // something to loot (see items.ts): the loot table its contents are
@@ -274,7 +276,7 @@ export const PROP_TYPES: Record<string, PropType> = {
   plant1: { kind: "cross", texture: "plant1", size: [0.3, 0.58, 0.3] },
   // a big oak (two crossed cutouts): it stands taller than a room is high, so
   // use it in the open (a sky ceiling)
-  tree1: { kind: "cross", texture: "fantasytree1", size: [1, 1.33, 1], blocks: true },
+  tree1: { kind: "cross", texture: "fantasytree1", size: [1, 1.33, 1], blocks: true, smoothRelief: 5 },
   // a tall pine: one picture that always faces the viewer (a billboard)
   pine1: { kind: "billboard", texture: "fantasypine1", size: [0.9, 1.97, 0.3], blocks: true },
   // billboard bushes, a barrel and a dead tree (one picture facing the viewer)
@@ -284,7 +286,7 @@ export const PROP_TYPES: Record<string, PropType> = {
   barrel1: { kind: "billboard", texture: "fantasybarrel1", size: [0.4, 0.49, 0.4], blocks: true },
   deadtree1: { kind: "billboard", texture: "fantasydeadtree1", size: [0.9, 1.4, 0.3], blocks: true },
   // a broad, gnarled one with the roots showing
-  tree2: { kind: "cross", texture: "fantasytree2", size: [1.1, 1.15, 1.1], blocks: true },
+  tree2: { kind: "cross", texture: "fantasytree2", size: [1.1, 1.15, 1.1], blocks: true, smoothRelief: 5 },
   // a strip curtain over a duct's mouth (the low corridors the cleaning
   // drones use): as wide as the cell, as tall as the lowest corridor - on
   // the room's side of the wall the duct opens in
@@ -357,8 +359,18 @@ export function propRetexturable(type: PropType): boolean {
   return type.kind === "box" || type.kind === "pillar" || type.kind === "chamfer" || type.kind === "panel" || type.kind === "cross" || type.kind === "roof";
 }
 
-// how tall a prop stands in its cell (wall heights): a pillar reaches the
-// ceiling
+// Props are small: their relief usually starts shallower than the walls'.
+export const PROP_RELIEF_SCALE = 0.6;
+
+export function propReliefAmount(depth: number, type: PropType, smooth: boolean): number {
+  return depth * PROP_RELIEF_SCALE * (type.relief ?? 1) * (smooth ? type.smoothRelief ?? 1 : 1);
+}
+
+export function propReliefCells(type: PropType): number {
+  return type.smoothRelief ? 48 : 32;
+}
+
+// How tall a prop stands in its cell (wall heights): a pillar reaches the ceiling.
 export function propHeight(map: Pick<GameMap, "floorHeights" | "ceilingHeights">, spec: PropSpec): number {
   const type = PROP_TYPES[spec.prop];
   // (the heights read here, not through map.ts: it imports this module)

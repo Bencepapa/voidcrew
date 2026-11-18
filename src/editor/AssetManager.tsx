@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { PROP_TYPES, propEditable } from "../game/props";
+import { PROP_TYPES, PROP_RELIEF_SCALE, propEditable, propReliefAmount, propReliefCells } from "../game/props";
 import { ACTOR_TYPES } from "../game/actors";
 import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { baseMaps, channels, type Channel, type MaterialMaps } from "./materialMaps";
@@ -17,6 +17,7 @@ import { sharedConfigured, sharedToken } from "./sharedAuth";
 import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
 import { Lock } from "lucide-react";
 import { DEFAULT_SETTINGS, FLOOR_BASE_DEPTH } from "../components/GameViewport";
+import type { ReliefMode } from "../game/renderLook";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
 
 const button = "rounded border border-neutral-500 bg-neutral-800 px-3 py-2 text-left hover:border-amber-400 aria-pressed:border-amber-400 aria-pressed:bg-neutral-700";
@@ -97,7 +98,11 @@ export function openAssetManager(sample: Sample, id: string) {
   window.dispatchEvent(new CustomEvent("voidcrew:open-asset", {detail: {sample, id}}));
 }
 
-export function AssetManager() {
+export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
+  reliefMode: ReliefMode;
+  reliefDepth: number;
+  wallDetail: number;
+}) {
   const [open, setOpen] = useState(false);
   const [sample, setSample] = useState<Sample>("material");
   const [selected, select] = useState("fantasywall1");
@@ -407,7 +412,7 @@ export function AssetManager() {
         const joined = joinEdges && layout!=="Single";
         // (the game's own relief: a floor's base depth is its own, and its relief mode, levels and island size are the viewer's defaults,
         // unless the texture asks for smooth - so what shows here at relief 1.0 is what the game builds)
-        const options={wallWidth:1,wallHeight:1,depth:depthScale*(orientation==="Floor" ? FLOOR_BASE_DEPTH : DEFAULT_SETTINGS.reliefDepth)*(tuneRef.current?.relief ?? 1),levels:DEFAULT_SETTINGS.reliefLevels,minIsland:DEFAULT_SETTINGS.reliefMinIsland,aoRadius:2,smooth:!!catalog[primary]?.smooth || DEFAULT_SETTINGS.reliefMode==="smooth"};
+        const options={wallWidth:1,wallHeight:1,depth:depthScale*(orientation==="Floor" ? FLOOR_BASE_DEPTH : reliefDepth)*(tuneRef.current?.relief ?? 1),levels:DEFAULT_SETTINGS.reliefLevels,minIsland:DEFAULT_SETTINGS.reliefMinIsland,aoRadius:2,smooth:!!catalog[primary]?.smooth || reliefMode==="smooth",smoothCells:wallDetail};
         const surface=createReliefWallGeometry(grid,{...options,flushEdges:!joined && layout==="Block",
           joinEdges:joined && orientation==="Wall" ? 1 : undefined,
           edgeModes:joined && layout==="Block" ? [1,1] : undefined,
@@ -516,7 +521,14 @@ export function AssetManager() {
           animate=()=>{mesh.rotation.y=Math.atan2(camera.position.x,camera.position.z)-object.rotation.y;};
           loadHeightGrid(textureFolder("item_"+id).depth).then(grid=>{
             if(disposed)return;
-            const result=createReliefWallGeometry(grid,{wallWidth:height*grid.width/grid.height,wallHeight:height,depth:depthScale*.025*(tuneRef.current?.relief ?? 1),levels:5,minIsland:2,aoRadius:2,flushEdges:false});
+            const smooth = reliefMode === "smooth";
+            const result=createReliefWallGeometry(grid,{
+              wallWidth:height*grid.width/grid.height,wallHeight:height,
+              depth:depthScale*reliefDepth*PROP_RELIEF_SCALE*.6*(tuneRef.current?.relief ?? 1),
+              levels:DEFAULT_SETTINGS.reliefLevels,minIsland:DEFAULT_SETTINGS.reliefMinIsland,aoRadius:2,flushEdges:false,
+              smooth,smoothHoles:smooth,smoothCells:Math.min(wallDetail,24),
+            });
+            if (smooth) mat.alphaTest = .5;
             mesh.geometry=keep(result.geometry);mat.aoMap=keep(result.aoMap);mat.needsUpdate=true;
           }).catch(()=>{if(!disposed)setError(t("assetManager.itemHeightError"));});
         }
@@ -525,11 +537,17 @@ export function AssetManager() {
           const paths=catalog[prop.texture] ?? textureFolder(prop.texture);
           loadHeightGrid(paths.depth).then(grid=>{
             if(disposed)return;
-            const depth=depthScale*.08*(prop.relief ?? 1)*(tuneRef.current?.relief ?? 1);
-            const result=createReliefWallGeometry(downsampleHeightGrid(grid,2),{wallWidth:w,wallHeight:h,depth,levels:5,minIsland:2,aoRadius:2,flushEdges:false});
+            const smooth = reliefMode === "smooth";
+            const depth=depthScale*propReliefAmount(reliefDepth,prop,smooth)*(tuneRef.current?.relief ?? 1);
+            const result=createReliefWallGeometry(smooth ? grid : downsampleHeightGrid(grid,2),{
+              wallWidth:w,wallHeight:h,depth,levels:DEFAULT_SETTINGS.reliefLevels,minIsland:DEFAULT_SETTINGS.reliefMinIsland,
+              aoRadius:2,flushEdges:false,smooth,smoothHoles:smooth,smoothCells:Math.min(wallDetail,propReliefCells(prop)),
+              outwardRelief:prop.kind==="cross",
+            });
             const relief=keep(result.geometry);keep(result.aoMap);
             object.remove(mesh);
             mat.side=THREE.FrontSide;mat.aoMap=result.aoMap;mat.needsUpdate=true;
+            if (smooth) mat.alphaTest = .5;
             for(const angle of prop.kind==="cross"?[0,Math.PI/2]:[0]){
               for(const back of [false,true]){
                 const face=new THREE.Mesh(relief,mat);
@@ -622,7 +640,7 @@ export function AssetManager() {
       controls.dispose();
       resources.forEach(r=>r.dispose());
     };
-  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief]);
+  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail]);
   const strip = "grid w-8 shrink-0 place-items-start rounded border border-neutral-600 bg-neutral-900 py-2 text-lg hover:border-amber-400";
   return <><button className={button} onClick={()=>{if(document.pointerLockElement)document.exitPointerLock();setOpen(true);}}>{t("assetManager.title")}</button>{open && createPortal(
     <div role="dialog" aria-label={t("assetManager.title")} aria-modal="true" className="fixed inset-0 z-[2147483647] bg-black/75 p-2 text-white pointer-events-auto" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation(); if(e.key==="Escape")requestClose();}}>
