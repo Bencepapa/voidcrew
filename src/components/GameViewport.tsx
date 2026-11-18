@@ -58,6 +58,7 @@ import { DecalLibrary, fetchDecalManifest } from "../render/decals";
 import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
 import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
+import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 
@@ -564,6 +565,8 @@ interface WallKit {
   depthUrl: string;
   // see TextureSetPaths
   grateLevels?: number;
+  // its relief is built smooth (slopes) whatever the viewer's relief mode: a continuous depth map (see TextureSetFiles.smooth)
+  smooth?: boolean;
   wallMat: THREE.MeshStandardMaterial;
   // relief step sides: same texture, no normal map (see reliefMesh.ts groups)
   sideMat: THREE.MeshStandardMaterial;
@@ -597,7 +600,7 @@ const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
 const EDIT_SETTLE_MS = 5000;
 const ORIGIN_NDC = new THREE.Vector2(0, 0);
 // the relief depth a floor texture is tuned against in the Asset Manager (its default)
-const FLOOR_BASE_DEPTH = 0.04;
+export const FLOOR_BASE_DEPTH = 0.04;
 // The top-down view (editing; the O key or the button): the camera high above
 // the map looking down (tilted with Ctrl+wheel), the ceilings and the sight
 // culling and fog off - to survey and texture a large area, even across
@@ -1515,6 +1518,13 @@ export function GameViewport({
   }, []);
   // a saved per-texture tuning (Asset Manager): the relief meshes rebuilt
   useEffect(() => onTextureTuningSaved(() => setTextureVersion((v) => v + 1)), []);
+  // a shared texture whose files changed (a draft's map uploaded or removed, a publish, the store listed again): the scene
+  // is built from the texture table once, so it would keep showing the old (often flat) maps; rebuilt when the edits settle
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const off = onSharedTexturesChanged(() => { clearTimeout(timer); timer = setTimeout(() => setTextureVersion((v) => v + 1), 800); });
+    return () => { off(); clearTimeout(timer); };
+  }, []);
   // the prop editor (see propEditState): its boxes drawn over the edited
   // type's props at once; the props rebuilt once its edits settle
   const propWiresRef = useRef<(() => void) | null>(null);
@@ -1768,6 +1778,8 @@ export function GameViewport({
     scene.add(shaftLight);
 
     const bust = textureVersion ? `?v=${textureVersion}` : "";
+    // (a draft texture's or an Auto map's blob: URL can't take a query string; those change their URL instead)
+    const busted = (url: string) => (/^(blob|data):/.test(url) ? url : url + bust);
     if (cache.version !== bust) {
       clearSceneCache(cache);
       cache.version = bust;
@@ -1883,9 +1895,9 @@ export function GameViewport({
     }
     function createWallKit(setId: string, displace = true, accent = true): WallKit {
       const paths: TextureSetFiles = isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
-      const diffuse = kitTexture(paths.diffuse + bust);
-      const normalMap = kitTexture(paths.normal + bust);
-      const depthMap = kitTexture(paths.depth + bust);
+      const diffuse = kitTexture(busted(paths.diffuse));
+      const normalMap = kitTexture(busted(paths.normal));
+      const depthMap = kitTexture(busted(paths.depth));
       diffuse.colorSpace = THREE.SRGBColorSpace;
       if (paths.pixelArt) {
         // crisp texels up close instead of bilinear blur; minification keeps
@@ -1915,7 +1927,7 @@ export function GameViewport({
       const textures = [diffuse, normalMap, depthMap];
       // the set's glow map, if it has one: always shining
       if (paths.glow) {
-        const glowMap = kitTexture(paths.glow + bust);
+        const glowMap = kitTexture(busted(paths.glow));
         glowMap.colorSpace = THREE.SRGBColorSpace;
         if (paths.pixelArt) glowMap.magFilter = THREE.NearestFilter;
         wallMat.emissiveMap = glowMap;
@@ -1927,7 +1939,7 @@ export function GameViewport({
 
       // the set's surface map, if it has one: its own shine per texel (the
       // viewer's roughness and metalness don't touch it)
-      const surfaceMap = paths.surface ? kitTexture(paths.surface + bust) : null;
+      const surfaceMap = paths.surface ? kitTexture(busted(paths.surface)) : null;
       if (surfaceMap) {
         if (paths.pixelArt) surfaceMap.magFilter = THREE.NearestFilter;
         textures.push(surfaceMap);
@@ -1935,7 +1947,7 @@ export function GameViewport({
 
       let litMat: THREE.MeshStandardMaterial | undefined;
       if (paths.emissive) {
-        const emissiveMap = kitTexture(paths.emissive + bust);
+        const emissiveMap = kitTexture(busted(paths.emissive));
         if (paths.pixelArt) emissiveMap.magFilter = THREE.NearestFilter;
         textures.push(emissiveMap);
         litMat = new THREE.MeshStandardMaterial({
@@ -1966,7 +1978,7 @@ export function GameViewport({
       // (a lamp's panel shines in its lamp's own colour: its trim takes the
       // livery, its light doesn't)
       if (litMat) litMat.userData.accentGlow = false;
-      return { id: setId, depthUrl: paths.depth + bust, grateLevels: paths.grateLevels, wallMat, sideMat, litMat, textures, slots: [] };
+      return { id: setId, depthUrl: busted(paths.depth), grateLevels: paths.grateLevels, smooth: paths.smooth, wallMat, sideMat, litMat, textures, slots: [] };
     }
 
     // most walls use the main texture set; a stable, position-based share of
@@ -2781,6 +2793,7 @@ export function GameViewport({
           settings.reliefLevels,
           settings.reliefMinIsland,
           settings.reliefMode,
+          kit.smooth ? "smooth" : "",
           settings.wallDetail,
           settings.aoRadius,
         ].join("|");
@@ -2799,7 +2812,7 @@ export function GameViewport({
           tick("height map load (wait)", gridFrom);
           // (a map with holes or cut-out levels is never built smooth - see
           // ReliefOptions.smooth - so its distant version gets the coarser grid)
-          const smooth = shape.hybrid || (settings.reliefMode === "smooth" && !grid.solid && !shape.holeLevels);
+          const smooth = shape.hybrid || ((kit.smooth || settings.reliefMode === "smooth") && !grid.solid && !shape.holeLevels);
           const smoothLod = smooth ? shape.smoothLod : undefined;
           let edgeProfile: EdgeSegment[] | undefined;
           if (shape.coarse && shape.coarse > 1 && !smoothLod) {
@@ -2831,7 +2844,7 @@ export function GameViewport({
             depth: (shape.depth ?? reliefDepth) * (textureTuning(kit.id)?.relief ?? 1),
             levels: settings.reliefLevels,
             minIsland: settings.reliefMinIsland,
-            smooth: shape.hybrid || settings.reliefMode === "smooth",
+            smooth: shape.hybrid || kit.smooth || settings.reliefMode === "smooth",
             smoothHoles: shape.hybrid,
             smoothCells: settings.wallDetail,
             smoothLod,
@@ -4421,7 +4434,7 @@ export function GameViewport({
     // stenciled into the panel's label field
     async function labeledPanelMaterial(spec: DoorSpec, kit: WallKit): Promise<THREE.MeshStandardMaterial> {
       const setPaths = TEXTURE_SETS[panelSetFor(spec.kind)];
-      const image = (await loader.loadAsync(setPaths.diffuse + bust)).image as HTMLImageElement;
+      const image = (await loader.loadAsync(busted(setPaths.diffuse))).image as HTMLImageElement;
       const canvas = document.createElement("canvas");
       canvas.width = image.width;
       canvas.height = image.height;

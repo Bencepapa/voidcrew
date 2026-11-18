@@ -1,4 +1,4 @@
-﻿// Texture sets: the renderer's texture set ids, where each one's files live
+// Texture sets: the renderer's texture set ids, where each one's files live
 // under public/textures/, and what it is for. The map editor's palette reads
 // this table (see EDITOR.md) - a set can't be named without being here, since
 // TextureSetId is the table's own keys.
@@ -28,6 +28,9 @@ export interface TextureSetFiles {
   // a grate floor: its lowest this many height levels are the slots, cut
   // open where it's a bridge deck (see through it)
   grateLevels?: number;
+  // build its relief smooth (slopes) whatever the viewer's relief mode: for a continuous depth map (a generated one,
+  // stone) rather than baked height levels (machines, panels)
+  smooth?: boolean;
 }
 
 export interface TextureSetPaths extends TextureSetFiles {
