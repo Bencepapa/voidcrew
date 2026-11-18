@@ -9,6 +9,7 @@ export async function baseMaps(set: TextureSetFiles): Promise<MaterialMaps> {
   const maps: MaterialMaps = { diffuse: set.diffuse, normal: set.normal, depth: set.depth, emissive: set.emissive, glow: set.glow };
   if (!set.surface) return maps;
   const image = new Image();
+  image.crossOrigin = "anonymous"; // (a shared texture's surface map is cross-origin; reading its pixels needs CORS)
   image.src = set.surface;
   await image.decode();
   const canvas = document.createElement("canvas");

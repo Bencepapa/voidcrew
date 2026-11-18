@@ -152,6 +152,9 @@ export async function loadHeightGrid(url: string): Promise<HeightGrid> {
   // onload rather than img.decode(): decode() can stall while the page is
   // hidden (a background tab), leaving the walls unbuilt
   const img = new Image();
+  // (a cross-origin map, like a shared texture from the store, taints the canvas below without this;
+  // the store answers with CORS headers, same-origin / blob: / data: URLs don't mind)
+  img.crossOrigin = "anonymous";
   await new Promise<void>((resolve, reject) => {
     img.onload = () => resolve();
     img.onerror = () => reject(new Error(`failed to load ${url}`));

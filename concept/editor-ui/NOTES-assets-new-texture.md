@@ -86,3 +86,33 @@ editing a published texture into a "changed" draft, the conflict question (No sk
 - Roughness / metal / emissive have no Auto (no generator for them).
 - The game viewport itself is not live-updated while you edit; the Assets preview room is. After a publish the registry is updated, and
   the game picks the new files up the next time it builds a wall kit.
+
+## Bug fix: blank preview after Publish (user's first real test)
+
+**Cause.** `loadHeightGrid` (`src/render/reliefMesh.ts`) loaded the depth PNG with a plain `new Image()` and read it back with
+`getImageData`. For a built-in or draft texture the URL is same-origin or `blob:`, so that worked. After Publish (and after a reload) the
+texture's URLs point at the Supabase public URL, which is a different origin: without `crossOrigin = "anonymous"` the canvas is tainted
+and `getImageData` throws a SecurityError, so the preview showed "A magasságtérkép betöltése sikertelen" and went blank. `baseMaps`
+in `materialMaps.ts` (the `surface.png` split) had the same flaw. The URL itself was right: the code requests
+`<project>/storage/v1/object/public/void-textures/<world>/<uuid>/r<rev>/depth.png`, which is exactly where Publish uploaded
+(checked in a mock; the user confirmed the real folder and a public bucket). My earlier mock was same-origin, so it missed this.
+
+**Reproduced** with a mock Supabase on a different origin (port 4301, CORS headers like the real one): a cross-origin `Image` without
+`crossOrigin` gives `SecurityError` on `getImageData`, with `crossOrigin = "anonymous"` it works.
+
+**Fix.** `crossOrigin = "anonymous"` in `loadHeightGrid` and `baseMaps`. The game's relief builder shares `loadHeightGrid`, so it gets the
+fix too (three's own `TextureLoader` / `ImageLoader` already default to anonymous). Same-origin, `blob:` and `data:` URLs are unaffected.
+In the preview room a depth map that can't be read now leaves a flat panel with the error text, not a blank 3D view.
+
+**Checked** (cross-origin mock, real generator from main): Auto normal + depth now come out of the real generator (2370 distinct
+normal values on a 64 px noise diffuse, not flat), preview and publish work, the published Auto texture uploads only the diffuse and meta.json; a texture
+with Uploaded normal and depth publishes, previews with relief, and still loads (relief and all) after a page reload and sign-in; a broken
+depth URL shows the error and a flat textured panel.
+
+**For the user to check in Supabase** (only if it still fails): the bucket must be public (it is) and answer with CORS headers, which
+Supabase Storage does by default (`Access-Control-Allow-Origin: *` on `/object/public/...`). A proxy, ad blocker or custom CORS setting on
+the project that strips it would reproduce this. In the browser's Network tab the `depth.png` response should show that header.
+
+Also noticed, not changed: `GameViewport` appends `?v=<n>` to texture URLs after a dev texture hot reload; that would break a `blob:`
+URL (a draft texture painted on a map). It only happens after a hot-reload event in the dev server. And Publish stops with a message if
+any draft has no diffuse yet; delete or fill the empty draft first.

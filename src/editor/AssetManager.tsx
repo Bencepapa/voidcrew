@@ -392,7 +392,9 @@ export function AssetManager() {
       const set=groupMaps(primary);
       const mat=assetMaterial(primary);
       apply=()=>{const t=tuneRef.current;mat.normalScale.setScalar(t?.normal ?? 1);mat.roughness=mat.roughnessMap?1:Math.min(1,.55*(t?.rough ?? 1));mat.metalness=mat.metalnessMap?1:Math.min(1,.45*(t?.metal ?? 1));};
-      const height = set.depth ? loadHeightGrid(set.depth) : Promise.resolve({width:2,height:2,data:new Float32Array(4)});
+      // a depth map that can't be read leaves a flat preview (with the error shown), not a blank view
+      const flatGrid = {width:2,height:2,data:new Float32Array(4)};
+      const height = set.depth ? loadHeightGrid(set.depth).catch((e)=>{if(!disposed)setError(t("assetManager.heightError")+" ("+(e instanceof Error ? e.message : String(e))+")");return flatGrid;}) : Promise.resolve(flatGrid);
       height.then(grid=>{
         if(disposed)return;
         const joined = joinEdges && layout!=="Single";
