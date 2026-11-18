@@ -32,7 +32,7 @@ return <>
                     value={p.prop.texture ?? ""}
                     options={[
                       { value: "", label: t("editorBar.itsOwn") },
-                      ...(PROP_TYPES[p.prop.name]?.kind === "roof" ? textureSetsOfKind("wall") : PROP_TEXTURES).map((id) => ({ value: id, label: TEXTURE_SETS[id].label })),
+                      ...(PROP_TYPES[p.prop.name]?.kind === "roof" ? textureSetsOfKind("wall").filter(id => id !== "sky") : PROP_TEXTURES).map((id) => ({ value: id, label: TEXTURE_SETS[id].label })),
                     ]}
                     onChange={(texture) => p.onPropChange({ texture: texture || undefined })}
                   />
