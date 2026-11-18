@@ -7,6 +7,11 @@ import type { SpriteEmitter } from "../render/spriteCloud";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { DarkFantasyShader } from "../render/darkFantasyShader";
 import { prepareRaycastsGradually } from "../render/bvh";
 import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
@@ -144,6 +149,14 @@ export interface ViewportSettings {
   pointLightIntensity: number;
   ambientIntensity: number;
   bobEnabled: boolean;
+  // the optional dark fantasy post-process (see render/darkFantasyShader.ts): on/off and its look
+  postDark: boolean;
+  postDarkness: number;
+  postWarm: number;
+  postCold: number;
+  postSaturation: number;
+  postPalette: number;
+  postVignette: number;
   bevelFraction: number;
   bevelAngleDeg: number;
   displacementScale: number;
@@ -339,6 +352,13 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   pointLightIntensity: 1.6,
   ambientIntensity: 0.35,
   bobEnabled: true,
+  postDark: false,
+  postDarkness: 0.7,
+  postWarm: 1.8,
+  postCold: 1.5,
+  postSaturation: 1.3,
+  postPalette: 0.9,
+  postVignette: 0.6,
   bevelFraction: 0.2,
   bevelAngleDeg: 30,
   displacementScale: 0.03,
@@ -2393,8 +2413,44 @@ export function GameViewport({
       }
       return faces;
     }
+    // The optional dark fantasy post-process: the scene into a half-float target (MSAA when antialiasing is
+    // on), the output pass (tone mapping, sRGB), then the colour pass last, to the screen. Textured view only.
+    let post: { composer: EffectComposer; pass: ShaderPass; ratio: number; w: number; h: number } | null = null;
+    function renderPost(s: ViewportSettings) {
+      const size = renderer.getSize(new THREE.Vector2());
+      const ratio = renderer.getPixelRatio();
+      if (!post) {
+        const target = new THREE.WebGLRenderTarget(size.x * ratio, size.y * ratio, { type: THREE.HalfFloatType, samples: s.antialias ? 4 : 0 });
+        const composer = new EffectComposer(renderer, target);
+        composer.setPixelRatio(ratio);
+        composer.setSize(size.x, size.y);
+        composer.addPass(new RenderPass(scene, camera));
+        composer.addPass(new OutputPass());
+        const pass = new ShaderPass(DarkFantasyShader);
+        composer.addPass(pass);
+        post = { composer, pass, ratio, w: size.x, h: size.y };
+      } else if (post.ratio !== ratio || post.w !== size.x || post.h !== size.y) {
+        post.composer.setPixelRatio(ratio);
+        post.composer.setSize(size.x, size.y);
+        post.ratio = ratio;
+        post.w = size.x;
+        post.h = size.y;
+      }
+      const u = post.pass.uniforms;
+      u.uDarkness.value = s.postDarkness;
+      u.uWarmBoost.value = s.postWarm;
+      u.uColdBoost.value = s.postCold;
+      u.uSaturation.value = s.postSaturation;
+      u.uPalette.value = s.postPalette;
+      u.uVignette.value = s.postVignette;
+      post.composer.render();
+    }
     function renderGeometryView(view: GeometryViewId) {
       scene.overrideMaterial = geometryViewMaterial(view);
+      if (view === "textured" && settingsRef.current.postDark) {
+        renderPost(settingsRef.current);
+        return;
+      }
       if (view !== "faces") {
         renderer.render(scene, camera);
         return;
@@ -7665,6 +7721,8 @@ export function GameViewport({
 
     return () => {
       disposed = true;
+      post?.composer.dispose();
+      post = null;
       clearBakeTimers();
       cancelBake?.();
       rebakeRef.current = null;

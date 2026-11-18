@@ -278,6 +278,24 @@ export function DebugPanel({
       )}
 
       {section(
+        t("debug.postDark"),
+        <>
+          <div className="text-[10px] text-neutral-300">{t("debug.postDarkHint")}</div>
+          {check("postDark", t("debug.postDarkOn"))}
+          {settings.postDark && (
+            <>
+              {slider({ key: "postDarkness", label: "debug.postDarkness", min: 0, max: 1, step: 0.01 })}
+              {slider({ key: "postWarm", label: "debug.postWarm", min: 0.5, max: 3, step: 0.05 })}
+              {slider({ key: "postCold", label: "debug.postCold", min: 0.5, max: 3, step: 0.05 })}
+              {slider({ key: "postSaturation", label: "debug.postSaturation", min: 0.5, max: 2, step: 0.05 })}
+              {slider({ key: "postPalette", label: "debug.postPalette", min: 0, max: 1, step: 0.01 })}
+              {slider({ key: "postVignette", label: "debug.postVignette", min: 0, max: 1, step: 0.01 })}
+            </>
+          )}
+        </>,
+      )}
+
+      {section(
         t("debug.graphics"),
         <>
           <div className="text-[10px] text-neutral-300">{t("debug.forAWeakerDeviceFewerParticlesCoarser")}</div>

@@ -214,4 +214,13 @@ export const debugEn = {
   "debug.moodValue": "{part}: {level}",
   "debug.statsGraphics": "Map: {v1}  Graphics: {v2} (particles {v3}, every {v4}, wall cells {v5}, LOD scale {v6}, pixel ratio cap {v7}, antialias {v8}, lights {v9}, normal maps {v10}, view distance {v11})",
   "debug.statsScreen": "Screen: {v1}x{v2} @{v3}x",
+  "debug.postDark": "Dark fantasy look (experiment)",
+  "debug.postDarkHint": "A colour post-process: crushed shadows, deep blue and glowing fire colours. Textured view only.",
+  "debug.postDarkOn": "Dark fantasy post-process",
+  "debug.postDarkness": "Darkness (shadow crush)",
+  "debug.postWarm": "Fire colour strength",
+  "debug.postCold": "Deep blue strength",
+  "debug.postSaturation": "Saturation of the key colours",
+  "debug.postPalette": "Palette pull (0 none, 1 full)",
+  "debug.postVignette": "Vignette",
 } as const satisfies Record<string, string>;
