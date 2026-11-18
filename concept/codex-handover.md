@@ -73,6 +73,25 @@ Lásd a `GameViewport.tsx` ~1832 időzítő-táblát.
 `concept/rpg-ruleset-integration-plan.md`: az AD&D-motor (`github.com/Bencepapa/rpg_ruleset_editor`) külső csomagként; a játék generál egy
 manifestet (aktorok, tárgyak, effektek, textúrák), az RPG-adat string-azonosítókkal hivatkozik rájuk, validálás a manifest ellen. Először a manifest-export.
 
+### G. Közös tartalom: vendég-olvasás és beépítés kiadáshoz (közepes)
+Két külön dolog, a Pages-es build **nem** csomagol be semmit a Supabase-ből:
+1. **Vendég-olvasás (bejelentkezés nélkül, a Pages-en is):** a legfrissebb közös térképek és textúrák látszanak a vendégnek is. Ma a listázás és a
+   `void_maps`/`void_map_heads` olvasása csak szerkesztőknek engedett (`supabase/shared-editor.sql`). Új, idempotens `supabase/shared-public-read.sql`
+   (a felhasználó futtatja a Dashboardon): `select` az `anon` szerepnek a `void_maps`-ra és a `void_map_heads`-re (+ `grant select`), és `select` az `anon`-nak a
+   `storage.objects`-re a `void-textures` bucketben (a fájlok eleve nyilvánosak). Az írás (`insert`, `delete`) szerkesztőknek marad. A kliens-oldali listázás/betöltés
+   (`sharedTextures.ts`, `SharedEditor.tsx`) működjön token nélkül is (csak olvasás), a szerkesztés/közzététel kérjen belépést. Döntési pont: a vendég a bejelentkezés
+   nélküli játékban is lássa a közzétett pályákat (jelölve „megosztott").
+2. **Beépítés kiadáshoz (kézi, ritkán):** `npm run pull:shared` (`scripts/pull-shared.mjs`), a fejlesztő futtatja, ha kiadást (Windows/Linux) készít, vagy időnként.
+   Letölti a közös textúrák legmagasabb `rev` mappáját a `public/textures/<id>/` alá (diffuse/normal/depth/surface/emissive; az Auto csatornákat előállítja és
+   elmenti, hogy futásidőben ne kelljen generálni), a `meta.json`-ból (kinds, pixelArt, smooth, átlátszóság, tuning) generált bejegyzést ír a beépített katalógusba
+   (pl. `src/render/sharedBuiltins.json`), a térképek legutóbbi revízióját a `src/maps/<világ>/<id>.json`-ba (`place`/`name` is). Hitelesítés: vendég (anon) kulccsal,
+   vagy `SUPABASE_EMAIL`/`SUPABASE_PASSWORD` környezeti változóval (soha ne tárold).
+   **Duplikáció elkerülése:** a beépített elem **ugyanazt az azonosítót** kapja, mint a közös volt (a meglévő térképek hivatkozásai nem törnek). A betöltők a
+   **beépített elsőbbségét** érvényesítik: a közös textúra-lista azokat az azonosítókat kihagyja, amelyek már a beépített katalógusban vannak, a közös térkép-lista a
+   már beépített azonosítójú fejeket elrejti (vagy „beépített" jelzéssel mutatja; ha a közös fej `revision`-je újabb a beépítettnél, jelezze: „újabb közös változat van").
+   A script ne írjon felül meglévő, kézzel szerkesztett beépítettet (csak figyelmeztessen), és a letöltött elem a UI-ban a nevével, olvasható (zárolt) jelzéssel jelenjen meg.
+   Opcionális: a beépítés után a közös példány archiválható/törölhető (a törlés SQL-policy-t igényel: `supabase/shared-texture-folders.sql`).
+
 ### F. Kisebb hibák és takarítás
 - `shiftAll` / `allPositions` (`src/editor/mapEdits.ts`) nem kezeli a `chanceWalls`-t (É/Ny bővítésnél nem mozdulnak).
 - A megemelt oldalfal magassága `min(alsó cella plafon, felső cella padló)`: ha a talaj plafonja alacsony, csak egy panelnyi; érdemes figyelmeztetni vagy automatikusan emelni.
