@@ -218,7 +218,8 @@ export interface PropSpec extends Linked {
 
 // A smoke emitter (see render/smoke.ts): a leaking pipe, a smouldering
 // console - puffs rising from a point, lit by the light around them.
-export type AmbientEffect = "smoke" | "fire" | "mist" | "groundfog" | "motes" | "petals" | "fireflies";
+export const AMBIENT_EFFECTS = ["smoke", "fire", "mist", "groundfog", "motes", "petals", "fireflies"] as const;
+export type AmbientEffect = typeof AMBIENT_EFFECTS[number];
 export interface Weather { wetness?: number; snowCover?: number; type: "rain" | "snow"; intensity?: number; wind?: [number, number]; indoors?: boolean }
 export interface SmokeSpec extends Linked {
   effect?: AmbientEffect;

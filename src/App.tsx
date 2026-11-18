@@ -7,7 +7,7 @@ import { EditorStatusBar } from "./editor/EditorStatusBar";
 import { useMapDrafts } from "./editor/DraftNotice";
 import { FloatToolbar } from "./editor/FloatToolbar";
 import { ShortcutHelp } from "./editor/ShortcutHelp";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
@@ -37,7 +37,7 @@ import { MapTitle } from "./components/MapTitle";
 import { MapDialog } from "./editor/MapDialog";
 import type { MapDialogMode, MapDialogValues } from "./editor/MapDialog";
 import { MAPS, START_MAP } from "./game/map";
-import { WORLDS, assetInWorld, setActiveWorld, startWorld } from "./game/worlds";
+import { WORLDS, assetInWorld, setActiveWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
 import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
 import { PROP_TYPES, flamePosition, propBlocks, propPlacement, propRetexturable } from "./game/props";
@@ -90,6 +90,18 @@ const MINIMAP_COLLAPSE_KEY = "voidcrew-editor-minimap-collapsed";
 const linksOf = (item: Linked): Linked => ({ id: item.id, with: item.with, without: item.without });
 
 export default function App() {
+  const [seed, setSeed] = useState(() => Number(new URLSearchParams(location.search).get("seed")) || newSeed());
+  // A direct map/seed link opens a deck. Otherwise only the open world
+  // starts in the viewport; Void Crew starts at the base.
+  const [phase, setPhase] = useState<"base" | "pick" | "run">(() => {
+    const query = new URLSearchParams(location.search);
+    return query.has("map") || query.has("seed") || WORLDS[START_MAP.world].loop === "open" ? "run" : "base";
+  });
+  const [editMode, setEditMode] = useState(false);
+  const [ship, setShip] = useState<ShipOffer | null>(null);
+  const [moodOverride, setMoodOverride] = useState<Partial<ShipMood>>({});
+  const mood = useMemo(() => ({ ...(ship ? ship.mood : moodOf(seed)), ...moodOverride }), [ship, seed, moodOverride]);
+  const variation = useMemo(() => editMode || phase !== "run" ? null : { seed, mood }, [editMode, phase, seed, mood]);
   const {
     map,
     pos,
@@ -133,7 +145,6 @@ export default function App() {
     replaceMap,
     enterMap,
     shiftParty,
-    setVariation,
     pushLog,
     crew,
     log,
@@ -149,13 +160,18 @@ export default function App() {
     sceneReady,
     syncPose,
     openDoorAt,
-  } = useGameState();
+  } = useGameState(variation);
   // (the interface's language: everything below renders again when it changes)
   useLang();
-  const [settings, setSettings] = useState<ViewportSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<ViewportSettings>(() => ({ ...DEFAULT_SETTINGS, ...map.render }));
+  const [settingsMapId, setSettingsMapId] = useState(map.id);
+  if (settingsMapId !== map.id) {
+    // Resolve the destination's look before the viewport can build it.
+    setSettingsMapId(map.id);
+    setSettings((s) => ({ ...s, ...renderDefaults(DEFAULT_SETTINGS), ...map.render }));
+  }
   // the map editor (see EDITOR.md): while it's on the world holds still,
   // walls don't stop the party and the headlamp is lit
-  const [editMode, setEditMode] = useState(false);
   const [editTool, setEditTool] = useState<EditTool>("select");
   // where the editor toolbar docks (the right column), when there is one
   const [editorDebug, setEditorDebug] = useState(false);
@@ -214,24 +230,10 @@ export default function App() {
   const keyTool: EditTool = editTool === "select" || (ownPick && ownPick[1] === null) ? (pickedTools.find(([, index]) => index !== null)?.[0] ?? editTool) : editTool;
   // the deck variation played (see variation.ts): ?seed= in the URL, else
   // a new one; while editing there's none - everything shows
-  const [seed, setSeed] = useState(() => Number(new URLSearchParams(location.search).get("seed")) || newSeed());
   // the ship's mood: the seed's, unless the debug panel sets a part of it
-  const [moodOverride, setMoodOverride] = useState<Partial<ShipMood>>({});
   const meta = useMeta();
-  // The game goes round: the base (stash, shop, weapons), the scan (pick a
-  // derelict), the run aboard it - and back. Opened with ?map= or ?seed=
-  // (a deck to look at, a variation to see again) it starts aboard.
-  const [phase, setPhase] = useState<"base" | "pick" | "run">(() => {
-    const query = new URLSearchParams(location.search);
-    // (an open world has no base: it starts in the world)
-    return query.has("map") || query.has("seed") || WORLDS[startWorld()].loop === "open" ? "run" : "base";
-  });
-  // the ship boarded (none: a deck opened straight from the URL)
-  const [ship, setShip] = useState<ShipOffer | null>(null);
   // the offers on the scan: new ones after every run
   const offers = useMemo(() => shipOffers(meta.depth, meta.runs), [meta.depth, meta.runs]);
-  const mood = useMemo(() => ({ ...(ship ? ship.mood : moodOf(seed)), ...moodOverride }), [ship, seed, moodOverride]);
-  useEffect(() => setVariation(editMode ? null : { seed, mood }), [editMode, seed, mood, setVariation]);
   const reroll = () => {
     const next = newSeed();
     setSeed(next);
@@ -285,8 +287,9 @@ export default function App() {
   // the editor's palettes follow the world of the map on screen
   setActiveWorld(map.world);
   // (and the page wears the world's look - see index.css)
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.classList.toggle("theme-fantasy", map.world === "fantasy");
+    document.title = WORLDS[map.world].name;
   }, [map.world]);
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
@@ -1249,18 +1252,6 @@ export default function App() {
     url.searchParams.set("map", to.id);
     history.replaceState(null, "", url);
   };
-  // a map's render values (material, AO, relief, wall height, ambient...):
-  // applied when it opens, over the viewer's defaults, so every deck keeps
-  // its own look; "Save to map" writes the sliders' current ones into its file
-  // (only when the deck changes: an effect re-run - a hot reload, say - must not
-  // throw the sliders' values away)
-  const renderAppliedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (renderAppliedFor.current === map.id) return;
-    renderAppliedFor.current = map.id;
-    setSettings((s) => ({ ...s, ...renderDefaults(DEFAULT_SETTINGS), ...map.render }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map.id]);
   const saveRender = (clear = false) => {
     const render = clear ? undefined : pickRender(settings, DEFAULT_SETTINGS);
     // nothing differs from the defaults: say so instead of wiping what the map has
@@ -2455,7 +2446,7 @@ export default function App() {
     return (
       <div className="relative h-[100dvh] w-screen overflow-hidden font-sans">
         <div className="absolute inset-0" {...viewInput}>
-          {viewport}
+          {(phase === "run" || editMode) && viewport}
           {joysticks}
           {overlays}
         </div>
@@ -2586,7 +2577,7 @@ export default function App() {
         </div>
 
         <div className="relative flex-1 min-w-0" {...viewInput}>
-          {viewport}
+          {(phase === "run" || editMode) && viewport}
           {joysticks}
           {overlays}
           {editMode && <FloatToolbar view={settings.geometryView} onView={(v) => setSettings({ ...settings, geometryView: v })} onHelp={() => setShortcutHelp(true)} debugOpen={editorDebug} onDebug={() => setEditorDebug(!editorDebug)} tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager reliefMode={settings.reliefMode} reliefDepth={map.reliefDepth ?? settings.reliefDepth} wallDetail={settings.wallDetail} /></div>} compact={compact} />}

@@ -46,11 +46,12 @@ function parseTuning(raw: unknown): SharedMeta["tuning"] {
 function parseMeta(raw: unknown, rev: number): SharedMeta | null {
   const m = raw as Partial<SharedMeta> | null;
   if (!m || typeof m !== "object" || typeof m.name !== "string") return null;
+  if (m.type !== undefined && m.type !== "texture") return null;
   const kinds = (Array.isArray(m.kinds) ? m.kinds : []).filter((k): k is SurfaceKind => k === "wall" || k === "floor" || k === "ceiling");
   const mode = (v: unknown, fallback: MapMode): MapMode => v === "uploaded" || v === "auto" || v === "none" ? v : fallback;
   const src = m.transparency?.source;
   return {
-    v: 1, name: m.name, kinds: kinds.length ? kinds : ["wall", "floor"], pixelArt: m.pixelArt !== false, rev,
+    v: 1, type: "texture", name: m.name, kinds: kinds.length ? kinds : ["wall", "floor"], pixelArt: m.pixelArt !== false, rev,
     smooth: m.smooth === true,
     tuning: parseTuning(m.tuning),
     transparency: { source: src === "colorKey" || src === "none" ? src : "alpha", colorKey: typeof m.transparency?.colorKey === "string" ? m.transparency.colorKey : "#ff00ff" },
@@ -126,7 +127,7 @@ function metaOf(d: TextureDraft, rev: number): SharedMeta {
   const gen: SharedMeta["gen"] = {};
   if (maps.normal === "auto") gen.normal = autoRecipe;
   if (maps.depth === "auto") gen.depth = autoRecipe;
-  return { v: 1, name: d.name.trim() || t("assetManager.untitled"), kinds: d.kinds, pixelArt: d.pixelArt, rev, smooth: !!d.smooth, transparency: d.transparency, maps, ...(Object.keys(gen).length ? { gen } : {}), ...(d.tuning && Object.keys(d.tuning).length ? { tuning: d.tuning } : {}) };
+  return { v: 1, type: "texture", name: d.name.trim() || t("assetManager.untitled"), kinds: d.kinds, pixelArt: d.pixelArt, rev, smooth: !!d.smooth, transparency: d.transparency, maps, ...(Object.keys(gen).length ? { gen } : {}), ...(d.tuning && Object.keys(d.tuning).length ? { tuning: d.tuning } : {}) };
 }
 
 export interface PublishReport { published: string[]; skipped: string[] }

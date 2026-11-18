@@ -143,7 +143,7 @@ export const editorShellEn = {
   "editorShell.propEditor.saveFailed": "save failed: {error}",
   "editorShell.shared.button": "Shared maps ({who})",
   "editorShell.shared.dialog": "Shared maps",
-  "editorShell.shared.logInShort": "Log In",
+  "editorShell.shared.guest": "Guest",
   "editorShell.shared.title": "Shared maps · {world}",
   "editorShell.shared.close": "Close shared maps",
   "editorShell.shared.newerVersion": "This map has a newer version. Save a copy to keep your edits.",

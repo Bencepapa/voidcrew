@@ -105,11 +105,10 @@ function directionTo(from: Vec2, to: Vec2): Direction | undefined {
   );
 }
 
-export function useGameState() {
+export function useGameState(variation: { seed: number; mood: ShipMood } | null) {
   // the deck as its map has it; `map` - what's played - is its variation
   // (see variation.ts), unless there's none (the editor shows everything)
   const [fullMap, setMap] = useState<GameMap>(START_MAP);
-  const [variation, setVariation] = useState<{ seed: number; mood: ShipMood } | null>(null);
   // the ship's power thrown back on: its lights up (only its lights change -
   // see variantOf - so the view relights in place)
   const [lightsUp, setLightsUp] = useState(false);
@@ -1589,7 +1588,6 @@ export function useGameState() {
     replaceMap,
     enterMap,
     shiftParty,
-    setVariation,
     elevation,
     jumpDown: jump,
     use,

@@ -351,7 +351,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
     p.y += dy;
   };
   move(file.start);
-  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures]) {
+  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls]) {
     for (const item of list ?? []) move(item);
   }
   for (const actor of file.actors ?? []) {
@@ -362,7 +362,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
 
 // every position on the map (to check a strip being cut off is empty)
 function allPositions(file: MapFile): { x: number; y: number }[] {
-  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures];
+  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls];
   return [
     file.start,
     ...lists.flatMap((list) => (list ?? []) as { x: number; y: number }[]),

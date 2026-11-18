@@ -144,7 +144,7 @@ export const editorShellHu: Record<keyof typeof editorShellEn, string> = {
   "editorShell.propEditor.saveFailed": "sikertelen mentés: {error}",
   "editorShell.shared.button": "Megosztott pályák ({who})",
   "editorShell.shared.dialog": "Megosztott pályák",
-  "editorShell.shared.logInShort": "Bejelentkezés",
+  "editorShell.shared.guest": "Vendég",
   "editorShell.shared.title": "Megosztott pályák · {world}",
   "editorShell.shared.close": "Megosztott pályák bezárása",
   "editorShell.shared.newerVersion": "Ennek a pályának újabb változata van. Ments másolatot a módosításaid megőrzéséhez.",

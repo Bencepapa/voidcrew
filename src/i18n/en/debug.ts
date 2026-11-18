@@ -214,4 +214,5 @@ export const debugEn = {
   "debug.moodValue": "{part}: {level}",
   "debug.statsGraphics": "Map: {v1}  Graphics: {v2} (particles {v3}, every {v4}, wall cells {v5}, LOD scale {v6}, pixel ratio cap {v7}, antialias {v8}, lights {v9}, normal maps {v10}, view distance {v11})",
   "debug.statsScreen": "Screen: {v1}x{v2} @{v3}x",
+  "debug.headlampColour": "Headlamp colour (saved with the map)",
 } as const satisfies Record<string, string>;

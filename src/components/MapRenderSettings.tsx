@@ -240,6 +240,14 @@ export function MapRenderSettings({
         "inspector.gameplay",
         <>
           {check("headlamp", t("debug.headlampOnLSavedWithTheMap"))}
+          <label className="flex items-center justify-between gap-2 text-[11px]">
+            {t("debug.headlampColour")}<input
+              type="color"
+              value={settings.headlampColor}
+              onChange={(e) => set("headlampColor", e.target.value)}
+              className="w-8 h-6 bg-transparent border border-neutral-600"
+            />
+          </label>
           {check("bobEnabled", t("debug.idleHeadBobSavedWithTheMap"))}
         </>,
       )}

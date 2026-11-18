@@ -47,6 +47,8 @@ export interface RenderLook extends Partial<Record<RenderNumberKey, number>> {
   fogColor?: string;
   // the headlamp is on (a dark dungeon: the party carries a light)
   headlamp?: boolean;
+  // the headlamp's colour ("#rrggbb"; none: the warm white default)
+  headlampColor?: string;
   // the view bobs a little while the party stands still
   bobEnabled?: boolean;
 }
@@ -66,6 +68,7 @@ export function cleanRenderLook(raw: unknown): RenderLook | undefined {
   if (PROFILES.includes(src.wallProfile as WallProfile)) out.wallProfile = src.wallProfile as WallProfile;
   if (MODES.includes(src.reliefMode as ReliefMode)) out.reliefMode = src.reliefMode as ReliefMode;
   if (typeof src.headlamp === "boolean") out.headlamp = src.headlamp;
+  if (typeof src.headlampColor === "string" && /^#[0-9a-fA-F]{6}$/.test(src.headlampColor)) out.headlampColor = src.headlampColor;
   if (typeof src.skyLightColor === "string" && /^#[0-9a-fA-F]{6}$/.test(src.skyLightColor)) out.skyLightColor = src.skyLightColor;
   if (typeof src.fogColor === "string" && /^#[0-9a-fA-F]{6}$/.test(src.fogColor)) out.fogColor = src.fogColor;
   if (typeof src.bobEnabled === "boolean") out.bobEnabled = src.bobEnabled;
@@ -78,7 +81,7 @@ export function pickRender(settings: object, defaults: object): RenderLook | und
   const s = settings as Record<string, unknown>;
   const d = defaults as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const key of [...RENDER_NUMBER_KEYS, "wallProfile", "reliefMode", "headlamp", "bobEnabled", "skyLightColor", "fogColor"]) {
+  for (const key of [...RENDER_NUMBER_KEYS, "wallProfile", "reliefMode", "headlamp", "headlampColor", "bobEnabled", "skyLightColor", "fogColor"]) {
     if (s[key] !== d[key]) out[key] = s[key];
   }
   return cleanRenderLook(out);
@@ -87,5 +90,5 @@ export function pickRender(settings: object, defaults: object): RenderLook | und
 // the viewer's defaults for the render keys (what a map without a render
 // block - or without some of them - gets)
 export function renderDefaults(defaults: object): RenderLook {
-  return cleanRenderLook(Object.fromEntries([...RENDER_NUMBER_KEYS, "wallProfile", "reliefMode", "headlamp", "bobEnabled", "skyLightColor", "fogColor"].map((k) => [k, (defaults as Record<string, unknown>)[k]]))) ?? {};
+  return cleanRenderLook(Object.fromEntries([...RENDER_NUMBER_KEYS, "wallProfile", "reliefMode", "headlamp", "headlampColor", "bobEnabled", "skyLightColor", "fogColor"].map((k) => [k, (defaults as Record<string, unknown>)[k]]))) ?? {};
 }

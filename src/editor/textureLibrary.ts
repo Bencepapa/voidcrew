@@ -21,6 +21,7 @@ const flat = { normal: `${import.meta.env.BASE_URL}textures/flat/normal.png`, de
 // what a published revision says about itself (meta.json)
 export interface SharedMeta {
   v: 1;
+  type: "texture";
   name: string;
   kinds: SurfaceKind[];
   pixelArt: boolean;

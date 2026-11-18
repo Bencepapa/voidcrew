@@ -13,7 +13,7 @@ import { AutoBadge, ChannelControls, errorText, SignInPopover, TextureFields, Un
 import { draftCounts, draftId, newDraft, useDrafts } from "./textureDrafts";
 import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
 import { loadSharedTextures } from "./sharedTextures";
-import { sharedConfigured, sharedToken } from "./sharedAuth";
+import { sharedConfigured } from "./sharedAuth";
 import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
 import { Lock } from "lucide-react";
 import { DEFAULT_SETTINGS, FLOOR_BASE_DEPTH } from "../components/GameViewport";
@@ -207,11 +207,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   // editing the selected texture (drafts of shared textures): its settings and the channel cards of the maps panel
   const editor = useTextureEditor(sample==="material" && entry ? id : "", setError, select);
   const editable = sample==="material" && !!entry && isEditable(id);
-  // the shared textures are listed when the window opens (if signed in); the old local previews are moved over once
+  // the shared textures are listed when the window opens; the old local previews are moved over once
   async function refreshShared() {
     try { await Promise.all((["scifi","fantasy"] as const).map(loadSharedTextures)); } catch (e) { setError(errorText(e)); }
   }
-  useEffect(() => { if(!open)return; void migrateLegacyPreviews(); if(sharedToken())void refreshShared(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if(!open)return; void migrateLegacyPreviews(); if(sharedConfigured)void refreshShared(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   async function createTexture() {
     try {
       const draft = await newDraft(world==="All" ? activeWorld() : world, t("assetManager.newTextureName"));
@@ -651,7 +651,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         <div className="flex min-h-0 flex-1 gap-2">
           {listOpen ? <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-hidden rounded border border-neutral-700 p-2">
             <div className="flex items-center justify-between gap-2"><strong>{t("assetManager.assets")}</strong><button aria-label={t("assetManager.collapseAssets")} title={t("assetManager.collapse")} className="px-2 hover:text-amber-400" onClick={()=>setListOpen(false)}>◀</button></div>
-            <div className="flex flex-wrap gap-1"><button className={button+" !px-2 !py-1"} title={t("assetManager.newTextureTitle")} onClick={()=>void createTexture()}>+ {t("assetManager.newTexture")}</button>{sharedConfigured && <button className={button+" !px-2 !py-1"} title={t("assetManager.refreshShared")} aria-label={t("assetManager.refreshShared")} onClick={()=>{if(sharedToken())void refreshShared();else setSignIn(true);}}>↻</button>}</div>
+            <div className="flex flex-wrap gap-1"><button className={button+" !px-2 !py-1"} title={t("assetManager.newTextureTitle")} onClick={()=>void createTexture()}>+ {t("assetManager.newTexture")}</button>{sharedConfigured && <button className={button+" !px-2 !py-1"} title={t("assetManager.refreshShared")} aria-label={t("assetManager.refreshShared")} onClick={()=>void refreshShared()}>↻</button>}</div>
             <div className="flex flex-wrap gap-1">{(["material","prop","actor","item"] as const).map((tab,i)=><button key={tab} className={button+" !px-2 !py-1"} aria-pressed={sample===tab} onClick={()=>{setSample(tab);if(background==="Selected texture" && tab!=="material")setBackground("3×3");setSub("All");setPose(-1);setTurn(0);setPlacement("Auto");}}>{display(["Textures","Props","NPCs","Items"][i])}</button>)}</div>
             <label>{t("assetManager.world")} <select className={button+" !py-1"} value={world} onChange={e=>{setWorld(e.target.value as typeof world);setPose(-1);}}><option value="All">{display("All")}</option><option value="scifi">{display("scifi")}</option><option value="fantasy">{display("fantasy")}</option></select></label>
             {["material","prop"].includes(sample) && <div className="flex flex-wrap gap-1">{["All",...(sample==="material"?["wall","floor","ceiling","traverse"]:["3D","billboard","decal"])].map(k=><button key={k} className={button+" !px-2 !py-1"} aria-pressed={sub===k} onClick={()=>setSub(k)}>{display(k)}</button>)}</div>}

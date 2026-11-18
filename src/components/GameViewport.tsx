@@ -112,6 +112,8 @@ export interface ViewportSettings {
   enemyScanner: boolean;
   // the headlamp: a light that moves with the party (off: map lights only)
   headlamp: boolean;
+  // the headlamp's colour (saved with the map)
+  headlampColor: string;
   // the map's lights baked (see lightGrid.ts) - any number of them, the
   // real lights left for flashes; off: every map light a real one
   bakedLights: boolean;
@@ -317,6 +319,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   noclip: false,
   enemyScanner: false,
   headlamp: false,
+  headlampColor: "#fff2d9",
   bakedLights: true,
   lightGridDensity: 3,
   lightGridMode: "directional",
@@ -1776,7 +1779,8 @@ export function GameViewport({
 
     const ambient = new THREE.AmbientLight(0x445566, settings.ambientIntensity);
     scene.add(ambient);
-    const pointLight = new THREE.PointLight(0xfff2d9, settings.pointLightIntensity, 8, 2);
+    const pointLight = new THREE.PointLight(settings.headlampColor, settings.pointLightIntensity, 8, 2);
+    let headlampColorNow = settings.headlampColor;
     scene.add(pointLight);
     // a lift ride's shaft lights: sweeping past the outside of the cabin
     // (lights shine through walls here - that's what makes it read as
@@ -7384,6 +7388,10 @@ export function GameViewport({
         backingMat.needsUpdate = true;
       }
       pointLight.intensity = s.headlamp ? s.pointLightIntensity * rideDip : 0;
+      if (s.headlampColor !== headlampColorNow) {
+        headlampColorNow = s.headlampColor;
+        pointLight.color.set(s.headlampColor);
+      }
       lightGrid.scale.value = s.bakedLights ? s.mapLightIntensity * rideDip : 0;
       const viewReach = topdown.on ? TOPDOWN_REACH : effectiveViewDistance(s);
       const fogFar = viewReach - FOG_FAR_MARGIN;

@@ -2,8 +2,13 @@ import { isTextEntry } from "./keyboardFocus";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { START_MAP } from "./game/map";
+import { WORLDS } from "./game/worlds";
 import { ActorEditor } from "./editor/ActorEditor";
 import "./index.css";
+
+document.documentElement.classList.toggle("theme-fantasy", START_MAP.world === "fantasy");
+document.title = WORLDS[START_MAP.world].name;
 
 // Keys typed into a text field are the field's alone: the game's and the
 // editor's key handlers (steps on WASD, R to turn a prop, Delete...) are all

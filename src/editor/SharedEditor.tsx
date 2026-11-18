@@ -46,8 +46,10 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     try { await fn(); } catch (error) { setMessage(String(error)); } finally { setBusy(false); }
   }
   async function refresh() {
-    await loadSharedTextures(map.world);
-    const latest = await sharedRequest<Head[]>("/rest/v1/void_map_heads?world=eq." + map.world + "&order=title,id");
+    const [latest] = await Promise.all([
+      sharedRequest<Head[]>("/rest/v1/void_map_heads?world=eq." + map.world + "&order=title,id"),
+      loadSharedTextures(map.world),
+    ]);
     setHeads(latest.sort((a, b) => (b.saved_at ?? "").localeCompare(a.saved_at ?? "")));
     changed();
     return latest;
@@ -79,7 +81,7 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     if ("error" in result) throw new Error(result.error);
     remember(id, head); openMap(result.map); setOpen(false);
   }
-  return <><button className={button} type="button" onClick={() => {setOpen(true); if(auth.token) void run(refresh);}}>{t("editorShell.shared.button", { who: auth.token ? auth.signedInName : t("editorShell.shared.logInShort") })}</button>
+  return <><button className={button} type="button" onClick={() => {setOpen(true); void run(refresh);}}>{t("editorShell.shared.button", { who: auth.token ? auth.signedInName : t("editorShell.shared.guest") })}</button>
     {open && <div role="dialog" aria-modal="true" aria-label={t("editorShell.shared.dialog")} onKeyDown={e => { e.stopPropagation(); if (e.key === "Escape") setOpen(false); }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
       <section className="w-[min(30rem,94vw)] max-h-[85vh] overflow-auto rounded-lg border-2 border-neutral-500 bg-neutral-950 p-5 text-left text-sm text-white shadow-2xl">
         <header className="mb-4 flex items-center justify-between border-b border-neutral-700 pb-3">
@@ -102,6 +104,7 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
           <p className="text-xs text-neutral-300">{t("editorShell.shared.publishHint")}</p>
           <button className={button} onClick={()=>void run(()=>save(true))}>{t("editorShell.shared.saveAsNew")}</button>
           <p className="text-xs text-neutral-300">{t("editorShell.shared.copyHint")}</p>
+        </>}
           <button type="button" className="mt-2 text-left underline hover:text-amber-300" onClick={()=>{setOpen(false);openAssetManager("material","");}}>{t("editorShell.shared.texturesInAssets")}</button>
           <strong className="mt-2">{t("editorShell.shared.latestSaves")}</strong>
           <button className={button} onClick={()=>void run(refresh)}>{t("editorShell.shared.refreshList")}</button>
@@ -114,8 +117,7 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
               <span className="block text-xs text-neutral-300">{h.saved_by ?? t("editorShell.shared.authorUnrecorded")}{h.saved_at && " · " + new Date(h.saved_at).toLocaleString()} · {h.id.slice(-8)}</span>
             </> };
           })} />
-          <button className={button} onClick={()=>{auth.signOut();setHeads([]);setMessage("");}}>{t("editorShell.shared.signOut")}</button>
-        </>}
+          {auth.token && <button className={button} onClick={()=>{auth.signOut();void run(refresh);}}>{t("editorShell.shared.signOut")}</button>}
         <output aria-live="polite">{busy ? t("editorShell.shared.working") : message}</output>
       </fieldset></section></div>}
     {ask && <ConfirmDialog title={t("editorShell.shared.title", { world: map.world })} message={t("editorShell.shared.confirmOpenLatest")} yes={t("dialog.yes")} no={t("dialog.no")}

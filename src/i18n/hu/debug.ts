@@ -214,4 +214,5 @@ export const debugHu = {
   "debug.moodValue": "{part}: {level}",
   "debug.statsGraphics": "Pálya: {v1}  Grafika: {v2} (részecskék {v3}, frissítési időköz {v4}, falrészletesség {v5}, LOD méret {v6}, pixelaránykorlát {v7}, élsimítás {v8}, fények {v9}, normáltérképek {v10}, látótáv {v11})",
   "debug.statsScreen": "Képernyő: {v1}x{v2} @{v3}x",
+  "debug.headlampColour": "Fejlámpa színe (a térképpel mentve)",
 } as const satisfies Record<string, string>;
