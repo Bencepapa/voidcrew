@@ -156,6 +156,8 @@ export const editorShellEn = {
   "editorShell.shared.working": "Working…",
   "editorShell.shared.email": "Email",
   "editorShell.shared.password": "Password",
+  "editorShell.shared.staySignedIn": "Stay signed in on this browser",
+  "editorShell.shared.signInFailed": "Sign-in failed",
   "editorShell.shared.logIn": "Log in",
   "editorShell.shared.saveShared": "Save shared map",
   "editorShell.shared.publishHint": "Publish this map or add its next revision.",

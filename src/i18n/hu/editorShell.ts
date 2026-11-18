@@ -157,6 +157,8 @@ export const editorShellHu: Record<keyof typeof editorShellEn, string> = {
   "editorShell.shared.working": "Folyamatban…",
   "editorShell.shared.email": "E-mail",
   "editorShell.shared.password": "Jelszó",
+  "editorShell.shared.staySignedIn": "Maradjak bejelentkezve ezen a böngészőn",
+  "editorShell.shared.signInFailed": "A bejelentkezés nem sikerült",
   "editorShell.shared.logIn": "Bejelentkezés",
   "editorShell.shared.saveShared": "Megosztott pálya mentése",
   "editorShell.shared.publishHint": "Tedd közzé ezt a pályát, vagy add hozzá a következő változatát.",
