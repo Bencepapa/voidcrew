@@ -1,4 +1,4 @@
-export const assetTreeEn = {"assetTree.title": "Assets", "assetTree.search": "Search name or kind...", "assetTree.pillar": "Pillar / Chamfer", "assetTree.decals": "Decals", "assetTree.lights": "Lights", "assetTree.empty": "No matching assets", "assetTree.lock": "Lock layer", "assetTree.unlock": "Unlock layer",
+﻿export const assetTreeEn = {"assetTree.title": "Assets", "assetTree.search": "Search name or kind...", "assetTree.pillar": "Pillar / Chamfer", "assetTree.decals": "Decals", "assetTree.lights": "Lights", "assetTree.empty": "No matching assets", "assetTree.lock": "Lock layer", "assetTree.unlock": "Unlock layer",
 "assetTree.name.Scrap metal": "Scrap metal",
 "assetTree.name.Wiring": "Wiring",
 "assetTree.name.Circuit board": "Circuit board",
@@ -61,5 +61,12 @@ export const assetTreeEn = {"assetTree.title": "Assets", "assetTree.search": "Se
 "assetTree.name.Wall 4": "Wall 4",
 "assetTree.name.Wall 5": "Wall 5",
 "assetTree.name.fence1": "Iron fence",
-"assetTree.name.arch1": "Stone arch"
+"assetTree.name.arch1": "Stone arch",
+"assetTree.name.roof_slope": "Roof slope",
+"assetTree.name.roof_slope_flat": "Roof slope into flat",
+"assetTree.name.roof_flat": "Roof, flat",
+"assetTree.name.roof_corner": "Roof corner (outer)",
+"assetTree.name.roof_corner_flat": "Roof corner (outer) into flat",
+"assetTree.name.roof_inner": "Roof corner (inner)",
+"assetTree.name.roof_inner_flat": "Roof corner (inner) into flat"
 } as const;

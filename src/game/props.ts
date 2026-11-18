@@ -125,7 +125,43 @@ export type PropType = {
       kind: "chamfer";
       cut: number;
     }
+  | {
+      // a roof piece filling its cell, for building houses on raised ground
+      // (put it on a riser block's top; stack the next piece with `Height`).
+      // `profile` is its side view from the eave (the low edge, at the
+      // piece's front, +z): 45 degree slopes and flat stretches, each `run`
+      // cells long (what the profile doesn't cover is flat). `corner` makes
+      // two of them meet: "outer" (a hip: eaves at the front and the left,
+      // the slopes rising to the back and the right, meeting in a diagonal
+      // ridge) or "inner" (a valley: eaves at the front and the right).
+      // Textured with `texture` (a wall-kind set; PropSpec.texture picks
+      // another per placement), else the deck's wall set. Decoration: it
+      // never blocks (it hangs over the cell, above head height).
+      kind: "roof";
+      profile: RoofSegment[];
+      corner?: "outer" | "inner";
+      texture?: string;
+    }
 );
+
+export interface RoofSegment {
+  kind: "slope" | "flat";
+  // horizontal cells it covers (a slope rises as much as it runs)
+  run: number;
+}
+// how thick a roof is (world units: its underside is this far under its surface)
+export const ROOF_THICKNESS = 0.06;
+function roof(profile: RoofSegment[], corner?: "outer" | "inner"): PropType {
+  const rise = profile.reduce((sum, s) => sum + (s.kind === "slope" ? s.run : 0), 0);
+  // (the height is the rise: stacking the next piece on it puts its surface
+  // level with this one's far edge)
+  return { kind: "roof", size: [1, rise, 1], profile, corner };
+}
+const SLOPE: RoofSegment = { kind: "slope", run: 1 };
+const SLOPE_FLAT: RoofSegment[] = [
+  { kind: "slope", run: 0.5 },
+  { kind: "flat", run: 0.5 },
+];
 
 // Parts are measured off the views (see npm run props:views): x across the
 // front view, y up it, z across the side view (+z = the front).
@@ -263,6 +299,16 @@ export const PROP_TYPES: Record<string, PropType> = {
   // corner cuts: half the cell's sides, and more of them
   chamfer1: { kind: "chamfer", size: [0.5 * Math.SQRT2, 1, 0.02], cut: 0.5, wall: true },
   chamfer2: { kind: "chamfer", size: [0.7 * Math.SQRT2, 1, 0.02], cut: 0.7, wall: true },
+  // roofs (see PropType "roof"): a 45 degree slope across the cell; a slope
+  // that bends into a flat half; the flat top; the outer (hip) and inner
+  // (valley) corners, each also with the bend
+  roof_slope: roof([SLOPE]),
+  roof_slope_flat: roof(SLOPE_FLAT),
+  roof_flat: roof([{ kind: "flat", run: 1 }]),
+  roof_corner: roof([SLOPE], "outer"),
+  roof_corner_flat: roof(SLOPE_FLAT, "outer"),
+  roof_inner: roof([SLOPE], "inner"),
+  roof_inner_flat: roof(SLOPE_FLAT, "inner"),
 };
 
 // The prop editor's saves (see src/editor/PropEditor.tsx): src/props/<name>.json
@@ -279,7 +325,7 @@ export interface PropEdit {
 }
 // (a pillar's and a chamfer's sizes are their shape's: not edited)
 export function propEditable(type: PropType | undefined): boolean {
-  return !!type && type.kind !== "pillar" && type.kind !== "chamfer";
+  return !!type && type.kind !== "pillar" && type.kind !== "chamfer" && type.kind !== "roof";
 }
 const EDITS = import.meta.glob<PropEdit>("../props/*.json", { eager: true, import: "default" });
 for (const [file, edit] of Object.entries(EDITS)) {
@@ -308,7 +354,7 @@ const CHAMFER_YAW = { NE: 45, SE: 135, SW: 225, NW: 315 };
 // the texture sets a prop can wear instead of its own (see
 // PropSpec.texture): only the one-texture kinds
 export function propRetexturable(type: PropType): boolean {
-  return type.kind === "box" || type.kind === "pillar" || type.kind === "chamfer" || type.kind === "panel" || type.kind === "cross";
+  return type.kind === "box" || type.kind === "pillar" || type.kind === "chamfer" || type.kind === "panel" || type.kind === "cross" || type.kind === "roof";
 }
 
 // how tall a prop stands in its cell (wall heights): a pillar reaches the
@@ -408,7 +454,8 @@ export function flamePosition(spec: PropSpec): [number, number, number] | null {
 // their heights above the cell's floor
 export function propBoxes(map: GameMap, cx: number, cy: number) {
   return (map.props ?? [])
-    .filter((p) => p.cell.x === cx && p.cell.y === cy)
+    // (a roof is decoration: it hangs over the cell, never in the way)
+    .filter((p) => p.cell.x === cx && p.cell.y === cy && PROP_TYPES[p.prop]?.kind !== "roof")
     .map((p) => {
       const { x, z, reachX, reachZ } = propPlacement(p);
       return { minX: x - reachX, maxX: x + reachX, minZ: z - reachZ, maxZ: z + reachZ, height: (p.elevation ?? 0) + propHeight(map, p) };
@@ -417,5 +464,5 @@ export function propBoxes(map: GameMap, cx: number, cy: number) {
 
 // whether a big prop closes the cell to grid movement
 export function propBlocks(map: GameMap, cell: Vec2): boolean {
-  return (map.props ?? []).some((p) => p.cell.x === cell.x && p.cell.y === cell.y && PROP_TYPES[p.prop].blocks);
+  return (map.props ?? []).some((p) => p.cell.x === cell.x && p.cell.y === cell.y && PROP_TYPES[p.prop]?.blocks);
 }

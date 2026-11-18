@@ -408,7 +408,7 @@ function occludersOf(map: GameMap): Occluders {
     }
   };
   for (const spec of map.props ?? []) {
-    if (PROP_TYPES[spec.prop]?.kind === "cross") continue;
+    if (PROP_TYPES[spec.prop]?.kind === "cross" || PROP_TYPES[spec.prop]?.kind === "roof") continue;
     const { x, z, reachX, reachZ } = propPlacement(spec);
     const bottom = floorHeight(map, spec.cell.x, spec.cell.y) + (spec.elevation ?? 0);
     add({ minX: x - reachX, maxX: x + reachX, minY: bottom, maxY: bottom + propHeight(map, spec), minZ: z - reachZ, maxZ: z + reachZ });

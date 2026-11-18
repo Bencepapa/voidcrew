@@ -208,7 +208,8 @@ export interface PropSpec extends Linked {
   chance?: number;
   // a texture set to wear instead of its type's (a box's sides - and its
   // top, if there's a <texture>_top set); unset: its type's (a pillar's:
-  // the deck's walls, a chamfer's: its cell's)
+  // the deck's walls, a chamfer's: its cell's, a roof's: the deck's walls -
+  // any wall-kind set, a shared one too)
   texture?: string;
   // a container's contents put in by hand (see items.ts; [] : empty);
   // unset: rolled from its type's loot table
