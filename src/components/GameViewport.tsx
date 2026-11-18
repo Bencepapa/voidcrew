@@ -151,7 +151,6 @@ export interface ViewportSettings {
   // EXPERIMENT: door panels and frames as a smooth hybrid relief (a smooth
   // mesh with the holes' quads left out, the pixel edge from an alpha cutout
   // on the diffuse) instead of the stepped one - see createSmoothReliefGeometry
-  hybridDoors: boolean;
   // the floors' own relief depth (world units) and normal strength; 0: as the walls'
   floorReliefDepth: number;
   floorNormalStrength: number;
@@ -338,7 +337,6 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   reliefLevels: 6,
   reliefMinIsland: 3,
   reliefMode: "steps",
-  hybridDoors: false,
   floorReliefDepth: 0,
   floorNormalStrength: 0,
   ...DEVICE_GRAPHICS,
@@ -2770,7 +2768,7 @@ export function GameViewport({
         // a smooth relief's distant version: this many times fewer cells each
         // way (see SMOOTH_LODS) - the grid isn't made coarser for it then
         smoothLod?: number;
-        // a door part's hybrid build (settings.hybridDoors): smooth whatever
+        // a door part's hybrid build (the map's relief mode: smooth): smooth whatever
         // the wall relief mode, with the holes' quads left out
         hybrid?: boolean;
         // side edges left for corner joins (ReliefOptions.joinEdges), and
@@ -3239,11 +3237,11 @@ export function GameViewport({
       lod.addLevel(new THREE.Mesh(far, mat), LOD_DISTANCE * lodScale);
       return lod;
     };
-    // The hybrid experiment (settings.hybridDoors): doors and frames as
+    // The hybrid experiment (the map's relief mode: smooth): doors and frames as
     // smooth meshes with the holes' quads left out and the pixel edge cut by
     // the diffuse's alpha - the same mesh builder for near and far, the far
     // one with fewer cells (never below 8).
-    const hybrid = settings.hybridDoors;
+    const hybrid = settings.reliefMode === "smooth";
     const hybridFarLod = Math.max(1, Math.min(LOD_FACTOR, Math.floor(settings.wallDetail / 8)));
     // (the door kits are the doors' own: no wall shares their materials)
     const cutout = (mat: THREE.Material) => {
@@ -4488,8 +4486,8 @@ export function GameViewport({
         aoMap: kit.wallMat.aoMap,
         roughness: settingsRef.current.roughness,
         metalness: settingsRef.current.metalness,
-        // (the hybrid doors' pixel edge: see settings.hybridDoors)
-        alphaTest: settings.hybridDoors ? 0.5 : 0,
+        // (the hybrid doors' pixel edge: see the map's relief mode)
+        alphaTest: settings.reliefMode === "smooth" ? 0.5 : 0,
       });
       addDirectLightOcclusion(material, cavity);
       // (a door panel is the deck's own: it takes the ship's livery)
@@ -7493,7 +7491,6 @@ export function GameViewport({
     settings.reliefLevels,
     settings.reliefMinIsland,
     settings.reliefMode,
-    settings.hybridDoors,
     settings.wallDetail,
     settings.lodScale,
     settings.pixelRatioCap,

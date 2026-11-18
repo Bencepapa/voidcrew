@@ -36,5 +36,15 @@
     "relief": 0.85,
     "rough": 0.8,
     "metal": 0.35
+  },
+  "fantasy_shared_f30bbffe-6079-4f7b-a029-65f9596045a9": {
+    "relief": 0.25,
+    "rough": 1.2,
+    "metal": 0.9
+  },
+  "fantasy_shared_0859a867-5230-43ff-8beb-0a1d8ac96486": {
+    "relief": 0.5,
+    "rough": 1.9,
+    "metal": 0.05
   }
 }
