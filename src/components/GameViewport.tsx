@@ -2631,7 +2631,12 @@ export function GameViewport({
           if (!spans.length) return;
 
           const face = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d], key: surfaceKey({ x, y }, d) };
-          const faceSet: string = isTextureSetId(wallOverride)
+          // (a step face or header can have a set of its own - see
+          // GameMap.faceTextureAt; a face against a wall cell can't)
+          const faceOverride = cellAt(map, nx, ny) !== "wall" ? map.faceTextureAt?.(x, y, d) : undefined;
+          const faceSet: string = isTextureSetId(faceOverride)
+            ? faceOverride
+            : isTextureSetId(wallOverride)
             ? wallOverride
             : accentKit && wallVariantRoll(face.x, face.z) < settings.accentRatio
               ? accentSet
@@ -5063,7 +5068,10 @@ export function GameViewport({
           wall: (x, y, side) => {
             const v = DIR_VECTOR[side];
             const override = next.wallTextureAt?.(x, y);
-            const faceSet: string = isTextureSetId(override)
+            const own = cellAt(next, x + v.x, y + v.y) !== "wall" ? next.faceTextureAt?.(x, y, side) : undefined;
+            const faceSet: string = isTextureSetId(own)
+              ? own
+              : isTextureSetId(override)
               ? override
               : accentKit && wallVariantRoll(x + v.x * 0.5, y + v.y * 0.5) < settings.accentRatio
                 ? accentSet

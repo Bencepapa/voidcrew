@@ -98,6 +98,10 @@ export function fill(file: MapFile, cell: Vec2): MapFile {
   file.layout[cell.y] = setChar(file.layout[cell.y], cell.x, "W");
   const here = (p: { x: number; y: number }) => p.x === cell.x && p.y === cell.y;
   if (file.decals) file.decals = file.decals.filter((d) => !here(d));
+  if (file.faceTextures) {
+    file.faceTextures = file.faceTextures.filter((f) => !here(f));
+    if (!file.faceTextures.length) delete file.faceTextures;
+  }
   if (file.lights) file.lights = file.lights.filter((l) => !here(l));
   return file;
 }
@@ -113,6 +117,17 @@ const CHAR_POOL = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678
 // characters their legend doesn't know.
 export function paintTexture(file: MapFile, layer: TextureLayer, cell: Vec2, setId: string | null): MapFile {
   return setLayerCell(file, layer, cell, setId);
+}
+
+// Paints one step face - a riser (a higher floor's side) or a header (a lower
+// ceiling's strip) - of the open cell it's seen from, toward `side`, with a
+// texture set; `setId` null: back to the cell's own wall texture.
+export function paintFace(file: MapFile, cell: Vec2, side: Direction, setId: string | null): MapFile {
+  const list = (file.faceTextures ?? []).filter((f) => !(f.x === cell.x && f.y === cell.y && f.face === side));
+  if (setId) list.push({ x: cell.x, y: cell.y, face: side, texture: setId });
+  if (list.length) file.faceTextures = list;
+  else delete file.faceTextures;
+  return file;
 }
 
 // A cell's value in a layer (a texture set, a height), or - null - the
@@ -336,7 +351,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
     p.y += dy;
   };
   move(file.start);
-  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals]) {
+  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures]) {
     for (const item of list ?? []) move(item);
   }
   for (const actor of file.actors ?? []) {
@@ -347,7 +362,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
 
 // every position on the map (to check a strip being cut off is empty)
 function allPositions(file: MapFile): { x: number; y: number }[] {
-  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals];
+  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures];
   return [
     file.start,
     ...lists.flatMap((list) => (list ?? []) as { x: number; y: number }[]),
@@ -564,7 +579,7 @@ export function rectCells(rect: Rect): Vec2[] {
   return cells;
 }
 
-const PLACED_LISTS = ["doors", "exits", "smokes", "items", "chanceWalls", "ladders", "bridges", "lights", "props", "actors", "decals"] as const;
+const PLACED_LISTS = ["doors", "exits", "smokes", "items", "chanceWalls", "ladders", "bridges", "lights", "props", "actors", "decals", "faceTextures"] as const;
 
 // Takes everything placed in the given cells off the map: props, robots,
 // items, lights, doors, ladders... (what would be left standing inside a wall).

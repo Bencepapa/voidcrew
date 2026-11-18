@@ -99,6 +99,13 @@ export interface MapFile {
     with?: string;
     without?: string;
   }[];
+  // Texture sets of single step faces: the side face of a raised floor
+  // (a "riser") or a lowered ceiling's strip (a "header"). x, y: the open cell
+  // the face is seen from (the LOWER one of a riser: the lower floor, the
+  // higher ceiling); face: its side toward the higher floor / lower
+  // ceiling; texture: a texture set id. Beats the cell's wallTexture on that
+  // face; a face with no entry (or no step there any more) uses the cell's.
+  faceTextures?: { x: number; y: number; face: Direction; texture: string }[];
   // ways off the ship (see ExitSpec)
   exits?: { x: number; y: number; name?: string }[];
   // the cells where the crew mustn't be (see GameMap.restricted)
@@ -294,6 +301,11 @@ export function parseMap(id: string, file: MapFile): GameMap {
   const floorTextures = readLayer(file.layers?.floorTexture, width, height, "floorTexture");
   const wallTextures = readLayer(file.layers?.wallTexture, width, height, "wallTexture");
   const ceilingTextures = readLayer(file.layers?.ceilingTexture, width, height, "ceilingTexture");
+  // (stale entries - a cell turned into wall, a bad side - are ignored, not errors)
+  const faceTextures = new Map<string, string>();
+  for (const f of file.faceTextures ?? []) {
+    if (DIR_VECTOR[f.face] && f.texture) faceTextures.set(`${f.x},${f.y},${f.face}`, f.texture);
+  }
 
   return {
     id,
@@ -319,6 +331,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     ceilingHeights,
     floorAt: file.layers?.floorTexture ? (x, y) => floorTextures[y]?.[x] ?? "" : undefined,
     wallTextureAt: (x, y) => wallTextures[y]?.[x],
+    faceTextureAt: faceTextures.size ? (x, y, side) => faceTextures.get(`${x},${y},${side}`) : undefined,
     ceilingTextureAt: (x, y) => ceilingTextures[y]?.[x],
     doors: (file.doors ?? []).map((d) => ({
       cell: { x: d.x, y: d.y },

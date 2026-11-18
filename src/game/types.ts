@@ -45,6 +45,11 @@ export interface GameMap {
   // wall texture set for the walls around a walkable cell (a renderer
   // texture set id); omitted = the renderer's default wall mix
   wallTextureAt?: (x: number, y: number) => string | undefined;
+  // texture set of one step face (a "riser": a neighbour's higher floor) or
+  // header (a neighbour's lower ceiling) of a walkable cell, seen from that
+  // cell toward `side` - over wallTextureAt. Undefined = the cell's own wall
+  // set. Never applies to a face against a wall cell.
+  faceTextureAt?: (x: number, y: number, side: Direction) => string | undefined;
   // ceiling texture set of a walkable cell; omitted = the renderer's choice
   ceilingTextureAt?: (x: number, y: number) => string | undefined;
   // the deck's own look: its default texture sets (renderer ids) - any

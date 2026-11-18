@@ -242,6 +242,7 @@ export function mapUses(id: string): boolean {
   if (m.textures && Object.values(m.textures).includes(id)) return true;
   for (let y = 0; y < m.height; y++) for (let x = 0; x < m.width; x++) {
     if (m.floorAt?.(x, y) === id || m.wallTextureAt?.(x, y) === id || m.ceilingTextureAt?.(x, y) === id) return true;
+    if (m.faceTextureAt && (["N", "E", "S", "W"] as const).some((d) => m.faceTextureAt!(x, y, d) === id)) return true;
   }
   return false;
 }

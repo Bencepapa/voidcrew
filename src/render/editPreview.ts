@@ -35,6 +35,7 @@ export function changedCells(built: GameMap, next: GameMap): Set<string> | null 
         ceilingHeight(built, x, y) === ceilingHeight(next, x, y) &&
         built.floorAt?.(x, y) === next.floorAt?.(x, y) &&
         built.wallTextureAt?.(x, y) === next.wallTextureAt?.(x, y) &&
+        DIRS.every((d) => built.faceTextureAt?.(x, y, d) === next.faceTextureAt?.(x, y, d)) &&
         built.ceilingTextureAt?.(x, y) === next.ceilingTextureAt?.(x, y);
       if (!same) changed.add(cellKey(x, y));
     }
