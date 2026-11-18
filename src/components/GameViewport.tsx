@@ -11,7 +11,8 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { DarkFantasyShader } from "../render/darkFantasyShader";
+import { DarkFantasyShader, updateDarkFantasyUniforms } from "../render/darkFantasyShader";
+import { defaultPostSettings, type PostProcessSettings } from "../render/postSettings";
 import { prepareRaycastsGradually } from "../render/bvh";
 import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
@@ -81,7 +82,7 @@ export type WallProfileId = "flat" | "convex" | "concave" | "relief";
 // what the 2D sprites show instead of flat faces and wire)
 export type GeometryViewId = "textured" | "faces" | "wireframe" | "normals" | "depth";
 
-export interface ViewportSettings {
+export interface ViewportSettings extends PostProcessSettings {
   textureSet: TextureSetId;
   // a second texture set used on a share of the walls
   accentTextureSet: TextureSetId | "none";
@@ -149,14 +150,6 @@ export interface ViewportSettings {
   pointLightIntensity: number;
   ambientIntensity: number;
   bobEnabled: boolean;
-  // the optional dark fantasy post-process (see render/darkFantasyShader.ts): on/off and its look
-  postDark: boolean;
-  postDarkness: number;
-  postWarm: number;
-  postCold: number;
-  postSaturation: number;
-  postPalette: number;
-  postVignette: number;
   bevelFraction: number;
   bevelAngleDeg: number;
   displacementScale: number;
@@ -352,13 +345,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   pointLightIntensity: 1.6,
   ambientIntensity: 0.35,
   bobEnabled: true,
-  postDark: false,
-  postDarkness: 0.7,
-  postWarm: 1.8,
-  postCold: 1.5,
-  postSaturation: 1.3,
-  postPalette: 0.9,
-  postVignette: 0.6,
+  ...defaultPostSettings(),
   bevelFraction: 0.2,
   bevelAngleDeg: 30,
   displacementScale: 0.03,
@@ -2437,12 +2424,7 @@ export function GameViewport({
         post.h = size.y;
       }
       const u = post.pass.uniforms;
-      u.uDarkness.value = s.postDarkness;
-      u.uWarmBoost.value = s.postWarm;
-      u.uColdBoost.value = s.postCold;
-      u.uSaturation.value = s.postSaturation;
-      u.uPalette.value = s.postPalette;
-      u.uVignette.value = s.postVignette;
+      updateDarkFantasyUniforms(u, s);
       post.composer.render();
     }
     function renderGeometryView(view: GeometryViewId) {
