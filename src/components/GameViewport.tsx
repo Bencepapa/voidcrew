@@ -605,6 +605,7 @@ function wallVariantRoll(x: number, z: number): number {
 const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
 // how long the editor leaves the quick flat preview of its structural edits before the scene's full build
 const EDIT_SETTLE_MS = 3000;
+const LIGHT_EDIT_SETTLE_MS = 500;
 const ORIGIN_NDC = new THREE.Vector2(0, 0);
 // the relief depth a floor texture is tuned against in the Asset Manager (its default)
 export const FLOOR_BASE_DEPTH = 0.04;
@@ -1714,6 +1715,7 @@ export function GameViewport({
   const topdownToggleRef = useRef<((on?: boolean) => void) | null>(null);
   // (kept here, not in the scene effect: a rebuild after an edit keeps the view where it was)
   const topdownRef = useRef({ on: false, x: 0, z: 0, h: 9, tilt: Math.PI / 2, yaw: 0, fresh: false });
+  const editHoverRef = useRef<THREE.Vector2 | null>(null);
   const rebakeRef = useRef<(() => void) | null>(null);
   useEffect(() => rebakeRef.current?.(), [settings.lightGridDensity, settings.lightGridMode, settings.lightBounce]);
   // the map as it is now (lights included - the scene's may be older)
@@ -2143,19 +2145,24 @@ export function GameViewport({
       }).catch((error) => console.error("Light bake failed:", error));
     };
     track(bake(map));
-    // the bake, a moment after the last call (a slider dragged, a prop moved)
+    // Light edits have a shorter idle window than geometry and prop edits.
+    // Either bake uses the latest map, including edits queued on the other timer.
     let bakeTimer: ReturnType<typeof setTimeout> | undefined;
+    let lightEditTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearBakeTimers = () => {
+      clearTimeout(bakeTimer);
+      clearTimeout(lightEditTimer);
+    };
+    const bakeLatest = () => {
+      clearBakeTimers();
+      if (!disposed) void bake(latestMapRef.current);
+    };
     const bakeSoon = () => {
       clearTimeout(bakeTimer);
-      bakeTimer = setTimeout(() => {
-        if (!disposed) void bake(latestMapRef.current);
-      }, EDIT_SETTLE_MS);
+      bakeTimer = setTimeout(bakeLatest, EDIT_SETTLE_MS);
     };
     // baked again when its settings change (see the effect on them)
-    rebakeRef.current = () => {
-      clearTimeout(bakeTimer);
-      void bake(latestMapRef.current);
-    };
+    rebakeRef.current = bakeLatest;
     const ceilingLightCells = (lights: LightSpec[]) =>
       new Set(lights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`));
     let litCells = ceilingLightCells(mapLights);
@@ -5126,9 +5133,6 @@ export function GameViewport({
       placeFixtures();
       // the new fixtures get culled with the rest on the next frame
       culledCount = -1;
-      // and the baked light follows (a moment after the last change: a colour
-      // being dragged doesn't bake at every step)
-      bakeSoon();
     }
     // A new version of the map with the same structure (see structureKey):
     // what differs in it is redone in place. Its robots need nothing here -
@@ -5226,7 +5230,8 @@ export function GameViewport({
         previewKey = next.structureKey;
         applyStructure(next);
       }
-      if (lightsOf(next) !== lightsOf(applied)) applyLights(next);
+      const lightsChanged = lightsOf(next) !== lightsOf(applied);
+      if (lightsChanged) applyLights(next);
       if (JSON.stringify(next.smokes) !== JSON.stringify(applied.smokes)) {
         const shape = (m: GameMap) => JSON.stringify(m.smokes?.map(({color, ...rest}) => rest));
         if (shape(next) === shape(applied)) {
@@ -5252,6 +5257,12 @@ export function GameViewport({
         applyProps(next, applied);
         const shadowProps = (m: GameMap) => JSON.stringify((m.props ?? []).filter(propCastsBakedShadow));
         if (shadowProps(next) !== shadowProps(applied)) bakeSoon();
+      }
+      if (lightsChanged) {
+        // A dragged light or slider restarts its own idle window.
+        clearTimeout(bakeTimer);
+        clearTimeout(lightEditTimer);
+        lightEditTimer = setTimeout(bakeLatest, LIGHT_EDIT_SETTLE_MS);
       }
       applied = next;
     };
@@ -6292,6 +6303,9 @@ export function GameViewport({
       return p && p.distanceTo(editRaycaster.ray.origin) <= (topdown.on ? TOPDOWN_REACH : EDIT_REACH) ? p : null;
     }
     const onPress = (e: PointerEvent) => {
+      // The canvas handles editing in top-down view. Keep the outer
+      // first-person pointer controls from starting a look drag.
+      if (topdown.on) e.stopPropagation();
       press = { x: e.clientX, y: e.clientY, at: performance.now() };
       dragItem = null;
       if (!editModeRef.current || e.button !== 0) return;
@@ -6521,9 +6535,8 @@ export function GameViewport({
     const editRaycaster = new THREE.Raycaster();
     editRaycaster.far = EDIT_REACH;
     const editNormal = new THREE.Vector3();
-    let editHover: THREE.Vector2 | null = null;
     const onHover = (e: PointerEvent) => {
-      editHover = viewNdc(e.clientX, e.clientY);
+      editHoverRef.current = viewNdc(e.clientX, e.clientY);
     };
     // leaving the view (for the toolbar, say) keeps the last point: the
     // highlight mustn't jump to whatever is in the middle of the view
@@ -6646,15 +6659,33 @@ export function GameViewport({
       const layer = TOOL_LAYER[editToolRef.current];
       return !!layer && lockedLayersRef.current.has(layer);
     };
-    function editTargetAt(ndc: THREE.Vector2): EditTarget | null {
+    let cursorLamp: THREE.Vector3 | null = null;
+    function editTargetAt(ndc: THREE.Vector2, updateLamp = false): EditTarget | null {
       editRaycaster.setFromCamera(ndc, camera);
       editRaycaster.far = topdown.on ? TOPDOWN_REACH : EDIT_REACH;
       // (the Select tool points at any kind: the nearest thing under the pointer)
       const selecting = editToolRef.current === "select";
       const lightTool = editToolRef.current === "light" || selecting;
       const locked = lockedLayersRef.current;
-      const hits = editRaycaster
-        .intersectObjects(group.children, true)
+      const intersections = editRaycaster.intersectObjects(group.children, true);
+      if (updateLamp) {
+        for (const hit of intersections) {
+          if (!hit.face || !drawnChain(hit.object) || seeThrough(hit.object)) continue;
+          const layer = objectLayer(hit.object);
+          if (layer === "light" || layer === "smoke" || layer === "actor" || layer === "decal") continue;
+          // Nudge off vertical faces into the adjacent open cell.
+          editNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+          const x = hit.point.x + editNormal.x * 0.05;
+          const z = hit.point.z + editNormal.z * 0.05;
+          const cx = Math.round(x);
+          const cz = Math.round(z);
+          if (cellAt(liveMap, cx, cz) === "wall") continue;
+          cursorLamp ??= new THREE.Vector3();
+          cursorLamp.set(x, Math.min(hit.point.y + 0.75, ceilingY(cx, cz) - 0.08), z);
+          break;
+        }
+      }
+      const hits = intersections
         .filter((h) => {
           if (!h.face) return false;
           const layer = objectLayer(h.object);
@@ -6904,19 +6935,30 @@ export function GameViewport({
     }
     // What is under the pointer is found with a ray (through thousands of triangles); it only changes when the pointer,
     // the view, the tool, the map or a drag does - not worked out again every frame while all of those stand still.
-    let hoverCache: { map: GameMap; tool: string; locked: ReadonlySet<string>; x: number; y: number; dragging: boolean; pos: THREE.Vector3; quat: THREE.Quaternion; target: EditTarget | null } | null = null;
-    function hoverTarget(): EditTarget | null {
-      const at = editHover ?? ORIGIN_NDC;
+    let hoverCache: { map: GameMap; tool: string; locked: ReadonlySet<string>; x: number; y: number; dragging: boolean; lamp: boolean; aspect: number; pos: THREE.Vector3; quat: THREE.Quaternion; target: EditTarget | null } | null = null;
+    function hoverTarget(lamp: boolean): EditTarget | null {
+      const at = editHoverRef.current ?? ORIGIN_NDC;
       const dragging = !!dragItem?.moved;
       const locked = lockedLayersRef.current;
       const c = hoverCache;
-      if (c && c.map === latestMapRef.current && c.tool === editToolRef.current && c.locked === locked && c.x === at.x && c.y === at.y && c.dragging === dragging && c.pos.equals(camera.position) && c.quat.equals(camera.quaternion)) return c.target;
-      const target = editTargetAt(at);
-      hoverCache = { map: latestMapRef.current, tool: editToolRef.current, locked, x: at.x, y: at.y, dragging, pos: camera.position.clone(), quat: camera.quaternion.clone(), target };
+      if (c && c.map === latestMapRef.current && c.tool === editToolRef.current && c.locked === locked && c.x === at.x && c.y === at.y && c.dragging === dragging && c.lamp === lamp && c.aspect === camera.aspect && c.pos.equals(camera.position) && c.quat.equals(camera.quaternion)) return c.target;
+      const target = editTargetAt(at, lamp);
+      hoverCache = { map: latestMapRef.current, tool: editToolRef.current, locked, x: at.x, y: at.y, dragging, lamp, aspect: camera.aspect, pos: camera.position.clone(), quat: camera.quaternion.clone(), target };
       return target;
     }
     function updateEditHighlight() {
-      const target = editModeRef.current && !toolLocked() ? hoverTarget() : null;
+      const lamp = topdown.on && settingsRef.current.headlamp;
+      const canEdit = editModeRef.current && !toolLocked();
+      const hovered = canEdit || lamp ? hoverTarget(lamp) : null;
+      const target = canEdit ? hovered : null;
+      if (lamp) {
+        if (cursorLamp) pointLight.position.copy(cursorLamp);
+        else {
+          const x = Math.round(topdown.x);
+          const z = Math.round(topdown.z);
+          pointLight.position.set(topdown.x, Math.min(floorY(x, z) + 0.75, ceilingY(x, z) - 0.08), topdown.z);
+        }
+      }
       reportHover(target);
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
@@ -7562,7 +7604,7 @@ export function GameViewport({
 
     return () => {
       disposed = true;
-      clearTimeout(bakeTimer);
+      clearBakeTimers();
       cancelBake?.();
       rebakeRef.current = null;
       stopRaycastPrep?.();
