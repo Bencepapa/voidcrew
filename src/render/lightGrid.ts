@@ -7,6 +7,8 @@ import { PROP_TYPES, propHeight, propPlacement } from "../game/props";
 import type { LightSpec } from "../game/lights";
 import type { GameMap } from "../game/types";
 
+export type LightBakeMap = Pick<GameMap, "width" | "height" | "cells" | "floorHeights" | "ceilingHeights" | "props" | "bridges">;
+
 // Baked lighting: a deck's static lights summed up once, on a grid of sample
 // points through its rooms (an irradiance volume, like Quake's light grid),
 // which every lit material looks up by its world position (see
@@ -55,6 +57,23 @@ export interface LightGridData {
   mode: LightGridMode;
 }
 
+type PackedLightGrid = Omit<LightGridData, "faces"> & { faces: Uint16Array[] };
+
+export function packLightGrid(grid: LightGridData, ambientOnly = false): PackedLightGrid {
+  const faces = (ambientOnly ? grid.faces.slice(0, 1) : grid.faces).map((face) => {
+    const rgba = new Uint16Array((face.length / 3) * 4);
+    const alpha = THREE.DataUtils.toHalfFloat(1);
+    for (let n = 0; n < face.length / 3; n++) {
+      rgba[n * 4] = THREE.DataUtils.toHalfFloat(face[n * 3]);
+      rgba[n * 4 + 1] = THREE.DataUtils.toHalfFloat(face[n * 3 + 1]);
+      rgba[n * 4 + 2] = THREE.DataUtils.toHalfFloat(face[n * 3 + 2]);
+      rgba[n * 4 + 3] = alpha;
+    }
+    return rgba;
+  });
+  return { ...grid, faces };
+}
+
 const AXES: [number, number, number][] = [
   [1, 0, 0],
   [-1, 0, 0],
@@ -65,7 +84,7 @@ const AXES: [number, number, number][] = [
 ];
 
 export function bakeLightGrid(
-  map: GameMap,
+  map: LightBakeMap,
   lights: LightSpec[],
   wallHeight: number,
   // bounce: how strong the light bounced round corners is (see bounceLight;
@@ -330,7 +349,7 @@ const BOUNCE_FALLOFF = 0.55;
 const BOUNCE_SCALE = 0.12;
 const SKY_BOUNCE_SHARE = 0.25;
 
-function bounceLight(map: GameMap, lights: LightSpec[]): Float32Array {
+function bounceLight(map: LightBakeMap, lights: LightSpec[]): Float32Array {
   const W = map.width;
   const H = map.height;
   const out = new Float32Array(W * H * 3);
@@ -398,7 +417,12 @@ interface Occluders {
   cells: (Occluder[] | undefined)[];
 }
 
-function occludersOf(map: GameMap): Occluders {
+export function propCastsBakedShadow(spec: NonNullable<GameMap["props"]>[number]): boolean {
+  const kind = PROP_TYPES[spec.prop]?.kind;
+  return kind !== "cross" && kind !== "roof";
+}
+
+function occludersOf(map: LightBakeMap): Occluders {
   const out: Occluders = { width: map.width, cells: [] };
   const add = (box: Occluder) => {
     for (let z = Math.max(0, Math.round(box.minZ)); z <= Math.min(map.height - 1, Math.round(box.maxZ)); z++) {
@@ -408,7 +432,7 @@ function occludersOf(map: GameMap): Occluders {
     }
   };
   for (const spec of map.props ?? []) {
-    if (PROP_TYPES[spec.prop]?.kind === "cross" || PROP_TYPES[spec.prop]?.kind === "roof") continue;
+    if (!propCastsBakedShadow(spec)) continue;
     const { x, z, reachX, reachZ } = propPlacement(spec);
     const bottom = floorHeight(map, spec.cell.x, spec.cell.y) + (spec.elevation ?? 0);
     add({ minX: x - reachX, maxX: x + reachX, minY: bottom, maxY: bottom + propHeight(map, spec), minZ: z - reachZ, maxZ: z + reachZ });
@@ -437,7 +461,7 @@ function blockedAt(occluders: Occluders, cx: number, cz: number, x: number, y: n
 // ceiling, prop or bridge (the light's own cell doesn't count - it may sit
 // in a wall, or on a prop)
 function clearLine(
-  map: GameMap,
+  map: LightBakeMap,
   occluders: Occluders,
   px: number,
   py: number,
@@ -547,15 +571,8 @@ export function createLightGridUniforms(): LightGridUniforms {
 // puts a bake into the uniforms (the old textures freed); `ambient`: a
 // coarser directional bake to take the ambient part from (see
 // LightGridUniforms.split)
-export function setLightGrid(uniforms: LightGridUniforms, data: LightGridData, ambient?: LightGridData) {
-  const put = (f: Float32Array, a: number, grid: LightGridData) => {
-    const rgba = new Uint16Array((f.length / 3) * 4);
-    for (let n = 0; n < f.length / 3; n++) {
-      rgba[n * 4] = THREE.DataUtils.toHalfFloat(f[n * 3]);
-      rgba[n * 4 + 1] = THREE.DataUtils.toHalfFloat(f[n * 3 + 1]);
-      rgba[n * 4 + 2] = THREE.DataUtils.toHalfFloat(f[n * 3 + 2]);
-      rgba[n * 4 + 3] = THREE.DataUtils.toHalfFloat(1);
-    }
+export function setLightGrid(uniforms: LightGridUniforms, data: PackedLightGrid, ambient?: PackedLightGrid) {
+  const put = (rgba: Uint16Array, a: number, grid: PackedLightGrid) => {
     const tex = new THREE.Data3DTexture(rgba, grid.nx, grid.nz, grid.ny);
     tex.format = THREE.RGBAFormat;
     tex.type = THREE.HalfFloatType;

@@ -18,6 +18,8 @@ import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
 import {
   bakeLightGrid,
+  packLightGrid,
+  propCastsBakedShadow,
   createLightGridUniforms,
   createLightReach,
   disposeLightGrid,
@@ -27,6 +29,7 @@ import {
   useLightGrid,
 } from "../render/lightGrid";
 import type { LightGridMode } from "../render/lightGrid";
+import type { LightBakeRequest, LightBakeResult } from "../render/lightBake.worker";
 import { DOOR_EDGE_OFFSET, bridgeAt, cellAt, ceilingHeight, doorAt, doorFacingAt, doorFits, floorHeight, ladderBetween, liftDoorOf, windowPanels } from "../game/map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
@@ -601,7 +604,7 @@ function wallVariantRoll(x: number, z: number): number {
 // custom HMR event sent by the texture hot-reload plugin in vite.config.ts
 const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
 // how long the editor leaves the quick flat preview of its structural edits before the scene's full build
-const EDIT_SETTLE_MS = 5000;
+const EDIT_SETTLE_MS = 3000;
 const ORIGIN_NDC = new THREE.Vector2(0, 0);
 // the relief depth a floor texture is tuned against in the Asset Manager (its default)
 export const FLOOR_BASE_DEPTH = 0.04;
@@ -2069,27 +2072,90 @@ export function GameViewport({
       bounce: settingsRef.current.lightBounce,
     });
     // the bake (and a coarser one for the ambient part, if the map asks)
-    const bake = (m: GameMap) => {
+    let cancelBake: (() => void) | undefined;
+    const bake = (m: GameMap): Promise<void> => {
+      cancelBake?.();
       const bakeFrom = performance.now();
       const options = bakeOptions(m);
-      const ambient =
+      const ambientDensity =
         options.mode === "directional" && liveMap === map && m.lightGridAmbient && m.lightGridAmbient !== options.perCell
-          ? bakeLightGrid(m, mapLights, wallHeight, { ...options, perCell: m.lightGridAmbient })
+          ? m.lightGridAmbient
           : undefined;
-      setLightGrid(lightGrid, bakeLightGrid(m, mapLights, wallHeight, options), ambient);
-      tick("light bake", bakeFrom);
+      const lights = mapLights;
+      const applyBake = ({ data, ambient }: LightBakeResult) => {
+        setLightGrid(lightGrid, data, ambient);
+        tick("light bake", bakeFrom);
+      };
+      const fallback = () => applyBake({
+        data: packLightGrid(bakeLightGrid(m, lights, wallHeight, options)),
+        ambient: ambientDensity === undefined ? undefined
+          : packLightGrid(bakeLightGrid(m, lights, wallHeight, { ...options, perCell: ambientDensity }), true),
+      });
+      return new Promise<void>((resolve, reject) => {
+        let worker: Worker;
+        const recover = () => {
+          try {
+            fallback();
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        };
+        try {
+          worker = new Worker(new URL("../render/lightBake.worker.ts", import.meta.url), { type: "module" });
+        } catch {
+          recover();
+          return;
+        }
+        const finish = () => {
+          worker.terminate();
+          cancelBake = undefined;
+        };
+        cancelBake = () => {
+          finish();
+          resolve();
+        };
+        worker.onmessage = ({ data }: MessageEvent<LightBakeResult>) => {
+          finish();
+          try {
+            applyBake(data);
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        };
+        worker.onerror = (event) => {
+          event.preventDefault();
+          finish();
+          recover();
+        };
+        const { width, height, cells, floorHeights, ceilingHeights, props, bridges } = m;
+        const request: LightBakeRequest = {
+          map: { width, height, cells, floorHeights, ceilingHeights, props, bridges },
+          lights, wallHeight, options, ambientDensity,
+        };
+        try {
+          worker.postMessage(request);
+        } catch {
+          finish();
+          recover();
+        }
+      }).catch((error) => console.error("Light bake failed:", error));
     };
-    bake(map);
+    track(bake(map));
     // the bake, a moment after the last call (a slider dragged, a prop moved)
     let bakeTimer: ReturnType<typeof setTimeout> | undefined;
-    const bakeSoon = (m: GameMap | (() => GameMap), delay: number) => {
+    const bakeSoon = () => {
       clearTimeout(bakeTimer);
       bakeTimer = setTimeout(() => {
-        if (!disposed) bake(typeof m === "function" ? m() : m);
-      }, delay);
+        if (!disposed) void bake(latestMapRef.current);
+      }, EDIT_SETTLE_MS);
     };
     // baked again when its settings change (see the effect on them)
-    rebakeRef.current = () => bake(latestMapRef.current);
+    rebakeRef.current = () => {
+      clearTimeout(bakeTimer);
+      void bake(latestMapRef.current);
+    };
     const ceilingLightCells = (lights: LightSpec[]) =>
       new Set(lights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`));
     let litCells = ceilingLightCells(mapLights);
@@ -5062,7 +5128,7 @@ export function GameViewport({
       culledCount = -1;
       // and the baked light follows (a moment after the last change: a colour
       // being dragged doesn't bake at every step)
-      bakeSoon(next, 250);
+      bakeSoon();
     }
     // A new version of the map with the same structure (see structureKey):
     // what differs in it is redone in place. Its robots need nothing here -
@@ -5148,7 +5214,7 @@ export function GameViewport({
       culledCount = -1;
       sceneVersion++;
       // the light grid, roughly: the full bake comes with the rebuild
-      bakeSoon(next, 120);
+      bakeSoon();
       // dev: what the quick preview holds (flat quads drawn, old surfaces taken off)
       if (import.meta.env.DEV) {
         Object.assign(window, { __voidcrewPreview: { changed: changed.size, quads: previewObjects.length, hidden: facingSurfaces.filter((o) => o.userData.editHidden).length } });
@@ -5184,9 +5250,8 @@ export function GameViewport({
       }
       if (JSON.stringify(next.props) !== JSON.stringify(applied.props)) {
         applyProps(next, applied);
-        // The props shade the baked light and shape the smoke's world: seen to
-        // once the work on them has stopped for a few seconds
-        bakeSoon(() => latestMapRef.current, 3000);
+        const shadowProps = (m: GameMap) => JSON.stringify((m.props ?? []).filter(propCastsBakedShadow));
+        if (shadowProps(next) !== shadowProps(applied)) bakeSoon();
       }
       applied = next;
     };
@@ -7497,6 +7562,9 @@ export function GameViewport({
 
     return () => {
       disposed = true;
+      clearTimeout(bakeTimer);
+      cancelBake?.();
+      rebakeRef.current = null;
       stopRaycastPrep?.();
       if (applyLightsRef.current === applyChanges) applyLightsRef.current = null;
       const w = window as { __voidcrewSnapshot?: () => string };

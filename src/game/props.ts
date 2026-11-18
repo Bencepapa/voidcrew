@@ -359,7 +359,7 @@ export function propRetexturable(type: PropType): boolean {
 
 // how tall a prop stands in its cell (wall heights): a pillar reaches the
 // ceiling
-export function propHeight(map: GameMap, spec: PropSpec): number {
+export function propHeight(map: Pick<GameMap, "floorHeights" | "ceilingHeights">, spec: PropSpec): number {
   const type = PROP_TYPES[spec.prop];
   // (the heights read here, not through map.ts: it imports this module)
   const { x, y } = spec.cell;
