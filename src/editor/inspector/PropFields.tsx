@@ -5,11 +5,14 @@ import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle } f
 
 import { PROP_TYPES, propEditable } from "../../game/props";
 import { propEdit } from "../propEditState";
+import { useTextureVersion } from "../textureLibrary";
 import { TEXTURE_SETS, textureSetsOfKind } from "../../render/textureSets";
 
-const PROP_TEXTURES = [...textureSetsOfKind("wall"), ...textureSetsOfKind("propFace")].filter(id => !id.endsWith("_top"));
 export function PropFields(p: EditorBarProps) {
+useTextureVersion();
 if (!p.prop) return null;
+// (the sets as they are now: a shared one loaded since counts)
+const PROP_TEXTURES = [...textureSetsOfKind("wall"), ...textureSetsOfKind("propFace")].filter(id => !id.endsWith("_top"));
 return <>
 <Section kind="prop" section="transform">
 {slider(t("editorBar.turn"), p.prop.rotation, 0, 345, 15, (v) => p.onPropChange({ rotation: v || undefined }))}
@@ -22,20 +25,17 @@ return <>
 <KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id)).map(value => ({value,label:value}))} onChange={prop => p.onPropChange({prop})}/>
 
 {p.prop.retexturable && (
-                  <label className="flex items-center gap-1">
-                    {t("editorBar.texture")}<select
-                      value={p.prop.texture ?? ""}
-                      onChange={(e) => p.onPropChange({ texture: e.target.value || undefined })}
-                      className="bg-neutral-800 border border-neutral-700 px-1 py-0.5"
-                    >
-                      <option value="">{t("editorBar.itsOwn")}</option>
-                      {PROP_TEXTURES.map((id) => (
-                        <option key={id} value={id}>
-                          {TEXTURE_SETS[id].label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  // (a roof wears any wall-kind set - the user's shared ones too; the other props
+                  // also the sets made for props)
+                  <KindChoice
+                    label={t("editorBar.texture")}
+                    value={p.prop.texture ?? ""}
+                    options={[
+                      { value: "", label: t("editorBar.itsOwn") },
+                      ...(PROP_TYPES[p.prop.name]?.kind === "roof" ? textureSetsOfKind("wall") : PROP_TEXTURES).map((id) => ({ value: id, label: TEXTURE_SETS[id].label })),
+                    ]}
+                    onChange={(texture) => p.onPropChange({ texture: texture || undefined })}
+                  />
                 )}
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropStack} title={t("editorBar.thePaletteSPropOnTopOf")}>{t("editorBar.stackOnTop", { v1: p.propChoice })}</button>
 </Section>

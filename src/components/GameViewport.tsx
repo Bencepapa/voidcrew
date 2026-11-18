@@ -33,6 +33,7 @@ import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type EdgeSegment } from "../render/reliefMesh";
+import { buildRoofGeometry } from "../render/roofMesh";
 import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
 import { generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
@@ -2132,6 +2133,39 @@ export function GameViewport({
       }
       return kit;
     };
+    // A roof's kit: a wall set's maps, copied and set to repeat (a roof's
+    // surface runs past the texture's one tile along its slope; the walls'
+    // maps clamp). One per set, among the prop kits.
+    const roofKitFor = (setId: string) => {
+      const key = `roof:${setId}`;
+      let kit = propKits.get(key);
+      if (!kit) {
+        const made = createWallKit(setId, false);
+        const copies = new Map<THREE.Texture, THREE.Texture>();
+        const repeating = (tex: THREE.Texture | null) => {
+          if (!tex) return tex;
+          let copy = copies.get(tex);
+          if (!copy) {
+            copy = tex.clone();
+            copy.wrapS = copy.wrapT = THREE.RepeatWrapping;
+            copy.needsUpdate = true;
+            copies.set(tex, copy);
+            made.textures.push(copy);
+          }
+          return copy;
+        };
+        for (const mat of kitMaterials(made)) {
+          mat.map = repeating(mat.map);
+          mat.normalMap = repeating(mat.normalMap);
+          mat.emissiveMap = repeating(mat.emissiveMap);
+          mat.roughnessMap = repeating(mat.roughnessMap);
+          mat.metalnessMap = repeating(mat.metalnessMap);
+        }
+        propKits.set(key, made);
+        kit = made;
+      }
+      return kit;
+    };
     // the loot items' sprites (all of them: a crate may spill any)
     for (const id of Object.keys(ITEM_TYPES)) sharedPropKitFor(`item_${id}`);
     // a prop type's texture sets: a box's side and top, its views, or a
@@ -2145,7 +2179,7 @@ export function GameViewport({
             ? [type.door, type.inside, `${type.views}_side`, `${type.views}_top`]
             : type.kind === "pillar"
               ? [type.texture ?? primarySet]
-              : type.kind === "chamfer"
+              : type.kind === "chamfer" || type.kind === "roof"
                 ? []
                 : [type.texture];
     // door panel kits by door kind, created on demand
@@ -3508,6 +3542,7 @@ export function GameViewport({
         case "box":
           return { ...type, side: texture, top: isTextureSetId(`${texture}_top`) ? `${texture}_top` : texture };
         case "pillar":
+        case "roof":
         case "panel":
         case "cross":
           return { ...type, texture };
@@ -3635,6 +3670,20 @@ export function GameViewport({
         return template;
       }
 
+      if (type.kind === "roof") {
+        // Flat triangles at 45 degrees (and flat stretches) in the wall set's
+        // diffuse and normal maps, repeating along the slope - no relief
+        // geometry (see roofKitFor and roofMesh.ts); the thick edge and the
+        // underside have the plain texture
+        const kit = roofKitFor(type.texture ?? primarySet);
+        kit.normal = type.normal;
+        const normal = settingsRef.current.normalStrength * (kit.normal ?? 1);
+        kit.wallMat.normalScale.set(normal, normal);
+        const { top, under } = buildRoofGeometry(type.profile, type.corner);
+        geometries.push(top, under);
+        template.add(new THREE.Mesh(top, kit.wallMat), new THREE.Mesh(under, kit.sideMat));
+        return template;
+      }
       if (type.kind === "pillar" || type.kind === "chamfer") return null;
       const [front, side, top] = propSets(type).map((id) => propKitFor(id));
       // What each view covers (see PropType's px): at one pixel scale -
@@ -4179,7 +4228,7 @@ export function GameViewport({
           return cx < 0 || cz < 0 || cx >= W || cz >= H ? wallHeight : ceilingCell[cz * W + cx];
         },
         boxes: (m.props ?? [])
-          .filter((p) => PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "chamfer")
+          .filter((p) => PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "chamfer" && PROP_TYPES[p.prop].kind !== "roof")
           .map((p) => {
             const { x, z, reachX, reachZ } = propPlacement(p);
             const bottom = floorY(p.cell.x, p.cell.y) + (p.elevation ?? 0) * wallHeight;

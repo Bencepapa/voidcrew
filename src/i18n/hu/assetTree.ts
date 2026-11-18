@@ -1,4 +1,4 @@
-export const assetTreeHu = {"assetTree.title": "Assetek", "assetTree.search": "Keres\u00e9s n\u00e9v vagy fajta szerint\u2026", "assetTree.pillar": "Pill\u00e9r / Saroklet\u00f6r\u00e9s", "assetTree.decals": "Matric\u00e1k", "assetTree.lights": "F\u00e9nyek", "assetTree.empty": "Nincs tal\u00e1lat", "assetTree.lock": "R\u00e9teg z\u00e1rol\u00e1sa", "assetTree.unlock": "R\u00e9teg felold\u00e1sa",
+﻿export const assetTreeHu = {"assetTree.title": "Assetek", "assetTree.search": "Keres\u00e9s n\u00e9v vagy fajta szerint\u2026", "assetTree.pillar": "Pill\u00e9r / Saroklet\u00f6r\u00e9s", "assetTree.decals": "Matric\u00e1k", "assetTree.lights": "F\u00e9nyek", "assetTree.empty": "Nincs tal\u00e1lat", "assetTree.lock": "R\u00e9teg z\u00e1rol\u00e1sa", "assetTree.unlock": "R\u00e9teg felold\u00e1sa",
 "assetTree.name.Scrap metal": "F\u00e9mhullad\u00e9k",
 "assetTree.name.Wiring": "Vezet\u00e9k",
 "assetTree.name.Circuit board": "\u00c1ramk\u00f6ri lap",
@@ -31,7 +31,7 @@ export const assetTreeHu = {"assetTree.title": "Assetek", "assetTree.search": "K
 "assetTree.name.An infected crewman": "Fert\u0151z\u00f6tt leg\u00e9nys\u00e9gi tag",
 "assetTree.name.An ogre": "Ogre",
 "assetTree.name.A goblin": "Goblin",
-"assetTree.name.A goblin raider": "Goblin fosztogató",
+"assetTree.name.A goblin raider": "Goblin fosztogatĂł",
 "assetTree.name.A necromancer": "Nekromanta",
 "assetTree.name.A wolf": "Farkas",
 "assetTree.name.A hooded mage": "Csukly\u00e1s m\u00e1gus",
@@ -61,5 +61,12 @@ export const assetTreeHu = {"assetTree.title": "Assetek", "assetTree.search": "K
 "assetTree.name.Wall 4": "Fal 4",
 "assetTree.name.Wall 5": "Fal 5",
 "assetTree.name.fence1": "Vasker\u00edt\u00e9s",
-"assetTree.name.arch1": "K\u0151bolt\u00edv"
+"assetTree.name.arch1": "K\u0151bolt\u00edv",
+"assetTree.name.roof_slope": "Tet\u0151 lejt\u0151",
+"assetTree.name.roof_slope_flat": "Tet\u0151 lejt\u0151, lapos r\u00e9sszel",
+"assetTree.name.roof_flat": "Tet\u0151, lapos",
+"assetTree.name.roof_corner": "Tet\u0151 sarok (k\u00fcls\u0151)",
+"assetTree.name.roof_corner_flat": "Tet\u0151 sarok (k\u00fcls\u0151), lapos r\u00e9sszel",
+"assetTree.name.roof_inner": "Tet\u0151 sarok (bels\u0151)",
+"assetTree.name.roof_inner_flat": "Tet\u0151 sarok (bels\u0151), lapos r\u00e9sszel"
 } as const;
