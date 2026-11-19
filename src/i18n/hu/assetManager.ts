@@ -144,12 +144,12 @@ export const assetManagerHu = {
   "assetManager.lockedTitle": "Beépített: csak olvasható",
   "assetManager.draftTitle": "Mentetlen módosítás (helyi piszkozat)",
   "assetManager.autoHint": "A diffuse-ból generálva, ezen a gépen; a recept tárolódik, nem a kép.",
-  "assetManager.ai.button": "AI mélység",
+  "assetManager.ai.button": "Generálás",
   "assetManager.ai.hint": "AI modellt futtat a gépeden. Az első használatkor letölti a modellt (kb. {size}), ez tovább tart; később gyorsabb, mert a böngésző gyorsítótárazza.",
   "assetManager.ai.size": "25-50 MB",
   "assetManager.ai.cached": "Modell gyorsítótárban: gyors.",
-  "assetManager.ai.licence": "Depth Anything V2 Small, Apache-2.0. A gépeden fut; a kép nem hagyja el.",
-  "assetManager.ai.status": "AI (Depth Anything V2 Small)",
+  "assetManager.ai.licence": "Depth Anything V2 Small (Apache-2.0). A gépeden fut; a kép nem hagyja el.",
+  "assetManager.ai.status": "generálva",
   "assetManager.ai.preparing": "Előkészítés…",
   "assetManager.ai.loading": "Az AI modell betöltése…",
   "assetManager.ai.downloading": "Az AI modell letöltése {percent}%",
@@ -238,5 +238,6 @@ export const assetManagerHu = {
   "assetManager.searchAssets": "Eszközök keresése",
   "assetManager.baseColor": "Alapszín (diffuse)",
   "assetManager.fit": "Illesztés",
-  "assetManager.actualSize": "100%"
+  "assetManager.actualSize": "100%",
+  "assetManager.ai.section": "AI mélység",
 } as const satisfies Record<string, string>;

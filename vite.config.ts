@@ -294,6 +294,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles(), propFiles(), textureTuningFile()],
   // ES workers: the AI depth worker imports Transformers.js dynamically (a separate chunk), which IIFE workers can't do
   worker: { format: "es" },
+  // pre-bundled at startup: otherwise the first AI depth click finds a "new dependency" and the dev server reloads the page
+  optimizeDeps: { include: ["@huggingface/transformers"] },
   server: {
     port: 3000,
     watch: {

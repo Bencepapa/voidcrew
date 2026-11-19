@@ -13,7 +13,7 @@ const small = "rounded border border-neutral-500 bg-neutral-800 px-2 py-1 text-x
 
 // a small neutral pill with a subtle accent: this feature runs an AI model
 export function AiBadge({ className = "" }: { className?: string }) {
-  return <span className={"rounded border border-sky-400/60 bg-neutral-700 px-1 text-[10px] font-bold leading-4 text-sky-200 " + className} title={t("assetManager.ai.hint", { size: t("assetManager.ai.size") })}>AI</span>;
+  return <span className={"rounded border border-sky-400/60 bg-neutral-700 px-1 text-[10px] font-bold leading-4 text-sky-200 " + className} title={t("assetManager.ai.licence")}>AI</span>;
 }
 
 export function AiDepthControls({ editor }: { editor: TextureEditor }) {
@@ -55,25 +55,25 @@ export function AiDepthControls({ editor }: { editor: TextureEditor }) {
     }
   }
 
-  return <div className="mt-1 flex flex-col gap-1 border-t border-neutral-700 pt-1">
-    <div className="flex flex-wrap items-center gap-1">
-      <button className={small + " inline-flex items-center gap-1"} disabled={running || editor.busy || !hasDiffuse} title={t("assetManager.ai.hint", { size: t("assetManager.ai.size") })} onClick={() => void start()}>
-        <AiBadge/>{t("assetManager.ai.button")}
-      </button>
-      {running && <button className={small} onClick={() => abort.current?.abort()}>{t("assetManager.cancel")}</button>}
-    </div>
-    {running && <p role="status" className="text-[10px] text-sky-200">{label}</p>}
-    {running && device === "wasm" && <p className="text-[10px] text-yellow-300">{t("assetManager.ai.slow")}</p>}
-    <p className="text-[10px] text-neutral-400">{cached ? t("assetManager.ai.cached") : t("assetManager.ai.hint", { size: t("assetManager.ai.size") })}</p>
-    <p className="text-[10px] text-neutral-400">{t("assetManager.ai.licence")}</p>
-    <label className="text-[11px]"><input type="checkbox" checked={alsoNormal} disabled={running} onChange={e => setAlsoNormal(e.target.checked)}/> {t("assetManager.ai.alsoNormal")}</label>
-    <details className="text-[11px]"><summary className="cursor-pointer">{t("assetManager.ai.options")}</summary>
-      <div className="mt-1 flex flex-col gap-1">
-        <label><input type="checkbox" checked={options.invert} disabled={running} onChange={e => set("invert", e.target.checked)}/> {t("assetManager.ai.invert")}</label>
-        <label>{t("assetManager.ai.detail")}: <strong>{options.detail.toFixed(2)}</strong>
-          <input className="block w-full" type="range" min="0" max="1" step="0.05" value={options.detail} disabled={running} onChange={e => set("detail", +e.target.value)}/></label>
-        <label><input type="checkbox" checked={options.keepAlpha} disabled={running} onChange={e => set("keepAlpha", e.target.checked)}/> {t("assetManager.ai.keepAlpha")}</label>
+  return <details className="mt-1 border-t border-neutral-700 pt-1 text-[11px]">
+    <summary className="flex cursor-pointer select-none items-center gap-1 text-neutral-200">
+      <AiBadge/>{t("assetManager.ai.section")}
+      {running && <span role="status" className="ml-1 truncate text-[10px] text-sky-200">{label}</span>}
+    </summary>
+    <div className="mt-1 flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        <button className={small} disabled={running || editor.busy || !hasDiffuse} title={t("assetManager.ai.hint", { size: t("assetManager.ai.size") })} onClick={() => void start()}>
+          {t("assetManager.ai.button")}
+        </button>
+        {running && <button className={small} onClick={() => abort.current?.abort()}>{t("assetManager.cancel")}</button>}
       </div>
-    </details>
-  </div>;
+      {running && device === "wasm" && <p className="text-[10px] text-yellow-300">{t("assetManager.ai.slow")}</p>}
+      <p className="text-[10px] text-neutral-400">{cached ? t("assetManager.ai.cached") : t("assetManager.ai.hint", { size: t("assetManager.ai.size") })}</p>
+      <label><input type="checkbox" checked={alsoNormal} disabled={running} onChange={e => setAlsoNormal(e.target.checked)}/> {t("assetManager.ai.alsoNormal")}</label>
+      <label><input type="checkbox" checked={options.invert} disabled={running} onChange={e => set("invert", e.target.checked)}/> {t("assetManager.ai.invert")}</label>
+      <label>{t("assetManager.ai.detail")}: <strong>{options.detail.toFixed(2)}</strong>
+        <input className="block w-full" type="range" min="0" max="1" step="0.05" value={options.detail} disabled={running} onChange={e => set("detail", +e.target.value)}/></label>
+      <label><input type="checkbox" checked={options.keepAlpha} disabled={running} onChange={e => set("keepAlpha", e.target.checked)}/> {t("assetManager.ai.keepAlpha")}</label>
+    </div>
+  </details>;
 }

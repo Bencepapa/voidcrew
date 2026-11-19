@@ -144,12 +144,12 @@ export const assetManagerEn = {
   "assetManager.lockedTitle": "Built-in: read-only",
   "assetManager.draftTitle": "Unsaved changes (a local draft)",
   "assetManager.autoHint": "Generated from the diffuse on this computer; the recipe is stored, not the image.",
-  "assetManager.ai.button": "AI depth",
+  "assetManager.ai.button": "Generate",
   "assetManager.ai.hint": "Runs an AI model on your computer. The first use downloads the model (about {size}) and takes longer; later runs are faster (the model is cached by the browser).",
   "assetManager.ai.size": "25 to 50 MB",
   "assetManager.ai.cached": "Model cached: fast.",
-  "assetManager.ai.licence": "Depth Anything V2 Small, Apache-2.0. It runs on your computer; the image does not leave it.",
-  "assetManager.ai.status": "AI (Depth Anything V2 Small)",
+  "assetManager.ai.licence": "Depth Anything V2 Small (Apache-2.0). It runs on your computer; the image does not leave it.",
+  "assetManager.ai.status": "generated",
   "assetManager.ai.preparing": "Preparing…",
   "assetManager.ai.loading": "Loading the AI model…",
   "assetManager.ai.downloading": "Downloading the AI model {percent}%",
@@ -238,5 +238,6 @@ export const assetManagerEn = {
   "assetManager.searchAssets": "Search assets",
   "assetManager.baseColor": "Base colour (diffuse)",
   "assetManager.fit": "Fit",
-  "assetManager.actualSize": "100%"
+  "assetManager.actualSize": "100%",
+  "assetManager.ai.section": "AI depth",
 } as const satisfies Record<string, string>;
