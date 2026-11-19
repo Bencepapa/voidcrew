@@ -15,7 +15,7 @@ import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./te
 import { loadSharedTextures } from "./sharedTextures";
 import { sharedConfigured } from "./sharedAuth";
 import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
-import { Lock } from "lucide-react";
+import { Lock, RefreshCw } from "lucide-react";
 import { DEFAULT_SETTINGS, FLOOR_BASE_DEPTH } from "../components/GameViewport";
 import type { ReliefMode } from "../game/renderLook";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "../render/reliefMesh";
@@ -129,29 +129,46 @@ function useImageSize(url?: string) {
   return size;
 }
 
-// A still image is not a room: show it flat, with wheel zoom and drag to pan.
+// A still image is not a room: show it flat, with wheel zoom and drag to pan. The percentage is the real scale
+// (Fit = the scale that fits the window, 100% = one image pixel per screen pixel); the wheel zooms from the shown scale.
 function StillPreview({ url, alt }: { url?: string; alt: string }) {
   const [fit, setFit] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [natural, setNatural] = useState({ w: 0, h: 0 });
+  const [box, setBox] = useState({ w: 0, h: 0 });
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
-  useEffect(() => { setFit(true); setZoom(1); setPan({ x: 0, y: 0 }); }, [url]);
+  const area = useRef<HTMLDivElement>(null);
+  useEffect(() => { setFit(true); setZoom(1); setPan({ x: 0, y: 0 }); setNatural({ w: 0, h: 0 }); }, [url]);
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    const measure = () => setBox({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [url]);
   if (!url) return <div className="grid h-full min-h-0 place-items-center rounded-sm border border-neutral-800 text-sm text-neutral-500">{t("assetManager.image.noPng")}</div>;
+  const fitScale = natural.w > 0 && natural.h > 0 && box.w > 0 && box.h > 0 ? Math.min((box.w - 2) / natural.w, (box.h - 2) / natural.h) : 1;
+  const scale = fit ? fitScale : zoom;
+  const clamp = (value: number) => Math.min(16, Math.max(.05, value));
   return <div className="flex min-h-0 flex-1 flex-col gap-1">
     <div className="flex shrink-0 items-center gap-1 text-xs">
-      <button type="button" className={button} onClick={() => { setFit(true); setZoom(1); setPan({ x: 0, y: 0 }); }}>{t("assetManager.fit")}</button>
+      <button type="button" className={button} onClick={() => { setFit(true); setPan({ x: 0, y: 0 }); }}>{t("assetManager.fit")}</button>
       <button type="button" className={button} onClick={() => { setFit(false); setZoom(1); setPan({ x: 0, y: 0 }); }}>{t("assetManager.actualSize")}</button>
-      <span className="text-neutral-400">{Math.round(zoom * 100)}%</span>
+      <span className="text-neutral-400">{Math.round(scale * 100)}%</span>
     </div>
-    <div className="relative min-h-0 flex-1 overflow-hidden rounded-sm border border-neutral-800 bg-neutral-900 [&_img]:select-none"
-      onWheel={event => { event.preventDefault(); event.stopPropagation(); setFit(false); setZoom(value => Math.min(8, Math.max(.1, value * Math.exp(-event.deltaY * .0015)))); }}
+    <div ref={area} className="relative min-h-0 flex-1 overflow-hidden rounded-sm border border-neutral-800 bg-neutral-900 [&_img]:select-none"
+      onWheel={event => { event.preventDefault(); event.stopPropagation(); const next = clamp(scale * Math.exp(-event.deltaY * .0015)); setFit(false); setZoom(next); }}
       onPointerDown={event => { if (event.button !== 0 || fit) return; event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y }; }}
       onPointerMove={event => { if (!drag.current) return; setPan({ x: drag.current.px + event.clientX - drag.current.x, y: drag.current.py + event.clientY - drag.current.y }); }}
       onPointerUp={() => { drag.current = null; }}
       onPointerCancel={() => { drag.current = null; }}>
       <img src={url} alt={alt} draggable={false}
-        className={(fit ? "max-h-full max-w-full" : "max-h-none max-w-none") + " absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 object-contain"}
-        style={fit ? { maxHeight: "calc(100% - 2px)", maxWidth: "calc(100% - 2px)" } : { transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}/>
+        onLoad={event => setNatural({ w: event.currentTarget.naturalWidth, h: event.currentTarget.naturalHeight })}
+        className="absolute left-1/2 top-1/2 max-h-none max-w-none object-contain"
+        style={natural.w > 0 ? { width: natural.w, height: natural.h, transform: `translate(calc(-50% + ${fit ? 0 : pan.x}px), calc(-50% + ${fit ? 0 : pan.y}px)) scale(${scale})`, imageRendering: scale > 2 ? "pixelated" : "auto" } : { opacity: 0 }}/>
     </div>
   </div>;
 }
@@ -841,7 +858,6 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       <section className="voidcrew-editor-controls flex h-full w-full flex-col rounded-lg border border-neutral-700 bg-neutral-950 p-3 text-neutral-200" style={neutralStyle}>
         <style>{".theme-fantasy .voidcrew-editor-controls .border { box-shadow: none; }"}</style>
         <header className="mb-2 flex shrink-0 flex-wrap items-center gap-2 border-b border-neutral-700 pb-2">
-          <strong className="mr-1 text-sm">{t("assetManager.title")}</strong>
           <label className="flex items-center gap-1 text-[11px] text-neutral-400">{t("assetManager.mainCategory")}
             <select className={selectClass} value={sample} onChange={e=>changeSample(e.target.value as Sample)}>
               {categories.map(c=><option key={c.value} value={c.value}>{t(c.label)}</option>)}
@@ -859,7 +875,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               <option value="fantasy">{t("assetManager.fantasy")}</option>
             </select>
           </label>
-          <button type="button" className={button} onClick={()=>void refreshShared()}>{t("assetManager.refresh")}</button>
+          <button type="button" className={button + " grid h-7 w-7 place-items-center !p-0"} aria-label={t("assetManager.refresh")} title={t("assetManager.refresh")} onClick={()=>void refreshShared()}><RefreshCw size={14} aria-hidden="true"/></button>
           <span className="min-w-0 flex-1 truncate text-xs text-red-300">{error || t("assetManager.orbitHint")}</span>
           <button aria-label={t("assetManager.close")} className={button} onClick={requestClose}>×</button>
         </header>
