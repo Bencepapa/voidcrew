@@ -28,6 +28,8 @@ export interface TextureDraft {
   // whether the uploaded diffuse has any alpha < 255 (found when it was chosen)
   diffuseAlpha: boolean;
   maps: Record<MapKey, MapSlot>;
+  // the depth is an AI result (Depth Anything V2 Small), for the status label; cleared when the depth is changed any other way
+  aiDepth?: boolean;
   // the published revision this edits (0: a new texture)
   baseRev: number;
   updated: number;

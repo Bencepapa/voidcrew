@@ -12,6 +12,7 @@ import { deleteSharedTexture, publishDrafts } from "./sharedTextures";
 import { discardImageDraft, useImageDrafts } from "./sharedImages";
 import { draftById, draftCounts, draftId, discardAllDrafts, discardDraft, MAP_KEYS, saveDraft, useDrafts, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
 import type { TextureTuning } from "../render/textureTuning";
+import { AiBadge, AiDepthControls } from "./AiDepthControls";
 import { catalogLabel, convertLegacy, ensureDraft, mapUses, sharedInfo, textureStatus, useTextureVersion } from "./textureLibrary";
 
 const small = "rounded border border-neutral-500 bg-neutral-800 px-2 py-1 text-xs hover:border-amber-400 aria-pressed:border-amber-400 aria-pressed:bg-neutral-700 disabled:opacity-50";
@@ -68,6 +69,7 @@ export function useTextureEditor(id: string, onError: (message: string) => void,
       const alpha = key === "diffuse" ? await hasAlpha(blob) : false;
       await change(d => {
         d.maps[key] = { mode: "uploaded", blob };
+        if (key === "depth") d.aiDepth = false;
         if (key === "diffuse") {
           d.diffuseAlpha = alpha;
           if (alpha) d.transparency.source = "alpha";
@@ -80,13 +82,21 @@ export function useTextureEditor(id: string, onError: (message: string) => void,
 
   function setMode(key: MapKey, mode: MapMode, open?: () => void) {
     if (mode === "uploaded" && !view?.slot(key).has) { open?.(); return; }
-    void change(d => { d.maps[key] = { ...d.maps[key], mode }; return d; });
+    void change(d => { d.maps[key] = { ...d.maps[key], mode }; if (key === "depth") d.aiDepth = false; return d; });
   }
-  const remove = (key: MapKey) => change(d => { d.maps[key] = { mode: key === "diffuse" ? "uploaded" : "none" }; return d; });
+  const remove = (key: MapKey) => change(d => { d.maps[key] = { mode: key === "diffuse" ? "uploaded" : "none" }; if (key === "depth") d.aiDepth = false; return d; });
+  // the diffuse to run the AI on (the draft is made from the published texture first when needed)
+  const diffuseBlob = async () => (draftById(id) ?? await ensureDraft(id)).maps.diffuse.blob;
+  // an AI depth (and optionally the normal made from it) become uploaded maps of the draft
+  const applyAiMaps = (depth: Blob, normal?: Blob) => change(d => {
+    d.maps.depth = { mode: "uploaded", blob: depth }; d.aiDepth = true;
+    if (normal) d.maps.normal = { mode: "uploaded", blob: normal };
+    return d;
+  });
   // the texture's own look tuning (the sliders): kept in the draft, published with the texture
   const setTuning = (tuning: TextureTuning | undefined) => change(d => { d.tuning = tuning; return d; });
 
-  return { id, status, draft, info, view, busy, change, chooseFile, setMode, remove, setTuning, onError, onSelect };
+  return { id, status, draft, info, view, busy, change, chooseFile, setMode, remove, setTuning, diffuseBlob, applyAiMaps, onError, onSelect };
 }
 
 // ---- the texture's settings: above the channel cards ----
@@ -185,6 +195,10 @@ export function ChannelControls({ editor, channel }: { editor: TextureEditor; ch
       <input ref={input} type="file" accept="image/png" className="sr-only" aria-label={t("assetManager.chooseFileFor", { map: t(rowKey(channel)) })} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void editor.chooseFile(channel, f); }}/>
     </div>
     {required && !slot.has && <p className="text-[10px] text-red-300">{t("assetManager.required")}</p>}
+    {channel === "depth" && <>
+      {editor.draft?.aiDepth && slot.mode === "uploaded" && slot.has && <p className="flex items-center gap-1 text-[10px] text-neutral-300"><AiBadge/>{t("assetManager.ai.status")}</p>}
+      <AiDepthControls editor={editor}/>
+    </>}
   </div>;
 }
 // ---- the yellow bar ----
