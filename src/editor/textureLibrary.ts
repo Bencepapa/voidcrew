@@ -62,16 +62,16 @@ const bump = () => {
   version++;
   for (const l of listeners) l();
   // the game builds its scene from the table once: tell it when a shared texture's files (not just its name) changed
-  let filesChanged = false;
+  const changed: string[] = [];
   const now = new Set<string>();
   for (const [id, set] of Object.entries(registry)) {
     if (!id.includes("_shared_")) continue;
     now.add(id);
     const key = [set.diffuse, set.normal, set.depth, set.surface, set.emissive, set.pixelArt, set.smooth, JSON.stringify(textureTuning(id))].join("|");
-    if (fileKeys.get(id) !== key) { fileKeys.set(id, key); filesChanged = true; }
+    if (fileKeys.get(id) !== key) { fileKeys.set(id, key); changed.push(id); }
   }
-  for (const id of [...fileKeys.keys()]) if (!now.has(id)) { fileKeys.delete(id); filesChanged = true; }
-  if (filesChanged) sharedTexturesChanged();
+  for (const id of [...fileKeys.keys()]) if (!now.has(id)) { fileKeys.delete(id); changed.push(id); }
+  if (changed.length) sharedTexturesChanged(changed);
 };
 export const useTextureVersion = () => useSyncExternalStore(subscribe, () => version);
 
@@ -241,9 +241,9 @@ export const catalogLabel = (id: string) => registry[id]?.label ?? draftById(id)
 
 let currentMap: GameMap | undefined;
 export const registerMap = (map: GameMap | undefined) => { currentMap = map; };
-export function mapUses(id: string): boolean {
-  const m = currentMap;
-  if (!m) return false;
+export const mapUses = (id: string): boolean => !!currentMap && mapUsesTexture(currentMap, id);
+// does this map use the texture (its defaults, painted floors / walls / ceilings, riser faces)?
+export function mapUsesTexture(m: GameMap, id: string): boolean {
   if (m.textures && Object.values(m.textures).includes(id)) return true;
   for (let y = 0; y < m.height; y++) for (let x = 0; x < m.width; x++) {
     if (m.floorAt?.(x, y) === id || m.wallTextureAt?.(x, y) === id || m.ceilingTextureAt?.(x, y) === id) return true;

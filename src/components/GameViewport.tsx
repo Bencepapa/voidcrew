@@ -69,6 +69,7 @@ import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
 import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
 import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
+import { mapUsesTexture } from "../editor/textureLibrary";
 import { onSharedDecalsChanged } from "../render/sharedImages";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
@@ -1538,7 +1539,12 @@ export function GameViewport({
   // is built from the texture table once, so it would keep showing the old (often flat) maps; rebuilt when the edits settle
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const off = onSharedTexturesChanged(() => { clearTimeout(timer); timer = setTimeout(() => setTextureVersion((v) => v + 1), 800); });
+    const off = onSharedTexturesChanged((ids) => {
+      // (a map that uses none of them keeps its scene: a full rebuild blanks the view for seconds)
+      if (!ids.some((id) => mapUsesTexture(latestMapRef.current, id))) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => setTextureVersion((v) => v + 1), 800);
+    });
     return () => { off(); clearTimeout(timer); };
   }, []);
   // the prop editor (see propEditState): its boxes drawn over the edited
