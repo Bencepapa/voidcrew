@@ -1,151 +1,240 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../i18n";
-import { activeWorld, type WorldId } from "../game/worlds";
-import { useSharedImages, type DecalSurfaceKind, type SharedImageType } from "../render/sharedImages";
+import { activeWorld } from "../game/worlds";
+import type { DecalSurfaceKind, ImagePurpose, SharedImage, SharedImageType } from "../render/sharedImages";
 import { applyTransparency, type Transparency } from "./imageTools";
 import { sharedConfigured, useSharedAuth } from "./sharedAuth";
-import { checkImagePng, discardImageDraft, imageAssetId, imageDrafts, loadSharedImages, publishImage, saveImageDraft, type ImageDraft } from "./sharedImages";
+import {
+  checkImagePng, createImageDraft, discardImageDraft, getImageDrafts, publishImage, saveImageDraft, useImageDrafts,
+  type ImageDraft,
+} from "./sharedImages";
 import { errorText, SignInPopover } from "./TexturePanel";
+import { active, BUTTON, idle, KindChoice, neutralStyle } from "./inspector/parts";
 
-const button = "rounded border border-neutral-500 bg-neutral-800 px-3 py-1.5 hover:border-amber-400 disabled:opacity-50";
-const field = "block w-full rounded border border-neutral-600 bg-neutral-900 px-2 py-1";
+const field = "block w-full min-w-0 rounded-sm border border-neutral-600 bg-neutral-900 px-2 py-1 text-sm text-neutral-100";
 
-export function ImageAssetsPanel({ onBack }: { onBack: () => void }) {
-  const auth = useSharedAuth();
-  const images = useSharedImages();
-  const [drafts, setDrafts] = useState<ImageDraft[]>([]);
-  const [world, setWorld] = useState<WorldId>(activeWorld);
-  const [type, setType] = useState<SharedImageType>("portrait");
-  const [editing, setEditing] = useState<ImageDraft | null>(null);
-  const [name, setName] = useState("");
-  const [png, setPng] = useState<Blob | null>(null);
-  const [surface, setSurface] = useState<DecalSurfaceKind>("wall");
-  const [transparency, setTransparency] = useState<Transparency>({ source: "alpha", colorKey: "#ff00ff" });
-  const [preview, setPreview] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [signIn, setSignIn] = useState(false);
-  const [fileInputVersion, setFileInputVersion] = useState(0);
-  const refreshDrafts = async () => setDrafts(await imageDrafts());
-  useEffect(() => { void refreshDrafts().catch(e => setMessage(errorText(e))); }, []);
-  useEffect(() => { void loadSharedImages(world).catch(e => setMessage(errorText(e))); }, [world]);
+const purposeLabel = (purpose: ImagePurpose | undefined) =>
+  purpose === "loading" ? t("assetManager.image.purposeLoading")
+    : purpose === "room" ? t("assetManager.image.purposeRoom")
+    : t("assetManager.image.purposePortrait");
+
+const surfaceLabel = (surface: DecalSurfaceKind) => t(`editorBar.${surface}`);
+
+// The preview as the game will see it: the colour key / opaque treatment is
+// applied to the draft's PNG and the result is an object URL, revoked on change.
+export function useImageDraftPreview(draft: ImageDraft | undefined): string {
+  const [url, setUrl] = useState("");
+  const png = draft?.png;
+  const source = draft?.transparency.source;
+  const colorKey = draft?.transparency.colorKey;
   useEffect(() => {
-    let active = true;
-    let url = "";
-    setPreview("");
-    if (png) void applyTransparency(png, transparency).then(processed => {
-      if (active) setPreview(url = URL.createObjectURL(processed ?? png));
-    }).catch(e => { if (active) setMessage(errorText(e)); });
-    return () => { active = false; if (url) URL.revokeObjectURL(url); };
-  }, [png, transparency]);
+    let live = true;
+    let created = "";
+    setUrl("");
+    if (!png) return () => {};
+    const transparency: Transparency = { source: source ?? "alpha", colorKey: colorKey ?? "#ff00ff" };
+    void applyTransparency(png, transparency).then(processed => {
+      if (!live) return;
+      created = URL.createObjectURL(processed ?? png);
+      setUrl(created);
+    }).catch(() => { if (live) setUrl(""); });
+    return () => {
+      live = false;
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [png, source, colorKey]);
+  return url;
+}
 
-  function edit(draft: ImageDraft | null) {
-    setEditing(draft);
-    setName(draft?.name ?? "");
-    setPng(draft?.png ?? null);
-    setSurface(draft?.surface ?? "wall");
-    setTransparency(draft?.transparency ?? { source: "alpha", colorKey: "#ff00ff" });
-    setFileInputVersion(value => value + 1);
-  }
+function PublishedDetails({ image }: { image: SharedImage }) {
+  return <div className="flex min-w-0 flex-col gap-2 text-sm" style={neutralStyle}>
+    <p className="text-xs text-neutral-400">{t("assetManager.image.readOnly")}</p>
+    <img className="max-h-52 max-w-full self-start object-contain" src={image.url} alt={image.name}/>
+    <p><span className="text-neutral-400">{t("assetManager.image.name")}: </span>{image.name}</p>
+    <p><span className="text-neutral-400">{t("assetManager.image.type")}: </span>{t(`assetManager.image.${image.type}`)}</p>
+    {image.type === "portrait"
+      ? <p><span className="text-neutral-400">{t("assetManager.image.purpose")}: </span>{purposeLabel(image.purpose)}</p>
+      : image.surface && <p><span className="text-neutral-400">{t("assetManager.image.surface")}: </span>{surfaceLabel(image.surface)}</p>}
+    <p><span className="text-neutral-400">{t("assetManager.world")}: </span>{t(image.world === "fantasy" ? "assetManager.fantasy" : "assetManager.scifi")}</p>
+    <p><span className="text-neutral-400">{t("assetManager.image.size")}: </span>{image.width} × {image.height}</p>
+    <p className="min-w-0"><span className="text-neutral-400">{t("assetManager.image.id")}: </span><code className="break-all text-xs text-neutral-400">{image.id}</code></p>
+  </div>;
+}
+
+export function ImageAssetInspector({ draft, image, onError }: {
+  draft?: ImageDraft;
+  image?: SharedImage;
+  onError: (message: string) => void;
+}) {
+  const auth = useSharedAuth();
+  const drafts = useImageDrafts();
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [signIn, setSignIn] = useState(false);
+  // Always read the stored copy: a prop from the list can be one edit behind.
+  const current = draft ? drafts.find(saved => saved.id === draft.id) : undefined;
+  const preview = useImageDraftPreview(current);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
-    setMessage("");
-    try { await action(); } catch (e) { setMessage(errorText(e)); }
+    setStatus("");
+    try { await action(); }
+    catch (error) { onError(errorText(error)); }
     finally { setBusy(false); }
   }
 
-  function save(event: FormEvent) {
-    event.preventDefault();
-    if (!png || !name.trim()) return;
-    void run(async () => {
-      await checkImagePng(png, name, type);
-      const uuid = editing?.uuid ?? crypto.randomUUID();
-      const draft = { uuid, id: imageAssetId(world, type, uuid), name: name.trim(), world, type, png, surface, transparency };
-      await saveImageDraft(draft);
-      await refreshDrafts();
-      edit(draft);
-      setMessage(t("assetManager.image.saved"));
+  const latest = () => current ? getImageDrafts().find(saved => saved.id === current.id) ?? current : undefined;
+  async function change(patch: Partial<ImageDraft>) {
+    const base = latest();
+    if (!base) return;
+    await saveImageDraft({ ...base, ...patch });
+  }
+  // Field edits save themselves; they must not disable the input mid-keystroke.
+  function autosave(patch: Partial<ImageDraft>) {
+    void change(patch).catch(error => onError(errorText(error)));
+  }
+  function autosaveTransparency(patch: Partial<Transparency>) {
+    const base = latest();
+    if (base) autosave({ transparency: { ...base.transparency, ...patch } });
+  }
+
+  async function chooseFile(file: File) {
+    await run(async () => {
+      if (!current) return;
+      await checkImagePng(file, file.name, current.type);
+      const png = file.slice(0, file.size, "image/png");
+      const name = current.name.trim() || file.name.replace(/\.png$/i, "").slice(0, 100);
+      await change({ png, name });
+      setStatus(t("assetManager.image.saved"));
     });
   }
 
-  const published = images.filter(image => image.world === world && image.type === type);
-  const local = drafts.filter(draft => draft.world === world && draft.type === type);
-  return <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto">
-    <div className="flex flex-wrap items-center gap-2">
-      <button type="button" className={button} onClick={onBack}>{t("assetManager.image.back")}</button>
-      {(["portrait", "decal"] as const).map(value =>
-        <button type="button" key={value} className={button} aria-pressed={type === value} disabled={busy}
-          onClick={() => { setType(value); edit(null); setMessage(""); }}>{t(`assetManager.image.${value}`)}</button>)}
-      <label className="flex items-center gap-2">{t("assetManager.world")}
-        <select className={field} value={world} disabled={busy} onChange={event => { setWorld(event.target.value as WorldId); edit(null); setMessage(""); }}>
-          <option value="fantasy">Void Fantasy</option>
-          <option value="scifi">Void Crew</option>
-        </select>
-      </label>
+  async function save() {
+    const base = latest();
+    if (!base) return;
+    await run(async () => {
+      await saveImageDraft(base);
+      setStatus(t("assetManager.image.saved"));
+    });
+  }
+
+  async function publish() {
+    const base = latest();
+    if (!base) return;
+    await run(async () => {
+      await publishImage(base);
+      setStatus(t("assetManager.image.published"));
+    });
+  }
+
+  function startPublish() {
+    if (!sharedConfigured) { onError(t("assetManager.notConfigured")); return; }
+    if (!auth.token) { setSignIn(true); return; }
+    void publish();
+  }
+
+  function discard() {
+    const base = latest();
+    if (!base) return;
+    if (!confirm(t("assetManager.image.discardConfirm", { name: base.name || t("assetManager.image.newDraft") }))) return;
+    void run(async () => {
+      await discardImageDraft(base.id);
+      setStatus("");
+    });
+  }
+
+  if (!current) {
+    if (image) return <PublishedDetails image={image}/>;
+    return <p className="text-sm text-neutral-400" style={neutralStyle}>{t("assetManager.image.selectHint")}</p>;
+  }
+
+  const purpose = current.purpose ?? "portrait";
+  return <div className="relative flex min-w-0 flex-col gap-2 text-sm" style={neutralStyle}>
+    <label className="flex min-w-0 flex-col gap-1">{t("assetManager.image.file")}
+      <input className={field} type="file" accept="image/png,.png" disabled={busy} onChange={event => {
+        const file = event.currentTarget.files?.[0];
+        event.currentTarget.value = "";
+        if (file) void chooseFile(file);
+      }}/>
+    </label>
+    {preview
+      ? <img className="max-h-52 max-w-full self-start object-contain" src={preview} alt={current.name}/>
+      : <p className="text-xs text-neutral-500">{t("assetManager.image.noPng")}</p>}
+
+    <label className="flex min-w-0 flex-col gap-1">{t("assetManager.image.name")}
+      <input className={field} value={current.name} maxLength={100}
+        onChange={event => autosave({ name: event.target.value })}/>
+    </label>
+
+    {current.type === "decal"
+      ? <KindChoice label={t("assetManager.image.surface")} value={current.surface}
+          options={(["wall", "floor", "ceiling"] as const).map(value => ({ value, label: surfaceLabel(value) }))}
+          onChange={value => autosave({ surface: value as DecalSurfaceKind })}/>
+      : <KindChoice label={t("assetManager.image.purpose")} value={purpose}
+          options={(["loading", "portrait", "room"] as const).map(value => ({ value, label: purposeLabel(value) }))}
+          onChange={value => autosave({ purpose: value as ImagePurpose })}/>}
+
+    <KindChoice label={t("assetManager.image.transparency")} value={current.transparency.source}
+      options={[
+        { value: "alpha", label: t("assetManager.image.alpha") },
+        { value: "colorKey", label: t("assetManager.image.colorKey") },
+        { value: "none", label: t("assetManager.image.none") },
+      ]}
+      onChange={value => autosaveTransparency({ source: value as Transparency["source"] })}/>
+    {current.transparency.source === "colorKey" && <label className="flex items-center gap-2">{t("assetManager.image.colorKey")}
+      <input type="color" value={current.transparency.colorKey}
+        onChange={event => autosaveTransparency({ colorKey: event.target.value })}/>
+    </label>}
+
+    <div className="flex flex-wrap gap-1">
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={busy} onClick={() => void save()}>{t("assetManager.image.saveDraft")}</button>
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={busy} onClick={startPublish}>{t("assetManager.image.publish")}</button>
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={busy} onClick={discard}>{t("assetManager.image.discard")}</button>
     </div>
-    <div className="grid gap-4 lg:grid-cols-2">
-      <form onSubmit={save} className="rounded border border-neutral-700 p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <strong>{editing ? t("assetManager.image.editDraft") : t("assetManager.image.newDraft")}</strong>
-          {editing && <button type="button" className={button} disabled={busy} onClick={() => edit(null)}>{t("assetManager.image.newDraft")}</button>}
-        </div>
-        <fieldset className="flex flex-col gap-3" disabled={busy}>
-          <label>{t("assetManager.image.name")}<input className={field} value={name} required maxLength={100} onChange={e => setName(e.target.value)}/></label>
-          <label>PNG<input className={field} key={fileInputVersion} type="file" accept="image/png,.png" onChange={event => {
-            const file = event.target.files?.[0];
-            if (file) void run(async () => {
-              await checkImagePng(file, file.name, type);
-              setPng(file);
-              setName(current => current.trim() ? current : file.name.replace(/\.png$/i, "").slice(0, 100));
-            });
-          }}/></label>
-          {type === "decal" && <label>{t("assetManager.image.surface")}<select className={field} value={surface} onChange={e => setSurface(e.target.value as DecalSurfaceKind)}>
-            {(["wall", "floor", "ceiling"] as const).map(value => <option key={value} value={value}>{t(`editorBar.${value}`)}</option>)}
-          </select></label>}
-          <label>{t("assetManager.image.transparency")}<select className={field} value={transparency.source} onChange={e => setTransparency({ ...transparency, source: e.target.value as Transparency["source"] })}>
-            {(["alpha", "colorKey", "none"] as const).map(value => <option key={value} value={value}>{t(`assetManager.image.${value}`)}</option>)}
-          </select></label>
-          {transparency.source === "colorKey" && <label>{t("assetManager.image.colorKey")} <input type="color" value={transparency.colorKey} onChange={e => setTransparency({ ...transparency, colorKey: e.target.value })}/></label>}
-          {preview && <img className="max-h-52 max-w-full self-start object-contain" src={preview} alt={name}/>}
-          <button type="submit" className={button + " self-start"} disabled={!png || !name.trim()}>{t("assetManager.image.saveDraft")}</button>
-        </fieldset>
-      </form>
-      <div className="flex flex-col gap-4">
-        <div>
-          <strong>{t("assetManager.image.drafts")}</strong>
-          {local.length === 0 && <p className="text-sm text-neutral-400">{t("assetManager.image.empty")}</p>}
-          {local.map(draft => <div key={draft.id} className="mt-2 flex flex-wrap items-center gap-2 rounded border border-neutral-700 p-2">
-            <button type="button" className={button} disabled={busy} onClick={() => edit(draft)}>{draft.name}</button>
-            {sharedConfigured && <button type="button" className={button} disabled={busy} onClick={() => {
-              if (!auth.token) { setSignIn(true); return; }
-              void run(async () => {
-                await publishImage(draft);
-                if (editing?.id === draft.id) edit(null);
-                await refreshDrafts();
-                setMessage(t("assetManager.image.published"));
-              });
-            }}>{t("assetManager.image.publish")}</button>}
-            <button type="button" className={button} disabled={busy} onClick={() => {
-              if (!confirm(t("assetManager.image.discardConfirm", { name: draft.name }))) return;
-              void run(async () => { await discardImageDraft(draft.id); if (editing?.id === draft.id) edit(null); await refreshDrafts(); });
-            }}>{t("assetManager.image.discard")}</button>
-          </div>)}
-        </div>
-        <div>
-          <strong>{t("assetManager.image.catalog")}</strong>
-          {published.length === 0 && <p className="text-sm text-neutral-400">{t("assetManager.image.empty")}</p>}
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {published.map(image => <figure key={image.id} className="min-w-0 rounded border border-neutral-700 p-2">
-              <img src={image.url} alt={image.name} className="mb-2 h-24 w-full object-contain"/>
-              <figcaption>{image.name}</figcaption>
-              <code className="block break-all text-xs text-neutral-400">{image.id}</code>
-            </figure>)}
-          </div>
-        </div>
-      </div>
+
+    <output aria-live="polite" className="min-h-5 text-xs text-neutral-300">
+      {busy ? t("assetManager.image.working") : status || t("assetManager.image.statusDraft")}
+    </output>
+
+    {signIn && <SignInPopover className="fixed left-1/2 top-24 z-30 -translate-x-1/2"
+      onDone={() => { setSignIn(false); void publish(); }}
+      onCancel={() => setSignIn(false)} onError={onError}/>}
+  </div>;
+}
+
+// The old full-screen entry point, kept so the Asset Manager keeps compiling
+// until its layout mounts the inspector in the properties panel directly.
+export function ImageAssetsPanel({ onBack }: { onBack: () => void }) {
+  const drafts = useImageDrafts();
+  const [selected, setSelected] = useState<string>();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const draft = selected ? drafts.find(item => item.id === selected) : undefined;
+
+  async function create(type: SharedImageType) {
+    setBusy(true);
+    setError("");
+    try { setSelected((await createImageDraft(activeWorld(), type)).id); }
+    catch (e) { setError(errorText(e)); }
+    finally { setBusy(false); }
+  }
+
+  return <section className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2" style={neutralStyle}>
+    <div className="flex flex-wrap items-center gap-1">
+      <button type="button" className={`${BUTTON} ${idle}`} onClick={onBack}>{t("assetManager.image.back")}</button>
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={busy} onClick={() => void create("portrait")}>
+        {t("assetManager.image.newDraft")} · {t("assetManager.image.portrait")}
+      </button>
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={busy} onClick={() => void create("decal")}>
+        {t("assetManager.image.newDraft")} · {t("assetManager.image.decal")}
+      </button>
     </div>
-    {signIn && <SignInPopover className="fixed left-1/2 top-24 z-10 -translate-x-1/2" onDone={() => setSignIn(false)} onCancel={() => setSignIn(false)} onError={setMessage}/>}
-    <output aria-live="polite" className="text-sm">{busy ? t("assetManager.image.working") : message}</output>
+    {drafts.length > 0 && <div className="flex flex-wrap gap-1">
+      {drafts.map(item => <button key={item.id} type="button" aria-pressed={item.id === selected}
+        className={`${BUTTON} ${item.id === selected ? active : idle}`}
+        onClick={() => setSelected(item.id)}>{item.name || t("assetManager.image.newDraft")}</button>)}
+    </div>}
+    <ImageAssetInspector draft={draft} onError={setError}/>
+    <output aria-live="polite" className="text-sm text-neutral-300">{busy ? t("assetManager.image.working") : error}</output>
   </section>;
 }

@@ -1,6 +1,7 @@
+import { useSyncExternalStore } from "react";
 import { t } from "../i18n";
 import type { WorldId } from "../game/worlds";
-import { setSharedImages, type DecalSurfaceKind, type SharedImage, type SharedImageType } from "../render/sharedImages";
+import { isImagePurpose, setSharedImages, type DecalSurfaceKind, type ImagePurpose, type SharedImage, type SharedImageType } from "../render/sharedImages";
 import { idb } from "./idb";
 import { applyTransparency, decode, isPng, MAX_PNG_BYTES, type Transparency } from "./imageTools";
 import { sharedConfigured, sharedToken, sharedUpload } from "./sharedAuth";
@@ -12,15 +13,125 @@ export interface ImageDraft {
   world: WorldId;
   type: SharedImageType;
   name: string;
-  png: Blob;
+  png: Blob | null;
   surface: DecalSurfaceKind;
   transparency: Transparency;
+  purpose?: ImagePurpose;
 }
 
 export const imageAssetId = (world: WorldId, type: SharedImageType, uuid: string) => `${world}_${type}_${uuid}`;
-export const imageDrafts = () => idb.all<ImageDraft>("imageDrafts");
-export const saveImageDraft = (draft: ImageDraft) => idb.put("imageDrafts", draft);
-export const discardImageDraft = (id: string) => idb.del("imageDrafts", id);
+
+const isSurface = (value: unknown): value is DecalSurfaceKind =>
+  value === "wall" || value === "floor" || value === "ceiling";
+const isTransparencySource = (value: unknown): value is Transparency["source"] =>
+  value === "alpha" || value === "colorKey" || value === "none";
+
+// An old draft has no purpose, and an older one may miss a field: normalize both.
+function normalizeDraft(value: Partial<ImageDraft>): ImageDraft {
+  const type: SharedImageType = value.type === "decal" ? "decal" : "portrait";
+  const world: WorldId = value.world === "scifi" ? "scifi" : "fantasy";
+  const uuid = typeof value.uuid === "string" && value.uuid ? value.uuid : crypto.randomUUID();
+  const transparency = value.transparency;
+  return {
+    id: typeof value.id === "string" && value.id ? value.id : imageAssetId(world, type, uuid),
+    uuid,
+    world,
+    type,
+    name: typeof value.name === "string" ? value.name : "",
+    png: value.png instanceof Blob ? value.png : null,
+    surface: isSurface(value.surface) ? value.surface : "wall",
+    transparency: {
+      source: isTransparencySource(transparency?.source) ? transparency.source : "alpha",
+      colorKey: typeof transparency?.colorKey === "string" && /^#[0-9a-f]{6}$/i.test(transparency.colorKey) ? transparency.colorKey : "#ff00ff",
+    },
+    purpose: type === "portrait" && isImagePurpose(value.purpose) ? value.purpose : undefined,
+  };
+}
+
+let drafts: readonly ImageDraft[] = [];
+// Drafts discarded before the initial load finished must not come back from it.
+const discarded = new Set<string>();
+const listeners = new Set<() => void>();
+const emit = () => { for (const listener of listeners) listener(); };
+export const subscribeImageDrafts = (listener: () => void) => {
+  listeners.add(listener);
+  return () => void listeners.delete(listener);
+};
+export const getImageDrafts = () => drafts;
+export const useImageDrafts = () => useSyncExternalStore(subscribeImageDrafts, getImageDrafts);
+
+const loadReady: Promise<void> = (async () => {
+  let saved: ImageDraft[] = [];
+  try { saved = (await idb.all<ImageDraft>("imageDrafts")).map(normalizeDraft); }
+  catch { /* no IndexedDB: drafts stay for this page only */ }
+  // A draft created while loading is newer than its saved copy.
+  const fresh = new Set(drafts.map(draft => draft.id));
+  drafts = [...saved.filter(draft => !fresh.has(draft.id) && !discarded.has(draft.id)), ...drafts];
+  emit();
+})();
+
+export async function imageDrafts(): Promise<ImageDraft[]> {
+  await loadReady;
+  return [...drafts];
+}
+
+export async function createImageDraft(world: WorldId, type: SharedImageType, purpose?: ImagePurpose): Promise<ImageDraft> {
+  const uuid = crypto.randomUUID();
+  const draft: ImageDraft = {
+    id: imageAssetId(world, type, uuid),
+    uuid,
+    world,
+    type,
+    name: "",
+    png: null,
+    surface: "wall",
+    transparency: { source: "alpha", colorKey: "#ff00ff" },
+    purpose: type === "portrait" ? (isImagePurpose(purpose) ? purpose : "portrait") : undefined,
+  };
+  await saveImageDraft(draft);
+  return draft;
+}
+
+// Writes are serialized so a quick series of edits lands in order.
+let chain: Promise<unknown> = Promise.resolve();
+function persist(work: () => Promise<unknown>) {
+  const next = chain.then(work, work);
+  chain = next.catch(() => {});
+  return next;
+}
+
+export async function saveImageDraft(draft: ImageDraft): Promise<void> {
+  const next = normalizeDraft(draft);
+  discarded.delete(next.id);
+  const previous = drafts.find(saved => saved.id === next.id);
+  drafts = previous ? drafts.map(saved => saved.id === next.id ? next : saved) : [...drafts, next];
+  emit();
+  try { await persist(() => idb.put("imageDrafts", next)); }
+  catch (error) {
+    // A newer edit of the same draft stays; only this failed value is rolled back.
+    if (drafts.find(saved => saved.id === next.id) === next) {
+      drafts = previous ? drafts.map(saved => saved.id === next.id ? previous : saved) : drafts.filter(saved => saved.id !== next.id);
+      emit();
+    }
+    throw error;
+  }
+}
+
+export async function discardImageDraft(id: string): Promise<void> {
+  const previous = drafts.find(draft => draft.id === id);
+  discarded.add(id);
+  drafts = drafts.filter(draft => draft.id !== id);
+  emit();
+  try { await persist(() => idb.del("imageDrafts", id)); }
+  catch (error) {
+    discarded.delete(id);
+    if (previous && !drafts.some(draft => draft.id === id)) {
+      drafts = [...drafts, previous];
+      emit();
+    }
+    throw error;
+  }
+}
 
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const imageLimit = (type: SharedImageType) => type === "decal" ? 512 : 4096;
@@ -35,12 +146,13 @@ async function publishedImage(world: WorldId, type: SharedImageType, uuid: strin
     const response = await fetch(base + "meta.json");
     if (response.status === 400 || response.status === 404) continue;
     if (!response.ok) throw new Error(`Asset metadata: HTTP ${response.status}`);
-    const { name, width, height, surface, type: savedType } = await response.json();
+    const { name, width, height, surface, type: savedType, purpose } = await response.json();
     if (savedType !== type || typeof name !== "string" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
       || width < 1 || height < 1 || width > imageLimit(type) || height > imageLimit(type)) continue;
     return {
       id: imageAssetId(world, type, uuid), world, type, name, width, height, url: base + "diffuse.png",
-      surface: type === "decal" && (surface === "floor" || surface === "ceiling" || surface === "wall") ? surface : undefined,
+      ...(type === "portrait" && isImagePurpose(purpose) ? { purpose } : {}),
+      surface: type === "decal" && isSurface(surface) ? surface : undefined,
     };
   }
 }
@@ -73,15 +185,20 @@ export async function checkImagePng(file: Blob, name: string, type: SharedImageT
 }
 
 export async function publishImage(draft: ImageDraft) {
+  if (!draft.png) throw new Error(t("assetManager.image.needPng"));
+  const name = draft.name.trim();
+  if (!name) throw new Error(t("assetManager.image.needName"));
   if (!sharedToken()) throw new Error(t("assetManager.err.signInFirst"));
+  const purpose = draft.type === "portrait" ? (isImagePurpose(draft.purpose) ? draft.purpose : "portrait") : undefined;
   const png = await applyTransparency(draft.png, draft.transparency) ?? draft.png;
-  const { width, height } = await checkImagePng(png, draft.name, draft.type);
+  const { width, height } = await checkImagePng(png, name, draft.type);
   const path = `${draft.world}/${draft.type}/${draft.uuid}`;
   const rev = (revisions(await listSharedObjects(path))[0] ?? 0) + 1;
   const target = `/storage/v1/object/void-textures/${path}/r${rev}/`;
   await sharedUpload(target + "diffuse.png", png, "image/png");
   await sharedUpload(target + "meta.json", JSON.stringify({
-    v: 1, type: draft.type, name: draft.name, width, height, rev,
+    v: 1, type: draft.type, name, width, height, rev,
+    ...(purpose ? { purpose } : {}),
     ...(draft.type === "decal" ? { surface: draft.surface } : {}),
   }), "application/json");
   await discardImageDraft(draft.id);
