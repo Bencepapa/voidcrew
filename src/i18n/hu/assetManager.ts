@@ -207,5 +207,18 @@ export const assetManagerHu = {
   "assetManager.tuningShared": "Ennek a textúrának a hangolása a textúrával együtt a megosztott tárba kerül: itt állítsd, aztán Közzététel a sárga sávban.",
   "assetManager.err.signInFirst": "Előbb jelentkezz be (a lista fölötti frissítés gomb kéri).",
   "assetManager.err.nothingToDelete": "Nincs mit törölni a tárban.",
-  "assetManager.err.needDeleteSql": "A tár nem törölte (a szerkesztőknek még nincs törlési jogosultságuk). Futtasd a supabase/shared-texture-folders.sql fájlt a Supabase SQL szerkesztőjében (Storage törlési szabályt ad a szerkesztőknek), aztán próbáld újra."
+  "assetManager.err.needDeleteSql": "A tár nem törölte (a szerkesztőknek még nincs törlési jogosultságuk). Futtasd a supabase/shared-texture-folders.sql fájlt a Supabase SQL szerkesztőjében (Storage törlési szabályt ad a szerkesztőknek), aztán próbáld újra.",
+  "assetManager.mainCategory": "Főkategória",
+  "assetManager.subCategory": "Alkategória",
+  "assetManager.refresh": "Frissítés",
+  "assetManager.stills": "Állóképek",
+  "assetManager.decals": "Matricák",
+  "assetManager.new": "Új",
+  "assetManager.newDecal": "Új matrica",
+  "assetManager.newStill": "Új állókép",
+  "assetManager.newUnsupported": "Még nem támogatott",
+  "assetManager.searchAssets": "Eszközök keresése",
+  "assetManager.baseColor": "Alapszín (diffuse)",
+  "assetManager.fit": "Illesztés",
+  "assetManager.actualSize": "100%"
 } as const satisfies Record<string, string>;

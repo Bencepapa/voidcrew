@@ -207,5 +207,18 @@ export const assetManagerEn = {
   "assetManager.tuningShared": "This texture's tuning is saved with the texture in the shared store: change it here, then Publish in the yellow bar.",
   "assetManager.err.signInFirst": "Sign in first (the refresh button above the list asks for it).",
   "assetManager.err.nothingToDelete": "Nothing was found in the store to delete.",
-  "assetManager.err.needDeleteSql": "The store did not delete it (editors have no delete permission yet). Run supabase/shared-texture-folders.sql in the Supabase SQL editor (it adds a Storage delete policy for editors), then try again."
+  "assetManager.err.needDeleteSql": "The store did not delete it (editors have no delete permission yet). Run supabase/shared-texture-folders.sql in the Supabase SQL editor (it adds a Storage delete policy for editors), then try again.",
+  "assetManager.mainCategory": "Main category",
+  "assetManager.subCategory": "Sub category",
+  "assetManager.refresh": "Refresh",
+  "assetManager.stills": "Stills",
+  "assetManager.decals": "Decals",
+  "assetManager.new": "New",
+  "assetManager.newDecal": "New decal",
+  "assetManager.newStill": "New still image",
+  "assetManager.newUnsupported": "Not supported yet",
+  "assetManager.searchAssets": "Search assets",
+  "assetManager.baseColor": "Base colour (diffuse)",
+  "assetManager.fit": "Fit",
+  "assetManager.actualSize": "100%"
 } as const satisfies Record<string, string>;
