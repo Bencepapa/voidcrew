@@ -9,11 +9,11 @@ import { ACTOR_TYPES } from "../game/actors";
 import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { baseMaps, channels, type Channel, type MaterialMaps } from "./materialMaps";
 import { decode } from "./imageTools";
-import { AutoBadge, ChannelControls, errorText, TextureFields, UnsavedBar, useTextureEditor } from "./TexturePanel";
+import { AutoBadge, ChannelControls, errorText, SignInPopover, TextureFields, UnsavedBar, useTextureEditor } from "./TexturePanel";
 import { draftCounts, draftId, newDraft, saveDraft, useDrafts, type SurfaceKind } from "./textureDrafts";
 import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
 import { loadSharedTextures } from "./sharedTextures";
-import { sharedConfigured } from "./sharedAuth";
+import { SharedHttpError, sharedConfigured, sharedToken } from "./sharedAuth";
 import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
 import { Lock, RefreshCw } from "lucide-react";
 import { DEFAULT_SETTINGS, FLOOR_BASE_DEPTH } from "../components/GameViewport";
@@ -355,14 +355,26 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const editor = useTextureEditor(sample==="material" && entry ? id : "", setError, select);
   const editable = sample==="material" && !!entry && isEditable(id);
   // the shared textures and images are listed when the window opens (and on Refresh); the old local previews are moved over once
-  async function refreshShared() {
-    if (!sharedConfigured) return;
+  // (manual: the Refresh button says what happened - or why nothing did; the automatic one on opening stays quiet)
+  const [notice, setNotice] = useState("");
+  const [signInOpen, setSignInOpen] = useState(false);
+  useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 6000); return () => clearTimeout(timer); }, [notice]);
+  async function refreshShared(manual = false) {
+    if (!sharedConfigured) { if (manual) { setNotice(""); setError(t("assetManager.sharedNotConfigured")); } return; }
+    if (manual) { setError(""); setNotice(t("assetManager.sharedRefreshing")); }
     try {
       await Promise.all([
         ...(["scifi","fantasy"] as const).map((world) => loadSharedTextures(world)),
         ...(["scifi","fantasy"] as const).map((world) => loadSharedImages(world)),
       ]);
-    } catch (e) { setError(errorText(e)); }
+      if (manual) setNotice(t("assetManager.sharedRefreshed"));
+    } catch (e) {
+      if (!manual) { setError(errorText(e)); return; }
+      setNotice("");
+      // (401 / 403: the store needs a sign-in, or the guest-read SQL has not been run)
+      if (e instanceof SharedHttpError && (e.status === 401 || e.status === 403) && !sharedToken()) { setError(t("assetManager.sharedSignInNeeded")); setSignInOpen(true); }
+      else setError(errorText(e));
+    }
   }
   useEffect(() => { if(!open)return; void migrateLegacyPreviews(); if(sharedConfigured)void refreshShared(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   async function createTexture() {
@@ -880,8 +892,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               <option value="fantasy">{t("assetManager.fantasy")}</option>
             </select>
           </label>
-          <button type="button" className={button + " grid h-7 w-7 place-items-center !p-0"} aria-label={t("assetManager.refresh")} title={t("assetManager.refresh")} onClick={()=>void refreshShared()}><RefreshCw size={14} aria-hidden="true"/></button>
-          <span className="min-w-0 flex-1 truncate text-xs text-red-300">{error || t("assetManager.orbitHint")}</span>
+          <button type="button" className={button + " grid h-7 w-7 place-items-center !p-0"} aria-label={t("assetManager.refresh")} title={t("assetManager.refresh")} onClick={()=>void refreshShared(true)}><RefreshCw size={14} aria-hidden="true"/></button>
+          <span className={"min-w-0 flex-1 truncate text-xs " + (error ? "text-red-300" : notice ? "text-emerald-300" : "text-red-300")} title={error || notice}>{error || notice || t("assetManager.orbitHint")}</span>
+          {signInOpen && <SignInPopover className="fixed left-1/2 top-24 -translate-x-1/2" onDone={()=>{setSignInOpen(false);setError("");void refreshShared(true);}} onCancel={()=>setSignInOpen(false)} onError={setError}/>}
           <button aria-label={t("assetManager.close")} className={button} onClick={requestClose}>×</button>
         </header>
         <UnsavedBar onError={setError}/>

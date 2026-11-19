@@ -221,5 +221,9 @@ export const assetManagerEn = {
   "assetManager.searchAssets": "Search assets",
   "assetManager.baseColor": "Base colour (diffuse)",
   "assetManager.fit": "Fit",
-  "assetManager.actualSize": "100%"
+  "assetManager.actualSize": "100%",
+  "assetManager.sharedNotConfigured": "The shared store is not set up in this build (the Supabase settings are missing), so there is nothing to refresh. Put them in .env.local.",
+  "assetManager.sharedRefreshing": "Refreshing the shared library…",
+  "assetManager.sharedRefreshed": "Shared library refreshed.",
+  "assetManager.sharedSignInNeeded": "The shared library needs a sign-in (or the guest-read SQL has not been run). Sign in below.",
 } as const satisfies Record<string, string>;
