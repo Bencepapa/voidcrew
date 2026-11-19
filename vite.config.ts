@@ -292,6 +292,8 @@ export default defineConfig({
   // (a packaged world is served from the root of its own server)
   base: process.env.VOID_BASE ?? "/voidcrew/",
   plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles(), propFiles(), textureTuningFile()],
+  // ES workers: the AI depth worker imports Transformers.js dynamically (a separate chunk), which IIFE workers can't do
+  worker: { format: "es" },
   server: {
     port: 3000,
     watch: {
