@@ -29,7 +29,7 @@ import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/wor
 import { fetchDecalManifest } from "../render/decals";
 import { sharedImage, useSharedImages, type ImagePurpose, type SharedImage } from "../render/sharedImages";
 import { neutralStyle } from "./inspector/parts";
-import { createImageDraft, loadSharedImages, useImageDrafts, type ImageDraft } from "./sharedImages";
+import { createImageDraft, loadSharedImages, getImageDrafts, useImageDrafts, type ImageDraft } from "./sharedImages";
 import { ImageAssetInspector, useImageDraftPreview } from "./ImageAssetsPanel";
 import { propEdit } from "./propEditState";
 import { textureFolder } from "../render/textureSets";
@@ -219,8 +219,13 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   useEffect(() => {
     const openAsset = (event: Event) => {
       const {sample, id} = (event as CustomEvent<{sample: Sample; id: string}>).detail;
+      const imageDraft = getImageDrafts().find(d => d.id === id);
       // Select the category, sub-category and world that make the item visible.
-      if (sample === "material") {
+      if (imageDraft) {
+        // (a local image draft: its category, purpose and world)
+        if (imageDraft.type === "decal") { setSample("prop"); setSub("decal"); } else { setSample("still"); setSub(imageDraft.purpose ?? "portrait"); }
+        setWorld(imageDraft.world);
+      } else if (sample === "material") {
         setSample("material"); setSub("All"); setWorld(id ? assetWorld(id) : activeWorld());
       } else if (sample === "prop") {
         if (id.startsWith("decal:")) {

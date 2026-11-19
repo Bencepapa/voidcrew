@@ -43,4 +43,7 @@ export const imageAssetsHu = {
   "assetManager.image.id": "Azonosító",
   "assetManager.image.preview": "Előnézet",
   "assetManager.image.unpublishedBar": "Közzé nem tett képek: {n} (mindegyiket a saját tulajdonságpaneljén tedd közzé)",
+  "assetManager.image.goToDraft": "A piszkozat megnyitása",
+  "assetManager.image.emptyDraft": "üres",
+  "assetManager.image.discardEmpty": "Elveted ezt az üres piszkozatot?",
 } as const satisfies Record<string, string>;
