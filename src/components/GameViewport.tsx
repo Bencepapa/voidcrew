@@ -1737,9 +1737,9 @@ export function GameViewport({
     // ?profile in the address, else in dev; and in window.__voidcrewBuild): totals by kind of
     // work, and when the textures and the builds were all in.
     const phases: Record<string, { ms: number; n: number }> = {};
-    const tick = (name: string, since: number) => {
+    const tick = (name: string, since: number, end = performance.now()) => {
       const p = (phases[name] ??= { ms: 0, n: 0 });
-      p.ms += performance.now() - since;
+      p.ms += Math.max(0, end - since);
       p.n++;
     };
     const milestones: Record<string, number> = {};
@@ -2086,8 +2086,17 @@ export function GameViewport({
           ? m.lightGridAmbient
           : undefined;
       const lights = mapLights;
-      const applyBake = ({ data, ambient }: LightBakeResult) => {
+      const applyBake = ({ data, ambient, timing }: LightBakeResult) => {
+        const applyFrom = performance.now();
+        if (timing) {
+          const start = performance.timeOrigin + bakeFrom;
+          tick("light worker startup and request", start, timing.receivedAt);
+          tick("light grid computation", timing.receivedAt, timing.computedAt);
+          tick("light grid packing", timing.computedAt, timing.packedAt);
+          tick("light worker response", timing.packedAt, performance.timeOrigin + applyFrom);
+        }
         setLightGrid(lightGrid, data, ambient);
+        tick("light grid texture setup", applyFrom);
         tick("light bake", bakeFrom);
       };
       const fallback = () => applyBake({
@@ -7595,7 +7604,9 @@ export function GameViewport({
 
     function animate() {
       if (disposed) return;
-      renderFrame();
+      // The loading screen covers a new map completely. Let its assets
+      // and worker results reach the main thread before drawing the scene.
+      if (!newMap || ready) renderFrame();
       raf = requestAnimationFrame(animate);
     }
     animate();

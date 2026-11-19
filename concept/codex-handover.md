@@ -40,6 +40,8 @@ Ctrl+görgő döntés, középső gomb pásztázás, Q/E forgatás).
 
 ## 4. A következő feature-ök (a felhasználó kérte; fontossági sorrendben)
 
+Aktuális sorrend: D, utána G. Az Assets v3 tervezésénél a H pont portréfeltöltését is figyelembe kell venni. E és F vár. A B pontot a felhasználó Void Fantasy (`smooth`) és Void Crew (`steps`) világon ellenőrizte és elfogadta.
+
 ### A. Felülnézeti „kurzor-fejlámpa" (kicsi, kezdd ezzel)
 A felhasználó észrevette, hogy felülnézetben a fejlámpa a parti (az arrow a minimapon) szeme fölött van, és a jobb gombbal körbenézve
 (jobbra-balra) a helyzete változik. Ötlete: **felülnézetben a fejlámpa kövesse a kurzort** (egy pontfény a kurzor alatti padló/felület fölött,
@@ -65,6 +67,10 @@ rács) az **„Ajtó + keret" nézettel** (nyitás/zárás animáció, mindkét 
 átlátszóságának forrása: alfa csatorna / színkulcs (alap magenta, állítható) / nincs: ez a textúra-panelben már megvan, a többi típusra kiterjesztendő.
 
 ### D. Lassú jelenet-felépítés: a magasságtérképek lazy betöltése (közepes, mérés előbb)
+
+Indulásnál külön ellenőrizendő a megfelelő világ témája az első képkockától, valamint hogy normál Void Crew indításkor a bázis mögött ne épüljön meg az Engineering jelenet, és hajóra lépéskor közvetlenül a Crew Quarters töltődjön.
+
+A böngészős hajóra lépés a Crew Quarterst mutatta az Engineering-naplósor nélkül. A matricavetítés javítása után a három Chrome-mérés mediánja a Fantasy pályán 4,44 s / 2,54 s, a Crew Quarters pályán 5,33 s / 3,06 s (hideg / ismételt). A depth map hálózati válaszok mindegyik futásban a jelenet elkészülte előtt érkeztek meg. A depth map kérések átrendezése így egyelőre nem része a javításnak.
 Egy új pálya 15,6 s alatt épült fel; ebből a geometria <1 s, a 195 magasságtérkép-betöltés (+4325 textúra) a várakozás (`height map load (wait)`).
 Mérd meg másodszori betöltésnél is. Javítások: a látótávolságon belüli falak térképei először, a többi háttérben; előtöltés; kisebb/tömörebb formátum.
 Lásd a `GameViewport.tsx` ~1832 időzítő-táblát.
@@ -100,6 +106,13 @@ Két külön dolog, a Pages-es build **nem** csomagol be semmit a Supabase-ből:
 - Tető: relief nélküli (lapos háromszögek); a 45° csak 1-es falmagasságnál pontos; belső sarok forgatva nem volt látva.
 - Későbbi: többes kijelölés (mozgatás/tulajdonság/törlés), térképváltó kijárat átmenetekkel (lépcső / köd), esélyfal mint álfal (Ctrl/Shift+kattintás), decal árok falára (ma már riser-faceként megoldott).
 - Ellenőrizetlen a felhasználó oldalán: a belépési felirat kinézete, a térkép-párbeszéd kinézete, az automatikus mentés visszaállítás-sávja, a valódi Supabase törlés, az ablak csillagos ege, a játék napló-színei.
+
+### H. Házajtók, bolt és beszélgetés
+
+- A megosztott fantasy pályák házajtóin a meglévő felületi interakció legyen kattintással és a Használat gombbal elérhető. A legtöbb ajtó „ZÁRVA” feliratú ablakot nyisson.
+- Egy próbaajtó nyisson boltot portréképpel és három választással. A Vásárlás és az Eladás egyelőre csak látható opció, a Viszlát bezárja az ablakot. A bolt és a játékos készlete későbbi lépés.
+- Egy lehelyezett, vándorló, barátságos NPC nyisson portrés párbeszédablakot. Kezdőszöveg például „Üdvözöllek, utazó!” A „Ki vagy te?” kétmondatos bemutatkozást ad, utána megmarad a „Ki vagy te?” és a „Viszlát” opció.
+- A választások legyenek használhatók egérrel és billentyűzettel. A portrék közös Asset Manager feltöltést kapjanak, először PNG-vel, később WebP-vel. Az Assets v3 tervezésekor ugyanazt a portréazonosítót lehessen használni bolthoz és NPC-hez.
 
 ## 5. Hasznos tudnivalók
 

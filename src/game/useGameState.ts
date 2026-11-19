@@ -164,7 +164,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null)
   const setNoclip = useCallback((on: boolean) => {
     noclipRef.current = on;
   }, []);
-  const [log, setLog] = useState<LogEntry[]>([
+  const [log, setLog] = useState<LogEntry[]>(() => variation === null ? [] : [
     { id: logId++, text: WORLDS[START_MAP.world].loop === "open" ? `You enter ${START_MAP.name}.` : `You board the USV Horizon, ${START_MAP.name}.` },
   ]);
   const [openingDoor, setOpeningDoor] = useState<Vec2 | null>(null);

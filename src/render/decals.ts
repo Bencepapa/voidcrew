@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
+import { projectDecal } from "./decalGeometry";
 import type { DecalSpec, Vec2 } from "../game/types";
 import { coplanarSurfaces, surfaceFrame, surfaceKey } from "./surfaces";
 import type { CellLevels } from "./surfaces";
@@ -598,7 +598,7 @@ if (uDecalPull.y > 0.0) {
       : "";
     let geometry = cache?.get(key);
     if (geometry === undefined) {
-      geometry = new DecalGeometry(mesh, p.position, p.orientation, p.size);
+      geometry = projectDecal(mesh, p.position, p.orientation, p.size);
       if (geometry.getAttribute("position").count === 0) {
         // this panel is out of the decal's reach after all
         geometry.dispose();

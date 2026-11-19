@@ -1,5 +1,6 @@
 import { DIR_VECTOR, rightOf } from "./movement";
-import type { BridgeSpec, CellType, Direction, DoorSpec, GameMap, LadderSpec, LiftSpec, Vec2 } from "./types";
+import type { BridgeSpec, Direction, DoorSpec, GameMap, LadderSpec, LiftSpec, Vec2 } from "./types";
+import { cellAt } from "./mapGeometry";
 import { parseMap } from "./mapFormat";
 import type { MapFile } from "./mapFormat";
 import { WORLDS, isWorldId, registerMapWorld, startWorld } from "./worlds";
@@ -79,19 +80,7 @@ export function doorCrossed(map: GameMap, from: Vec2, to: Vec2): Vec2 | null {
   return null;
 }
 
-export function cellAt(map: Pick<GameMap, "width" | "height" | "cells">, x: number, y: number): CellType {
-  if (y < 0 || y >= map.height || x < 0 || x >= map.width) return "wall";
-  return map.cells[y][x];
-}
-
-// floor and ceiling heights of a walkable cell (in wall heights)
-export function floorHeight(map: Pick<GameMap, "floorHeights">, x: number, y: number): number {
-  return map.floorHeights[y]?.[x] ?? 0;
-}
-
-export function ceilingHeight(map: Pick<GameMap, "ceilingHeights">, x: number, y: number): number {
-  return map.ceilingHeights[y]?.[x] ?? 1;
-}
+export { cellAt, ceilingHeight, floorHeight } from "./mapGeometry";
 
 // every wall panel a window takes: its cell, the wall, and where in the
 // window it is (0 = leftmost, seen facing the wall)

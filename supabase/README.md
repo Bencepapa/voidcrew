@@ -15,7 +15,13 @@ The Pages build can connect to a Supabase project for shared maps and PNG textur
 
 3. In the GitHub repository under **Settings → Secrets and variables → Actions → Variables**, set `VITE_SUPABASE_URL` to the project URL and `VITE_SUPABASE_PUBLISHABLE_KEY` to the public project key. Run **Deploy to GitHub Pages** again. For local development the same variable names can go in Vite's local environment file. The browser bundle includes these values. Use only a publishable or legacy anon key.
 
-Shared maps require editor access. Uploaded texture images have public read URLs, so use assets suitable for public distribution. PNG uploads are limited to 8 MiB per file.
+Publishing requires editor access. To allow guests to open shared maps and list textures, run [shared-public-read.sql](./shared-public-read.sql). Guests can read existing map revisions. Uploaded texture images have public read URLs, so use assets suitable for public distribution. PNG uploads are limited to 8 MiB per file.
+
+### Bundling shared content for a release
+
+Run `npm run pull:shared` before building the release. The script uses the publishable credentials from the environment or the local Vite environment files. It downloads the latest published map and texture revisions, generates Auto normal and depth maps, and writes the bundled asset catalog. The original IDs are kept so existing maps can still find their textures.
+
+To preview the import in a separate directory, run `npm run pull:shared -- <output-directory>`. The importer preserves existing files and reports when a newer shared revision is available. Review the imported files before including them in a release.
 
 ### Textures
 

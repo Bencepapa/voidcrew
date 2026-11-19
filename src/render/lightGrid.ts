@@ -1,8 +1,7 @@
 import { createWeatherUniforms, useWeatherSurface, type WeatherUniforms } from "./weather";
 import * as THREE from "three";
 import { ACCENT_GLSL, ACCENT_UNIFORMS } from "./accent";
-import { cellAt, ceilingHeight, floorHeight } from "../game/map";
-import { BRIDGE_THICKNESS, BRIDGE_WIDTH } from "../game/heights";
+import { BRIDGE_THICKNESS, BRIDGE_WIDTH, cellAt, ceilingHeight, floorHeight } from "../game/mapGeometry";
 import { PROP_TYPES, propHeight, propPlacement } from "../game/props";
 import type { LightSpec } from "../game/lights";
 import type { GameMap } from "../game/types";

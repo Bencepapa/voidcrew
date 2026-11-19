@@ -5,6 +5,7 @@
 // viewer's own setting (unset: 1), so the debug sliders still work on top.
 
 import saved from "./textureTuning.json";
+import { bundledTextures } from "../game/sharedBuiltins";
 
 export interface TextureTuning {
   // its normal map's strength
@@ -21,7 +22,10 @@ export type TextureTuningTable = Record<string, TextureTuning>;
 // what the game uses; the Asset Manager changes it live before it's saved
 // (a shared texture's tuning lives with the texture in the shared store, never in this file: stale entries are ignored)
 const isShared = (id: string) => id.includes("_shared_");
-let table: TextureTuningTable = Object.fromEntries(Object.entries(saved as TextureTuningTable).filter(([id]) => !isShared(id)));
+let table: TextureTuningTable = {
+  ...Object.fromEntries(Object.entries(saved as TextureTuningTable).filter(([id]) => !isShared(id))),
+  ...Object.fromEntries(Object.entries(bundledTextures).flatMap(([id, entry]) => entry.tuning ? [[id, entry.tuning]] : [])),
+};
 
 export function textureTuning(id: string): TextureTuning | undefined {
   return table[id];

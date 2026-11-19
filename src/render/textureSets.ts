@@ -4,6 +4,7 @@
 // TextureSetId is the table's own keys.
 
 import { assetInWorld } from "../game/worlds";
+import { bundledTextures } from "../game/sharedBuiltins";
 
 export type TextureSetKind = "wall" | "floor" | "ceiling" | "door" | "window" | "propFace";
 
@@ -415,7 +416,22 @@ export const TEXTURE_SETS = {
   },
 };
 
-// a texture set that isn't listed: the maps in public/textures/<name>/
+for (const [id, entry] of Object.entries(bundledTextures)) {
+  const base = `${import.meta.env.BASE_URL}textures/`;
+  const folder = `${base}${id}/`;
+  (TEXTURE_SETS as Record<string, TextureSetPaths>)[id] = {
+    diffuse: `${folder}diffuse.png`,
+    kind: entry.kinds,
+    label: entry.label,
+    pixelArt: entry.pixelArt,
+    smooth: entry.smooth,
+    normal: entry.files.includes("normal.png") ? `${folder}normal.png` : `${base}flat/normal.png`,
+    depth: entry.files.includes("depth.png") ? `${folder}depth.png` : `${base}flat/depth.png`,
+    ...(entry.files.includes("emissive.png") ? { emissive: `${base}${id}/emissive.png` } : {}),
+    ...(entry.files.includes("surface.png") ? { surface: `${base}${id}/surface.png` } : {}),
+  };
+}
+
 // the unlisted folders (props' views) that have a glow map too - a glow.png
 // next to their diffuse (see TextureSetFiles.glow)
 const FOLDER_GLOWS = new Set(["kitchen1_front"]);

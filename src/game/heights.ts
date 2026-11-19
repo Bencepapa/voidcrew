@@ -1,4 +1,5 @@
 import { bridgeAt, cellAt, ceilingHeight, floorHeight, ladderBetween } from "./map";
+import { BRIDGE_THICKNESS } from "./mapGeometry";
 import { propBlocks } from "./props";
 import type { Direction, GameMap, Vec2 } from "./types";
 
@@ -14,8 +15,7 @@ export const CLIMB_SPEED = 1;
 // a bridge deck's thickness below its walking surface, and its width
 // (world units per cell) - narrow enough to step off in free movement even
 // between walls (the player's center gets 0.3 from the middle there)
-export const BRIDGE_THICKNESS = 0.06;
-export const BRIDGE_WIDTH = 0.5;
+export { BRIDGE_THICKNESS, BRIDGE_WIDTH } from "./mapGeometry";
 
 // What fits where: the lowest opening a body gets through, and how high a
 // step it takes without a ladder (the party's: MIN_HEADROOM, MAX_STEP). A

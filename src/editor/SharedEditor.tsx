@@ -3,6 +3,7 @@ import { createMap, hasUnsavedEdits, mapFile, markSaved } from "./mapStore";
 import { t } from "../i18n";
 import type { GameMap } from "../game/types";
 import type { MapFile } from "../game/mapFormat";
+import { bundledMaps } from "../game/sharedBuiltins";
 import { SharedLoginForm, sharedButton as button, sharedProject, sharedRequest, useSharedAuth } from "./sharedAuth";
 import { loadSharedTextures } from "./sharedTextures";
 import { openAssetManager } from "./AssetManager";
@@ -50,9 +51,11 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
       sharedRequest<Head[]>("/rest/v1/void_map_heads?world=eq." + map.world + "&order=title,id"),
       loadSharedTextures(map.world),
     ]);
-    setHeads(latest.sort((a, b) => (b.saved_at ?? "").localeCompare(a.saved_at ?? "")));
+    const available = latest.filter((head) => head.revision > (bundledMaps[map.world]?.[head.id] ?? 0))
+      .sort((a, b) => (b.saved_at ?? "").localeCompare(a.saved_at ?? ""));
+    setHeads(available);
     changed();
-    return latest;
+    return available;
   }
   async function save(copy: boolean) {
     const body = mapFile(map.id);

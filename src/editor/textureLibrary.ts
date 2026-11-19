@@ -5,6 +5,7 @@
 
 import { useSyncExternalStore } from "react";
 import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
+import { bundledTextures } from "../game/sharedBuiltins";
 import { t } from "../i18n";
 import type { GameMap } from "../game/types";
 import type { WorldId } from "../game/worlds";
@@ -79,6 +80,7 @@ export const useTextureVersion = () => useSyncExternalStore(subscribe, () => ver
 export const sharedInfo = (id: string) => infos.get(id);
 export type TextureStatus = "builtin" | "legacy" | "shared" | "new" | "changed";
 export function textureStatus(id: string): TextureStatus {
+  if (Object.hasOwn(bundledTextures, id)) return "builtin";
   const draft = draftById(id);
   if (draft) return draft.baseRev === 0 ? "new" : "changed";
   const info = infos.get(id);
@@ -184,6 +186,7 @@ async function draftPaths(d: TextureDraft): Promise<TextureSetPaths | null> {
 }
 
 function restore(id: string) {
+  if (Object.hasOwn(bundledTextures, id)) return;
   setSharedTuning(id, infos.get(id)?.meta?.tuning);
   const base = baselines.get(id);
   if (base) registry[id] = base; else delete registry[id];
@@ -192,9 +195,10 @@ function restore(id: string) {
 const seen = new Map<string, { draft: TextureDraft; id: string }>();
 const applying = new Map<string, number>();
 async function applyDraft(d: TextureDraft) {
+  const id = draftId(d);
+  if (Object.hasOwn(bundledTextures, id)) return;
   const ticket = (applying.get(d.uuid) ?? 0) + 1;
   applying.set(d.uuid, ticket);
-  const id = draftId(d);
   try {
     const paths = await draftPaths(d);
     if (applying.get(d.uuid) !== ticket) return;
@@ -293,6 +297,7 @@ function sharedBaseline(info: SharedInfo): TextureSetPaths {
 
 // Replaces the shared textures of one world with what the store lists now.
 export function setSharedTextures(world: WorldId, list: SharedInfo[]) {
+  list = list.filter(({ id }) => !Object.hasOwn(bundledTextures, id));
   const prefix = world + "_shared_";
   const keep = new Set(list.map(i => i.id));
   for (const id of [...infos.keys()]) {
