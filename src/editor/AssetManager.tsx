@@ -10,7 +10,7 @@ import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { baseMaps, channels, type Channel, type MaterialMaps } from "./materialMaps";
 import { decode } from "./imageTools";
 import { AutoBadge, ChannelControls, errorText, TextureFields, UnsavedBar, useTextureEditor } from "./TexturePanel";
-import { draftCounts, draftId, newDraft, useDrafts } from "./textureDrafts";
+import { draftCounts, draftId, newDraft, saveDraft, useDrafts, type SurfaceKind } from "./textureDrafts";
 import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
 import { loadSharedTextures } from "./sharedTextures";
 import { sharedConfigured } from "./sharedAuth";
@@ -334,6 +334,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const editable = sample==="material" && !!entry && isEditable(id);
   // the shared textures and images are listed when the window opens (and on Refresh); the old local previews are moved over once
   async function refreshShared() {
+    if (!sharedConfigured) return;
     try {
       await Promise.all([
         ...(["scifi","fantasy"] as const).map(loadSharedTextures),
@@ -345,12 +346,16 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   async function createTexture() {
     try {
       const draft = await newDraft(world==="All" ? activeWorld() : world, t("assetManager.newTextureName"));
+      // the new draft gets the surface of the selected sub-category
+      const surface = sub==="wall" || sub==="floor" || sub==="ceiling" ? sub : undefined;
+      const saved = surface ? { ...draft, kinds: [surface] as SurfaceKind[] } : draft;
+      if (surface) await saveDraft(saved);
       setSample("material");
-      if (!["wall","floor","ceiling"].includes(sub)) setSub("All");
+      if (!surface) setSub("All");
       setPose(-1); setTurn(0); setPlacement("Auto");
       setQuery("");
-      pendingScroll.current = draftId(draft);
-      select(draftId(draft));
+      pendingScroll.current = draftId(saved);
+      select(draftId(saved));
     } catch (e) { setError(errorText(e)); }
   }
   async function createDecal() {
@@ -393,6 +398,14 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   }
   const [listOpen, setListOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
+  // a narrow window folds both side panels away; the strips still open them
+  useEffect(() => {
+    if (!open) return;
+    const fit = () => { if (window.innerWidth < 900) { setListOpen(false); setPanelOpen(false); } };
+    window.addEventListener("resize", fit);
+    fit();
+    return () => window.removeEventListener("resize", fit);
+  }, [open]);
   const [tuneStamp, setTuneStamp] = useState(0);
   const [saveNote, setSaveNote] = useState("");
   const [copyNote, setCopyNote] = useState("");
@@ -900,7 +913,24 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               {(selectedStillDraft || selectedDecalDraft) && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName((selectedStillDraft ?? selectedDecalDraft)!.world)}</p>}
               <ImageAssetInspector draft={selectedDecalDraft ?? selectedStillDraft} image={isDecal ? decalImage : entry?.image} onError={setError}/>
             </> : <>
-            <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.look", { texture: sample==="material" ? (entry?.label ?? "") : (tuneId || t("assetManager.noTuning")) })}</summary>
+            {sample==="material" && <details open className="rounded border border-neutral-800 p-2">
+              <summary className="cursor-pointer font-semibold">{t("assetManager.baseColor")}</summary>
+              <div className="mt-1 flex flex-col gap-1">
+                {(() => { const url = edits.diffuse ?? groups[primary]?.diffuse; return url
+                  ? <img src={url} alt={t("assetManager.diffuse")} className="max-h-40 w-full object-contain"/>
+                  : <p className="text-xs text-neutral-500">{t("assetManager.image.noPng")}</p>; })()}
+                <label className="cursor-pointer self-start rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] text-neutral-200 hover:bg-neutral-700">
+                  {t("assetManager.chooseFile")}
+                  <input type="file" accept="image/png" className="sr-only" onChange={async e=>{
+                    const file=e.target.files?.[0]; e.target.value="";
+                    if(!file)return;
+                    if(editable) void editor.chooseFile("diffuse",file);
+                    else try { await decode(file); await edit("diffuse",file); } catch { setError(t("assetManager.importError")); }
+                  }}/>
+                </label>
+              </div>
+            </details>}
+            <details className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.look", { texture: sample==="material" ? (entry?.label ?? "") : (tuneId || t("assetManager.noTuning")) })}</summary>
               {tune ? <>
                 <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>
                 {TUNING.map(({key,label,max,hint})=><label key={key} className="my-1 block text-sm" title={t(hint)}>{t(label)}: <strong>{(tune[key]??1).toFixed(2)}×</strong><input className="block w-full" type="range" min="0" max={max} step=".05" value={tune[key]??1} onChange={e=>changeTune(key,+e.target.value)}/></label>)}
