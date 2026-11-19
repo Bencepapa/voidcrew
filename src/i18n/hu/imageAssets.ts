@@ -41,5 +41,6 @@ export const imageAssetsHu = {
   "assetManager.image.type": "Fajta",
   "assetManager.image.size": "Méret",
   "assetManager.image.id": "Azonosító",
-  "assetManager.image.preview": "Előnézet"
+  "assetManager.image.preview": "Előnézet",
+  "assetManager.image.unpublishedBar": "Közzé nem tett képek: {n} (mindegyiket a saját tulajdonságpaneljén tedd közzé)",
 } as const satisfies Record<string, string>;

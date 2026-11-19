@@ -9,6 +9,7 @@ import { StorageFullError } from "./idb";
 import { hasAlpha, validatePng, type TransparencySource } from "./imageTools";
 import { SharedLoginForm, sharedConfigured, sharedToken, useSharedAuth } from "./sharedAuth";
 import { deleteSharedTexture, publishDrafts } from "./sharedTextures";
+import { useImageDrafts } from "./sharedImages";
 import { draftById, draftCounts, draftId, discardAllDrafts, discardDraft, MAP_KEYS, saveDraft, useDrafts, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
 import type { TextureTuning } from "../render/textureTuning";
 import { catalogLabel, convertLegacy, ensureDraft, mapUses, sharedInfo, textureStatus, useTextureVersion } from "./textureLibrary";
@@ -190,6 +191,8 @@ export function ChannelControls({ editor, channel }: { editor: TextureEditor; ch
 
 export function UnsavedBar({ onError }: { onError: (message: string) => void }) {
   const drafts = useDrafts();
+  // (images - decals and stills - are published one by one from their own properties panel; the bar only reminds)
+  const imageDrafts = useImageDrafts().length;
   useSharedAuth();
   const [busy, setBusy] = useState(false);
   const [login, setLogin] = useState(false);
@@ -197,7 +200,7 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
   // a result message fades after a while
   useEffect(() => { if (!message || busy) return; const timer = setTimeout(() => setMessage(""), 8000); return () => clearTimeout(timer); }, [message, busy]);
   const { added, changed } = draftCounts(drafts);
-  if (!drafts.length && !message) return null;
+  if (!drafts.length && !imageDrafts && !message) return null;
 
   async function publish() {
     setBusy(true); setMessage("");
@@ -213,7 +216,8 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
     void publish();
   }
   return <div role="status" className="relative mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded border border-yellow-500 bg-yellow-900/40 px-3 py-1 text-sm text-yellow-100">
-    {drafts.length > 0 ? <span>{t("assetManager.unsaved", { n: added, m: changed })}</span> : <span>{message}</span>}
+    {drafts.length > 0 ? <span>{t("assetManager.unsaved", { n: added, m: changed })}</span> : imageDrafts === 0 ? <span>{message}</span> : null}
+    {imageDrafts > 0 && <span>{t("assetManager.image.unpublishedBar", { n: imageDrafts })}</span>}
     {drafts.length > 0 && message && <span className="text-yellow-200/80">{message}</span>}
     {drafts.length > 0 && <>
       <button className={small + " !border-yellow-400"} disabled={busy} onClick={start}>{t("assetManager.publish")}</button>

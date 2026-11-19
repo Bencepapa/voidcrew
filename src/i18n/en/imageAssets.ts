@@ -41,5 +41,6 @@ export const imageAssetsEn = {
   "assetManager.image.type": "Kind",
   "assetManager.image.size": "Size",
   "assetManager.image.id": "ID",
-  "assetManager.image.preview": "Preview"
+  "assetManager.image.preview": "Preview",
+  "assetManager.image.unpublishedBar": "Unpublished images: {n} (publish each one from its own properties panel)",
 } as const satisfies Record<string, string>;
