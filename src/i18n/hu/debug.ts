@@ -145,6 +145,7 @@ export const debugHu = {
   "debug.smokeBumpsIntoProps": "Füst ütközése tárgyakkal",
   "debug.robotsPushSmokeAside": "A robotok félretolják a füstöt",
   "debug.playTesting": "Játék és tesztelés",
+  "debug.autoLoadShared": "A legfrissebb megosztott tartalom automatikus betöltése",
   "debug.gridMovementOffFreeJoysticks": "Rácsmozgás (ki: szabad, botkormány)",
   "debug.aimingMiniGameOffChanceRoll": "Célzós minijáték (ki: esélydobás)",
   "debug.immortalCrewHPStopsAt1": "Halhatatlan csapat (HP minimum 1)",

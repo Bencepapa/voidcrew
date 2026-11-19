@@ -43,6 +43,7 @@ export const editorBarHu = {
   "editorBar.chanceWall": "Esélyfal",
   "editorBar.wallsLeftToChanceThereInSome": "Véletlenszerű falak: egyes változatokban fal, másokban szabad padló",
   "editorBar.map": "Pálya",
+  "editorBar.sharedBadge": "megosztott",
   "editorBar.theMapSSizeOpenMakeOr": "Pályaméret; pályák megnyitása, létrehozása és másolása",
   "editorBar.clickAFloorOrCeilingUp0": "kattintás padlóra vagy plafonra: 0,25-tel fel · jobb kattintás: le",
   "editorBar.clickNearAFloorSEdgeOr": "kattintás a padló széléhez (vagy lépcső oldalára): létra azon az oldalon · újra: eltávolítás",

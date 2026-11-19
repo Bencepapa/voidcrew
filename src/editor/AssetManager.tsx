@@ -209,7 +209,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const editable = sample==="material" && !!entry && isEditable(id);
   // the shared textures are listed when the window opens; the old local previews are moved over once
   async function refreshShared() {
-    try { await Promise.all((["scifi","fantasy"] as const).map(loadSharedTextures)); } catch (e) { setError(errorText(e)); }
+    try { await Promise.all((["scifi","fantasy"] as const).map((world) => loadSharedTextures(world))); } catch (e) { setError(errorText(e)); }
   }
   useEffect(() => { if(!open)return; void migrateLegacyPreviews(); if(sharedConfigured)void refreshShared(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   async function createTexture() {

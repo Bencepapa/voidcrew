@@ -43,6 +43,7 @@ export const editorBarEn = {
   "editorBar.chanceWall": "Chance wall",
   "editorBar.wallsLeftToChanceThereInSome": "Walls left to chance: there in some variations, open floor in others",
   "editorBar.map": "Map",
+  "editorBar.sharedBadge": "shared",
   "editorBar.theMapSSizeOpenMakeOr": "The map's size; open, make or copy maps",
   "editorBar.clickAFloorOrCeilingUp0": "click a floor or ceiling: up 0.25 · right-click: down",
   "editorBar.clickNearAFloorSEdgeOr": "click near a floor's edge (or a step's face): a ladder up that side · again: take it out",
