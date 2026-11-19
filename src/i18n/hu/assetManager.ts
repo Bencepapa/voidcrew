@@ -240,4 +240,8 @@ export const assetManagerHu = {
   "assetManager.fit": "Illesztés",
   "assetManager.actualSize": "100%",
   "assetManager.ai.section": "AI mélység",
+  "assetManager.sharedNotConfigured": "A megosztott tár nincs beállítva ebben a buildben (hiányoznak a Supabase-beállítások), ezért nincs mit frissíteni. Add meg őket a .env.local fájlban.",
+  "assetManager.sharedRefreshing": "A megosztott könyvtár frissítése…",
+  "assetManager.sharedRefreshed": "A megosztott könyvtár frissítve.",
+  "assetManager.sharedSignInNeeded": "A megosztott könyvtár olvasásához bejelentkezés kell (vagy nem futott le a vendég-olvasási SQL). Jelentkezz be lent.",
 } as const satisfies Record<string, string>;

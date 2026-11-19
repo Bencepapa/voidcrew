@@ -1,4 +1,4 @@
-import { t, type Key } from "../i18n";
+﻿import { t, type Key } from "../i18n";
 import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -9,11 +9,11 @@ import { ACTOR_TYPES } from "../game/actors";
 import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { baseMaps, channels, type Channel, type MaterialMaps } from "./materialMaps";
 import { decode } from "./imageTools";
-import { AutoBadge, ChannelControls, errorText, TextureFields, UnsavedBar, useTextureEditor } from "./TexturePanel";
+import { AutoBadge, ChannelControls, errorText, SignInPopover, TextureFields, UnsavedBar, useTextureEditor } from "./TexturePanel";
 import { draftCounts, draftId, newDraft, saveDraft, useDrafts, type SurfaceKind } from "./textureDrafts";
 import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
 import { loadSharedTextures } from "./sharedTextures";
-import { sharedConfigured } from "./sharedAuth";
+import { SharedHttpError, sharedConfigured, sharedToken } from "./sharedAuth";
 import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
 import { Lock, RefreshCw } from "lucide-react";
 import { DEFAULT_SETTINGS, FLOOR_BASE_DEPTH } from "../components/GameViewport";
@@ -61,8 +61,8 @@ const displayKeys: Record<string,
   "Off": "assetManager.off",
   "Empty": "assetManager.emptyRoom",
   "Gray": "assetManager.gray",
-  "3×3": "assetManager.room3",
-  "5×5": "assetManager.room5",
+  "3Ă—3": "assetManager.room3",
+  "5Ă—5": "assetManager.room5",
   "Selected texture": "assetManager.selectedTexture",
   "textured": "assetManager.textured",
   "faces": "assetManager.faces",
@@ -112,7 +112,7 @@ function DraftThumb({ draft }: { draft: ImageDraft }) {
   const url = useImageDraftPreview(draft);
   return url
     ? <img src={url} alt="" className="h-9 w-9 shrink-0 object-contain"/>
-    : <span className="grid h-9 w-9 shrink-0 place-items-center text-neutral-500">…</span>;
+    : <span className="grid h-9 w-9 shrink-0 place-items-center text-neutral-500">â€¦</span>;
 }
 
 function useImageSize(url?: string) {
@@ -355,14 +355,26 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const editor = useTextureEditor(sample==="material" && entry ? id : "", setError, select);
   const editable = sample==="material" && !!entry && isEditable(id);
   // the shared textures and images are listed when the window opens (and on Refresh); the old local previews are moved over once
-  async function refreshShared() {
-    if (!sharedConfigured) return;
+  // (manual: the Refresh button says what happened - or why nothing did; the automatic one on opening stays quiet)
+  const [notice, setNotice] = useState("");
+  const [signInOpen, setSignInOpen] = useState(false);
+  useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 6000); return () => clearTimeout(timer); }, [notice]);
+  async function refreshShared(manual = false) {
+    if (!sharedConfigured) { if (manual) { setNotice(""); setError(t("assetManager.sharedNotConfigured")); } return; }
+    if (manual) { setError(""); setNotice(t("assetManager.sharedRefreshing")); }
     try {
       await Promise.all([
         ...(["scifi","fantasy"] as const).map((world) => loadSharedTextures(world)),
         ...(["scifi","fantasy"] as const).map((world) => loadSharedImages(world)),
       ]);
-    } catch (e) { setError(errorText(e)); }
+      if (manual) setNotice(t("assetManager.sharedRefreshed"));
+    } catch (e) {
+      if (!manual) { setError(errorText(e)); return; }
+      setNotice("");
+      // (401 / 403: the store needs a sign-in, or the guest-read SQL has not been run)
+      if (e instanceof SharedHttpError && (e.status === 401 || e.status === 403) && !sharedToken()) { setError(t("assetManager.sharedSignInNeeded")); setSignInOpen(true); }
+      else setError(errorText(e));
+    }
   }
   useEffect(() => { if(!open)return; void migrateLegacyPreviews(); if(sharedConfigured)void refreshShared(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   async function createTexture() {
@@ -416,7 +428,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     setSample(next);
     setSub("All");
     setPose(-1); setTurn(0); setPlacement("Auto");
-    if (background === "Selected texture" && next !== "material") setBackground("3×3");
+    if (background === "Selected texture" && next !== "material") setBackground("3Ă—3");
   }
   const [listOpen, setListOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -546,7 +558,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       if(color)loaded.colorSpace=THREE.SRGBColorSpace;
       loaded.magFilter=THREE.NearestFilter; return loaded;
     };
-    const n = background==="5×5" ? 5 : 3;
+    const n = background==="5Ă—5" ? 5 : 3;
     const half = n/2;
     const fantasy = (world==="All" ? assetWorld(id.replace(/^decal:/,"")) : world)==="fantasy";
     const roomSets = fantasy ? ["fantasyfloor1","fantasywall1","fantasywall1"] : ["floor1","wall4","ceiling1"];
@@ -880,14 +892,15 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               <option value="fantasy">{t("assetManager.fantasy")}</option>
             </select>
           </label>
-          <button type="button" className={button + " grid h-7 w-7 place-items-center !p-0"} aria-label={t("assetManager.refresh")} title={t("assetManager.refresh")} onClick={()=>void refreshShared()}><RefreshCw size={14} aria-hidden="true"/></button>
-          <span className="min-w-0 flex-1 truncate text-xs text-red-300">{error || t("assetManager.orbitHint")}</span>
-          <button aria-label={t("assetManager.close")} className={button} onClick={requestClose}>×</button>
+          <button type="button" className={button + " grid h-7 w-7 place-items-center !p-0"} aria-label={t("assetManager.refresh")} title={t("assetManager.refresh")} onClick={()=>void refreshShared(true)}><RefreshCw size={14} aria-hidden="true"/></button>
+          <span className={"min-w-0 flex-1 truncate text-xs " + (error ? "text-red-300" : notice ? "text-emerald-300" : "text-neutral-400")} title={error || notice}>{error || notice || t("assetManager.orbitHint")}</span>
+          {signInOpen && <SignInPopover className="fixed left-1/2 top-24 -translate-x-1/2" onDone={()=>{setSignInOpen(false);setError("");void refreshShared(true);}} onCancel={()=>setSignInOpen(false)} onError={setError}/>}
+          <button aria-label={t("assetManager.close")} className={button} onClick={requestClose}>Ă—</button>
         </header>
         <UnsavedBar onError={setError}/>
         <div className="flex min-h-0 flex-1 gap-2">
           {listOpen ? <aside className="flex w-64 shrink-0 flex-col gap-1 overflow-hidden border-r border-neutral-800 pr-2">
-            <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.assets")}</strong><button aria-label={t("assetManager.collapseAssets")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setListOpen(false)}>◀</button></div>
+            <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.assets")}</strong><button aria-label={t("assetManager.collapseAssets")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setListOpen(false)}>â—€</button></div>
             <div className="flex items-center gap-1">
               <input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder={t("assetManager.searchAssets")} aria-label={t("assetManager.searchAssets")}
                 className="min-w-0 flex-1 rounded-sm border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-100"/>
@@ -906,7 +919,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                   {a?<span className="block h-9 w-9 shrink-0" style={{backgroundImage:"url("+e.img+")",backgroundSize:a.cols*100+"% "+a.rows*100+"%",backgroundPosition:"0 "+a.idleRow/Math.max(1,a.rows-1)*100+"%"}}/>
                     :e.draft?<DraftThumb draft={e.draft}/>
                     :e.img?<img src={e.img} loading="lazy" alt="" className="h-9 w-9 shrink-0 object-contain"/>
-                    :<span className="grid h-9 w-9 shrink-0 place-items-center text-neutral-500">…</span>}
+                    :<span className="grid h-9 w-9 shrink-0 place-items-center text-neutral-500">â€¦</span>}
                   <span className="min-w-0 flex-1 truncate">{e.label}</span>
                   {auto.length>0 && <AutoBadge/>}
                   {draft && <span role="img" aria-label={t("assetManager.draftTitle")} title={t("assetManager.draftTitle")} className="h-2 w-2 shrink-0 rounded-full bg-yellow-400"/>}
@@ -915,7 +928,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               })}
               {!shown.length && <p className="p-2 text-xs text-neutral-500">{t("assetManager.noAssets")}</p>}
             </div>
-          </aside> : <button aria-label={t("assetManager.showAssets")} title={t("assetManager.assets")} className={strip} onClick={()=>setListOpen(true)}>▶</button>}
+          </aside> : <button aria-label={t("assetManager.showAssets")} title={t("assetManager.assets")} className={strip} onClick={()=>setListOpen(true)}>â–¶</button>}
           <main className="flex min-w-0 flex-1 flex-col gap-2">
             <div className="flex shrink-0 flex-wrap items-center gap-2"><strong>{entry?.label ?? t("assetManager.noAssets")}</strong>
               {sample==="material" && <>{["Wall","Floor","Ceiling"].map(v=><button className={button} aria-pressed={orientation===v} key={v} onClick={()=>{orient(v);if(v==="Ceiling" || v==="Floor"){const cam=liveCamera.current;if(cam){cam.camera.position.y=v==="Ceiling"?.25:1.7;cam.controls.target.y=v==="Ceiling"?.95:.05;cam.controls.update();}}if(v!=="Wall" && layout==="Block")setLayout("Single");}}>{display(v)}</button>)}{(orientation==="Wall"?["Single","Pair","Block"]:["Single","Pair"]).map(v=><button className={button} aria-pressed={layout===v} key={v} onClick={()=>setLayout(v)}>{display(v)}</button>)}</>}
@@ -929,7 +942,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               : <div className="min-h-0 max-h-[65vh] flex-1 overflow-hidden rounded-sm border border-neutral-800 [&>canvas]:block" ref={host}/>}
           </main>
           {panelOpen ? <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-neutral-800 pl-2">
-            <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setPanelOpen(false)}>▶</button></div>
+            <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setPanelOpen(false)}>â–¶</button></div>
             {sample==="still" || isDecal ? <>
               {(selectedStillDraft || selectedDecalDraft) && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName((selectedStillDraft ?? selectedDecalDraft)!.world)}</p>}
               <ImageAssetInspector draft={selectedDecalDraft ?? selectedStillDraft} image={isDecal ? decalImage : entry?.image} onError={setError}/>
@@ -954,7 +967,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
             <details className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.look", { texture: sample==="material" ? (entry?.label ?? "") : (tuneId || t("assetManager.noTuning")) })}</summary>
               {tune ? <>
                 <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>
-                {TUNING.map(({key,label,max,hint})=><label key={key} className="my-1 block text-sm" title={t(hint)}>{t(label)}: <strong>{(tune[key]??1).toFixed(2)}×</strong><input className="block w-full" type="range" min="0" max={max} step=".05" value={tune[key]??1} onChange={e=>changeTune(key,+e.target.value)}/></label>)}
+                {TUNING.map(({key,label,max,hint})=><label key={key} className="my-1 block text-sm" title={t(hint)}>{t(label)}: <strong>{(tune[key]??1).toFixed(2)}Ă—</strong><input className="block w-full" type="range" min="0" max={max} step=".05" value={tune[key]??1} onChange={e=>changeTune(key,+e.target.value)}/></label>)}
                 <div className="mt-2 flex flex-wrap items-center gap-2">{!editable && <button className={button+" !py-1"} onClick={dev ? saveTune : downloadTune}>{t(dev ? "assetManager.save" : "assetManager.download")}</button>}{!editable && !dev && <button className={button+" !py-1"} onClick={copyTune}>{t("assetManager.copy")}</button>}<button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);if(editable)void editor.setTuning(undefined);setTuneStamp(n=>n+1);setSaveNote("");setCopyNote("");}}>{t("assetManager.reset")}</button></div>
                 {editable && <p className="mt-1 text-xs text-neutral-300">{t("assetManager.tuningShared")}</p>}
                 {saveNote && <p className="mt-1 text-xs text-neutral-300">{saveNote}</p>}
@@ -964,7 +977,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
             </details>
             <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.roomLights")}</summary>
               <div className="mt-1 flex flex-col gap-2 text-sm">
-                <label>{t("assetManager.room")} <select className={button+" !py-1"} value={background} onChange={e=>setBackground(e.target.value)}>{["Empty","Gray","3×3","5×5",...(sample==="material"?["Selected texture"]:[])].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>
+                <label>{t("assetManager.room")} <select className={button+" !py-1"} value={background} onChange={e=>setBackground(e.target.value)}>{["Empty","Gray","3Ă—3","5Ă—5",...(sample==="material"?["Selected texture"]:[])].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>
                 <label>{t("assetManager.roomCeiling")} <select className={button+" !py-1"} value={ceiling} onChange={e=>setCeiling(e.target.value)}>{["Auto","On","Off"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>
                 <p className="text-xs text-neutral-300">{t("assetManager.walkHint")}</p>
                 <label><input type="checkbox" checked={rgb} onChange={e=>setRgb(e.target.checked)}/> {t("assetManager.rgb")}</label>
@@ -985,7 +998,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                 {edits[channel]!==undefined && <button className="underline" onClick={()=>void edit(channel)}>{t("assetManager.restore")}</button>}</>}
               </div>;
             })}</div></section>)}</details>}</>}
-          </aside> : <button aria-label={t("assetManager.showProperties")} title={t("assetManager.properties")} className={strip} onClick={()=>setPanelOpen(true)}>◀</button>}
+          </aside> : <button aria-label={t("assetManager.showProperties")} title={t("assetManager.properties")} className={strip} onClick={()=>setPanelOpen(true)}>â—€</button>}
         </div>
       </section>
     </div>,document.body)}</>;
