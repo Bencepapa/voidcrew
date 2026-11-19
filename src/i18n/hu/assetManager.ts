@@ -212,6 +212,7 @@ export const assetManagerHu = {
   "assetManager.subCategory": "Alkategória",
   "assetManager.refresh": "Frissítés",
   "assetManager.stills": "Állóképek",
+  "assetManager.pickups": "Felszedhető tárgyak",
   "assetManager.decals": "Matricák",
   "assetManager.new": "Új",
   "assetManager.newDecal": "Új matrica",

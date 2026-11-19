@@ -22,12 +22,15 @@ import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "
 
 const button = "rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1 text-left text-neutral-200 hover:bg-neutral-700 aria-pressed:border-amber-400 aria-pressed:bg-amber-400/15 aria-pressed:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40";
 const selectClass = "min-w-0 rounded-sm border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-200";
-export type Sample = "material" | "actor" | "prop" | "item";
+export type Sample = "material" | "actor" | "prop" | "item" | "still";
+type Entry = { key: string; label: string; img: string; groups: string[]; world: WorldId; draft?: ImageDraft; image?: SharedImage; builtinDecal?: string };
 import { ITEM_TYPES } from "../game/items";
 import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { fetchDecalManifest } from "../render/decals";
-import { sharedImage, useSharedImages } from "../render/sharedImages";
+import { sharedImage, useSharedImages, type ImagePurpose, type SharedImage } from "../render/sharedImages";
 import { neutralStyle } from "./inspector/parts";
+import { createImageDraft, loadSharedImages, useImageDrafts, type ImageDraft } from "./sharedImages";
+import { ImageAssetInspector, useImageDraftPreview } from "./ImageAssetsPanel";
 import { propEdit } from "./propEditState";
 import { textureFolder } from "../render/textureSets";
 import { saveTextureTuning, setTextureTuning, textureTuning, textureTuningJson, type TextureTuning } from "../render/textureTuning";
@@ -78,23 +81,80 @@ const categories: { value: Sample; label: Key }[] = [
   { value: "material", label: "assetManager.textures" },
   { value: "prop", label: "assetManager.props" },
   { value: "actor", label: "assetManager.npcs" },
-  { value: "item", label: "assetManager.items" },
+  { value: "item", label: "assetManager.pickups" },
+  { value: "still", label: "assetManager.stills" },
 ];
 const subsOf: Record<Sample, string[]> = {
   material: ["All", "wall", "floor", "ceiling", "traverse"],
   prop: ["All", "3D", "billboard", "decal"],
   actor: ["All"],
   item: ["All"],
+  still: ["All", "loading", "portrait", "room"],
 };
-const subLabel = (_sample: Sample, value: string) => {
+const subLabel = (sample: Sample, value: string) => {
   if (value === "All") return t("assetManager.all");
   if (value === "wall") return t("assetManager.wall");
   if (value === "floor") return t("assetManager.floor");
   if (value === "ceiling") return t("assetManager.ceiling");
   if (value === "traverse") return t("traverse.group");
   if (value === "decal") return t("assetManager.decals");
+  if (sample === "still") {
+    if (value === "loading") return t("assetManager.image.purposeLoading");
+    if (value === "room") return t("assetManager.image.purposeRoom");
+    if (value === "portrait") return t("assetManager.image.purposePortrait");
+  }
   return t(displayKeys[value]);
 };
+const worldName = (world: WorldId) => t(world === "fantasy" ? "assetManager.fantasy" : "assetManager.scifi");
+
+// A still draft's own preview, processed the same way as the game will see it.
+function DraftThumb({ draft }: { draft: ImageDraft }) {
+  const url = useImageDraftPreview(draft);
+  return url
+    ? <img src={url} alt="" className="h-9 w-9 shrink-0 object-contain"/>
+    : <span className="grid h-9 w-9 shrink-0 place-items-center text-neutral-500">…</span>;
+}
+
+function useImageSize(url?: string) {
+  const [size, setSize] = useState<{ width: number; height: number }>();
+  useEffect(() => {
+    setSize(undefined);
+    if (!url) return;
+    let live = true;
+    const image = new Image();
+    image.onload = () => { if (live) setSize({ width: image.naturalWidth, height: image.naturalHeight }); };
+    image.src = url;
+    return () => { live = false; };
+  }, [url]);
+  return size;
+}
+
+// A still image is not a room: show it flat, with wheel zoom and drag to pan.
+function StillPreview({ url, alt }: { url?: string; alt: string }) {
+  const [fit, setFit] = useState(true);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  useEffect(() => { setFit(true); setZoom(1); setPan({ x: 0, y: 0 }); }, [url]);
+  if (!url) return <div className="grid h-full min-h-0 place-items-center rounded-sm border border-neutral-800 text-sm text-neutral-500">{t("assetManager.image.noPng")}</div>;
+  return <div className="flex min-h-0 flex-1 flex-col gap-1">
+    <div className="flex shrink-0 items-center gap-1 text-xs">
+      <button type="button" className={button} onClick={() => { setFit(true); setZoom(1); setPan({ x: 0, y: 0 }); }}>{t("assetManager.fit")}</button>
+      <button type="button" className={button} onClick={() => { setFit(false); setZoom(1); setPan({ x: 0, y: 0 }); }}>{t("assetManager.actualSize")}</button>
+      <span className="text-neutral-400">{Math.round(zoom * 100)}%</span>
+    </div>
+    <div className="relative min-h-0 flex-1 overflow-hidden rounded-sm border border-neutral-800 bg-neutral-900 [&_img]:select-none"
+      onWheel={event => { event.preventDefault(); event.stopPropagation(); setFit(false); setZoom(value => Math.min(8, Math.max(.1, value * Math.exp(-event.deltaY * .0015)))); }}
+      onPointerDown={event => { if (event.button !== 0 || fit) return; event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y }; }}
+      onPointerMove={event => { if (!drag.current) return; setPan({ x: drag.current.px + event.clientX - drag.current.x, y: drag.current.py + event.clientY - drag.current.y }); }}
+      onPointerUp={() => { drag.current = null; }}
+      onPointerCancel={() => { drag.current = null; }}>
+      <img src={url} alt={alt} draggable={false}
+        className={(fit ? "max-h-full max-w-full" : "max-h-none max-w-none") + " absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 object-contain"}
+        style={fit ? { maxHeight: "calc(100% - 2px)", maxWidth: "calc(100% - 2px)" } : { transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}/>
+    </div>
+  </div>;
+}
 // the dev server can write textureTuning.json; a production build can only download it
 const dev = import.meta.env.DEV;
 const catalog = TEXTURE_SETS as Record<string, TextureSetPaths>;
@@ -133,7 +193,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [selected, select] = useState("fantasywall1");
   const [world, setWorld] = useState<WorldId | "All">("All");
   const [sub, setSub] = useState("All");
+  const [query, setQuery] = useState("");
   const drafts = useDrafts();
+  const imageDrafts = useImageDrafts();
+  const pendingScroll = useRef<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   useTextureVersion();
   useEffect(() => {
     const openAsset = (event: Event) => {
@@ -167,16 +231,34 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [decals,setDecals] = useState<Awaited<ReturnType<typeof fetchDecalManifest>>>({});
   useEffect(()=>{if(open) fetchDecalManifest(import.meta.env.BASE_URL,"").then(setDecals).catch(()=>setError(t("assetManager.loadDecals")));},[open]);
   const isTraverse = (v: TextureSetPaths) => [v.kind].flat().includes("door");
-  const entries = sample==="material" ? Object.entries(catalog).filter(([,v])=>isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[]}))
+  const decalDrafts = imageDrafts.filter(d => d.type === "decal");
+  const stillDrafts = imageDrafts.filter(d => d.type === "portrait");
+  const entries: Entry[] = sample==="material" ? Object.entries(catalog).filter(([,v])=>isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[],world:assetWorld(key)}))
       // (a new draft with no diffuse yet isn't in the registry)
-      .concat(drafts.filter(d=>!catalog[draftId(d)]).map(d=>({key:draftId(d),label:d.name || t("assetManager.untitled"),img:"",groups:d.kinds as string[]})))
-    : sample==="actor" ? Object.entries(ACTOR_TYPES).map(([key,v])=>({key,label:v.name,img:import.meta.env.BASE_URL+"actors/"+v.sheet+"/diffuse.png",groups:[] as string[]}))
-    : sample==="item" ? Object.entries(ITEM_TYPES).map(([key,v])=>({key,label:v.name,img:textureFolder("item_"+key).diffuse,groups:[] as string[]}))
-    : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:key,img:propImage(key),groups:[v.kind==="billboard"?"billboard":"3D"]})),...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"]})),
-      ...imageCatalog.filter(image=>image.type==="decal").map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"]}))];
-  const visible = entries.filter(e=>(world==="All" || assetInWorld(e.key.replace(/^decal:/,""),world)) && (sub==="All" || e.groups.includes(sub)));
-  const entry = visible.find(e=>e.key===selected) ?? visible[0];
+      .concat(drafts.filter(d=>!catalog[draftId(d)]).map(d=>({key:draftId(d),label:d.name || t("assetManager.untitled"),img:"",groups:d.kinds as string[],world:d.world})))
+    : sample==="actor" ? Object.entries(ACTOR_TYPES).map(([key,v])=>({key,label:v.name,img:import.meta.env.BASE_URL+"actors/"+v.sheet+"/diffuse.png",groups:[] as string[],world:assetWorld(key)}))
+    : sample==="item" ? Object.entries(ITEM_TYPES).map(([key,v])=>({key,label:v.name,img:textureFolder("item_"+key).diffuse,groups:[] as string[],world:assetWorld(key)}))
+    : sample==="still" ? [
+      ...imageCatalog.filter(image=>image.type==="portrait").map(image=>({key:image.id,label:image.name,img:image.url,groups:[image.purpose ?? "portrait"],world:image.world,image})),
+      ...stillDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:[d.purpose ?? "portrait"],world:d.world,draft:d})),
+    ]
+    : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:key,img:propImage(key),groups:[v.kind==="billboard"?"billboard":"3D"],world:assetWorld(key)})),
+      ...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"],world:assetWorld(d),builtinDecal:d})),
+      ...imageCatalog.filter(image=>image.type==="decal").map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"],world:image.world,image})),
+      ...decalDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:["decal"],world:d.world,draft:d}))];
+  const visible = entries.filter(e=>(world==="All" || (e.draft || e.image ? e.world===world : assetInWorld(e.key.replace(/^decal:/,""),world))) && (sub==="All" || e.groups.includes(sub)));
+  const term = query.trim().toLocaleLowerCase();
+  const shown = term ? visible.filter(e=>`${e.label} ${e.key}`.toLocaleLowerCase().includes(term)) : visible;
+  const entry = shown.find(e=>e.key===selected) ?? shown[0];
   const id = entry?.key ?? "";
+  const selectedImageDraft = imageDrafts.find(d => d.id === id);
+  const selectedDecalDraft = selectedImageDraft?.type === "decal" ? selectedImageDraft : undefined;
+  const selectedStillDraft = selectedImageDraft?.type === "portrait" ? selectedImageDraft : undefined;
+  const decalDraftPreview = useImageDraftPreview(selectedDecalDraft);
+  const stillDraftPreview = useImageDraftPreview(selectedStillDraft);
+  const previewUrl = selectedDecalDraft ? decalDraftPreview : selectedStillDraft ? stillDraftPreview : (entry?.img ?? "");
+  const isDecal = sample === "prop" && !!entry && entry.groups.includes("decal");
+  const builtinDecalSize = useImageSize(entry?.builtinDecal ? entry.img : undefined);
   const prop = sample==="prop" ? PROP_TYPES[id] : undefined;
   const top = prop ? prop.size[1] + ("elevation" in prop ? prop.elevation ?? 0 : 0) : 0;
   const showCeiling = ceiling==="On" || (ceiling==="Auto" && top<=1);
@@ -210,9 +292,12 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     if(!open || !id)return;
     let active=true;
     setGroups({}); showPreview({});
+    if(sample==="still")return;
     async function read(){
       let result:Record<string,MaterialMaps>={};
-      if(sample==="actor"){
+      if(selectedDecalDraft){
+        result[id]=previewUrl ? {diffuse:previewUrl} : {};
+      }else if(sample==="actor"){
         const actor=ACTOR_TYPES[id], dir=import.meta.env.BASE_URL+"actors/"+actor.sheet+"/";
         result[id]={diffuse:dir+"diffuse.png",normal:dir+"normal.png",emissive:actor.glow ? dir+"emissive.png" : undefined};
       }else if(id.startsWith("decal:")){
@@ -231,7 +316,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[open,id,sample,primary,prop,decals,texSig,imageCatalog]);
+  },[open,id,sample,primary,prop,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft]);
   async function edit(channel: Channel, file?: Blob | "") {
     const next: PreviewMaps = { ...previewBlobs.current, [channel]: file };
     if (file === undefined) delete next[channel];
@@ -247,16 +332,46 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   // editing the selected texture (drafts of shared textures): its settings and the channel cards of the maps panel
   const editor = useTextureEditor(sample==="material" && entry ? id : "", setError, select);
   const editable = sample==="material" && !!entry && isEditable(id);
-  // the shared textures are listed when the window opens; the old local previews are moved over once
+  // the shared textures and images are listed when the window opens (and on Refresh); the old local previews are moved over once
   async function refreshShared() {
-    try { await Promise.all((["scifi","fantasy"] as const).map(loadSharedTextures)); } catch (e) { setError(errorText(e)); }
+    try {
+      await Promise.all([
+        ...(["scifi","fantasy"] as const).map(loadSharedTextures),
+        ...(["scifi","fantasy"] as const).map(loadSharedImages),
+      ]);
+    } catch (e) { setError(errorText(e)); }
   }
   useEffect(() => { if(!open)return; void migrateLegacyPreviews(); if(sharedConfigured)void refreshShared(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   async function createTexture() {
     try {
       const draft = await newDraft(world==="All" ? activeWorld() : world, t("assetManager.newTextureName"));
-      setSample("material"); setSub("All"); setPose(-1); setTurn(0); setPlacement("Auto");
+      setSample("material");
+      if (!["wall","floor","ceiling"].includes(sub)) setSub("All");
+      setPose(-1); setTurn(0); setPlacement("Auto");
+      setQuery("");
+      pendingScroll.current = draftId(draft);
       select(draftId(draft));
+    } catch (e) { setError(errorText(e)); }
+  }
+  async function createDecal() {
+    try {
+      const draft = await createImageDraft(activeWorld(), "decal");
+      setSample("prop"); setSub("decal");
+      if (world !== "All" && world !== draft.world) setWorld(draft.world);
+      setPose(-1); setPlacement("Auto"); setQuery("");
+      pendingScroll.current = draft.id;
+      select(draft.id);
+    } catch (e) { setError(errorText(e)); }
+  }
+  async function createStill() {
+    try {
+      const purpose: ImagePurpose = sub === "loading" || sub === "room" ? sub : "portrait";
+      const draft = await createImageDraft(activeWorld(), "portrait", purpose);
+      setSample("still"); setSub(purpose);
+      if (world !== "All" && world !== draft.world) setWorld(draft.world);
+      setQuery("");
+      pendingScroll.current = draft.id;
+      select(draft.id);
     } catch (e) { setError(errorText(e)); }
   }
   // closing with local drafts left asks first (the drafts stay on this computer either way)
@@ -282,7 +397,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [saveNote, setSaveNote] = useState("");
   const [copyNote, setCopyNote] = useState("");
   // the texture whose look the sliders tune (an NPC's normal strength is set in the NPC editor, a decal has none)
-  const tuneId = !entry || sample==="actor" || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : propTexture(id);
+  const tuneId = !entry || sample==="actor" || sample==="still" || isDecal || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : propTexture(id);
   void tuneStamp;
   const tune: TextureTuning | undefined = tuneId ? { ...textureTuning(tuneId) } : undefined;
   const tuneRef = useRef(tune);
@@ -320,7 +435,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const host = useRef<HTMLDivElement>(null);
   const previewRenderer = useRef<THREE.WebGLRenderer | null>(null);
   useEffect(() => {
-    if (!open || !host.current) return;
+    if (!open || sample==="still" || !host.current) return;
     const renderer = new THREE.WebGLRenderer({antialias:true});
     renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     host.current.appendChild(renderer.domElement);
@@ -332,11 +447,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       renderer.forceContextLoss();
       renderer.domElement.remove();
     };
-  }, [open]);
+  }, [open, sample]);
   useEffect(() => {
     const el = host.current;
     const renderer = previewRenderer.current;
-    if (!open || !el || !entry || !groups[primary] || !renderer) return;
+    if (!open || sample==="still" || !el || !entry || !groups[primary] || !renderer) return;
     let disposed = false;
     setError("");
     const scene = new THREE.Scene();
@@ -509,16 +624,21 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
           t.offset.set((col+(mirror?1:0))/actor.cols,1-(row+1)/actor.rows);
         }
       };
-    } else if(id.startsWith("decal:")) {
-      const info=decals[id.slice(6)];
+    } else if(isDecal) {
+      const info=id.startsWith("decal:") ? decals[id.slice(6)] : undefined;
       const stamp=assetMaterial(primary,{alphaTest:.5,roughness:info?.water ? .14 : .75,metalness:.15,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-4});
+      // a draft paints on its own selected surface; a published/built-in decal shows on both, as before
+      const draftSurface=selectedDecalDraft?.surface;
+      const surfaces:("floor"|"wall"|"ceiling")[] = draftSurface ? [draftSurface] : ["floor","wall"];
       async function projectSamples(){
-        const image = await new THREE.ImageLoader().loadAsync(entry!.img);
+        if(!previewUrl)return;
+        const image = await new THREE.ImageLoader().loadAsync(previewUrl);
         if(disposed)return;
         const scale=.65/Math.max(image.width,image.height);
         const size=new THREE.Vector3(image.width*scale,image.height*scale,.32);
-        for(const floor of [true,false]){
-          const paths=catalog[roomSets[floor?0:1]];
+        for(const name of surfaces){
+          const floor=name==="floor", ceiling=name==="ceiling";
+          const paths=catalog[roomSets[name==="floor"?0:name==="wall"?1:2]];
           const textured=background!=="Empty" && background!=="Gray";
           const grid=textured ? await loadHeightGrid(paths.depth) : undefined;
           if(disposed)return;
@@ -526,12 +646,12 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
           const geo=keep(relief?.geometry ?? new THREE.PlaneGeometry(1,1));
           if(relief)keep(relief.aoMap);
           const surfaceMat=keep(new THREE.MeshStandardMaterial({map:textured?texture(paths.diffuse):null}));
-          for(let side=0;side<(floor?1:4);side++){
+          for(let side=0;side<(name==="wall"?4:1);side++){
             const angle=side*Math.PI/2;
             const surface=new THREE.Mesh(geo,surfaceMat);
-            surface.rotation.set(floor?-Math.PI/2:0,angle,0);
+            surface.rotation.set(floor?-Math.PI/2:ceiling?Math.PI/2:0,angle,0);
             const radius=half-(textured?.09:.002);
-            surface.position.set(floor?0:-radius*Math.sin(angle),floor?(textured?.09:.002):.5,floor?0:-radius*Math.cos(angle));
+            surface.position.set(floor||ceiling?0:-radius*Math.sin(angle),floor?(textured?.09:.002):ceiling?1-(textured?.09:.002):.5,floor||ceiling?0:-radius*Math.cos(angle));
             surface.updateMatrixWorld();
             if(textured)scene.add(surface);
             const geometry=keep(new DecalGeometry(surface,surface.position,surface.rotation,size));
@@ -692,8 +812,17 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       controls.dispose();
       resources.forEach(r=>r.dispose());
     };
-  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail]);
-  const strip = "grid w-8 shrink-0 place-items-start rounded border border-neutral-600 bg-neutral-900 py-2 text-lg hover:border-amber-400";
+  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface]);
+  const newInfo: { disabled: boolean; title: string; run?: () => Promise<void> } =
+    sample === "material" ? { disabled: false, title: t("assetManager.newTexture"), run: createTexture }
+      : sample === "still" ? { disabled: false, title: t("assetManager.newStill"), run: createStill }
+        : sample === "prop" && (sub === "decal" || sub === "All") ? { disabled: false, title: t("assetManager.newDecal"), run: createDecal }
+          : { disabled: true, title: t("assetManager.newUnsupported") };
+  const decalImage: SharedImage | undefined = entry?.image ?? (entry?.builtinDecal ? {
+    id: entry.builtinDecal, world: entry.world, type: "decal", name: entry.label,
+    width: builtinDecalSize?.width ?? 0, height: builtinDecalSize?.height ?? 0, url: entry.img,
+  } : undefined);
+  const strip = "grid w-8 shrink-0 place-items-start rounded-sm border border-neutral-700 bg-neutral-900 py-2 text-lg text-neutral-400 hover:text-neutral-200";
   return <><button className={button} onClick={openManager}>{t("assetManager.title")}</button>{open && createPortal(
     <div role="dialog" aria-label={t("assetManager.title")} aria-modal="true" className="fixed inset-0 z-[2147483647] bg-black/75 p-2 text-white pointer-events-auto" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation(); if(e.key==="Escape")requestClose();}}>
       <section className="voidcrew-editor-controls flex h-full w-full flex-col rounded-lg border border-neutral-700 bg-neutral-950 p-3 text-neutral-200" style={neutralStyle}>
@@ -726,29 +855,51 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
           {listOpen ? <aside className="flex w-64 shrink-0 flex-col gap-1 overflow-hidden border-r border-neutral-800 pr-2">
             <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.assets")}</strong><button aria-label={t("assetManager.collapseAssets")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setListOpen(false)}>◀</button></div>
             <div className="flex items-center gap-1">
-              <button type="button" className={button} title={t("assetManager.newTexture")} onClick={()=>void createTexture()}>+ {t("assetManager.new")}</button>
+              <input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder={t("assetManager.searchAssets")} aria-label={t("assetManager.searchAssets")}
+                className="min-w-0 flex-1 rounded-sm border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-100"/>
+              <button type="button" className={button + " shrink-0"} disabled={newInfo.disabled} title={newInfo.title} onClick={()=>void newInfo.run?.()}>+ {t("assetManager.new")}</button>
             </div>
-            <div className="grid min-h-0 flex-1 content-start grid-cols-2 gap-1 overflow-auto">{visible.map(e=>{
-              const a=sample==="actor"?ACTOR_TYPES[e.key]:undefined;
-              const status=sample==="material" ? textureStatus(e.key) : undefined;
-              const auto=sample==="material" ? autoChannels(e.key) : [];
-              return <button key={e.key} className={button+" relative !p-1 text-xs"+(status==="new"||status==="changed" ? " !border-yellow-500" : "")} aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>
-                {status && <span className="absolute right-1 top-1 z-10 flex items-center gap-1">{(status==="new"||status==="changed") && <span role="img" aria-label={t("assetManager.draftTitle")} title={t("assetManager.draftTitle")} className="h-2.5 w-2.5 rounded-full bg-yellow-400"/>}{status==="builtin" && <span title={t("assetManager.lockedTitle")} aria-label={t("assetManager.lockedTitle")} className="text-neutral-400"><Lock size={11}/></span>}</span>}
-                {a?<span className="block h-12 w-12" style={{backgroundImage:"url("+e.img+")",backgroundSize:a.cols*100+"% "+a.rows*100+"%",backgroundPosition:"0 "+a.idleRow/Math.max(1,a.rows-1)*100+"%"}}/>:e.img?<img src={e.img} loading="lazy" alt="" className="h-14 w-full object-contain"/>:<span className="grid h-14 w-full place-items-center text-neutral-500">…</span>}{e.label}{auto.length>0 && <AutoBadge className="ml-1"/>}</button>;
-            })}</div>
+            <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-auto" ref={listRef}>
+              {shown.map(e=>{
+                const a=sample==="actor"?ACTOR_TYPES[e.key]:undefined;
+                const status=sample==="material" ? textureStatus(e.key) : undefined;
+                const auto=sample==="material" ? autoChannels(e.key) : [];
+                const draft=!!e.draft || status==="new" || status==="changed";
+                return <button key={e.key} type="button" data-key={e.key}
+                  ref={node=>{if(node && pendingScroll.current===e.key){node.scrollIntoView({block:"nearest"});pendingScroll.current=null;}}}
+                  className={"flex w-full items-center gap-2 rounded-sm border px-1 py-0.5 text-left text-xs "+(id===e.key?"border-amber-400 bg-amber-400/10 text-amber-100":"border-transparent text-neutral-200 hover:bg-neutral-900")}
+                  aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>
+                  {a?<span className="block h-9 w-9 shrink-0" style={{backgroundImage:"url("+e.img+")",backgroundSize:a.cols*100+"% "+a.rows*100+"%",backgroundPosition:"0 "+a.idleRow/Math.max(1,a.rows-1)*100+"%"}}/>
+                    :e.draft?<DraftThumb draft={e.draft}/>
+                    :e.img?<img src={e.img} loading="lazy" alt="" className="h-9 w-9 shrink-0 object-contain"/>
+                    :<span className="grid h-9 w-9 shrink-0 place-items-center text-neutral-500">…</span>}
+                  <span className="min-w-0 flex-1 truncate">{e.label}</span>
+                  {auto.length>0 && <AutoBadge/>}
+                  {draft && <span role="img" aria-label={t("assetManager.draftTitle")} title={t("assetManager.draftTitle")} className="h-2 w-2 shrink-0 rounded-full bg-yellow-400"/>}
+                  {status==="builtin" && <span title={t("assetManager.lockedTitle")} aria-label={t("assetManager.lockedTitle")} className="shrink-0 text-neutral-500"><Lock size={11}/></span>}
+                </button>;
+              })}
+              {!shown.length && <p className="p-2 text-xs text-neutral-500">{t("assetManager.noAssets")}</p>}
+            </div>
           </aside> : <button aria-label={t("assetManager.showAssets")} title={t("assetManager.assets")} className={strip} onClick={()=>setListOpen(true)}>▶</button>}
           <main className="flex min-w-0 flex-1 flex-col gap-2">
             <div className="flex shrink-0 flex-wrap items-center gap-2"><strong>{entry?.label ?? t("assetManager.noAssets")}</strong>
-              {sample==="material" && <>{["Wall","Floor","Ceiling"].map(v=><button className={button+" !py-1"} aria-pressed={orientation===v} key={v} onClick={()=>{orient(v);if(v==="Ceiling" || v==="Floor"){const cam=liveCamera.current;if(cam){cam.camera.position.y=v==="Ceiling"?.25:1.7;cam.controls.target.y=v==="Ceiling"?.95:.05;cam.controls.update();}}if(v!=="Wall" && layout==="Block")setLayout("Single");}}>{display(v)}</button>)}{(orientation==="Wall"?["Single","Pair","Block"]:["Single","Pair"]).map(v=><button className={button+" !py-1"} aria-pressed={layout===v} key={v} onClick={()=>setLayout(v)}>{display(v)}</button>)}</>}
-              {sample==="actor" && entry && <><label>{t("assetManager.pose")} <select className={button+" !py-1"} value={pose} onChange={e=>setPose(+e.target.value)}><option value={-1}>{t("assetManager.walkCycle")}</option>{Array.from({length:ACTOR_TYPES[id].rows},(_,i)=><option key={i} value={i}>{t(i===ACTOR_TYPES[id].idleRow ? "assetManager.idleRow" : "assetManager.row", { n: i+1 })}</option>)}</select></label><a className={button+" !py-1"} target="_blank" rel="noreferrer" href={"?editor=actors&actor="+encodeURIComponent(id)}>{t("assetManager.npcEditor")}</a></>}
-              {sample==="prop" && propEditable(PROP_TYPES[id]) && <button className={button+" !py-1"} onClick={()=>{setOpen(false);propEdit.set({name:id,part:0});}}>{t("assetManager.propEditor")}</button>}
-              {!id.startsWith("decal:") && sample==="prop" && <label>{t("assetManager.mount")} <select className={button+" !py-1"} value={placement} onChange={e=>setPlacement(e.target.value)}>{["Auto","Floor","Wall"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>}</div>
-            <div className="flex flex-wrap gap-1" aria-label={t("assetManager.previewView")}>{["textured","faces","wireframe","normals","depth"].map(v=><button key={v} className={button+" !py-1 capitalize"} aria-pressed={view===v} onClick={()=>setView(v)}>{display(v)}</button>)}</div>
-            {sample==="material" && layout!=="Single" && <label><input type="checkbox" checked={joinEdges} onChange={e=>setJoinEdges(e.target.checked)}/> {t("assetManager.joinEdges")}</label>}
-            <div className="min-h-0 max-h-[65vh] flex-1 overflow-hidden rounded border border-neutral-700 [&>canvas]:block" ref={host}/>
+              {sample==="material" && <>{["Wall","Floor","Ceiling"].map(v=><button className={button} aria-pressed={orientation===v} key={v} onClick={()=>{orient(v);if(v==="Ceiling" || v==="Floor"){const cam=liveCamera.current;if(cam){cam.camera.position.y=v==="Ceiling"?.25:1.7;cam.controls.target.y=v==="Ceiling"?.95:.05;cam.controls.update();}}if(v!=="Wall" && layout==="Block")setLayout("Single");}}>{display(v)}</button>)}{(orientation==="Wall"?["Single","Pair","Block"]:["Single","Pair"]).map(v=><button className={button} aria-pressed={layout===v} key={v} onClick={()=>setLayout(v)}>{display(v)}</button>)}</>}
+              {sample==="actor" && entry && <><label>{t("assetManager.pose")} <select className={selectClass} value={pose} onChange={e=>setPose(+e.target.value)}><option value={-1}>{t("assetManager.walkCycle")}</option>{Array.from({length:ACTOR_TYPES[id].rows},(_,i)=><option key={i} value={i}>{t(i===ACTOR_TYPES[id].idleRow ? "assetManager.idleRow" : "assetManager.row", { n: i+1 })}</option>)}</select></label><a className={button} target="_blank" rel="noreferrer" href={"?editor=actors&actor="+encodeURIComponent(id)}>{t("assetManager.npcEditor")}</a></>}
+              {sample==="prop" && propEditable(prop) && <button className={button} onClick={()=>{setOpen(false);propEdit.set({name:id,part:0});}}>{t("assetManager.propEditor")}</button>}
+              {!isDecal && sample==="prop" && <label>{t("assetManager.mount")} <select className={selectClass} value={placement} onChange={e=>setPlacement(e.target.value)}>{["Auto","Floor","Wall"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>}</div>
+            {sample!=="still" && <div className="flex flex-wrap gap-1" aria-label={t("assetManager.previewView")}>{["textured","faces","wireframe","normals","depth"].map(v=><button key={v} className={button+" capitalize"} aria-pressed={view===v} onClick={()=>setView(v)}>{display(v)}</button>)}</div>}
+            {sample==="material" && layout!=="Single" && <label className="text-xs"><input type="checkbox" checked={joinEdges} onChange={e=>setJoinEdges(e.target.checked)}/> {t("assetManager.joinEdges")}</label>}
+            {sample==="still"
+              ? <StillPreview url={previewUrl} alt={entry?.label ?? ""}/>
+              : <div className="min-h-0 max-h-[65vh] flex-1 overflow-hidden rounded-sm border border-neutral-800 [&>canvas]:block" ref={host}/>}
           </main>
-          {panelOpen ? <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-auto rounded border border-neutral-700 p-2">
-            <div className="flex items-center justify-between gap-2"><strong>{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 hover:text-amber-400" onClick={()=>setPanelOpen(false)}>▶</button></div>
+          {panelOpen ? <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-neutral-800 pl-2">
+            <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setPanelOpen(false)}>▶</button></div>
+            {sample==="still" || isDecal ? <>
+              {(selectedStillDraft || selectedDecalDraft) && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName((selectedStillDraft ?? selectedDecalDraft)!.world)}</p>}
+              <ImageAssetInspector draft={selectedDecalDraft ?? selectedStillDraft} image={isDecal ? decalImage : entry?.image} onError={setError}/>
+            </> : <>
             <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.look", { texture: sample==="material" ? (entry?.label ?? "") : (tuneId || t("assetManager.noTuning")) })}</summary>
               {tune ? <>
                 <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>
@@ -782,7 +933,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                 {url && <button className="ml-1 underline" onClick={()=>void edit(channel,"")}>{t("assetManager.clear")}</button>}
                 {edits[channel]!==undefined && <button className="underline" onClick={()=>void edit(channel)}>{t("assetManager.restore")}</button>}</>}
               </div>;
-            })}</div></section>)}</details>}
+            })}</div></section>)}</details>}</>}
           </aside> : <button aria-label={t("assetManager.showProperties")} title={t("assetManager.properties")} className={strip} onClick={()=>setPanelOpen(true)}>◀</button>}
         </div>
       </section>

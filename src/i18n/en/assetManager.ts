@@ -212,6 +212,7 @@ export const assetManagerEn = {
   "assetManager.subCategory": "Sub category",
   "assetManager.refresh": "Refresh",
   "assetManager.stills": "Stills",
+  "assetManager.pickups": "Pickups",
   "assetManager.decals": "Decals",
   "assetManager.new": "New",
   "assetManager.newDecal": "New decal",
