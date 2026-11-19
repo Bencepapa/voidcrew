@@ -38,7 +38,28 @@ megemelt talaj oldalfala mint fal (per-face textúra `faceTextures`, matrica, fa
 kerítés/boltív propok, hibrid sima relief ajtókhoz/keretekhez (a térkép `reliefMode: smooth` esetén), felülnézet (O; görgő nagyítás,
 Ctrl+görgő döntés, középső gomb pásztázás, Q/E forgatás).
 
+## 3b. Állapot-frissítés (2026-11-19, a Claude-körök után; ez a legfrissebb)
+
+**Kész és a `main`-en (pusholva, `acb268c`):**
+- A (kurzor-fejlámpa), B (propok/tárgyak sima relief), a fénysütés háttérbe vitele: a Codex kész (`74d3df9`, `5640344`, `132a1f4`, `0b66560`).
+- **Egységes Asset Manager** (`src/editor/AssetManager.tsx`): egy közös lista, Főkategória/Alkategória/Világ legördülők, `+ Új` a keresőnél, Frissítés-ikon, semleges stílus, a külön „Képek" képernyő megszűnt. Kategóriák: Textúrák, Tárgyak (3D, Billboard, Matricák egy listában), NPC-k, Felszedhető tárgyak, **Állóképek** (töltőképernyő / portré / szobakép, 2D előnézet valós méretaránnyal). Adatréteg: `src/editor/sharedImages.ts` (`useImageDrafts`, `createImageDraft`, `ImageDraft`, `ImagePurpose`), `src/render/sharedImages.ts`, inspector: `ImageAssetInspector` (`src/editor/ImageAssetsPanel.tsx`), nyelvi fájlok: `src/i18n/*/imageAssets.ts`. A sárga „mentetlen" sáv (`UnsavedBar`, `TexturePanel.tsx`) a közzé nem tett képeket is listázza (kattintás: a piszkozatra ugrik, ×: elvet); a képeket egyesével, a saját panelükön kell közzétenni.
+- **Vendég-automatikus betöltés** (`src/editor/autoShared.ts`, `sharedMapHeads.ts`, `sharedMaps.ts`): kapcsoló a Debug > Játék és tesztelés alatt (`voidcrew-auto-shared`, alap: be), háttérben, gyorsítótárral, időtúllépéssel; a térkép-lista „shared" jelzéssel; a vendég is megnyithat megosztott pályát. A Supabase vendég-olvasás SQL-jét (`supabase/shared-public-read.sql`) a felhasználó lefuttatta.
+- **Megjegyzett Supabase-bejelentkezés** (`sharedAuth.ts`), **automatikus mentés és visszaállítás** (`mapDrafts.ts`), **új pálya párbeszéd** (helyszín + pálya, `deriveMapId`), **megemelt oldalfal mint fal** (`faceTextures`), **tető propok**, kerítés/boltív propok, hibrid sima relief ajtókhoz, **fejlámpa-szín** (Pályabeállítások > Játék), **sötét fantasy utófeldolgozás** (Debug panel, alapból KI, `src/render/darkFantasyShader.ts`, `postSettings.ts`: 4 hue-szabály, „Egyéb" mód, maszk-nézet, Alaphelyzet).
+
+**Félkész, folytasd itt:**
+1. **Fáklya fénye** (a felhasználó kérése: a tűz-emitter fényének színe/erőssége/hatótávja nem állítható). Egy OpenCode-agent félig megcsinálta, **nem commitolt** állapotban a `C:\dev\js\voidcrew-firelight` worktree-ben (ág: `feature/fire-light-controls`, 11 módosított fájl: `types.ts`, `mapFormat.ts`, `SmokeFields.tsx`, `parts.tsx`, `GameViewport.tsx`, `App.tsx`, `EditorBar.tsx`, i18n…). A `tsc` tiszta. Terv: opcionális `lightColor` (#rrggbb), `lightIntensity` (szorzó, alap 1), `lightReach` (szorzó, alap 1) a tűz-emitter specifikációján, a fény létrehozásánál használva (`GameViewport.tsx` ~ a „a fire (see fire.ts): its light" körül, és `lightGrid.ts`, ha a tűz-fények azon át mennek), Inspector „Fény" csoport (színválasztó Alaphelyzet gombbal, Erősség 0–3, Hatótáv 0,2–3), élő frissítés, i18n en+hu. Nézd át a `git diff`-et abban a worktree-ben, fejezd be, vagy kezdd újra a `main`-ről.
+2. **Állóképek automatikus betöltése vendégként:** az `autoShared.ts` ma a textúrákat és a térkép-fejeket tölti; a `loadSharedImages(world)`-t a `Promise.all`-ba kell venni (már van `src/editor/sharedImages.ts`).
+
+**Ellenőrizetlen (a felhasználó oldalán kell kipróbálni a Pages-en):** a valódi Supabase vendég-olvasás és gyorsítótár, a közzététel/törlés, az állóképek közzététele, az automatikus mentés visszaállítás-sávja, a térkép-párbeszéd kinézete, a belépési felirat, az új Asset Manager mobilon/keskeny ablakban, az utófeldolgozás teljesítménye (a „Kirajzolt háromszögek: 1" a statisztikában az utolsó pass miatt van: a composer miatt `renderer.info.autoReset = false` + kézi nullázás kellene a valódi szám mutatásához).
+
+**Ismert hiányosságok / ötletek:** a statisztika-számláló az utófeldolgozással (lásd fent); a sötét fantasy shader hangolása (a meleg szabály a kő színét is tűzszínűre viszi: a fények módosítása, pl. hideg kék ambient és szűkebb fáklya-sugár, többet adna); a tető relief nélküli; a `chanceWalls` áthelyezése É/Ny bővítésnél (F lista).
+
+**Worktree-k és ágak:** a kész ágak a `main`-be beolvasztva (`feature/asset-manager-unified`, `guest-auto-load`, `dark-fantasy-post`, `persist-login`, `map-autosave`, `map-place-dialog`, `riser-walls`, `roof-props`, `fence-arch-props`). Törölhető worktree-k: `voidcrew-assetmgr`, `-guestload`, `-post`, `-seams` (a falvarrat-jegyzet és kísérleti patch csak az ágon van), `-riser`, `-roof`, `-mapdialog`, `-autosave`, `-authsave`, `-hybrid`, `-gen`, `-assets2`, `-float`, `-traverse`, `-tuning`, `-assets`, `-fence`. Kivétel: `voidcrew-firelight` (félkész munka, lásd fent). A `git worktree remove` előtt nézd meg a `git status`-t.
+
 ## 4. A következő feature-ök (a felhasználó kérte; fontossági sorrendben)
+
+*(A, B és G részben kész: lásd a 3b. szakaszt. Az alábbi leírások a korábbi állapotot rögzítik.)*
+
 
 Aktuális sorrend: D, utána G. Az Assets v3 tervezésénél a H pont portréfeltöltését is figyelembe kell venni. E és F vár. A B pontot a felhasználó Void Fantasy (`smooth`) és Void Crew (`steps`) világon ellenőrizte és elfogadta.
 
