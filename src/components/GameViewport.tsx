@@ -63,6 +63,7 @@ import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
 import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
 import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
+import { onSharedDecalsChanged } from "../render/sharedImages";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 
@@ -2566,6 +2567,10 @@ export function GameViewport({
       parent: group,
     });
     if (settings.decalsEnabled) track(decals.add(map.decals ?? []));
+    const stopSharedDecals = onSharedDecalsChanged(ids => {
+      const specs = latestMapRef.current.decals ?? [];
+      if (!disposed && settings.decalsEnabled && specs.some(spec => ids.has(spec.decal))) track(decals.reset(specs));
+    });
     // dev-only: inspect from the console
     if (import.meta.env.DEV) Object.assign(window, { __voidcrewDecals: decals });
 
@@ -7740,6 +7745,7 @@ export function GameViewport({
       ceilMat.dispose();
       for (const mat of fixtureMats.values()) mat.dispose();
       (selectBox.material as THREE.Material).dispose();
+      stopSharedDecals();
       decals.dispose();
       disposeLightGrid(lightGrid);
       exitMat.map?.dispose();

@@ -25,6 +25,8 @@ export type Sample = "material" | "actor" | "prop" | "item";
 import { ITEM_TYPES } from "../game/items";
 import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { fetchDecalManifest } from "../render/decals";
+import { sharedImage, useSharedImages } from "../render/sharedImages";
+import { ImageAssetsPanel } from "./ImageAssetsPanel";
 import { propEdit } from "./propEditState";
 import { textureFolder } from "../render/textureSets";
 import { saveTextureTuning, setTextureTuning, textureTuning, textureTuningJson, type TextureTuning } from "../render/textureTuning";
@@ -104,6 +106,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   wallDetail: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [imagesOpen, setImagesOpen] = useState(false);
+  const imageCatalog = useSharedImages();
   const [sample, setSample] = useState<Sample>("material");
   const [selected, select] = useState("fantasywall1");
   const [world, setWorld] = useState<WorldId | "All">("All");
@@ -112,6 +116,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   useTextureVersion();
   useEffect(() => {
     const openAsset = (event: Event) => {
+      setImagesOpen(false);
       const {sample, id} = (event as CustomEvent<{sample: Sample; id: string}>).detail;
       setSample(sample); select(id); setWorld("All"); setSub("All"); setOpen(true);
     };
@@ -132,7 +137,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       .concat(drafts.filter(d=>!catalog[draftId(d)]).map(d=>({key:draftId(d),label:d.name || t("assetManager.untitled"),img:"",groups:d.kinds as string[]})))
     : sample==="actor" ? Object.entries(ACTOR_TYPES).map(([key,v])=>({key,label:v.name,img:import.meta.env.BASE_URL+"actors/"+v.sheet+"/diffuse.png",groups:[] as string[]}))
     : sample==="item" ? Object.entries(ITEM_TYPES).map(([key,v])=>({key,label:v.name,img:textureFolder("item_"+key).diffuse,groups:[] as string[]}))
-    : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:key,img:propImage(key),groups:[v.kind==="billboard"?"billboard":"3D"]})),...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"]}))];
+    : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:key,img:propImage(key),groups:[v.kind==="billboard"?"billboard":"3D"]})),...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"]})),
+      ...imageCatalog.filter(image=>image.type==="decal").map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"]}))];
   const visible = entries.filter(e=>(world==="All" || assetInWorld(e.key.replace(/^decal:/,""),world)) && (sub==="All" || e.groups.includes(sub)));
   const entry = visible.find(e=>e.key===selected) ?? visible[0];
   const id = entry?.key ?? "";
@@ -176,7 +182,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         result[id]={diffuse:dir+"diffuse.png",normal:dir+"normal.png",emissive:actor.glow ? dir+"emissive.png" : undefined};
       }else if(id.startsWith("decal:")){
         const dir=import.meta.env.BASE_URL+"decals/"+id.slice(6)+"/";
-        result[id]={diffuse:dir+"diffuse.png",normal:decals[id.slice(6)]?.normal ? dir+"normal.png" : undefined};
+        result[id]={diffuse:sharedImage(id.slice(6))?.url ?? dir+"diffuse.png",normal:decals[id.slice(6)]?.normal ? dir+"normal.png" : undefined};
       }else{
         const names=prop?.kind==="views"?["front","side","top"].map(v=>prop.views+"_"+v)
           : prop?.kind==="box"?[prop.side,prop.top]
@@ -190,7 +196,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[open,id,sample,primary,prop,decals,texSig]);
+  },[open,id,sample,primary,prop,decals,texSig,imageCatalog]);
   async function edit(channel: Channel, file?: Blob | "") {
     const next: PreviewMaps = { ...previewBlobs.current, [channel]: file };
     if (file === undefined) delete next[channel];
@@ -268,7 +274,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const host = useRef<HTMLDivElement>(null);
   const previewRenderer = useRef<THREE.WebGLRenderer | null>(null);
   useEffect(() => {
-    if (!open || !host.current) return;
+    if (!open || imagesOpen || !host.current) return;
     const renderer = new THREE.WebGLRenderer({antialias:true});
     renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     host.current.appendChild(renderer.domElement);
@@ -280,11 +286,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       renderer.forceContextLoss();
       renderer.domElement.remove();
     };
-  }, [open]);
+  }, [open, imagesOpen]);
   useEffect(() => {
     const el = host.current;
     const renderer = previewRenderer.current;
-    if (!open || !el || !entry || !groups[primary] || !renderer) return;
+    if (!open || imagesOpen || !el || !entry || !groups[primary] || !renderer) return;
     let disposed = false;
     setError("");
     const scene = new THREE.Scene();
@@ -640,12 +646,13 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       controls.dispose();
       resources.forEach(r=>r.dispose());
     };
-  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail]);
+  },[open,imagesOpen,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail]);
   const strip = "grid w-8 shrink-0 place-items-start rounded border border-neutral-600 bg-neutral-900 py-2 text-lg hover:border-amber-400";
   return <><button className={button} onClick={()=>{if(document.pointerLockElement)document.exitPointerLock();setOpen(true);}}>{t("assetManager.title")}</button>{open && createPortal(
     <div role="dialog" aria-label={t("assetManager.title")} aria-modal="true" className="fixed inset-0 z-[2147483647] bg-black/75 p-2 text-white pointer-events-auto" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation(); if(e.key==="Escape")requestClose();}}>
       <section className="flex h-full w-full flex-col rounded-lg border border-neutral-500 bg-neutral-950 p-3">
-        <header className="mb-2 flex shrink-0 items-center justify-between gap-3"><strong>{t("assetManager.title")}</strong><span className="min-w-0 flex-1 truncate text-sm text-neutral-300">{error || t("assetManager.orbitHint")}</span><button aria-label={t("assetManager.close")} className={button} onClick={requestClose}>×</button></header>
+        <header className="mb-2 flex shrink-0 items-center justify-between gap-3"><strong>{t("assetManager.title")}</strong><span className="min-w-0 flex-1 truncate text-sm text-neutral-300">{imagesOpen ? "" : error || t("assetManager.orbitHint")}</span>{!imagesOpen && <button type="button" className={button} onClick={()=>setImagesOpen(true)}>{t("assetManager.image.open")}</button>}<button aria-label={t("assetManager.close")} className={button} onClick={requestClose}>×</button></header>
+        {imagesOpen ? <ImageAssetsPanel onBack={() => setImagesOpen(false)}/> : <>
         <UnsavedBar onError={setError}/>
         {signIn && <SignInPopover className="fixed left-1/2 top-24 -translate-x-1/2" onDone={()=>{setSignIn(false);void refreshShared();}} onCancel={()=>setSignIn(false)} onError={setError}/>}
         <div className="flex min-h-0 flex-1 gap-2">
@@ -711,7 +718,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               </div>;
             })}</div></section>)}</details>}
           </aside> : <button aria-label={t("assetManager.showProperties")} title={t("assetManager.properties")} className={strip} onClick={()=>setPanelOpen(true)}>◀</button>}
-        </div>
+        </div></>}
       </section>
     </div>,document.body)}</>;
 }

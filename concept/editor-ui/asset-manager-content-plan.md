@@ -1,5 +1,9 @@
 # Assets: új tárgy, NPC, matrica, prop és ajtó létrehozása (terv v3, 2026-11-17)
 
+## Első szelet
+
+Az Asset Manager **Portrék és matricák** nézete PNG-t fogad. A képek helyi piszkozatban szerkeszthetők és belépés után közzétehetők. A portré és a matrica stabil azonosítót kap. A matrica falhoz, padlóhoz vagy plafonhoz adható hozzá, és közzététel után megjelenik az eszközfában. A portrékatalógust a H pont boltja és beszélgetése fogja használni. A matrica legfeljebb 512 × 512, a portré legfeljebb 4096 × 4096 képpont.
+
 A `asset-manager-textures-plan.md` (textúrák) kiterjesztése. Ugyanaz a szerkezet marad: helyi piszkozat, sárga „mentetlen” sáv,
 **Közzététel** belépéssel (`sharedAuth.ts`), mappás tár `meta.json`-nal. Új: a tartalom **típusa** is a `meta.json`-ban.
 

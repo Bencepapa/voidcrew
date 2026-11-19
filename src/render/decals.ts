@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { projectDecal } from "./decalGeometry";
+import { sharedImage } from "./sharedImages";
 import type { DecalSpec, Vec2 } from "../game/types";
 import { coplanarSurfaces, surfaceFrame, surfaceKey } from "./surfaces";
 import type { CellLevels } from "./surfaces";
@@ -124,6 +125,7 @@ export class DecalLibrary {
     for (const d of this.disposables) if (d instanceof THREE.MeshStandardMaterial) fn(d);
   }
   private disposed = false;
+  private placementVersion = 0;
 
   constructor(
     private opts: {
@@ -157,10 +159,11 @@ export class DecalLibrary {
   // (resolves once every decal's asset is in and it's on the surfaces there
   // are so far)
   add(specs: DecalSpec[]): Promise<void> {
+    const placementVersion = this.placementVersion;
     const loads = specs.map((spec, index) =>
       this.asset(spec.decal)
         .then((asset) => {
-          if (this.disposed) return;
+          if (this.disposed || placementVersion !== this.placementVersion) return;
           for (const p of this.project(spec, asset, index)) {
             const list = this.projections.get(p.key) ?? [];
             list.push(p);
@@ -205,14 +208,19 @@ export class DecalLibrary {
   }
 
   private asset(name: string): Promise<DecalAsset> {
-    let asset = this.assets.get(name);
+    const shared = sharedImage(name);
+    const sharedUrl = shared?.type === "decal" ? shared.url : undefined;
+    const cacheKey = sharedUrl ?? name;
+    let asset = this.assets.get(cacheKey);
     if (!asset) {
-      asset = this.manifest.then(async (manifest) => {
-        const entry = manifest[name];
-        if (!entry) throw new Error("not in public/decals/index.json");
+      const entryPromise: Promise<DecalManifestEntry | undefined> = sharedUrl
+        ? Promise.resolve({ normal: false })
+        : this.manifest.then(manifest => manifest[name]);
+      asset = entryPromise.then(async (entry) => {
+        if (!entry) throw new Error("Unknown decal");
         const { baseUrl, bust } = this.opts;
         const dir = `${baseUrl}decals/${name}/`;
-        const map = await this.loadTexture(`${dir}diffuse.png${bust}`);
+        const map = await this.loadTexture(sharedUrl ?? `${dir}diffuse.png${bust}`);
         map.colorSpace = THREE.SRGBColorSpace;
         map.magFilter = THREE.NearestFilter;
         let normalMap = entry.normal ? await this.loadTexture(`${dir}normal.png${bust}`) : null;
@@ -239,7 +247,7 @@ export class DecalLibrary {
         const image = map.image as { width: number; height: number };
         return { material, width: image.width, height: image.height, water: !!entry.water };
       });
-      this.assets.set(name, asset);
+      this.assets.set(cacheKey, asset);
     }
     return asset;
   }
@@ -280,7 +288,7 @@ export class DecalLibrary {
       position,
       orientation,
       size,
-      material: this.layer(spec.decal, asset.material, index),
+      material: this.layer(asset.material, index),
     }));
   }
 
@@ -417,12 +425,12 @@ export class DecalLibrary {
   private farRise = new Map<number, number>();
 
   // a decal's material pulled forward as far as its place in the list says
-  private layer(name: string, base: THREE.Material, index: number): THREE.Material {
+  private layer(base: THREE.Material, index: number): THREE.Material {
     // (water is a shader of its own, all of it sharing one set of light uniforms)
     if (base instanceof THREE.ShaderMaterial) return base;
     const std = base as THREE.MeshStandardMaterial;
     const layer = Math.min(index, DECAL_LAYERS - 1);
-    const key = `${name}|${layer}`;
+    const key = `${base.uuid}|${layer}`;
     let material = this.layered.get(key);
     if (!material) {
       material = std.clone();
@@ -527,6 +535,7 @@ if (uDecalPull.y > 0.0) {
   // on the surfaces already in the scene. Unchanged ones come out of the
   // geometry cache, so only what's new costs anything.
   reset(specs: DecalSpec[]) {
+    this.placementVersion++;
     for (const mesh of this.meshes) this.opts.parent.remove(mesh);
     this.meshes = [];
     this.pieces = [];

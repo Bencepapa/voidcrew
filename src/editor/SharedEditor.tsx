@@ -6,6 +6,7 @@ import type { MapFile } from "../game/mapFormat";
 import { bundledMaps } from "../game/sharedBuiltins";
 import { SharedLoginForm, sharedButton as button, sharedProject, sharedRequest, useSharedAuth } from "./sharedAuth";
 import { loadSharedTextures } from "./sharedTextures";
+import { loadSharedImages } from "./sharedImages";
 import { openAssetManager } from "./AssetManager";
 import { registerMap } from "./textureLibrary";
 
@@ -50,6 +51,7 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     const [latest] = await Promise.all([
       sharedRequest<Head[]>("/rest/v1/void_map_heads?world=eq." + map.world + "&order=title,id"),
       loadSharedTextures(map.world),
+      loadSharedImages(map.world),
     ]);
     const available = latest.filter((head) => head.revision > (bundledMaps[map.world]?.[head.id] ?? 0))
       .sort((a, b) => (b.saved_at ?? "").localeCompare(a.saved_at ?? ""));

@@ -17,9 +17,10 @@ import { setSharedTextures, sharedInfo, surfaceOf, uploaded, type SharedInfo, ty
 
 const LIST = "/storage/v1/object/list/void-textures";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const publicBase = () => sharedProject + "/storage/v1/object/public/void-textures/";
+export const sharedAssetBase = () => sharedProject + "/storage/v1/object/public/void-textures/";
+const publicBase = sharedAssetBase;
 
-async function list(prefix: string): Promise<{ name: string }[]> {
+export async function listSharedObjects(prefix: string): Promise<{ name: string }[]> {
   const all: { name: string }[] = [];
   for (let offset = 0; ; offset += 100) {
     const page = await sharedRequest<{ name: string }[]>(LIST, {
@@ -29,6 +30,7 @@ async function list(prefix: string): Promise<{ name: string }[]> {
     if (page.length < 100) return all;
   }
 }
+const list = listSharedObjects;
 
 const revNumbers = (entries: { name: string }[]) => entries.map(e => /^r(\d+)$/.exec(e.name)).filter(Boolean).map(m => Number(m![1])).sort((a, b) => b - a);
 

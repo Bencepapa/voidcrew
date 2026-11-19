@@ -11,6 +11,7 @@ const catalogPath = join(root, "src/game/sharedBuiltins.json");
 const catalog = existsSync(catalogPath)
   ? JSON.parse(await readFile(catalogPath, "utf8"))
   : { textures: {}, maps: {} };
+catalog.images ??= {};
 for (const path of [".env.local", ".env"]) if (existsSync(path)) loadEnvFile(path);
 const project = process.env.VITE_SUPABASE_URL?.replace(/\/$/, "");
 const key = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -133,8 +134,43 @@ async function pullTexture(world: string, name: string) {
   console.log(`Bundled texture ${id} (r${rev}).`);
 }
 
+async function pullImages(world: string, type: "portrait" | "decal") {
+  const prefix = `${world}/${type}`;
+  for (const { name: idPart } of await list(prefix)) {
+    if (!uuid.test(idPart)) continue;
+    const path = `${prefix}/${idPart}`;
+    const id = `${world}_${type}_${idPart}`;
+    const target = join(root, "public/shared-images", id + ".png");
+    const versions = (await list(path)).flatMap(({ name }) => /^r[1-9]\d*$/.test(name) ? [Number(name.slice(1))] : [])
+      .filter(Number.isSafeInteger).sort((a, b) => b - a);
+    for (const rev of versions) {
+      const folder = `${path}/r${rev}/`;
+      const response = await asset(folder + "meta.json");
+      if (response.status === 400 || response.status === 404) continue;
+      if (!response.ok) throw new Error(`Could not read ${folder} metadata (HTTP ${response.status}).`);
+      const { name, type: savedType, width, height, surface } = await response.json();
+      if (savedType !== type || typeof name !== "string" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) continue;
+      if (existsSync(target) || Object.hasOwn(catalog.images, id)) {
+        if (catalog.images[id]?.rev !== rev) console.warn(`Kept existing ${id}; shared revision: ${rev}.`);
+        break;
+      }
+      const png = await file(folder + "diffuse.png");
+      const actual = await sharp(png).metadata();
+      if (actual.format !== "png" || actual.width !== width || actual.height !== height) throw new Error(`Invalid PNG: ${folder}diffuse.png`);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, png, { flag: "wx" });
+      catalog.images[id] = { world, type, name, width, height, rev, ...(type === "decal" && ["wall", "floor", "ceiling"].includes(surface) ? { surface } : {}) };
+      await saveCatalog();
+      console.log(`Bundled ${type} ${id} (r${rev}).`);
+      break;
+    }
+  }
+}
+
 for (const world of ["fantasy", "scifi"]) {
   for (const { name } of await list(world)) await pullTexture(world, name);
+  await pullImages(world, "portrait");
+  await pullImages(world, "decal");
   const heads = await pages<{ id: string; revision: number }>(offset =>
     request(`/rest/v1/void_map_heads?select=id,revision&world=eq.${world}&order=id&limit=100&offset=${offset}`));
   const versions = catalog.maps[world] ??= {};

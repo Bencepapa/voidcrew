@@ -17,6 +17,8 @@ import { editorToolLabel } from "./editor/EditorBar";
 import { SharedEditor } from "./editor/SharedEditor";
 import { sharedConfigured } from "./editor/sharedAuth";
 import { AssetManager } from "./editor/AssetManager";
+import { loadSharedImages } from "./editor/sharedImages";
+import { sharedImage } from "./render/sharedImages";
 import { PropEditor } from "./editor/PropEditor";
 import {
   applyEdit,
@@ -291,6 +293,10 @@ export default function App() {
     document.documentElement.classList.toggle("theme-fantasy", map.world === "fantasy");
     document.title = WORLDS[map.world].name;
   }, [map.world]);
+  const needsSharedImages = editMode || !!map.decals?.some(({ decal }) => /^(fantasy|scifi)_decal_/.test(decal) && !sharedImage(decal));
+  useEffect(() => {
+    if (needsSharedImages) void loadSharedImages(map.world).catch(console.warn);
+  }, [map.world, needsSharedImages]);
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");
@@ -908,6 +914,12 @@ export default function App() {
           return;
         }
         const { cell, surface, u, v } = target.surfacePoint;
+        const allowedSurface = sharedImage(decalChoice.name)?.surface;
+        const surfaceKind = surface === "floor" || surface === "ceiling" ? surface : "wall";
+        if (allowedSurface && allowedSurface !== surfaceKind) {
+          pushLog(t("assetManager.image.wrongSurface", { surface: t(`editorBar.${allowedSurface}`) }), "editor");
+          return;
+        }
         const count = map.decals?.length ?? 0;
         result = applyEdit(map.id, (file) =>
           addDecal(file, {

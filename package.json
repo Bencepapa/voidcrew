@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "rpg:manifest": "node scripts/export-rpg-manifest.mjs",
     "pull:shared": "tsx scripts/pull-shared.ts",
     "gen:wall": "tsx scripts/gen-wall-texture.ts",
     "downscale:pixelart": "tsx scripts/downscale-pixelart.ts",

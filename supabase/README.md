@@ -35,6 +35,8 @@ void-textures/<world>/<uuid>/r<rev>/diffuse.png    plus normal.png, depth.png, s
 
 `meta.json` is uploaded last and the loader uses the highest `r<rev>` folder that has one, so a half-published folder is never shown. Publishing again adds the next `r<rev>` folder, which replaces the old one in the game; the old one stays in storage, unlisted. Auto maps are not stored: the browser makes them from the diffuse. Publishing needs [shared-texture-folders.sql](./shared-texture-folders.sql) to have been run (it adds `application/json` to the bucket's allowed types and a Storage delete policy for editors; the insert and select policies already cover the folders). A texture's look tuning (normal strength, relief depth, roughness, metalness) and its smooth-relief flag are part of its `meta.json`.
 
+The **Portraits and decals** panel uses the same PNG bucket and policies. Images are stored under `<world>/portrait/<uuid>/r<rev>/` or `<world>/decal/<uuid>/r<rev>/`. The release importer includes both image types. Published decals appear in the editor's decal palette.
+
 ## Try it from two browsers
 
 1. Open the same game world in two browser profiles. Enter the editor with **Tab**, click **Shared maps** and sign in with different accounts.

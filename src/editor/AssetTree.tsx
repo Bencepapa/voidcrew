@@ -7,6 +7,7 @@ import { ITEM_TYPES } from "../game/items";
 import { ACTOR_TYPES } from "../game/actors";
 import { TEXTURE_SETS, textureFolder, textureSetsOfKind } from "../render/textureSets";
 import { fetchDecalManifest } from "../render/decals";
+import { useSharedImages } from "../render/sharedImages";
 import { neutralStyle } from "./inspector/parts";
 import { openAssetManager, type Sample } from "./AssetManager";
 import { useTextureVersion } from "./textureLibrary";
@@ -27,6 +28,7 @@ export function AssetTree(p: EditorBarProps) {
   const [collapsed, collapse] = useState<Set<string>>(() => new Set());
   const [decals, setDecals] = useState<string[]>([]);
   const [error, setError] = useState(false);
+  const sharedImages = useSharedImages();
   useEffect(() => { let live = true; fetchDecalManifest(import.meta.env.BASE_URL, "").then(m => {if(live)setDecals(Object.keys(m));}).catch(() => {if(live)setError(true);}); return () => {live = false;}; }, []);
   const choose = (tool: EditTool, callback: () => void) => { p.onTool(tool); callback(); };
   const toolEntry = (tool: EditTool, label: string, icon: ReactNode, image?: string): Entry => ({id:tool,tool,label,kind:"",icon,image,active:true,pick:()=>p.onTool(tool),manager:image?"material":undefined});
@@ -48,7 +50,14 @@ export function AssetTree(p: EditorBarProps) {
     {id:"traverse",label:t("traverse.group"),entries:traverse,bare:true},
     {id:"texture",label:t("assetManager.textures"),entries:textures},
     {id:"prop",label:t("assetManager.props"),entries:props},
-    {id:"decal",label:t("assetTree.decals"),entries:decals.filter(id=>assetInWorld(id)).map(id=>({id,label:id,kind:t("assetManager.decal"),image:`${import.meta.env.BASE_URL}decals/${id}/diffuse.png`,active:p.decalChoice===id,pick:button=>{const img=button.querySelector("img");choose("decal",()=>p.onDecalChoice({name:id,width:img?.naturalWidth||64,height:img?.naturalHeight||64}));},manager:"prop",managerId:`decal:${id}`}))},
+    {id:"decal",label:t("assetTree.decals"),entries:[
+      ...decals.filter(id=>assetInWorld(id)).map(id=>({id,label:id,kind:t("assetManager.decal"),image:`${import.meta.env.BASE_URL}decals/${id}/diffuse.png`,active:p.decalChoice===id,pick:(button:HTMLButtonElement)=>{const img=button.querySelector("img");choose("decal",()=>p.onDecalChoice({name:id,width:img?.naturalWidth||64,height:img?.naturalHeight||64}));},manager:"prop" as const,managerId:`decal:${id}`})),
+      ...sharedImages.filter(image=>image.type==="decal" && assetInWorld(image.id)).map(image=>({
+        id:image.id,label:image.name,kind:t("assetManager.decal"),image:image.url,active:p.decalChoice===image.id,
+        pick:()=>choose("decal",()=>p.onDecalChoice({name:image.id,width:image.width,height:image.height})),
+        manager:"prop" as const,managerId:`decal:${image.id}`,
+      })),
+    ]},
     {id:"item",label:t("assetManager.items"),entries:Object.entries(ITEM_TYPES).filter(([id])=>assetInWorld(id)).map(([id,v])=>({id,label:assetName(v.name),search:v.name,kind:v.category,image:textureFolder("item_"+id).diffuse,active:p.itemChoice===id,pick:()=>choose("item",()=>p.onItemChoice(id)),manager:"item"}))},
     {id:"robot",label:t("assetManager.npcs"),entries:Object.entries(ACTOR_TYPES).filter(([id])=>assetInWorld(id)).map(([id,v])=>({id,label:assetName(v.name),search:v.name,kind:id,style:{backgroundImage:`url(${import.meta.env.BASE_URL}actors/${v.sheet}/diffuse.png)`,backgroundSize:`${v.cols*100}% ${v.rows*100}%`,backgroundPosition:`0 ${v.rows>1?v.idleRow/(v.rows-1)*100:0}%`},active:p.robotChoice===id,pick:()=>choose("robot",()=>p.onRobotChoice(id)),manager:"actor"}))},
     {id:"light",label:t("assetTree.lights"),entries:(["ceiling","point"] as const).flatMap(place=>[undefined,"flicker","spark","pulse"].map(effect=>({id:`${place}:${effect??""}`,label:`${t(place==="ceiling"?"editorBar.ceilingLamp":"editorBar.pointLight")}${effect?` · ${t(`editorBar.${effect}` as "editorBar.flicker")}`:""}`,kind:t("assetTree.lights"),active:p.lightPlace===place && p.light?.effect===effect,pick:()=>choose("light",()=>{p.onLightPlace(place);p.onAssetEffect("light",effect);})})))},
