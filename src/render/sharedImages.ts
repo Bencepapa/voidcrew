@@ -4,6 +4,12 @@ import { bundledImages } from "../game/sharedBuiltins";
 
 export type SharedImageType = "portrait" | "decal";
 export type DecalSurfaceKind = "wall" | "floor" | "ceiling";
+// The stored type "portrait" covers every still image; this says which one it is.
+// A legacy image without a purpose is a portrait.
+export type ImagePurpose = "loading" | "portrait" | "room";
+export const IMAGE_PURPOSES: readonly ImagePurpose[] = ["loading", "portrait", "room"];
+export const isImagePurpose = (value: unknown): value is ImagePurpose =>
+  value === "loading" || value === "portrait" || value === "room";
 
 export interface SharedImage {
   id: string;
@@ -13,6 +19,7 @@ export interface SharedImage {
   width: number;
   height: number;
   surface?: DecalSurfaceKind;
+  purpose?: ImagePurpose;
   url: string;
 }
 

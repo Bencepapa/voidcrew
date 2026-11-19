@@ -148,7 +148,7 @@ async function pullImages(world: string, type: "portrait" | "decal") {
       const response = await asset(folder + "meta.json");
       if (response.status === 400 || response.status === 404) continue;
       if (!response.ok) throw new Error(`Could not read ${folder} metadata (HTTP ${response.status}).`);
-      const { name, type: savedType, width, height, surface } = await response.json();
+      const { name, type: savedType, width, height, surface, purpose } = await response.json();
       if (savedType !== type || typeof name !== "string" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) continue;
       if (existsSync(target) || Object.hasOwn(catalog.images, id)) {
         if (catalog.images[id]?.rev !== rev) console.warn(`Kept existing ${id}; shared revision: ${rev}.`);
@@ -159,7 +159,10 @@ async function pullImages(world: string, type: "portrait" | "decal") {
       if (actual.format !== "png" || actual.width !== width || actual.height !== height) throw new Error(`Invalid PNG: ${folder}diffuse.png`);
       await mkdir(dirname(target), { recursive: true });
       await writeFile(target, png, { flag: "wx" });
-      catalog.images[id] = { world, type, name, width, height, rev, ...(type === "decal" && ["wall", "floor", "ceiling"].includes(surface) ? { surface } : {}) };
+      const validPurpose = type === "portrait" && (purpose === "loading" || purpose === "portrait" || purpose === "room") ? purpose : undefined;
+      catalog.images[id] = { world, type, name, width, height, rev,
+        ...(validPurpose ? { purpose: validPurpose } : {}),
+        ...(type === "decal" && ["wall", "floor", "ceiling"].includes(surface) ? { surface } : {}) };
       await saveCatalog();
       console.log(`Bundled ${type} ${id} (r${rev}).`);
       break;
