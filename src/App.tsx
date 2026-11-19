@@ -16,6 +16,9 @@ import type { AimFocus, AimFrame, EditDrag, EditTarget, ViewportSettings, Viewpo
 import { editorToolLabel } from "./editor/EditorBar";
 import { SharedEditor } from "./editor/SharedEditor";
 import { sharedConfigured } from "./editor/sharedAuth";
+import { autoSharedSceneReady, setAutoSharedWorld } from "./editor/autoShared";
+import { loadSharedMap } from "./editor/sharedMaps";
+import type { SharedMapHead } from "./editor/sharedMapHeads";
 import { AssetManager } from "./editor/AssetManager";
 import { loadSharedImages } from "./editor/sharedImages";
 import { sharedImage } from "./render/sharedImages";
@@ -288,6 +291,8 @@ export default function App() {
   const aimWeapon = aim ? (crewWeapon(crew[aim.crew].id) ?? null) : null;
   // the editor's palettes follow the world of the map on screen
   setActiveWorld(map.world);
+  // (the background shared-content loader follows the same world)
+  useEffect(() => { setAutoSharedWorld(map.world); }, [map.world]);
   // (and the page wears the world's look - see index.css)
   useLayoutEffect(() => {
     document.documentElement.classList.toggle("theme-fantasy", map.world === "fantasy");
@@ -1264,6 +1269,12 @@ export default function App() {
     url.searchParams.set("map", to.id);
     history.replaceState(null, "", url);
   };
+  // a shared revision from the Map settings picker (guests may open it too)
+  const openSharedMap = (head: SharedMapHead) => {
+    void loadSharedMap(map.world, head).then(openMap).catch((error) => {
+      pushLog(t("app.editorError", { error: error instanceof Error ? error.message : String(error) }), "error");
+    });
+  };
   const saveRender = (clear = false) => {
     const render = clear ? undefined : pickRender(settings, DEFAULT_SETTINGS);
     // nothing differs from the defaults: say so instead of wiping what the map has
@@ -2145,7 +2156,7 @@ export default function App() {
       onEditHover={onEditHover}
       onEditDrag={onEditDrag}
       onEditAdjust={onEditAdjust}
-      onReady={sceneReady}
+      onReady={(id) => { sceneReady(id); autoSharedSceneReady(); }}
       freeTick={grid ? undefined : free.tick}
       peekRef={view.peekRef}
       settings={viewSettings}
@@ -2292,6 +2303,7 @@ export default function App() {
           mapIds={mapIds(map.world)}
           onResize={resize}
           onOpenMap={(id) => MAPS[id] && openMap(MAPS[id])}
+          onOpenSharedMap={openSharedMap}
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
           onRenameMap={renameCurrentMap}

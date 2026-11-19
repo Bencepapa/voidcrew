@@ -3,8 +3,12 @@ import { t, type Key } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
 import { KindChoice, OptionalNumber, CommitContext, Section, slider, BUTTON, idle, active } from "./parts";
 import { MAPS } from "../../game/map";
+import { worldOfMap } from "../../game/worlds";
 import { MapList } from "../MapList";
 import type { Direction } from "../../game/types";
+import { useAutoLoadShared } from "../autoSharedPrefs";
+import { useSharedMapHeads } from "../sharedMapHeads";
+import { splitSharedTitle } from "../sharedMaps";
 
 import { TEXTURE_SETS, textureSetsOfKind } from "../../render/textureSets";
 
@@ -21,6 +25,20 @@ const TEXTURE_SLOTS: { slot: string; label: Key; kind: "wall" | "floor" | "ceili
 ];
 export function MapFields(p: EditorBarProps) {
 const commit=useContext(CommitContext);
+const world = worldOfMap(p.mapId);
+const autoShared = useAutoLoadShared();
+const sharedHeads = useSharedMapHeads(world);
+const localItems = p.mapIds.filter((id) => MAPS[id]).map((id) => ({ key: id, place: MAPS[id].place, name: MAPS[id].name, active: id === p.mapId, onPick: () => p.onOpenMap(id) }));
+const sharedItems = autoShared && p.onOpenSharedMap ? sharedHeads.map((head) => {
+  const { place, name } = splitSharedTitle(head.title);
+  return {
+    key: "shared:" + head.id,
+    place: place ?? t("mapDialog.sharedPlace"),
+    name,
+    onPick: () => p.onOpenSharedMap?.(head),
+    node: <span className="flex items-center gap-1"><span>{name}</span><span className="rounded bg-amber-400/20 px-1 text-[9px] uppercase tracking-wide text-amber-200">{t("editorBar.sharedBadge")}</span></span>,
+  };
+}) : [];
 
 return <>
 <Section kind="map" section="transform">
@@ -41,7 +59,7 @@ return <>
 <MapList
   itemClass={`${BUTTON} ${idle}`}
   activeClass={active}
-  items={p.mapIds.filter((id) => MAPS[id]).map((id) => ({ key: id, place: MAPS[id].place, name: MAPS[id].name, active: id === p.mapId, onPick: () => p.onOpenMap(id) }))}
+  items={[...localItems, ...sharedItems]}
 />
 <div className="flex flex-wrap gap-1">
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onNewMap}>{t("editorBar.newMap")}</button>

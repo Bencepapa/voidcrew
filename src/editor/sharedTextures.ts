@@ -12,6 +12,7 @@ import type { WorldId } from "../game/worlds";
 import { autoRecipe } from "./autoMaps";
 import { MAX_PNG_BYTES, isPng } from "./imageTools";
 import { SharedHttpError, sharedConfigured, sharedProject, sharedRequest, sharedToken, sharedUpload } from "./sharedAuth";
+import { readSharedCache, writeSharedCache } from "./sharedCache";
 import { draftId, discardDraft, MAP_KEYS, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
 import { setSharedTextures, sharedInfo, surfaceOf, uploaded, type SharedInfo, type SharedMeta } from "./textureLibrary";
 
@@ -20,11 +21,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const sharedAssetBase = () => sharedProject + "/storage/v1/object/public/void-textures/";
 const publicBase = sharedAssetBase;
 
-export async function listSharedObjects(prefix: string): Promise<{ name: string }[]> {
+export async function listSharedObjects(prefix: string, init?: RequestInit): Promise<{ name: string }[]> {
   const all: { name: string }[] = [];
   for (let offset = 0; ; offset += 100) {
     const page = await sharedRequest<{ name: string }[]>(LIST, {
-      method: "POST", body: JSON.stringify({ prefix, limit: 100, offset, sortBy: { column: "name", order: "asc" } }),
+      method: "POST", body: JSON.stringify({ prefix, limit: 100, offset, sortBy: { column: "name", order: "asc" } }), ...init,
     });
     all.push(...page);
     if (page.length < 100) return all;
@@ -63,11 +64,11 @@ function parseMeta(raw: unknown, rev: number): SharedMeta | null {
 }
 
 // The highest revision of a texture that has its meta.json (null: none yet).
-async function readLatest(world: WorldId, uuid: string, revs: number[]): Promise<SharedInfo | null> {
+async function readLatest(world: WorldId, uuid: string, revs: number[], init?: RequestInit): Promise<SharedInfo | null> {
   for (const rev of revs) {
     const base = `${publicBase()}${world}/${uuid}/r${rev}/`;
     try {
-      const res = await fetch(base + "meta.json");
+      const res = await fetch(base + "meta.json", init);
       if (!res.ok) continue;
       const meta = parseMeta(await res.json(), rev);
       if (meta) return { id: `${world}_shared_${uuid}`, world, uuid, rev, legacy: false, meta, base };
@@ -76,21 +77,50 @@ async function readLatest(world: WorldId, uuid: string, revs: number[]): Promise
   return null;
 }
 
+const TEXTURE_CACHE = "textures";
+
+// A cached entry is only usable when every URL it points to is a plain public
+// storage URL of this world.
+function cacheUsable(world: WorldId, value: unknown): value is SharedInfo[] {
+  if (!Array.isArray(value)) return false;
+  const prefix = world + "_shared_";
+  const base = publicBase();
+  return value.every(raw => {
+    const info = raw as Partial<SharedInfo> | null;
+    if (!info || typeof info.id !== "string" || !info.id.startsWith(prefix)) return false;
+    if (info.world !== world || typeof info.uuid !== "string") return false;
+    if (typeof info.rev !== "number" || !Number.isFinite(info.rev)) return false;
+    if (info.legacy) return typeof info.file === "string" && info.file.startsWith(base);
+    return typeof info.base === "string" && info.base.startsWith(base) && parseMeta(info.meta, info.rev) !== null;
+  });
+}
+
+// The cached texture metadata, applied synchronously before the network (false: none usable).
+export function applyCachedSharedTextures(world: WorldId): boolean {
+  if (!sharedConfigured) return false;
+  const cached = readSharedCache<unknown>(TEXTURE_CACHE, world);
+  if (!cacheUsable(world, cached)) return false;
+  const list = cached.map(info => info.legacy ? info : { ...info, meta: parseMeta(info.meta, info.rev)! });
+  setSharedTextures(world, list);
+  return list.length > 0;
+}
+
 // Lists the world's shared textures (old flat files and revision folders) into TEXTURE_SETS.
-export async function loadSharedTextures(world: WorldId): Promise<void> {
+export async function loadSharedTextures(world: WorldId, init?: RequestInit): Promise<void> {
   if (!sharedConfigured) return;
   const found: SharedInfo[] = [];
   const folders: string[] = [];
-  for (const { name } of await list(world)) {
+  for (const { name } of await list(world, init)) {
     if (/^[a-z0-9-]+\.png$/.test(name)) {
       found.push({ id: `${world}_shared_${name.slice(0, -4)}`, world, uuid: name.slice(0, 36), rev: 0, legacy: true, base: "", file: `${publicBase()}${world}/${name}` });
     } else if (UUID.test(name)) folders.push(name);
   }
   const loaded = await Promise.all(folders.map(async uuid => {
-    try { return await readLatest(world, uuid, revNumbers(await list(`${world}/${uuid}`))); } catch { return null; }
+    try { return await readLatest(world, uuid, revNumbers(await list(`${world}/${uuid}`, init)), init); } catch { return null; }
   }));
   for (const info of loaded) if (info) found.push(info);
   setSharedTextures(world, found);
+  writeSharedCache(TEXTURE_CACHE, world, found);
 }
 
 // ---- publishing ----

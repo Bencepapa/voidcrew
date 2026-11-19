@@ -145,6 +145,7 @@ export const debugEn = {
   "debug.smokeBumpsIntoProps": "Smoke bumps into props",
   "debug.robotsPushSmokeAside": "Robots push smoke aside",
   "debug.playTesting": "Play & testing",
+  "debug.autoLoadShared": "Load the latest shared content automatically",
   "debug.gridMovementOffFreeJoysticks": "Grid movement (off: free, joysticks)",
   "debug.aimingMiniGameOffChanceRoll": "Aiming mini-game (off: chance roll)",
   "debug.immortalCrewHPStopsAt1": "Immortal crew (HP stops at 1)",

@@ -1,55 +1,40 @@
 import { useEffect, useState } from "react";
-import { createMap, hasUnsavedEdits, mapFile, markSaved } from "./mapStore";
+import { hasUnsavedEdits, mapFile, markSaved } from "./mapStore";
 import { t } from "../i18n";
 import type { GameMap } from "../game/types";
-import type { MapFile } from "../game/mapFormat";
 import { bundledMaps } from "../game/sharedBuiltins";
-import { SharedLoginForm, sharedButton as button, sharedProject, sharedRequest, useSharedAuth } from "./sharedAuth";
+import { SharedLoginForm, sharedButton as button, sharedRequest, useSharedAuth } from "./sharedAuth";
 import { loadSharedTextures } from "./sharedTextures";
 import { loadSharedImages } from "./sharedImages";
+import { refreshSharedMapHeads, type SharedMapHead } from "./sharedMapHeads";
+import { loadSharedMap, rememberSharedOrigin, sharedOrigin, splitSharedTitle } from "./sharedMaps";
 import { openAssetManager } from "./AssetManager";
 import { registerMap } from "./textureLibrary";
 
 import { ConfirmDialog } from "./Dialog";
 import { MapList } from "./MapList";
 
-interface Head { id: string; revision: number; title: string; saved_by?: string; saved_at?: string }
-// a shared head's title is "Place – Name" (the head table has no place column)
 const SEP = " – ";
-const splitTitle = (title: string): { place?: string; name: string } => {
-  const i = title.indexOf(SEP);
-  return i > 0 ? { place: title.slice(0, i), name: title.slice(i + SEP.length) } : { name: title };
-};
-const origins = new Map<string, Head>();
 
 export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m: GameMap) => void; changed: () => void}) {
   const auth = useSharedAuth();
   // (the Assets window warns before it deletes a texture this map uses)
   useEffect(() => { registerMap(map); return () => registerMap(undefined); }, [map]);
   const [open, setOpen] = useState(false);
-  const [heads, setHeads] = useState<Head[]>([]);
+  const [heads, setHeads] = useState<SharedMapHead[]>([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   // the newest shared version, offered while the open map has unsaved edits
-  const [ask, setAsk] = useState<Head | null>(null);
-  const originKey = (id: string) => JSON.stringify([sharedProject, map.world, id]);
-  function origin(id: string): Head | undefined {
-    const key = originKey(id);
-    try { return origins.get(key) ?? JSON.parse(localStorage.getItem("voidcrew:shared:" + key) ?? "null"); }
-    catch { return origins.get(key); }
-  }
-  function remember(id: string, head: Head) {
-    const key = originKey(id);
-    origins.set(key, head);
-    try { localStorage.setItem("voidcrew:shared:" + key, JSON.stringify(head)); } catch { /* Session cache remains available. */ }
-  }
+  const [ask, setAsk] = useState<SharedMapHead | null>(null);
+  const origin = (id: string) => sharedOrigin(map.world, id);
+  const remember = (id: string, head: SharedMapHead) => rememberSharedOrigin(map.world, id, head);
   async function run(fn: () => Promise<unknown>) {
     setBusy(true); setMessage("");
     try { await fn(); } catch (error) { setMessage(String(error)); } finally { setBusy(false); }
   }
   async function refresh() {
     const [latest] = await Promise.all([
-      sharedRequest<Head[]>("/rest/v1/void_map_heads?world=eq." + map.world + "&order=title,id"),
+      refreshSharedMapHeads(map.world),
       loadSharedTextures(map.world),
       loadSharedImages(map.world),
     ]);
@@ -70,21 +55,9 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     if (!copy) markSaved(map.id);
     await refresh(); setMessage(t("editorShell.shared.savedVersion", { n: head.revision }));
   }
-  async function load(head: Head) {
-    const rows = await sharedRequest<{body: MapFile}[]>("/rest/v1/void_maps?select=body&world=eq." + map.world + "&id=eq." + encodeURIComponent(head.id) + "&revision=eq." + head.revision);
-    if (!rows.length) throw new Error(t("editorShell.shared.mapVersionUnavailable"));
-    const id = "shared-" + crypto.randomUUID();
-    // (a version saved before places existed: the place comes from the title, else "Shared")
-    const body = { ...rows[0].body };
-    if (!body.place) {
-      const { place, name } = splitTitle(head.title);
-      body.place = place ?? t("mapDialog.sharedPlace");
-      body.name = name;
-      body.showTitle ??= false;
-    }
-    const result = createMap(id, body, undefined, map.world);
-    if ("error" in result) throw new Error(result.error);
-    remember(id, head); openMap(result.map); setOpen(false);
+  async function load(head: SharedMapHead) {
+    const result = await loadSharedMap(map.world, head);
+    openMap(result); setOpen(false);
   }
   return <><button className={button} type="button" onClick={() => {setOpen(true); void run(refresh);}}>{t("editorShell.shared.button", { who: auth.token ? auth.signedInName : t("editorShell.shared.guest") })}</button>
     {open && <div role="dialog" aria-modal="true" aria-label={t("editorShell.shared.dialog")} onKeyDown={e => { e.stopPropagation(); if (e.key === "Escape") setOpen(false); }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
@@ -116,7 +89,7 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
           <p className="text-xs text-neutral-300">{t("editorShell.shared.refreshHint")}</p>
           {!busy && !heads.length && <p>{t("editorShell.shared.noShared")}</p>}
           <MapList itemClass={button + " w-full"} activeClass="" items={heads.map(h => {
-            const { place, name } = splitTitle(h.title);
+            const { place, name } = splitSharedTitle(h.title);
             return { key: h.id, place: place ?? t("mapDialog.noPlace"), name, onPick: () => void run(() => load(h)), node: <>
               <strong>{t("editorShell.shared.open", { title: name })}</strong> · v{h.revision}
               <span className="block text-xs text-neutral-300">{h.saved_by ?? t("editorShell.shared.authorUnrecorded")}{h.saved_at && " · " + new Date(h.saved_at).toLocaleString()} · {h.id.slice(-8)}</span>

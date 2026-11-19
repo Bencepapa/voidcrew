@@ -6,6 +6,7 @@ import type { ViewportSettings, ViewportStats } from "./GameViewport";
 import { downloadMap } from "../editor/mapStore";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
 import { LOCKED_WORLD, WORLDS, switchWorld } from "../game/worlds";
+import { setAutoLoadShared, useAutoLoadShared } from "../editor/autoSharedPrefs";
 import { GRAPHICS_PRESETS, VIEW_DISTANCE_HIGH, VIEW_DISTANCE_MAX, effectiveViewDistance, presetOf } from "../render/graphics";
 import type { WorldId } from "../game/worlds";
 import { LangSwitch } from "../i18n/LangSwitch";
@@ -156,6 +157,7 @@ export function DebugPanel({
     );
 
   const relief = settings.wallProfile === "relief";
+  const autoShared = useAutoLoadShared();
 
   // a collapsible category, closed until opened
   const section = (title: string, children: ReactNode, hint?: string) => (
@@ -442,6 +444,10 @@ export function DebugPanel({
       {section(
         t("debug.playTesting"),
         <>
+          <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+            <input type="checkbox" checked={autoShared} onChange={(e) => setAutoLoadShared(e.target.checked)} />
+            {t("debug.autoLoadShared")}
+          </label>
           {check("gridMovement", t("debug.gridMovementOffFreeJoysticks"))}
           {check("aimMiniGame", t("debug.aimingMiniGameOffChanceRoll"))}
           {check("immortalCrew", t("debug.immortalCrewHPStopsAt1"))}

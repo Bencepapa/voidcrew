@@ -9,6 +9,7 @@ import type { ActorWake } from "../game/types";
 
 import type { TextureSetId } from "../render/textureSets";
 import type { ViewportSettings } from "../components/GameViewport";
+import type { SharedMapHead } from "./sharedMapHeads";
 import type { EditSurface, EditTool } from "./mapEdits";
 import type { Direction, LightEffect, Linked, MapLight } from "../game/types";
 
@@ -82,6 +83,8 @@ export interface EditorBarProps {
   mapIds: string[];
   onResize: (edge: Direction, grow: boolean) => void;
   onOpenMap: (id: string) => void;
+  // a shared head shown in the map picker (when automatic loading is on)
+  onOpenSharedMap?: (head: SharedMapHead) => void;
   onNewMap: () => void;
   onSaveMapAs: () => void;
   onRenameMap: () => void;

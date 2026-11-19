@@ -337,7 +337,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     if (!sharedConfigured) return;
     try {
       await Promise.all([
-        ...(["scifi","fantasy"] as const).map(loadSharedTextures),
+        ...(["scifi","fantasy"] as const).map((world) => loadSharedTextures(world)),
         ...(["scifi","fantasy"] as const).map(loadSharedImages),
       ]);
     } catch (e) { setError(errorText(e)); }
