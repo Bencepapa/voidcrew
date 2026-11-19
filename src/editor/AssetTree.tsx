@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Library, Lock, LockOpen, LogOut } from "lucide-react";
+import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Image, Library, Lock, LockOpen, LogOut, MessageSquare } from "lucide-react";
 import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld } from "../game/worlds";
 import { PROP_TYPES } from "../game/props";
@@ -46,6 +46,14 @@ export function AssetTree(p: EditorBarProps) {
   const doorSet = (TEXTURE_SETS as Record<string,{diffuse:string}>)[p.mapLook.textures?.door ?? ""] ? p.mapLook.textures!.door! : "door1";
   const traverse: Entry[] = [toolEntry("ladder",t("editorBar.ladder"),<ArrowUpFromLine size={28}/>), toolEntry("bridge",t("editorBar.bridge"),<AlignJustify size={28}/>), {...toolEntry("door",t("editorBar.door"),null,(TEXTURE_SETS as Record<string,{diffuse:string}>)[doorSet].diffuse),managerId:doorSet}];
   const events: Entry[] = [toolEntry("exit",t("editorBar.exit"),<LogOut size={28}/>), toolEntry("start",t("editorBar.start"),<Flag size={28}/>), toolEntry("restricted",t("editorBar.restricted"),<Ban size={28}/>), toolEntry("wall",t("editorBar.chanceWall"),<Dices size={28}/>)];
+  for (const kind of ["message", "image"] as const) {
+    events.push({
+      ...toolEntry("event", t(`events.${kind}`), kind === "message" ? <MessageSquare size={28}/> : <Image size={28}/>),
+      id: kind,
+      active: p.eventKind === kind,
+      pick: () => choose("event", () => p.onEventKind(kind)),
+    });
+  }
   const groups: {id:string; label:string; entries:Entry[]; bare?:boolean}[] = [
     {id:"traverse",label:t("traverse.group"),entries:traverse,bare:true},
     {id:"texture",label:t("assetManager.textures"),entries:textures},

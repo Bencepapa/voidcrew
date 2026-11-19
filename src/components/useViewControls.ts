@@ -52,6 +52,7 @@ interface ViewControlsOptions {
   // captured (free movement turns by dragging instead) and hovering doesn't
   // glance around (grid movement)
   editing?: boolean;
+  suppressPointerLock?: boolean;
 }
 
 const clampPeek = (v: number) => Math.max(-MAX_PEEK, Math.min(MAX_PEEK, v));
@@ -121,7 +122,7 @@ export function useViewControls(opts: ViewControlsOptions) {
           drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, peek: false, startOffset: 0, axis: null, peekX: e.clientX };
           return;
         }
-        if (e.pointerType === "mouse") {
+        if (e.pointerType === "mouse" && !o.suppressPointerLock) {
           lockTarget.current = e.currentTarget;
           // refused in some embedded/hidden pages - mouselook just stays off
           Promise.resolve(e.currentTarget.requestPointerLock?.()).catch(() => {});

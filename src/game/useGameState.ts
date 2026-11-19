@@ -105,7 +105,7 @@ function directionTo(from: Vec2, to: Vec2): Direction | undefined {
   );
 }
 
-export function useGameState(variation: { seed: number; mood: ShipMood } | null) {
+export function useGameState(variation: { seed: number; mood: ShipMood } | null, interactionBlocksMovement: { readonly current: boolean }) {
   // the deck as its map has it; `map` - what's played - is its variation
   // (see variation.ts), unless there's none (the editor shows everything)
   const [fullMap, setMap] = useState<GameMap>(START_MAP);
@@ -245,6 +245,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null)
   // while the map loads
   const busyUntilRef = useRef(0);
   const busy = () =>
+    interactionBlocksMovement.current ||
     wipedRef.current !== null ||
     performance.now() < busyUntilRef.current ||
     readyMapRef.current !== mapRef.current.id ||

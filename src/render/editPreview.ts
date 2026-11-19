@@ -7,10 +7,11 @@
 
 import * as THREE from "three";
 import { cellAt, ceilingHeight, floorHeight, windowPanels } from "../game/map";
+import { wallFaceSpans } from "../game/mapGeometry";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, GameMap } from "../game/types";
 import { cellKey } from "../game/visibility";
-import { WALL_ROTATION } from "./surfaces";
+import { surfaceKey, WALL_ROTATION } from "./surfaces";
 
 const DIRS: Direction[] = ["N", "E", "S", "W"];
 
@@ -85,16 +86,19 @@ export function buildEditPreview(next: GameMap, changed: Set<string>, wallHeight
     mesh.position.set(x, y, z);
     mesh.rotation.set(rx, ry, 0);
     objects.push(mesh);
+    return mesh;
   };
   // a wall face from `bottom` to `top` (wall heights): whole panels from the end it hangs from, the rest in one more
-  const face = (x: number, y: number, side: Direction, bottom: number, top: number, fromTop: boolean) => {
+  const face = (x: number, y: number, side: Direction, { bottom, top, part }: ReturnType<typeof wallFaceSpans>[number]) => {
     const v = DIR_VECTOR[side];
     const mat = materials.wall(x, y, side);
     const length = top - bottom;
     for (let done = 0; done < length - 1e-6; done += 1) {
       const h = Math.min(1, length - done);
-      const centre = fromTop ? top - done - h / 2 : bottom + done + h / 2;
-      place(plane(h), mat, x + v.x * 0.5, centre * wallHeight, y + v.y * 0.5, 0, WALL_ROTATION[side]);
+      const centre = part === "header" ? top - done - h / 2 : bottom + done + h / 2;
+      const mesh = place(plane(h), mat, x + v.x * 0.5, centre * wallHeight, y + v.y * 0.5, 0, WALL_ROTATION[side]);
+      mesh.userData.eventSurface = surfaceKey({ x, y }, side);
+      mesh.userData.eventPart = part;
     }
   };
   for (let y = 0; y < next.height; y++) {
@@ -112,15 +116,7 @@ export function buildEditPreview(next: GameMap, changed: Set<string>, wallHeight
         const nx = x + v.x;
         const ny = y + v.y;
         if (!here && !changed.has(cellKey(nx, ny))) continue;
-        if (cellAt(next, nx, ny) === "wall") {
-          face(x, y, side, floor, ceiling, false);
-          continue;
-        }
-        const nFloor = floorHeight(next, nx, ny);
-        const nCeiling = ceilingHeight(next, nx, ny);
-        // a higher floor next door leaves a step face, a lower ceiling a header
-        if (nFloor > floor) face(x, y, side, floor, Math.min(ceiling, nFloor), false);
-        if (nCeiling < ceiling) face(x, y, side, Math.max(floor, nCeiling), ceiling, true);
+        for (const span of wallFaceSpans(next, { x, y }, side)) face(x, y, side, span);
       }
     }
   }

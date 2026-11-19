@@ -30,7 +30,16 @@ export interface MapLook {
 
 // the deck's default texture sets: the slot, and which sets are offered for it
 
+import type { Interaction } from "../game/interactions";
+import type { WorldId } from "../game/worlds";
+
 export interface EditorBarProps {
+  eventKind: Interaction["kind"];
+  onEventKind: (kind: Interaction["kind"]) => void;
+  selectedEvent?: Interaction;
+  onEventChange: (event: Interaction, merge?: string) => void;
+  onEventRemove: () => void;
+  eventWorld: WorldId;
   assetDock?: HTMLElement | null;
   onAssetEffect: (kind: "smoke" | "light", effect: string | undefined) => void;
   // an element to draw the toolbar into (the right column) instead of over
@@ -326,6 +335,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
 };
 
 const TOOL_LABELS: Partial<Record<EditTool, Key>> = {
+  event: "events.group",
   ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", decal: "editorBar.decal",
   robot: "editorBar.npc", item: "editorBar.item", smoke: "editorBar.particles", exit: "editorBar.exit", start: "editorBar.start",
   restricted: "editorBar.restricted", wall: "editorBar.chanceWall", map: "editorBar.map",

@@ -179,10 +179,20 @@ export class DecalLibrary {
   // a surface panel has been placed in the scene
   registerSurface(key: string, mesh: THREE.Mesh) {
     if (this.disposed) return;
+    mesh.userData.eventSurface = key;
+    if (mesh.parent instanceof THREE.LOD) mesh.parent.userData.eventSurface = key;
     const list = this.surfaces.get(key) ?? [];
     list.push(mesh);
     this.surfaces.set(key, list);
     for (const p of this.projections.get(key) ?? []) this.build(p, mesh);
+  }
+
+  get pieceCount(): number {
+    return this.pieces.length;
+  }
+
+  center(index: number): THREE.Vector3 | undefined {
+    return this.pieces.find(piece => piece.projection.index === index)?.projection.position;
   }
 
   dispose() {

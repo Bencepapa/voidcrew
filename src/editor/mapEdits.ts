@@ -1,4 +1,7 @@
 import type { MapFile } from "../game/mapFormat";
+import { doorAt } from "../game/map";
+import { wallFaceSpans } from "../game/mapGeometry";
+import type { Interaction, InteractionTarget } from "../game/interactions";
 import { t } from "../i18n";
 import { PROP_TYPES } from "../game/props";
 import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
@@ -12,6 +15,7 @@ import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
 // take out a ladder, a bridge, a door or a prop.
 export type EditTool =
   | "select"
+  | "event"
   | "dig"
   | "fill"
   | "texture"
@@ -351,7 +355,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
     p.y += dy;
   };
   move(file.start);
-  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls]) {
+  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions]) {
     for (const item of list ?? []) move(item);
   }
   for (const actor of file.actors ?? []) {
@@ -362,7 +366,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
 
 // every position on the map (to check a strip being cut off is empty)
 function allPositions(file: MapFile): { x: number; y: number }[] {
-  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls];
+  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions];
   return [
     file.start,
     ...lists.flatMap((list) => (list ?? []) as { x: number; y: number }[]),
@@ -579,7 +583,28 @@ export function rectCells(rect: Rect): Vec2[] {
   return cells;
 }
 
-const PLACED_LISTS = ["doors", "exits", "smokes", "items", "chanceWalls", "ladders", "bridges", "lights", "props", "actors", "decals", "faceTextures"] as const;
+const PLACED_LISTS = ["doors", "exits", "smokes", "items", "chanceWalls", "ladders", "bridges", "lights", "props", "actors", "decals", "faceTextures", "wallInteractions"] as const;
+
+export function setInteraction(file: MapFile, map: Parameters<typeof doorAt>[0], target: InteractionTarget, interaction?: Interaction): MapFile {
+  switch (target.kind) {
+    case "wall": {
+      const { x, y } = target.cell;
+      const { side, part } = target;
+      const defaultPart = wallFaceSpans(map, target.cell, side)[0]?.part;
+      const entries = (file.wallInteractions ?? []).filter(w =>
+        w.x !== x || w.y !== y || w.side !== side || (w.part ?? defaultPart) !== part);
+      if (interaction) entries.push({ x, y, side, part, interaction });
+      return { ...file, wallInteractions: entries.length ? entries : undefined };
+    }
+    case "door": {
+      const { kind, facing } = doorAt(map, target.cell.x, target.cell.y);
+      return updateDoor(file, target.cell, { kind, facing }, { interaction });
+    }
+    case "prop": return updateProp(file, target.index, { interaction });
+    case "item": return updateItem(file, target.index, { interaction });
+    case "decal": return updateDecal(file, target.index, { interaction });
+  }
+}
 
 // Takes everything placed in the given cells off the map: props, robots,
 // items, lights, doors, ladders... (what would be left standing inside a wall).

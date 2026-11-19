@@ -6,19 +6,26 @@
 let realBase = performance.now();
 let gameBase = 0;
 let rate = 1;
+let paused = false;
 
 export const gameClock = {
   // ms of game time
   now(): number {
-    return gameBase + (performance.now() - realBase) * rate;
+    return paused ? gameBase : gameBase + (performance.now() - realBase) * rate;
   },
   rate(): number {
-    return rate;
+    return paused ? 0 : rate;
   },
   // 1 = normal speed, 0.1 = bullet time
   setRate(next: number) {
     gameBase = gameClock.now();
     realBase = performance.now();
     rate = next;
+  },
+  setPaused(next: boolean) {
+    if (paused === next) return;
+    gameBase = gameClock.now();
+    realBase = performance.now();
+    paused = next;
   },
 };

@@ -7,7 +7,11 @@ import { EditorStatusBar } from "./editor/EditorStatusBar";
 import { useMapDrafts } from "./editor/DraftNotice";
 import { FloatToolbar } from "./editor/FloatToolbar";
 import { ShortcutHelp } from "./editor/ShortcutHelp";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { InteractionPopup } from "./components/InteractionPopup";
+import { gameClock } from "./game/clock";
+import { interactionAt, type Interaction, type InteractionTarget } from "./game/interactions";
+import { setInteraction } from "./editor/mapEdits";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
@@ -103,6 +107,13 @@ export default function App() {
     return query.has("map") || query.has("seed") || WORLDS[START_MAP.world].loop === "open" ? "run" : "base";
   });
   const [editMode, setEditMode] = useState(false);
+  const [eventKind, setEventKind] = useState<Interaction["kind"]>("message");
+  const [eventTarget, setEventTarget] = useState<InteractionTarget | null>(null);
+  const [activeInteraction, setActiveInteraction] = useState<Interaction | null>(null);
+  const [partyDock, setPartyDock] = useState<HTMLDivElement | null>(null);
+  const activeInteractionRef = useRef<Interaction | null>(null);
+  const interactionUseRef = useRef<(() => boolean) | null>(null);
+  const interactionBlocksMovement = useRef(false);
   const [ship, setShip] = useState<ShipOffer | null>(null);
   const [moodOverride, setMoodOverride] = useState<Partial<ShipMood>>({});
   const mood = useMemo(() => ({ ...(ship ? ship.mood : moodOf(seed)), ...moodOverride }), [ship, seed, moodOverride]);
@@ -113,7 +124,7 @@ export default function App() {
     dir,
     elevation,
     jumpDown,
-    use,
+    use: useBase,
     haul,
     lootedProps,
     takenItems,
@@ -165,7 +176,7 @@ export default function App() {
     sceneReady,
     syncPose,
     openDoorAt,
-  } = useGameState(variation);
+  } = useGameState(variation, interactionBlocksMovement);
   // (the interface's language: everything below renders again when it changes)
   useLang();
   const [settings, setSettings] = useState<ViewportSettings>(() => ({ ...DEFAULT_SETTINGS, ...map.render }));
@@ -265,7 +276,56 @@ export default function App() {
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
   useEffect(() => setNoclip(viewSettings.noclip), [viewSettings.noclip, setNoclip]);
-  useEffect(() => setWorldFrozen(editMode || !!runEnd || phase !== "run"), [editMode, runEnd, phase, setWorldFrozen]);
+  const interactionPausesWorld = activeInteraction?.kind === "image" || activeInteraction?.modal === true;
+  useLayoutEffect(() => {
+    setWorldFrozen(editMode || !!runEnd || phase !== "run" || interactionPausesWorld);
+    gameClock.setPaused(interactionPausesWorld);
+    return () => gameClock.setPaused(false);
+  }, [editMode, runEnd, phase, interactionPausesWorld, setWorldFrozen]);
+  const closeInteraction = useCallback(() => {
+    activeInteractionRef.current = null;
+    interactionBlocksMovement.current = false;
+    setActiveInteraction(null);
+  }, []);
+  useLayoutEffect(() => {
+    closeInteraction();
+    setEventTarget(null);
+  }, [map.id, editMode, phase, closeInteraction]);
+  useEffect(() => {
+    if (activeInteraction?.kind !== "message" || !activeInteraction.timeout) return;
+    const timer = window.setTimeout(closeInteraction, Math.min(activeInteraction.timeout * 1000, 2_147_483_647));
+    return () => window.clearTimeout(timer);
+  }, [activeInteraction, closeInteraction]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const event = activeInteractionRef.current;
+      if (!event) return;
+      if (e.key === "Escape" || e.key === "Enter") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!e.repeat) closeInteraction();
+      } else if (e.key === "Tab" && event.kind === "message" && event.modal) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      } else if (e.key === " " && e.target instanceof HTMLButtonElement && e.target.closest('[role="dialog"]')) {
+        e.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [closeInteraction]);
+  const openInteraction = (event: Interaction) => {
+    if (editMode || phase !== "run" || inLift || terminal || keypad || aim || runEnd || wipedAt !== null || activeInteractionRef.current) return false;
+    activeInteractionRef.current = event;
+    interactionBlocksMovement.current = event.kind === "message" && event.modal;
+    if (document.pointerLockElement) document.exitPointerLock();
+    setActiveInteraction(event);
+    if (event.text.trim()) pushLog(event.text);
+    return true;
+  };
+  const use = useCallback(() => {
+    if (!activeInteractionRef.current && !interactionUseRef.current?.()) useBase();
+  }, [useBase]);
   // at the base or the scan, the keys aren't the game's
   useEffect(() => {
     if (phase === "run") return;
@@ -298,7 +358,9 @@ export default function App() {
     document.documentElement.classList.toggle("theme-fantasy", map.world === "fantasy");
     document.title = WORLDS[map.world].name;
   }, [map.world]);
-  const needsSharedImages = editMode || !!map.decals?.some(({ decal }) => /^(fantasy|scifi)_decal_/.test(decal) && !sharedImage(decal));
+  const needsSharedImages = editMode ||
+    (activeInteraction?.kind === "image" && !!activeInteraction.image && !sharedImage(activeInteraction.image)) ||
+    !!map.decals?.some(({ decal }) => /^(fantasy|scifi)_decal_/.test(decal) && !sharedImage(decal));
   useEffect(() => {
     if (needsSharedImages) void loadSharedImages(map.world).catch(console.warn);
   }, [map.world, needsSharedImages]);
@@ -307,7 +369,7 @@ export default function App() {
   const finePointer = useMediaQuery("(pointer: fine)");
   const free = useFreeMovement({
     enabled: !grid,
-    frozen: inLift || aim !== null,
+    frozen: inLift || aim !== null || (activeInteraction?.kind === "message" && activeInteraction.modal),
     noclip: viewSettings.noclip,
     map,
     pos,
@@ -320,6 +382,7 @@ export default function App() {
   });
   const view = useViewControls({
     grid,
+    suppressPointerLock: !!activeInteraction,
     onForward: moveForward,
     onBack: moveBackward,
     onTurnLeft: turnL,
@@ -1916,6 +1979,7 @@ export default function App() {
   // Choosing a tool lets go of what was selected (a light or a prop left selected while other kinds
   // of thing are picked is just in the way): the inspector then shows the new thing's settings.
   const chooseTool = (tool: EditTool) => {
+    setEventTarget(null);
     setSelectedProp(null);
     setSelectedDecal(null);
     setSelectedItem(null);
@@ -1926,6 +1990,35 @@ export default function App() {
     setSelectedChanceWall(null);
     setSelectedDoor(null);
     setEditTool(tool);
+  };
+  const editInteraction = (target: InteractionTarget, event?: Interaction, merge?: string) => {
+    const result = applyEdit(map.id, file => setInteraction(file, map, target, event), merge && `event ${JSON.stringify(target)} ${merge}`);
+    if ("error" in result) {
+      pushLog(t("app.editorError", { error: result.error }), "error");
+      return false;
+    }
+    replaceMap(result.map);
+    setEdits(n => n + 1);
+    return true;
+  };
+  const selectEventTarget = (target: InteractionTarget | null, remove: boolean) => {
+    if (!target) {
+      setEventTarget(null);
+      return;
+    }
+    const existing = interactionAt(map, target);
+    if (remove) {
+      if (existing && editInteraction(target)) setEventTarget(null);
+      return;
+    }
+    const event: Interaction = existing ?? (eventKind === "image"
+      ? { kind: "image", text: "" }
+      : { kind: "message", text: "", modal: false, position: "center" });
+    if (existing || editInteraction(target, event)) {
+      if (editTool !== "event") chooseTool("event");
+      setEventKind(event.kind);
+      setEventTarget(target);
+    }
   };
   // The editor opens with Select; Esc (a click on empty space too) returns to it, V picks it; Alt held acts as it
   useEffect(() => {
@@ -2096,7 +2189,7 @@ export default function App() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const n = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : NaN;
-      if (n >= 1 && n <= crew.length && !aim && !editMode) {
+      if (n >= 1 && n <= crew.length && !aim && !editMode && !activeInteractionRef.current) {
         // with Shift: the crewmate's other weapon in hand
         if (e.shiftKey) {
           switchWeapon(crew[n - 1].id);
@@ -2110,7 +2203,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [crew.length, aim, fireWeapon, editMode]);
   const onWeapon = (index: number) => {
-    if (editMode) return;
+    if (editMode || activeInteractionRef.current) return;
     if (document.pointerLockElement) document.exitPointerLock();
     fireWeapon(index);
   };
@@ -2122,8 +2215,8 @@ export default function App() {
   // Use (Space or Enter) works in both movement modes
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (editMode || runEnd) return;
-      if ((e.key === " " || e.key === "Enter") && !aimRef.current) use();
+      if (editMode || runEnd || isTextEntry(e.target)) return;
+      if ((e.key === " " || e.key === "Enter") && !aimRef.current && !e.repeat) use();
       if ((e.key === "i" || e.key === "I") && !aimRef.current) setHaulOpen((o) => !o);
     }
     window.addEventListener("keydown", onKey);
@@ -2147,6 +2240,10 @@ export default function App() {
       aimFocusRef={aimFocusRef}
       partyCoverRef={partyCoverRef}
       onTouch={touch}
+      onInteraction={openInteraction}
+      onEditInteraction={selectEventTarget}
+      interactionUseRef={interactionUseRef}
+      interactionOpen={!!activeInteraction}
       editMode={editMode}
       hiddenLayers={hiddenLayers}
       lockedLayers={lockedLayers}
@@ -2261,6 +2358,7 @@ export default function App() {
         />
       )}
       {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
+      {activeInteraction && !editMode && <InteractionPopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>}
       {editMode && <PropEditor />}
       {editMode && (
         <Inspector
@@ -2270,6 +2368,12 @@ export default function App() {
           dock={editDock}
           tool={editTool}
           onTool={chooseTool}
+          eventKind={eventKind}
+          eventWorld={map.world}
+          onEventKind={setEventKind}
+          selectedEvent={eventTarget ? interactionAt(map, eventTarget) : undefined}
+          onEventChange={(event, merge) => { if (eventTarget) editInteraction(eventTarget, event, merge); }}
+          onEventRemove={() => { if (eventTarget && editInteraction(eventTarget)) setEventTarget(null); }}
           surface={editSurface}
           paint={paint}
           onPaint={(surface, setId) => setPaint((p) => ({ ...p, [surface]: setId }))}
@@ -2500,7 +2604,7 @@ export default function App() {
 
         {/* the party at the bottom, the menu (action + debug) under it: scrolls when it is long */}
         <div className="absolute bottom-2 inset-x-2 max-h-[calc(100%-8.5rem)] overflow-y-auto flex flex-col gap-1 pointer-events-none landscape:max-h-none landscape:overflow-visible">
-          {!editMode && !menuOpen && <PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />}
+          {!editMode && !menuOpen && <div ref={setPartyDock}><PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} /></div>}
           {menuOpen && (
             <div className="pointer-events-auto flex flex-col gap-1 landscape:fixed landscape:top-12 landscape:right-2 landscape:bottom-16 landscape:w-48 landscape:overflow-y-auto">
               {SHOW_ACTION_MENU && actionMenu}
@@ -2659,7 +2763,7 @@ export default function App() {
               onJumpDown={jumpDown ?? undefined}
             />
           )}
-          <div className="flex-1 min-w-0">
+          <div ref={setPartyDock} className="flex-1 min-w-0">
             <PartyPanel crew={crew} readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />
           </div>
         </div>

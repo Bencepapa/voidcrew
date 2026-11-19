@@ -1,5 +1,7 @@
 import { DIR_VECTOR, rightOf } from "./movement";
 import { ITEM_TYPES } from "./items";
+import { readInteraction, type Interaction } from "./interactions";
+import { wallFaceSpans, type WallFacePart } from "./mapGeometry";
 import { PROP_TYPES } from "./props";
 import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
 import type { Lock, Terminal, Trigger } from "./story";
@@ -85,6 +87,7 @@ export interface MapFile {
     ceilingTexture?: LayerFile<string>;
   };
   doors?: {
+    interaction?: Interaction;
     x: number;
     y: number;
     kind: DoorSpec["kind"];
@@ -140,6 +143,7 @@ export interface MapFile {
   }[];
   // loot lying about (see MapItem)
   items?: {
+    interaction?: Interaction;
     item: string;
     x: number;
     y: number;
@@ -171,6 +175,7 @@ export interface MapFile {
   windows?: { x: number; y: number; wall: Direction; width?: number; glow?: boolean }[];
   // at: where in the cell (default "center"); rotation: degrees
   props?: {
+    interaction?: Interaction;
     prop: string;
     x: number;
     y: number;
@@ -199,7 +204,9 @@ export interface MapFile {
     with?: string;
     without?: string;
   }[];
+  wallInteractions?: { x: number; y: number; side: Direction; part?: WallFacePart; interaction: Interaction }[];
   decals?: {
+    interaction?: Interaction;
     decal: string;
     x: number;
     y: number;
@@ -337,6 +344,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     faceTextureAt: faceTextures.size ? (x, y, side) => faceTextures.get(`${x},${y},${side}`) : undefined,
     ceilingTextureAt: (x, y) => ceilingTextures[y]?.[x],
     doors: (file.doors ?? []).map((d) => ({
+      interaction: readInteraction(d.interaction),
       cell: { x: d.x, y: d.y },
       kind: d.kind,
       facing: d.facing,
@@ -371,6 +379,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
       // (redone in place by the viewport - see applyLightsRef)
       decals: undefined,
       props: undefined,
+      wallInteractions: undefined,
+      doors: file.doors?.map(({ interaction: _interaction, ...door }) => door),
       items: undefined,
       render: undefined,
     }),
@@ -380,6 +390,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       if (cells[p.y]?.[p.x] !== "floor") throw new Error(`prop at ${p.x},${p.y} isn't in a floor cell`);
       return {
         prop: p.prop,
+        interaction: readInteraction(p.interaction),
         cell: { x: p.x, y: p.y },
         at: p.at ?? "center",
         rotation: p.rotation,
@@ -431,6 +442,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       if (cells[it.y]?.[it.x] !== "floor") throw new Error(`item at ${it.x},${it.y} isn't in a floor cell`);
       return {
         item: it.item,
+        interaction: readInteraction(it.interaction),
         cell: { x: it.x, y: it.y },
         count: it.count,
         offset: it.offset,
@@ -463,7 +475,16 @@ export function parseMap(id: string, file: MapFile): GameMap {
       if (cells[l.y]?.[l.x] !== "floor") throw new Error(`lift at ${l.x},${l.y} isn't a floor cell`);
       return { cell: { x: l.x, y: l.y }, button: l.button, to: l.to };
     }),
+    wallInteractions: (file.wallInteractions ?? []).flatMap(({ x, y, side, part, interaction }) => {
+      const event = readInteraction(interaction);
+      if (!event || !cells[y]?.[x] || cells[y][x] === "wall" || !["N", "E", "S", "W"].includes(side)) return [];
+      const cell = { x, y };
+      // Old records used the same key for a step and a full wall.
+      const face = part ?? wallFaceSpans({ width, height, cells, floorHeights, ceilingHeights }, cell, side)[0]?.part;
+      return [{ cell, side, part: face, interaction: event }];
+    }),
     decals: (file.decals ?? []).map((d) => ({
+      interaction: readInteraction(d.interaction),
       decal: d.decal,
       cell: { x: d.x, y: d.y },
       surface: d.surface,

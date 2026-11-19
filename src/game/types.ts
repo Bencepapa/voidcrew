@@ -1,6 +1,7 @@
 import type { Lock, Terminal, Trigger } from "./story";
 import type { RenderLook } from "./renderLook";
 import type { WorldId } from "./worlds";
+import type { Interaction, WallInteractionTarget } from "./interactions";
 
 export type Direction = "N" | "E" | "S" | "W";
 
@@ -114,6 +115,7 @@ export interface GameMap {
   // the deck's story (see story.ts): its terminals by id, and its triggers
   terminals?: Record<string, Terminal>;
   triggers?: Trigger[];
+  wallInteractions?: (Omit<WallInteractionTarget, "kind"> & { interaction: Interaction })[];
   weather?: Weather;
   smokes?: SmokeSpec[];
   actors?: ActorSpec[];
@@ -191,6 +193,7 @@ export interface MapLight extends Linked {
 export type LightEffect = "flicker" | "spark" | "pulse";
 
 export interface PropSpec extends Linked {
+  interaction?: Interaction;
   // a props.ts PROP_TYPES name, e.g. "crate1"
   prop: string;
   cell: Vec2;
@@ -274,6 +277,7 @@ export interface ExitSpec {
 // A loot item lying in a walkable cell (see items.ts): picked up by
 // stepping into the cell (or Use from the cell before it).
 export interface MapItem extends Linked {
+  interaction?: Interaction;
   item: string;
   cell: Vec2;
   // how many (default 1)
@@ -333,6 +337,7 @@ export interface LadderSpec {
 }
 
 export interface DoorSpec extends Linked {
+  interaction?: Interaction;
   cell: Vec2;
   // standard: panel slides up and stays open; lift: panel slides to the
   // right (seen from the front) and closes again after a while
@@ -365,6 +370,7 @@ export interface ChanceWall extends Linked {
 // walkable cell. Positions are in the surface texture's pixels (256 per
 // cell), so decals line up with the wall's own pixel grid.
 export interface DecalSpec extends Linked {
+  interaction?: Interaction;
   // name in public/decals/index.json
   decal: string;
   // the walkable cell the surface belongs to
