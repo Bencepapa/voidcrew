@@ -139,11 +139,11 @@ const revisions = (entries: { name: string }[]) => entries
   .flatMap(({ name }) => /^r[1-9]\d*$/.test(name) ? [Number(name.slice(1))] : [])
   .filter(Number.isSafeInteger).sort((a, b) => b - a);
 
-async function publishedImage(world: WorldId, type: SharedImageType, uuid: string): Promise<SharedImage | undefined> {
+async function publishedImage(world: WorldId, type: SharedImageType, uuid: string, init?: RequestInit): Promise<SharedImage | undefined> {
   const path = `${world}/${type}/${uuid}`;
-  for (const rev of revisions(await listSharedObjects(path))) {
+  for (const rev of revisions(await listSharedObjects(path, init))) {
     const base = `${sharedAssetBase()}${path}/r${rev}/`;
-    const response = await fetch(base + "meta.json");
+    const response = await fetch(base + "meta.json", init);
     if (response.status === 400 || response.status === 404) continue;
     if (!response.ok) throw new Error(`Asset metadata: HTTP ${response.status}`);
     const { name, width, height, surface, type: savedType, purpose } = await response.json();
@@ -158,15 +158,15 @@ async function publishedImage(world: WorldId, type: SharedImageType, uuid: strin
 }
 
 const loads = new Map<WorldId, number>();
-export async function loadSharedImages(world: WorldId) {
+export async function loadSharedImages(world: WorldId, init?: RequestInit) {
   if (!sharedConfigured) return;
   const version = (loads.get(world) ?? 0) + 1;
   loads.set(world, version);
   const collections = await Promise.all((["portrait", "decal"] as const).map(async (type) => {
-    const entries = await listSharedObjects(`${world}/${type}`);
-    return Promise.all(entries.filter(e => uuidPattern.test(e.name)).map(e => publishedImage(world, type, e.name)));
+    const entries = await listSharedObjects(`${world}/${type}`, init);
+    return Promise.all(entries.filter(e => uuidPattern.test(e.name)).map(e => publishedImage(world, type, e.name, init)));
   }));
-  if (loads.get(world) === version) {
+  if (!init?.signal?.aborted && loads.get(world) === version) {
     setSharedImages(world, collections.flat().filter((value): value is SharedImage => value !== undefined));
   }
 }

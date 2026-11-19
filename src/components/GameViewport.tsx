@@ -44,7 +44,7 @@ import type { Direction, DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type EdgeSegment } from "../render/reliefMesh";
 import { buildRoofGeometry } from "../render/roofMesh";
 import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
-import { generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
+import { fireLightColor, generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
 import { PROP_TYPES, PROP_RELIEF_SCALE, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
@@ -926,7 +926,6 @@ const CAMERA_ALARM_LIGHT = 0xff2418;
 // a fire (see fire.ts): its light (color, intensity and reach at size 1,
 // how high over its flames), and the dark smoke rising off it (color, how
 // high over the flames it comes from, how much and how big beside them)
-const FIRE_LIGHT = 0xff7a2a;
 const FIRE_LIGHT_INTENSITY = 1.8;
 const FIRE_LIGHT_RANGE = 2.4;
 const FIRE_LIGHT_LIFT = 0.15;
@@ -4280,13 +4279,19 @@ export function GameViewport({
     const smokeBlowMat = new THREE.LineBasicMaterial({ color: 0xffd060 });
     // the fires' flames (see fire.ts), made with the smoke: each a fire
     // emitter here and dark smoke rising off it among the smoke's
-    let fireEmitters: SmokeEmitter[] = [];
+    type FireEmitter = SmokeEmitter & { lightColor: number; lightIntensity: number; lightReach: number };
+    const fireEmitters = new Map<number, FireEmitter>();
+    const fireLight = (spec: NonNullable<GameMap["smokes"]>[number]) => ({
+      lightColor: fireLightColor(spec),
+      lightIntensity: spec.lightIntensity ?? 1,
+      lightReach: spec.lightReach ?? 1,
+    });
     let petalEmitters: SpriteEmitter[] = [];
     let moteEmitters: PetalEmitter[] = [], mistEmitters: SpriteEmitter[] = [], flyEmitters: SpriteEmitter[] = [];
     const effectColors = new Map<number, THREE.Color>();
     const buildSmoke = (m: GameMap) => {
       effectColors.clear();
-      fireEmitters = [];
+      fireEmitters.clear();
       petalEmitters = []; moteEmitters = []; mistEmitters = []; flyEmitters = [];
       return createSmoke(
       (m.smokes ?? []).flatMap((spec, index): SmokeEmitter[] => {
@@ -4377,7 +4382,7 @@ export function GameViewport({
         if (effect !== "fire") return [emitter];
         // (its color tints the flames: none, as they burn)
         emitter.color.setHex(parseColor(spec.color) ?? 0xffffff);
-        fireEmitters.push({ ...emitter });
+        fireEmitters.set(index, { ...emitter, ...fireLight(spec) });
         return [{
           ...emitter,
           y: Math.min(emitter.ceiling - 0.1, emitter.y + FIRE_SMOKE_LIFT * wallHeight),
@@ -4392,7 +4397,7 @@ export function GameViewport({
       { quality: settings.particleQuality },
     );
     };
-    const buildFire = (m: GameMap) => createSmoke(fireEmitters, lightGrid, smokeWorld(m), { fire: true, quality: settings.particleQuality });
+    const buildFire = (m: GameMap) => createSmoke([...fireEmitters.values()], lightGrid, smokeWorld(m), { fire: true, quality: settings.particleQuality });
     // what the smoke bumps into: the deck's walls, floors and ceilings, and
     // its props as boxes (not the 45-degree cuts: a box would close their
     // whole corner)
@@ -5351,12 +5356,14 @@ export function GameViewport({
       const lightsChanged = lightsOf(next) !== lightsOf(applied);
       if (lightsChanged) applyLights(next);
       if (JSON.stringify(next.smokes) !== JSON.stringify(applied.smokes)) {
-        const shape = (m: GameMap) => JSON.stringify(m.smokes?.map(({color, ...rest}) => rest));
+        const shape = (m: GameMap) => JSON.stringify(m.smokes?.map(({ color, lightColor, lightIntensity, lightReach, ...rest }) => rest));
         if (shape(next) === shape(applied)) {
           next.smokes?.forEach((spec, index) => {
             const effect = spec.effect ?? (spec.petals ? "motes" : spec.fire ? "fire" : "smoke");
             const fallback = effect === "fire" || effect === "petals" ? 0xffffff : effect === "fireflies" ? 0xd9ef78 : effect === "motes" ? 0xf4a6c0 : effect === "groundfog" ? 0xb4b8bc : SMOKE_COLOR;
             effectColors.get(index)?.setHex(parseColor(spec.color) ?? fallback);
+            const fire = fireEmitters.get(index);
+            if (fire) Object.assign(fire, fireLight(spec));
           });
         } else {
           applySmoke(next);
@@ -5439,16 +5446,18 @@ export function GameViewport({
         });
       }
       // the fires' flickering glow
+      let fireIndex = 0;
       fireEmitters.forEach((e, i) => {
+        const flickerIndex = fireIndex++;
+        if (e.lightIntensity === 0) return;
         list.push({
           key: `fire ${i}`,
           x: e.x,
           y: e.y + FIRE_LIGHT_LIFT * wallHeight,
           z: e.z,
-          // (a fire with a color of its own lights in it)
-          color: e.color.r > 0.99 && e.color.g > 0.99 && e.color.b > 0.99 ? FIRE_LIGHT : e.color.getHex(),
-          intensity: FIRE_LIGHT_INTENSITY * Math.sqrt(e.size * e.density) * fireFlicker(now, i),
-          range: FIRE_LIGHT_RANGE * Math.sqrt(e.size),
+          color: e.lightColor,
+          intensity: FIRE_LIGHT_INTENSITY * e.lightIntensity * Math.sqrt(e.size * e.density) * fireFlicker(now, flickerIndex),
+          range: FIRE_LIGHT_RANGE * e.lightReach * Math.sqrt(e.size),
           cell: e.cell,
         });
       });
@@ -7228,7 +7237,10 @@ export function GameViewport({
           ...mapLights
             .filter((l) => l.kind !== "window")
             .map((l) => ({ x: l.x, y: l.y * wallHeight, z: l.z, color: l.color, intensity: l.intensity })),
-          ...fireEmitters.map((e) => ({ x: e.x, y: e.y + FIRE_LIGHT_LIFT * wallHeight, z: e.z, color: e.color.r > 0.99 && e.color.g > 0.99 && e.color.b > 0.99 ? FIRE_LIGHT : e.color.getHex(), intensity: FIRE_LIGHT_INTENSITY * 0.5 })),
+          ...[...fireEmitters.values()].filter(e => e.lightIntensity > 0).map(e => ({
+            x: e.x, y: e.y + FIRE_LIGHT_LIFT * wallHeight, z: e.z, color: e.lightColor,
+            intensity: FIRE_LIGHT_INTENSITY * e.lightIntensity * 0.5,
+          })),
         ];
         lights.sort((a, b) => (a.x - eye.x) ** 2 + (a.z - eye.z) ** 2 - ((b.x - eye.x) ** 2 + (b.z - eye.z) ** 2));
         decals.setWaterLights(lights);

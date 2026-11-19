@@ -130,6 +130,9 @@ export interface EditorBarProps {
       pos?: [number, number, number];
       blow?: { speed: number; yaw: number; pitch?: number };
       fire?: boolean;
+      lightColor?: string;
+      lightIntensity?: number;
+      lightReach?: number;
       petals?: boolean;
       decorative?: boolean;
       opacity?: number;
@@ -238,6 +241,11 @@ export interface SmokeInfo {
   blow: { speed: number; yaw: number; pitch: number };
   // a fire (see fire.ts)
   fire: boolean;
+  // its light: the color as shown (its own, else the usual one), and its
+  // strength and reach as multipliers (see SmokeSpec)
+  lightColor?: string;
+  lightIntensity: number;
+  lightReach: number;
   petals: boolean;
   // a fire that is only decoration: it doesn't burn
   decorative: boolean;

@@ -360,7 +360,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     try {
       await Promise.all([
         ...(["scifi","fantasy"] as const).map((world) => loadSharedTextures(world)),
-        ...(["scifi","fantasy"] as const).map(loadSharedImages),
+        ...(["scifi","fantasy"] as const).map((world) => loadSharedImages(world)),
       ]);
     } catch (e) { setError(errorText(e)); }
   }

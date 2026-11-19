@@ -1,4 +1,4 @@
-// Background loading of the latest shared content (textures, map heads) for
+// Background loading of the latest shared content for
 // the active world. It runs only after the first scene is ready, off the
 // critical path (a delay, then an idle callback), with a timeout and at most
 // one retry a minute. The Debug panel's switch turns it off.
@@ -8,6 +8,7 @@ import { autoLoadShared, subscribeAutoLoadShared } from "./autoSharedPrefs";
 import { sharedConfigured, sharedProject } from "./sharedAuth";
 import { applyCachedSharedMapHeads, refreshSharedMapHeads } from "./sharedMapHeads";
 import { applyCachedSharedTextures, loadSharedTextures } from "./sharedTextures";
+import { loadSharedImages } from "./sharedImages";
 
 const IDLE_DELAY_MS = 1200;
 const TIMEOUT_MS = 10_000;
@@ -96,6 +97,7 @@ async function execute(forGeneration: number) {
     await Promise.all([
       loadSharedTextures(activeWorld, { signal: current.signal }),
       refreshSharedMapHeads(activeWorld, { signal: current.signal }),
+      loadSharedImages(activeWorld, { signal: current.signal }),
     ]);
     loaded = true;
     retried = false;

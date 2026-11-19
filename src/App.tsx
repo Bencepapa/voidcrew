@@ -54,7 +54,7 @@ import { ACTOR_TYPES } from "./game/actors";
 import { DOOR_EDGE_OFFSET, cellAt, ceilingHeight, doorAt, doorFacingAt, floorHeight } from "./game/map";
 import type { Direction, MapLight, PropAnchor, PropSpec, Vec2 } from "./game/types";
 import { DIR_VECTOR, behindOf, rightOf } from "./game/movement";
-import { generateLights, ownCeilingLight } from "./game/lights";
+import { fireLightColor, generateLights, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, Rect, TextureLayer } from "./editor/mapEdits";
 import { paintFace } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
@@ -432,7 +432,7 @@ export default function App() {
   // is selected, the inspector shows and changes these (see placingKind).
   const templates = useRef<Record<"smoke" | "light" | "prop" | "item" | "actor", Record<string, unknown>>>({ smoke: {}, light: {}, prop: {}, item: {}, actor: {} });
   const TEMPLATE_KEYS = {
-    smoke: ["effect", "mistStyle", "sprite", "spread", "height", "density", "size", "color", "blow", "chance", "decorative", "opacity", "opacityDark"],
+    smoke: ["effect", "mistStyle", "sprite", "spread", "height", "density", "size", "color", "blow", "chance", "decorative", "opacity", "opacityDark", "lightColor", "lightIntensity", "lightReach"],
     light: ["color", "intensity", "range", "effect", "bulb", "chance"],
     prop: ["texture", "scale", "chance"],
     item: ["count", "chance"],
@@ -1502,6 +1502,9 @@ export default function App() {
           ceilingHeight(map, selectedSmokeSpec.cell.x, selectedSmokeSpec.cell.y) - floorHeight(map, selectedSmokeSpec.cell.x, selectedSmokeSpec.cell.y),
         blow: { speed: selectedSmokeSpec.blow?.speed ?? 0, yaw: selectedSmokeSpec.blow?.yaw ?? 0, pitch: selectedSmokeSpec.blow?.pitch ?? 0 },
         fire: !!selectedSmokeSpec.fire,
+        lightColor: `#${fireLightColor(selectedSmokeSpec).toString(16).padStart(6, "0")}`,
+        lightIntensity: selectedSmokeSpec.lightIntensity ?? 1,
+        lightReach: selectedSmokeSpec.lightReach ?? 1,
         decorative: !!selectedSmokeSpec.decorative,
         opacity: selectedSmokeSpec.opacity ?? 1,
         opacityDark: selectedSmokeSpec.opacityDark ?? 0.3,
@@ -1999,6 +2002,9 @@ export default function App() {
     roomHeight: 1,
     blow: { speed: smokeTemplate.blow?.speed ?? 0, yaw: smokeTemplate.blow?.yaw ?? 0, pitch: smokeTemplate.blow?.pitch ?? 0 },
     fire: false,
+    lightColor: `#${fireLightColor(smokeTemplate).toString(16).padStart(6, "0")}`,
+    lightIntensity: smokeTemplate.lightIntensity ?? 1,
+    lightReach: smokeTemplate.lightReach ?? 1,
     decorative: !!smokeTemplate.decorative,
     opacity: smokeTemplate.opacity ?? 1,
     opacityDark: smokeTemplate.opacityDark ?? 0.3,

@@ -1,5 +1,5 @@
 import { ceilingHeight, floorHeight } from "./map";
-import type { GameMap, LightEffect, MapLight } from "./types";
+import type { GameMap, LightEffect, MapLight, SmokeSpec } from "./types";
 import { DIR_VECTOR, rightOf } from "./movement";
 
 // A deck's lights are placed on its map (MapLight, see the editor's Light
@@ -33,6 +33,16 @@ export interface LightSpec {
 export function parseColor(hex: string | undefined): number | undefined {
   if (!hex || !/^#?[0-9a-fA-F]{6}$/.test(hex)) return undefined;
   return parseInt(hex.replace("#", ""), 16);
+}
+
+export function fireLightColor({ color, lightColor }: Pick<SmokeSpec, "color" | "lightColor">): number {
+  const own = parseColor(lightColor);
+  if (own !== undefined) return own;
+  const flames = parseColor(color);
+  // Neutral flames use the default orange light. 254 sRGB is just above
+  // 0.99 in linear space, the renderer's original near-white threshold.
+  const neutral = flames === undefined || ((flames >> 16) >= 254 && ((flames >> 8) & 255) >= 254 && (flames & 255) >= 254);
+  return neutral ? 0xff7a2a : flames;
 }
 
 const DEFAULT_LAMP_COLOR = 0xfff4e0;

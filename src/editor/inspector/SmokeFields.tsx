@@ -29,6 +29,14 @@ return <>
               {t("editorBar.color")}<ColorField value={p.smoke.color} onChange={color => p.onSmokeChange({color})}/>
             </label>
 </Section>
+{p.smoke.effect === "fire" && <Section kind="smoke" section="light">
+<label className="flex items-center gap-1">
+              {t("editorBar.lightColor")}<ColorField value={p.smoke.lightColor ?? "#ff7a2a"} onChange={lightColor => p.onSmokeChange({lightColor})}/>
+              <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onSmokeChange({ lightColor: undefined })}>{t("editorBar.reset")}</button>
+            </label>
+{slider(t("editorBar.lightStrength"), p.smoke.lightIntensity, 0, 3, 0.05, (v) => p.onSmokeChange({ lightIntensity: v === 1 ? undefined : v }))}
+{slider(t("editorBar.lightReach"), p.smoke.lightReach, 0.2, 3, 0.05, (v) => p.onSmokeChange({ lightReach: v === 1 ? undefined : v }))}
+</Section>}
 <Section kind="smoke" section="logic">
 {chanceSlider(p.smoke.chance, (chance) => p.onSmokeChange({ chance }))}
 {linkFields(p.smoke.links, p.linkIds, p.onSmokeChange)}

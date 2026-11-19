@@ -126,6 +126,9 @@ export interface MapFile {
     color?: string;
     blow?: { speed: number; yaw: number; pitch?: number };
     fire?: boolean;
+    lightColor?: string;
+    lightIntensity?: number;
+    lightReach?: number;
     petals?: boolean;
     decorative?: boolean;
     opacity?: number;
@@ -411,6 +414,9 @@ export function parseMap(id: string, file: MapFile): GameMap {
         mistStyle: s.mistStyle,
         sprite: s.sprite,
         fire: s.effect ? s.effect === "fire" : s.fire,
+        lightColor: typeof s.lightColor === "string" && /^#[0-9a-f]{6}$/i.test(s.lightColor) ? s.lightColor : undefined,
+        lightIntensity: typeof s.lightIntensity === "number" && Number.isFinite(s.lightIntensity) ? Math.max(0, Math.min(3, s.lightIntensity)) : undefined,
+        lightReach: typeof s.lightReach === "number" && Number.isFinite(s.lightReach) ? Math.max(0.2, Math.min(3, s.lightReach)) : undefined,
         decorative: s.decorative,
         opacity: s.opacity === undefined ? undefined : Math.max(0.05, Math.min(1.5, s.opacity)),
         opacityDark: s.opacityDark === undefined ? undefined : Math.max(0, Math.min(1, s.opacityDark)),

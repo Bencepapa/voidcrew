@@ -243,6 +243,12 @@ export interface SmokeSpec extends Linked {
   // a fire (see fire.ts): flames, dark smoke off them, a flickering light,
   // and its cell burns (its color tints the flames)
   fire?: boolean;
+  // a fire's light (see GameViewport's FIRE_LIGHT): its color ("#rrggbb";
+  // unset: the flames' own, or the usual fire orange), and its strength and
+  // reach as multipliers of the usual ones (unset: 1)
+  lightColor?: string;
+  lightIntensity?: number;
+  lightReach?: number;
   // falling petals (leaves, blossom) instead of smoke: `color` is theirs, `size`
   // and `density` how big and how many, `blow` the wind that carries them
   petals?: boolean;
