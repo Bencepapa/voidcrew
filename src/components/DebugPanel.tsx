@@ -5,6 +5,8 @@ import type { ShipMood } from "../game/variation";
 import type { ViewportSettings, ViewportStats } from "./GameViewport";
 import { downloadMap } from "../editor/mapStore";
 import { TEXTURE_SETS, textureSetsOfKind } from "../render/textureSets";
+import { defaultPostSettings, hueOfHex, hueToHex } from "../render/postSettings";
+import type { PostMaskMode, PostOthersMode, PostRule, PostRuleMode } from "../render/postSettings";
 import { LOCKED_WORLD, WORLDS, switchWorld } from "../game/worlds";
 import { setAutoLoadShared, useAutoLoadShared } from "../editor/autoSharedPrefs";
 import { GRAPHICS_PRESETS, VIEW_DISTANCE_HIGH, VIEW_DISTANCE_MAX, effectiveViewDistance, presetOf } from "../render/graphics";
@@ -106,6 +108,71 @@ export function DebugPanel({
           onChange={(e) => set(s.key, parseFloat(e.target.value) as ViewportSettings[typeof s.key])}
           className="w-full"
         />
+      </div>
+    );
+  }
+
+  function range(label: string, value: number, min: number, max: number, step: number, onValue: (value: number) => void) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <div className="flex justify-between text-[10px] text-neutral-300">
+          <span>{label}</span>
+          <span>{formatNumber(value, step >= 1 ? 0 : step >= 0.01 ? 2 : 3)}</span>
+        </div>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onValue(parseFloat(e.target.value))}
+          className="w-full"
+        />
+      </div>
+    );
+  }
+
+  function setRule(index: number, patch: Partial<PostRule>) {
+    set("postRules", settings.postRules.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)));
+  }
+
+  function ruleEditor(rule: PostRule, index: number) {
+    return (
+      <div key={index} className="flex flex-col gap-1 border border-neutral-800 rounded-sm p-1.5">
+        <div className="flex items-center gap-2 text-[11px] font-semibold">
+          <input type="checkbox" checked={rule.on} onChange={(e) => setRule(index, { on: e.target.checked })} />
+          <span>{t("debug.postRule", { v1: index + 1 })}</span>
+        </div>
+        <label className="flex items-center justify-between gap-2 text-[10px] text-neutral-300">
+          <span>{t("debug.postRuleSource")}</span>
+          <input
+            type="color"
+            value={hueToHex(rule.hue)}
+            onChange={(e) => setRule(index, { hue: hueOfHex(e.target.value) })}
+            className="h-6 w-10 bg-transparent"
+          />
+        </label>
+        {range(t("debug.postRuleWidth"), rule.width, 5, 90, 1, (v) => setRule(index, { width: v }))}
+        {range(t("debug.postRuleMinSat"), rule.minSat, 0, 1, 0.01, (v) => setRule(index, { minSat: v }))}
+        {select(
+          t("debug.postRuleMode"),
+          <select value={rule.mode} onChange={(e) => setRule(index, { mode: e.target.value as PostRuleMode })} className={SELECT}>
+            <option value="keep">{t("debug.postRuleModeKeep")}</option>
+            <option value="shift">{t("debug.postRuleModeShift")}</option>
+            <option value="fade">{t("debug.postRuleModeFade")}</option>
+          </select>,
+        )}
+        <label className="flex items-center justify-between gap-2 text-[10px] text-neutral-300">
+          <span>{t("debug.postRuleTarget")}</span>
+          <input
+            type="color"
+            value={rule.target}
+            onChange={(e) => setRule(index, { target: e.target.value })}
+            className="h-6 w-10 bg-transparent"
+          />
+        </label>
+        {range(t("debug.postRuleSaturation"), rule.sat, 0, 2, 0.05, (v) => setRule(index, { sat: v }))}
+        {range(t("debug.postRuleValue"), rule.val, 0.2, 3, 0.05, (v) => setRule(index, { val: v }))}
       </div>
     );
   }
@@ -277,6 +344,56 @@ export function DebugPanel({
           )}
         </>,
         t("debug.wallAccentFloorCeilingDoors"),
+      )}
+
+      {section(
+        t("debug.postDark"),
+        <>
+          <div className="text-[10px] text-neutral-300">{t("debug.postDarkHint")}</div>
+          {check("postDark", t("debug.postDarkOn"))}
+          {settings.postDark && (
+            <>
+              {slider({ key: "postDarkness", label: "debug.postDarkness", min: 0, max: 1, step: 0.01 })}
+              {slider({ key: "postWarm", label: "debug.postWarm", min: 0.5, max: 3, step: 0.05 })}
+              {slider({ key: "postCold", label: "debug.postCold", min: 0.5, max: 3, step: 0.05 })}
+              {slider({ key: "postSaturation", label: "debug.postSaturation", min: 0.5, max: 2, step: 0.05 })}
+              {slider({ key: "postPalette", label: "debug.postPalette", min: 0, max: 1, step: 0.01 })}
+              {slider({ key: "postVignette", label: "debug.postVignette", min: 0, max: 1, step: 0.01 })}
+              {select(
+                t("debug.postMask"),
+                <select value={settings.postMask} onChange={(e) => set("postMask", e.target.value as PostMaskMode)} className={SELECT}>
+                  <option value="off">{t("debug.postMaskOff")}</option>
+                  <option value="rules">{t("debug.postMaskRules")}</option>
+                </select>,
+              )}
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">{t("debug.postRules")}</div>
+              {settings.postRules.map(ruleEditor)}
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">{t("debug.postOthers")}</div>
+              {select(
+                t("debug.postOthersMode"),
+                <select
+                  value={settings.postOthers.mode}
+                  onChange={(e) => set("postOthers", { ...settings.postOthers, mode: e.target.value as PostOthersMode })}
+                  className={SELECT}
+                >
+                  <option value="keep">{t("debug.postOthersKeep")}</option>
+                  <option value="fade">{t("debug.postOthersFade")}</option>
+                </select>,
+              )}
+              {settings.postOthers.mode === "fade" &&
+                range(t("debug.postOthersFadeAmount"), settings.postOthers.fade, 0, 1, 0.01, (v) =>
+                  set("postOthers", { ...settings.postOthers, fade: v }),
+                )}
+              <button
+                type="button"
+                onClick={() => onChange({ ...settings, ...defaultPostSettings(), postDark: settings.postDark })}
+                className={button}
+              >
+                {t("debug.postReset")}
+              </button>
+            </>
+          )}
+        </>,
       )}
 
       {section(
