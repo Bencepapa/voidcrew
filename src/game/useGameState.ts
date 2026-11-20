@@ -7,7 +7,7 @@ import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
 import type { Direction, GameMap, Vec2, PropSpec } from "./types";
 import { crewOf } from "./crew";
 import { variantOf } from "./variation";
-import { rollLoot, stacksText, stacksValue } from "./items";
+import { ITEM_TYPES, isSharedPickupId, rollLoot, stacksText, stacksValue } from "./items";
 import type { ItemStack, LootSpill } from "./items";
 import { PROP_TYPES, propHeight, propPlacement } from "./props";
 import type { ShipMood } from "./variation";
@@ -1207,7 +1207,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   const pickUpItems = useCallback(
     (ahead: boolean) => {
       const found = (map.items ?? []).filter(
-        (it) => inReach(it.cell, ahead) && !looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))),
+        (it) => (!isSharedPickupId(it.item) || Object.hasOwn(ITEM_TYPES, it.item)) &&
+          inReach(it.cell, ahead) && !looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))),
       );
       if (!found.length) return false;
       const stacks = found.map((it) => ({ item: it.item, count: it.count ?? 1 }));

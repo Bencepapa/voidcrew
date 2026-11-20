@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
 import { activeWorld } from "../game/worlds";
+import { DEFAULT_PICKUP, ITEM_CATEGORIES, type PickupAppearance } from "../game/items";
 import type { DecalSurfaceKind, ImagePurpose, SharedImage, SharedImageType } from "../render/sharedImages";
-import { applyTransparency, type Transparency } from "./imageTools";
+import { applyTransparency, decode, type Transparency } from "./imageTools";
 import { sharedConfigured, useSharedAuth } from "./sharedAuth";
 import {
-  checkImagePng, createImageDraft, discardImageDraft, getImageDrafts, publishImage, saveImageDraft, useImageDrafts,
+  checkImagePng, createImageDraft, discardImageDraft, getImageDrafts, publishImage, resolvePickupMaps, saveImageDraft, useImageDrafts,
   type ImageDraft,
 } from "./sharedImages";
 import { errorText, SignInPopover } from "./TexturePanel";
 import { active, BUTTON, idle, KindChoice, neutralStyle } from "./inspector/parts";
+import { NumberField } from "./NumberField";
+import { AiBadge, AiDepthControls } from "./AiDepthControls";
+import type { MaterialMaps } from "./materialMaps";
 
 const field = "block w-full min-w-0 rounded-sm border border-neutral-600 bg-neutral-900 px-2 py-1 text-sm text-neutral-100";
 
@@ -19,6 +23,39 @@ const purposeLabel = (purpose: ImagePurpose | undefined) =>
     : t("assetManager.image.purposePortrait");
 
 const surfaceLabel = (surface: DecalSurfaceKind) => t(`editorBar.${surface}`);
+
+export function usePickupDraftMaps(draft: ImageDraft | undefined, onError: (message: string) => void): MaterialMaps | undefined {
+  const png = draft?.png;
+  const source = draft?.transparency.source ?? "alpha";
+  const colorKey = draft?.transparency.colorKey ?? "#ff00ff";
+  const depth = draft?.pickupMaps?.depth;
+  const normal = draft?.pickupMaps?.normal;
+  const [maps, setMaps] = useState<MaterialMaps>();
+  useEffect(() => {
+    setMaps(undefined);
+    if (!png) return;
+    let active = true;
+    const urls: string[] = [];
+    const url = (blob: Blob) => {
+      const next = URL.createObjectURL(blob);
+      urls.push(next);
+      return next;
+    };
+    void resolvePickupMaps(png, { source, colorKey }, depth, normal).then(result => {
+      if (!active) return;
+      setMaps({
+        diffuse: url(result.diffuse),
+        depth: result.depth && url(result.depth),
+        normal: result.normal && url(result.normal),
+      });
+    }).catch(error => { if (active) onError(errorText(error)); });
+    return () => {
+      active = false;
+      urls.forEach(value => URL.revokeObjectURL(value));
+    };
+  }, [png, source, colorKey, depth, normal, onError]);
+  return maps;
+}
 
 // The preview as the game will see it: the colour key / opaque treatment is
 // applied to the draft's PNG and the result is an object URL, revoked on change.
@@ -55,20 +92,33 @@ function PublishedDetails({ image }: { image: SharedImage }) {
     {image.type === "portrait"
       ? <p><span className="text-neutral-400">{t("assetManager.image.purpose")}: </span>{purposeLabel(image.purpose)}</p>
       : image.surface && <p><span className="text-neutral-400">{t("assetManager.image.surface")}: </span>{surfaceLabel(image.surface)}</p>}
+    {image.pickup && <>
+      <p>{t("assetManager.pickup.category")}: {t(`assetManager.pickup.${image.pickup.category}`)}</p>
+      <p>{t("assetManager.pickup.height")}: {image.pickup.height}</p>
+      <p>{t("assetManager.pickup.glow")}: {image.pickup.glow}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {(["normal", "depth"] as const).map(channel => <div key={channel}>
+          <strong>{t(`assetManager.row.${channel}`)}</strong>
+          <img className="h-20 w-full object-contain" src={channel === "normal" ? image.pickup!.normalUrl : image.pickup!.depthUrl} alt=""/>
+        </div>)}
+      </div>
+    </>}
     <p><span className="text-neutral-400">{t("assetManager.world")}: </span>{t(image.world === "fantasy" ? "assetManager.fantasy" : "assetManager.scifi")}</p>
     <p><span className="text-neutral-400">{t("assetManager.image.size")}: </span>{image.width} × {image.height}</p>
     <p className="min-w-0"><span className="text-neutral-400">{t("assetManager.image.id")}: </span><code className="break-all text-xs text-neutral-400">{image.id}</code></p>
   </div>;
 }
 
-export function ImageAssetInspector({ draft, image, onError }: {
+export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
   draft?: ImageDraft;
   image?: SharedImage;
+  pickupPreview?: MaterialMaps;
   onError: (message: string) => void;
 }) {
   const auth = useSharedAuth();
   const drafts = useImageDrafts();
   const [busy, setBusy] = useState(false);
+  const [aiRunning, setAiRunning] = useState(false);
   const [status, setStatus] = useState("");
   const [signIn, setSignIn] = useState(false);
   // Always read the stored copy: a prop from the list can be one edit behind.
@@ -83,7 +133,7 @@ export function ImageAssetInspector({ draft, image, onError }: {
     finally { setBusy(false); }
   }
 
-  const latest = () => current ? getImageDrafts().find(saved => saved.id === current.id) ?? current : undefined;
+  const latest = () => current ? getImageDrafts().find(saved => saved.id === current.id) : undefined;
   async function change(patch: Partial<ImageDraft>) {
     const base = latest();
     if (!base) return;
@@ -97,6 +147,10 @@ export function ImageAssetInspector({ draft, image, onError }: {
     const base = latest();
     if (base) autosave({ transparency: { ...base.transparency, ...patch } });
   }
+  function autosavePickup(patch: Partial<PickupAppearance>) {
+    const base = latest();
+    if (base) autosave({ pickup: { ...(base.pickup ?? DEFAULT_PICKUP), ...patch } });
+  }
 
   async function chooseFile(file: File) {
     await run(async () => {
@@ -104,8 +158,27 @@ export function ImageAssetInspector({ draft, image, onError }: {
       await checkImagePng(file, file.name, current.type);
       const png = file.slice(0, file.size, "image/png");
       const name = current.name.trim() || file.name.replace(/\.png$/i, "").slice(0, 100);
-      await change({ png, name });
+      await change({ png, name, pickupMaps: undefined });
       setStatus(t("assetManager.image.saved"));
+    });
+  }
+
+  function choosePickupMap(channel: "normal" | "depth", file: File) {
+    void run(async () => {
+      const base = latest();
+      if (!base?.png || base.type !== "item") return;
+      const [map, diffuse] = await Promise.all([
+        checkImagePng(file, file.name, "item"), decode(base.png),
+      ]);
+      if (map.width !== diffuse.width || map.height !== diffuse.height) {
+        throw new Error(t("assetManager.pickup.mapSize", { width: diffuse.width, height: diffuse.height }));
+      }
+      if (latest()?.png !== base.png) return;
+      await change({ pickupMaps: {
+        ...base.pickupMaps,
+        [channel]: file.slice(0, file.size, "image/png"),
+        ...(channel === "depth" ? { aiDepth: false } : {}),
+      } });
     });
   }
 
@@ -149,7 +222,10 @@ export function ImageAssetInspector({ draft, image, onError }: {
   }
 
   const purpose = current.purpose ?? "portrait";
+  const pickup = current.pickup ?? DEFAULT_PICKUP;
+  const locked = busy || aiRunning;
   return <div className="relative flex min-w-0 flex-col gap-2 text-sm" style={neutralStyle}>
+    <fieldset className="flex min-w-0 flex-col gap-2" disabled={locked}>
     <label className="flex min-w-0 flex-col gap-1">{t("assetManager.image.file")}
       <input className={field} type="file" accept="image/png,.png" disabled={busy} onChange={event => {
         const file = event.currentTarget.files?.[0];
@@ -170,9 +246,19 @@ export function ImageAssetInspector({ draft, image, onError }: {
       ? <KindChoice label={t("assetManager.image.surface")} value={current.surface}
           options={(["wall", "floor", "ceiling"] as const).map(value => ({ value, label: surfaceLabel(value) }))}
           onChange={value => autosave({ surface: value as DecalSurfaceKind })}/>
-      : <KindChoice label={t("assetManager.image.purpose")} value={purpose}
+      : current.type === "portrait" && <KindChoice label={t("assetManager.image.purpose")} value={purpose}
           options={(["loading", "portrait", "room"] as const).map(value => ({ value, label: purposeLabel(value) }))}
           onChange={value => autosave({ purpose: value as ImagePurpose })}/>}
+
+    {current.type === "item" && <>
+      <KindChoice label={t("assetManager.pickup.category")} value={pickup.category}
+        options={ITEM_CATEGORIES.map(value => ({ value, label: t(`assetManager.pickup.${value}`) }))}
+        onChange={category => autosavePickup({ category: category as PickupAppearance["category"] })}/>
+      <NumberField label={t("assetManager.pickup.height")} min={0.03} max={2} step={0.01}
+        value={pickup.height} defaultValue={DEFAULT_PICKUP.height} onChange={height => autosavePickup({ height })}/>
+      <NumberField label={t("assetManager.pickup.glow")} min={0} max={2} step={0.05}
+        value={pickup.glow} defaultValue={DEFAULT_PICKUP.glow} onChange={glow => autosavePickup({ glow })}/>
+    </>}
 
     <KindChoice label={t("assetManager.image.transparency")} value={current.transparency.source}
       options={[
@@ -185,11 +271,53 @@ export function ImageAssetInspector({ draft, image, onError }: {
       <input type="color" value={current.transparency.colorKey}
         onChange={event => autosaveTransparency({ colorKey: event.target.value })}/>
     </label>}
+    </fieldset>
+
+    {current.type === "item" && <details open className="min-w-0 rounded border border-neutral-800 p-2">
+      <summary className="cursor-pointer font-semibold">{t("assetManager.mapsEditable")}</summary>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {(["normal", "depth"] as const).map(channel => {
+          const label = t(`assetManager.row.${channel}`);
+          const custom = current.pickupMaps?.[channel];
+          return <div className="flex min-w-0 flex-col gap-1 border border-neutral-700 p-1" key={channel}>
+            <strong>{label}</strong>
+            {pickupPreview?.[channel] && <img className="h-16 w-full object-contain" src={pickupPreview[channel]} alt={label}/>}
+            <span className="text-xs text-neutral-300">
+              {channel === "depth" && current.pickupMaps?.aiDepth ? <><AiBadge/> {t("assetManager.ai.status")}</>
+                : t(custom ? "assetManager.mode.uploaded" : "assetManager.mode.auto")}
+            </span>
+            <label className={`${BUTTON} ${idle}`}>
+              {t("assetManager.chooseFile")}
+              <input className="sr-only" type="file" accept="image/png,.png" disabled={locked || !current.png}
+                aria-label={t("assetManager.chooseFileFor", { map: label })} onChange={event => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) choosePickupMap(channel, file);
+                }}/>
+            </label>
+            {custom && <button type="button" className={`${BUTTON} ${idle}`} disabled={locked} onClick={() => {
+              autosave({ pickupMaps: { ...current.pickupMaps, [channel]: undefined, ...(channel === "depth" ? { aiDepth: false } : {}) } });
+            }}>{t("assetManager.mode.auto")}</button>}
+          </div>;
+        })}
+      </div>
+      <AiDepthControls onRunningChange={setAiRunning} editor={{
+        view: { pixelArt: true, transparency: current.transparency, slot: () => ({ has: !!current.png }) },
+        busy,
+        diffuseBlob: async () => current.png,
+        applyAiMaps: async (depth, normal) => {
+          const base = latest();
+          if (!base || base.png !== current.png) return;
+          await change({ pickupMaps: { ...base.pickupMaps, depth, aiDepth: true, ...(normal ? { normal } : {}) } });
+        },
+        onError,
+      }}/>
+    </details>}
 
     <div className="flex flex-wrap gap-1">
-      <button type="button" className={`${BUTTON} ${idle}`} disabled={busy} onClick={() => void save()}>{t("assetManager.image.saveDraft")}</button>
-      <button type="button" className={`${BUTTON} ${idle}`} disabled={busy} onClick={startPublish}>{t("assetManager.image.publish")}</button>
-      <button type="button" className={`${BUTTON} ${idle}`} disabled={busy} onClick={discard}>{t("assetManager.image.discard")}</button>
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={locked} onClick={() => void save()}>{t("assetManager.image.saveDraft")}</button>
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={locked} onClick={startPublish}>{t("assetManager.image.publish")}</button>
+      <button type="button" className={`${BUTTON} ${idle}`} disabled={locked} onClick={discard}>{t("assetManager.image.discard")}</button>
     </div>
 
     <output aria-live="polite" className="min-h-5 text-xs text-neutral-300">

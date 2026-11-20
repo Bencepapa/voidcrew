@@ -30,7 +30,7 @@ import { fetchDecalManifest } from "../render/decals";
 import { sharedImage, useSharedImages, type ImagePurpose, type SharedImage } from "../render/sharedImages";
 import { neutralStyle } from "./inspector/parts";
 import { createImageDraft, loadSharedImages, getImageDrafts, useImageDrafts, type ImageDraft } from "./sharedImages";
-import { ImageAssetInspector, useImageDraftPreview } from "./ImageAssetsPanel";
+import { ImageAssetInspector, useImageDraftPreview, usePickupDraftMaps } from "./ImageAssetsPanel";
 import { propEdit } from "./propEditState";
 import { textureFolder } from "../render/textureSets";
 import { saveTextureTuning, setTextureTuning, textureTuning, textureTuningJson, type TextureTuning } from "../render/textureTuning";
@@ -205,6 +205,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   wallDetail: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
   const imageCatalog = useSharedImages();
   const [sample, setSample] = useState<Sample>("material");
   const [selected, select] = useState("fantasywall1");
@@ -223,7 +224,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       // Select the category, sub-category and world that make the item visible.
       if (imageDraft) {
         // (a local image draft: its category, purpose and world)
-        if (imageDraft.type === "decal") { setSample("prop"); setSub("decal"); } else { setSample("still"); setSub(imageDraft.purpose ?? "portrait"); }
+        if (imageDraft.type === "decal") { setSample("prop"); setSub("decal"); }
+        else if (imageDraft.type === "item") { setSample("item"); setSub("All"); }
+        else { setSample("still"); setSub(imageDraft.purpose ?? "portrait"); }
         setWorld(imageDraft.world);
       } else if (sample === "material") {
         setSample("material"); setSub("All"); setWorld(id ? assetWorld(id) : activeWorld());
@@ -255,11 +258,18 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const isTraverse = (v: TextureSetPaths) => [v.kind].flat().includes("door");
   const decalDrafts = imageDrafts.filter(d => d.type === "decal");
   const stillDrafts = imageDrafts.filter(d => d.type === "portrait");
+  const pickupDrafts = imageDrafts.filter(d => d.type === "item");
   const entries: Entry[] = sample==="material" ? Object.entries(catalog).filter(([,v])=>isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[],world:assetWorld(key)}))
       // (a new draft with no diffuse yet isn't in the registry)
       .concat(drafts.filter(d=>!catalog[draftId(d)]).map(d=>({key:draftId(d),label:d.name || t("assetManager.untitled"),img:"",groups:d.kinds as string[],world:d.world})))
     : sample==="actor" ? Object.entries(ACTOR_TYPES).map(([key,v])=>({key,label:v.name,img:import.meta.env.BASE_URL+"actors/"+v.sheet+"/diffuse.png",groups:[] as string[],world:assetWorld(key)}))
-    : sample==="item" ? Object.entries(ITEM_TYPES).map(([key,v])=>({key,label:v.name,img:textureFolder("item_"+key).diffuse,groups:[] as string[],world:assetWorld(key)}))
+    : sample==="item" ? [
+      ...Object.entries(ITEM_TYPES).map(([key,v])=>{
+        const image = imageCatalog.find(image=>image.id === key);
+        return {key,label:v.name,img:image?.url ?? textureFolder("item_"+key).diffuse,groups:[],world:assetWorld(key),image};
+      }),
+      ...pickupDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:[],world:d.world,draft:d})),
+    ]
     : sample==="still" ? [
       ...imageCatalog.filter(image=>image.type==="portrait").map(image=>({key:image.id,label:image.name,img:image.url,groups:[image.purpose ?? "portrait"],world:image.world,image})),
       ...stillDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:[d.purpose ?? "portrait"],world:d.world,draft:d})),
@@ -276,9 +286,16 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const selectedImageDraft = imageDrafts.find(d => d.id === id);
   const selectedDecalDraft = selectedImageDraft?.type === "decal" ? selectedImageDraft : undefined;
   const selectedStillDraft = selectedImageDraft?.type === "portrait" ? selectedImageDraft : undefined;
+  const selectedPickupDraft = selectedImageDraft?.type === "item" ? selectedImageDraft : undefined;
+  const isPickupDraft = !!selectedPickupDraft;
+  const pickup = sample === "item" ? selectedPickupDraft?.pickup ?? entry?.image?.pickup : undefined;
+  const pickupMaps = usePickupDraftMaps(selectedPickupDraft, setError);
+  const pickupDraftPreview = useImageDraftPreview(selectedPickupDraft);
+  const [inventoryPreview, setInventoryPreview] = useState(false);
+  const preview2D = sample === "still" || (sample === "item" && inventoryPreview);
   const decalDraftPreview = useImageDraftPreview(selectedDecalDraft);
   const stillDraftPreview = useImageDraftPreview(selectedStillDraft);
-  const previewUrl = selectedDecalDraft ? decalDraftPreview : selectedStillDraft ? stillDraftPreview : (entry?.img ?? "");
+  const previewUrl = selectedDecalDraft ? decalDraftPreview : selectedStillDraft ? stillDraftPreview : isPickupDraft ? pickupDraftPreview : (entry?.img ?? "");
   const isDecal = sample === "prop" && !!entry && entry.groups.includes("decal");
   const builtinDecalSize = useImageSize(entry?.builtinDecal ? entry.img : undefined);
   const prop = sample==="prop" ? PROP_TYPES[id] : undefined;
@@ -319,6 +336,10 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       let result:Record<string,MaterialMaps>={};
       if(selectedDecalDraft){
         result[id]=previewUrl ? {diffuse:previewUrl} : {};
+      }else if(isPickupDraft){
+        result[id]=pickupMaps ?? {};
+      }else if(sample==="item" && entry?.image?.pickup){
+        result[id]={diffuse:entry.image.url, depth:entry.image.pickup.depthUrl, normal:entry.image.pickup.normalUrl};
       }else if(sample==="actor"){
         const actor=ACTOR_TYPES[id], dir=import.meta.env.BASE_URL+"actors/"+actor.sheet+"/";
         result[id]={diffuse:dir+"diffuse.png",normal:dir+"normal.png",emissive:actor.glow ? dir+"emissive.png" : undefined};
@@ -338,7 +359,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[open,id,sample,primary,prop,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft]);
+  },[open,id,sample,primary,prop,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,isPickupDraft,pickupMaps]);
   async function edit(channel: Channel, file?: Blob | "") {
     const next: PreviewMaps = { ...previewBlobs.current, [channel]: file };
     if (file === undefined) delete next[channel];
@@ -350,7 +371,6 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [keyLight, setKeyLight] = useState(true);
   const [rimLight, setRimLight] = useState(true);
   const [turn, setTurn] = useState(0);
-  const [error, setError] = useState("");
   // editing the selected texture (drafts of shared textures): its settings and the channel cards of the maps panel
   const editor = useTextureEditor(sample==="material" && entry ? id : "", setError, select);
   const editable = sample==="material" && !!entry && isEditable(id);
@@ -413,6 +433,16 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       select(draft.id);
     } catch (e) { setError(errorText(e)); }
   }
+  async function createPickup() {
+    try {
+      const draft = await createImageDraft(world === "All" ? activeWorld() : world, "item");
+      setSub("All");
+      setQuery("");
+      setInventoryPreview(false);
+      pendingScroll.current = draft.id;
+      select(draft.id);
+    } catch (e) { setError(errorText(e)); }
+  }
   // closing with local drafts left asks first (the drafts stay on this computer either way)
   function requestClose() {
     const c = draftCounts(drafts);
@@ -444,7 +474,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [saveNote, setSaveNote] = useState("");
   const [copyNote, setCopyNote] = useState("");
   // the texture whose look the sliders tune (an NPC's normal strength is set in the NPC editor, a decal has none)
-  const tuneId = !entry || sample==="actor" || sample==="still" || isDecal || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : propTexture(id);
+  const tuneId = !entry || sample==="actor" || sample==="still" || isDecal || pickup || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : propTexture(id);
   void tuneStamp;
   const tune: TextureTuning | undefined = tuneId ? { ...textureTuning(tuneId) } : undefined;
   const tuneRef = useRef(tune);
@@ -482,7 +512,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const host = useRef<HTMLDivElement>(null);
   const previewRenderer = useRef<THREE.WebGLRenderer | null>(null);
   useEffect(() => {
-    if (!open || sample==="still" || !host.current) return;
+    if (!open || preview2D || !host.current) return;
     const renderer = new THREE.WebGLRenderer({antialias:true});
     renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     host.current.appendChild(renderer.domElement);
@@ -494,11 +524,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       renderer.forceContextLoss();
       renderer.domElement.remove();
     };
-  }, [open, sample]);
+  }, [open, sample, preview2D]);
   useEffect(() => {
     const el = host.current;
     const renderer = previewRenderer.current;
-    if (!open || sample==="still" || !el || !entry || !groups[primary] || !renderer) return;
+    if (!open || preview2D || !el || !entry || !groups[primary] || !renderer) return;
     let disposed = false;
     setError("");
     const scene = new THREE.Scene();
@@ -732,13 +762,19 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
           }
         }
         if(sample==="item"){
-          const height=.2;
+          const height=pickup?.height ?? .2;
+          if (pickup) {
+            mat.emissiveMap = mat.map;
+            mat.emissive.setHex(0xffffff);
+            mat.emissiveIntensity = pickup.glow;
+          }
           const tilt=-Math.PI/12;
           mesh.rotation.order="YXZ";
           mesh.rotation.x=tilt;
           mesh.position.y=height*Math.cos(tilt)/2;
           animate=()=>{mesh.rotation.y=Math.atan2(camera.position.x,camera.position.z)-object.rotation.y;};
-          loadHeightGrid(textureFolder("item_"+id).depth).then(grid=>{
+          const depth = groups[primary]?.depth;
+          if (depth) void loadHeightGrid(depth).then(grid=>{
             if(disposed)return;
             const smooth = reliefMode === "smooth";
             const result=createReliefWallGeometry(grid,{
@@ -859,10 +895,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       controls.dispose();
       resources.forEach(r=>r.dispose());
     };
-  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface]);
+  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface,preview2D,pickup?.height,pickup?.glow]);
   const newInfo: { disabled: boolean; title: string; run?: () => Promise<void> } =
     sample === "material" ? { disabled: false, title: t("assetManager.newTexture"), run: createTexture }
       : sample === "still" ? { disabled: false, title: t("assetManager.newStill"), run: createStill }
+        : sample === "item" ? { disabled: false, title: t("assetManager.pickup.new"), run: createPickup }
         : sample === "prop" && (sub === "decal" || sub === "All") ? { disabled: false, title: t("assetManager.newDecal"), run: createDecal }
           : { disabled: true, title: t("assetManager.newUnsupported") };
   const decalImage: SharedImage | undefined = entry?.image ?? (entry?.builtinDecal ? {
@@ -935,17 +972,21 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               {sample==="actor" && entry && <><label>{t("assetManager.pose")} <select className={selectClass} value={pose} onChange={e=>setPose(+e.target.value)}><option value={-1}>{t("assetManager.walkCycle")}</option>{Array.from({length:ACTOR_TYPES[id].rows},(_,i)=><option key={i} value={i}>{t(i===ACTOR_TYPES[id].idleRow ? "assetManager.idleRow" : "assetManager.row", { n: i+1 })}</option>)}</select></label><a className={button} target="_blank" rel="noreferrer" href={"?editor=actors&actor="+encodeURIComponent(id)}>{t("assetManager.npcEditor")}</a></>}
               {sample==="prop" && propEditable(prop) && <button className={button} onClick={()=>{setOpen(false);propEdit.set({name:id,part:0});}}>{t("assetManager.propEditor")}</button>}
               {!isDecal && sample==="prop" && <label>{t("assetManager.mount")} <select className={selectClass} value={placement} onChange={e=>setPlacement(e.target.value)}>{["Auto","Floor","Wall"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>}</div>
-            {sample!=="still" && <div className="flex flex-wrap gap-1" aria-label={t("assetManager.previewView")}>{["textured","faces","wireframe","normals","depth"].map(v=><button key={v} className={button+" capitalize"} aria-pressed={view===v} onClick={()=>setView(v)}>{display(v)}</button>)}</div>}
+            {sample==="item" && <div className="flex gap-1">
+              <button type="button" className={button} aria-pressed={inventoryPreview} onClick={()=>setInventoryPreview(true)}>{t("assetManager.pickup.icon")}</button>
+              <button type="button" className={button} aria-pressed={!inventoryPreview} onClick={()=>setInventoryPreview(false)}>{t("assetManager.pickup.world")}</button>
+            </div>}
+            {!preview2D && <div className="flex flex-wrap gap-1" aria-label={t("assetManager.previewView")}>{["textured","faces","wireframe","normals","depth"].map(v=><button key={v} className={button+" capitalize"} aria-pressed={view===v} onClick={()=>setView(v)}>{display(v)}</button>)}</div>}
             {sample==="material" && layout!=="Single" && <label className="text-xs"><input type="checkbox" checked={joinEdges} onChange={e=>setJoinEdges(e.target.checked)}/> {t("assetManager.joinEdges")}</label>}
-            {sample==="still"
+            {preview2D
               ? <StillPreview url={previewUrl} alt={entry?.label ?? ""}/>
               : <div className="min-h-0 max-h-[65vh] flex-1 overflow-hidden rounded-sm border border-neutral-800 [&>canvas]:block" ref={host}/>}
           </main>
           {panelOpen ? <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-neutral-800 pl-2">
             <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setPanelOpen(false)}>▶</button></div>
-            {sample==="still" || isDecal ? <>
-              {(selectedStillDraft || selectedDecalDraft) && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName((selectedStillDraft ?? selectedDecalDraft)!.world)}</p>}
-              <ImageAssetInspector draft={selectedDecalDraft ?? selectedStillDraft} image={isDecal ? decalImage : entry?.image} onError={setError}/>
+            {sample==="still" || isDecal || (sample==="item" && (isPickupDraft || entry?.image?.pickup)) ? <>
+              {selectedImageDraft && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName(selectedImageDraft.world)}</p>}
+              <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError}/>
             </> : <>
             {sample==="material" && <details open className="rounded border border-neutral-800 p-2">
               <summary className="cursor-pointer font-semibold">{t("assetManager.baseColor")}</summary>

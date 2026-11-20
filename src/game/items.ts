@@ -3,6 +3,19 @@
 // upgrades and credits.
 
 export type ItemCategory = "salvage" | "tech" | "supplies" | "valuables" | "data";
+export const ITEM_CATEGORIES = ["salvage", "tech", "supplies", "valuables", "data"] as const;
+export const isItemCategory = (value: unknown): value is ItemCategory =>
+  ITEM_CATEGORIES.some(category => category === value);
+
+export interface PickupAppearance {
+  category: ItemCategory;
+  height: number;
+  glow: number;
+}
+
+export const DEFAULT_PICKUP: PickupAppearance = { category: "salvage", height: 0.2, glow: 0 };
+export const isSharedPickupId = (id: string) =>
+  /^(fantasy|scifi)_item_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id);
 
 export interface ItemType {
   name: string;

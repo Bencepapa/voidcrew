@@ -1,8 +1,10 @@
 import { useSyncExternalStore } from "react";
 import type { WorldId } from "../game/worlds";
 import { bundledImages } from "../game/sharedBuiltins";
+import { ITEM_TYPES, isSharedPickupId, type PickupAppearance } from "../game/items";
+import { textureFolder, type TextureSetFiles } from "./textureSets";
 
-export type SharedImageType = "portrait" | "decal";
+export type SharedImageType = "portrait" | "decal" | "item";
 export type DecalSurfaceKind = "wall" | "floor" | "ceiling";
 // The stored type "portrait" covers every still image; this says which one it is.
 // A legacy image without a purpose is a portrait.
@@ -21,11 +23,13 @@ export interface SharedImage {
   surface?: DecalSurfaceKind;
   purpose?: ImagePurpose;
   url: string;
+  pickup?: PickupAppearance & { depthUrl: string; normalUrl: string };
 }
 
 const worlds = new Map<WorldId, SharedImage[]>();
 const listeners = new Set<() => void>();
 const decalListeners = new Set<(ids: ReadonlySet<string>) => void>();
+const pickupListeners = new Set<(ids: ReadonlySet<string>) => void>();
 const builtins: SharedImage[] = Object.entries(bundledImages).map(([id, entry]) => ({
   ...entry, id, url: `${import.meta.env.BASE_URL}shared-images/${id}.png`,
 }));
@@ -38,6 +42,17 @@ const subscribe = (listener: () => void) => {
   return () => { listeners.delete(listener); };
 };
 export const useSharedImages = () => useSyncExternalStore(subscribe, getSharedImages);
+export function pickupTexture(id: string): TextureSetFiles {
+  const image = sharedImage(id);
+  return image?.pickup
+    ? { diffuse: image.url, depth: image.pickup.depthUrl, normal: image.pickup.normalUrl, pixelArt: true }
+    : textureFolder(`item_${id}`);
+}
+
+export function onSharedPickupsChanged(listener: (ids: ReadonlySet<string>) => void): () => void {
+  pickupListeners.add(listener);
+  return () => { pickupListeners.delete(listener); };
+}
 export function onSharedDecalsChanged(listener: (ids: ReadonlySet<string>) => void): () => void {
   decalListeners.add(listener);
   return () => { decalListeners.delete(listener); };
@@ -49,7 +64,21 @@ export function setSharedImages(world: WorldId, images: SharedImage[]) {
   if (JSON.stringify(before) === JSON.stringify(images)) return;
   worlds.set(world, images);
   snapshot = [...builtins, ...[...worlds.values()].flat()];
+  const pickups = (list: SharedImage[]) => new Map(list.filter(image =>
+    image.type === "item" && image.pickup && isSharedPickupId(image.id)).map(image => [image.id, image]));
+  const oldPickups = pickups(before);
+  const newPickups = pickups(images);
+  const updatedPickups = new Set<string>();
+  for (const id of oldPickups.keys()) {
+    if (!newPickups.has(id)) { delete ITEM_TYPES[id]; updatedPickups.add(id); }
+  }
+  for (const [id, image] of newPickups) {
+    if (!image.pickup) continue;
+    ITEM_TYPES[id] = { name: image.name, category: image.pickup.category, value: 0 };
+    if (JSON.stringify(oldPickups.get(id)) !== JSON.stringify(image)) updatedPickups.add(id);
+  }
   for (const listener of listeners) listener();
+  if (updatedPickups.size) for (const listener of pickupListeners) listener(updatedPickups);
   const oldDecals = new Map(before.filter(i => i.type === "decal").map(i => [i.id, i.url]));
   const newDecals = new Map(images.filter(i => i.type === "decal").map(i => [i.id, i.url]));
   const changed = new Set([...oldDecals.keys(), ...newDecals.keys()].filter(id => oldDecals.get(id) !== newDecals.get(id)));

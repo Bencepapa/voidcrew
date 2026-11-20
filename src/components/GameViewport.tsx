@@ -19,7 +19,7 @@ import { createPetals, type PetalEmitter } from "../render/petals";
 import { effectiveViewDistance, loadGraphics } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
-import { ITEM_TYPES, itemSpot } from "../game/items";
+import { ITEM_TYPES, isSharedPickupId, itemSpot } from "../game/items";
 import { interactionAt, sameInteractionCell, type Interaction, type InteractionTarget, type WallInteractionTarget } from "../game/interactions";
 import { wallFaceSpans, type WallFacePart } from "../game/mapGeometry";
 import type { LootSpill } from "../game/items";
@@ -72,7 +72,7 @@ import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
 import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
 import { mapUsesTexture } from "../editor/textureLibrary";
-import { onSharedDecalsChanged } from "../render/sharedImages";
+import { onSharedDecalsChanged, onSharedPickupsChanged, pickupTexture, sharedImage } from "../render/sharedImages";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 
@@ -1571,6 +1571,13 @@ export function GameViewport({
   }, []);
   // a saved per-texture tuning (Asset Manager): the relief meshes rebuilt
   useEffect(() => onTextureTuningSaved(() => setTextureVersion((v) => v + 1)), []);
+  useEffect(() => onSharedPickupsChanged(ids => {
+    const current = latestMapRef.current;
+    if (current.items?.some(item => ids.has(item.item)) ||
+        current.props?.some(prop => prop.loot?.some(item => ids.has(item.item)))) {
+      setTextureVersion(version => version + 1);
+    }
+  }), []);
   // a shared texture whose files changed (a draft's map uploaded or removed, a publish, the store listed again): the scene
   // is built from the texture table once, so it would keep showing the old (often flat) maps; rebuilt when the edits settle
   useEffect(() => {
@@ -1955,8 +1962,8 @@ export function GameViewport({
       mat.userData.metalBase = mat.metalness;
       viewMaps.set(mat, { normal: normalMap, depth });
     }
-    function createWallKit(setId: string, displace = true, accent = true): WallKit {
-      const paths: TextureSetFiles = isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
+    function createWallKit(setId: string, displace = true, accent = true, paths?: TextureSetFiles): WallKit {
+      paths ??= isTextureSetId(setId) ? TEXTURE_SETS[setId] : textureFolder(setId);
       const diffuse = kitTexture(busted(paths.diffuse));
       const normalMap = kitTexture(busted(paths.normal));
       const depthMap = kitTexture(busted(paths.depth));
@@ -2265,10 +2272,10 @@ export function GameViewport({
     };
     // prop side/top kits by texture set, created on demand
     const propKits = new Map<string, WallKit>();
-    const sharedPropKitFor = (setId: string) => {
+    const sharedPropKitFor = (setId: string, paths?: TextureSetFiles) => {
       let kit = propKits.get(setId);
       if (!kit) {
-        kit = createWallKit(setId, false, false);
+        kit = createWallKit(setId, false, false, paths);
         propKits.set(setId, kit);
       }
       return kit;
@@ -2307,7 +2314,9 @@ export function GameViewport({
       return kit;
     };
     // the loot items' sprites (all of them: a crate may spill any)
-    for (const id of Object.keys(ITEM_TYPES)) sharedPropKitFor(`item_${id}`);
+    for (const id of Object.keys(ITEM_TYPES)) {
+      if (!isSharedPickupId(id)) sharedPropKitFor(`item_${id}`);
+    }
     // a prop type's texture sets: a box's side and top, its views, or a
     // cutout's one
     const propSets = (type: PropType): string[] =>
@@ -4550,14 +4559,16 @@ export function GameViewport({
       let made = itemTemplates.get(id);
       if (!made) {
         made = (async () => {
-          const kit = sharedPropKitFor(`item_${id}`);
+          const pickup = sharedImage(id)?.pickup;
+          if (isSharedPickupId(id) && !pickup) return null;
+          const kit = sharedPropKitFor(`item_${id}`, pickup ? pickupTexture(id) : undefined);
           let gridPromise = cache.grids.get(kit.depthUrl);
           if (!gridPromise) {
             gridPromise = loadWithRetry(kit.depthUrl, 4);
             cache.grids.set(kit.depthUrl, gridPromise);
           }
           const grid = await gridPromise;
-          const h = ITEM_HEIGHT;
+          const h = pickup?.height ?? ITEM_HEIGHT;
           const w = (h * grid.width) / grid.height;
           const relief = await buildPropRelief(kit, { width: w, height: h, flushEdges: false, depth: propReliefDepth * PROP_RELIEF_SCALE * 0.6 }, 24);
           if (!relief) return null;
@@ -4565,7 +4576,7 @@ export function GameViewport({
           // a faint glow of their own: loot reads even in a dark room
           kit.wallMat.emissiveMap = kit.wallMat.map;
           kit.wallMat.emissive.setHex(0xffffff);
-          kit.wallMat.emissiveIntensity = ITEM_GLOW;
+          kit.wallMat.emissiveIntensity = pickup?.glow ?? ITEM_GLOW;
           kit.wallMat.needsUpdate = true;
           // Its normals bent up (and a little back): turned to the camera
           // whichever way it's seen, it would take only the light from the

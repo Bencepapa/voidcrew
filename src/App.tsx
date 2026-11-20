@@ -82,7 +82,7 @@ import { KeypadPanel } from "./components/KeypadPanel";
 import { AlertMeter } from "./components/AlertMeter";
 import type { Lock } from "./game/story";
 import { RunSummary } from "./components/RunSummary";
-import { ITEM_TYPES, itemSpot } from "./game/items";
+import { ITEM_TYPES, isSharedPickupId, itemSpot } from "./game/items";
 import { DebugPanel } from "./components/DebugPanel";
 import { useMediaQuery } from "./components/useMediaQuery";
 import { useViewControls } from "./components/useViewControls";
@@ -360,7 +360,9 @@ export default function App() {
   }, [map.world]);
   const needsSharedImages = editMode ||
     (activeInteraction?.kind === "image" && !!activeInteraction.image && !sharedImage(activeInteraction.image)) ||
-    !!map.decals?.some(({ decal }) => /^(fantasy|scifi)_decal_/.test(decal) && !sharedImage(decal));
+    !!map.decals?.some(({ decal }) => /^(fantasy|scifi)_decal_/.test(decal) && !sharedImage(decal)) ||
+    !!map.items?.some(({ item }) => isSharedPickupId(item) && !sharedImage(item)) ||
+    !!map.props?.some(({ loot }) => loot?.some(({ item }) => isSharedPickupId(item) && !sharedImage(item)));
   useEffect(() => {
     if (needsSharedImages) void loadSharedImages(map.world).catch(console.warn);
   }, [map.world, needsSharedImages]);

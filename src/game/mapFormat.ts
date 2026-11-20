@@ -1,5 +1,5 @@
 import { DIR_VECTOR, rightOf } from "./movement";
-import { ITEM_TYPES } from "./items";
+import { ITEM_TYPES, isSharedPickupId } from "./items";
 import { readInteraction, type Interaction } from "./interactions";
 import { wallFaceSpans, type WallFacePart } from "./mapGeometry";
 import { PROP_TYPES } from "./props";
@@ -438,7 +438,9 @@ export function parseMap(id: string, file: MapFile): GameMap {
       };
     }),
     items: (file.items ?? []).map((it) => {
-      if (!ITEM_TYPES[it.item]) throw new Error(`item at ${it.x},${it.y}: unknown item "${it.item}"`);
+      if (!Object.hasOwn(ITEM_TYPES, it.item) && !isSharedPickupId(it.item)) {
+        throw new Error(`item at ${it.x},${it.y}: unknown item "${it.item}"`);
+      }
       if (cells[it.y]?.[it.x] !== "floor") throw new Error(`item at ${it.x},${it.y} isn't in a floor cell`);
       return {
         item: it.item,

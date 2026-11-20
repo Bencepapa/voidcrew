@@ -1,13 +1,12 @@
 // The "AI depth" button of the Depth channel: runs Depth Anything V2 Small in the browser (src/render/aiDepth.ts) and stores the
 // result as an uploaded depth PNG on the draft (optionally the normal map made from it). Editor-only; nothing runs without a click.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
 import { AiDepthAborted, defaultAiDepthOptions, generateAiDepth, isAiDepthCached, type AiDepthOptions } from "../render/aiDepth";
 import type { AiDepthDevice } from "../render/aiDepthWorker";
 import { generateNormal } from "../render/depthNormal";
-import { applyTransparency, decode, encode } from "./imageTools";
-import type { TextureEditor } from "./TexturePanel";
+import { applyTransparency, decode, encode, type Transparency } from "./imageTools";
 
 const small = "rounded border border-neutral-500 bg-neutral-800 px-2 py-1 text-xs hover:border-amber-400 disabled:opacity-50";
 
@@ -16,7 +15,18 @@ export function AiBadge({ className = "" }: { className?: string }) {
   return <span className={"rounded border border-sky-400/60 bg-neutral-700 px-1 text-[10px] font-bold leading-4 text-sky-200 " + className} title={t("assetManager.ai.licence")}>AI</span>;
 }
 
-export function AiDepthControls({ editor }: { editor: TextureEditor }) {
+type AiDepthEditor = {
+  view?: { pixelArt: boolean; transparency: Transparency; slot: (channel: "diffuse") => { has: boolean } };
+  busy: boolean;
+  diffuseBlob: () => Promise<Blob | null | undefined>;
+  applyAiMaps: (depth: Blob, normal?: Blob) => Promise<void>;
+  onError: (message: string) => void;
+};
+
+export function AiDepthControls({ editor, onRunningChange }: {
+  editor: AiDepthEditor;
+  onRunningChange?: (running: boolean) => void;
+}) {
   const { view } = editor;
   const [running, setRunning] = useState(false);
   const [label, setLabel] = useState("");
@@ -24,15 +34,17 @@ export function AiDepthControls({ editor }: { editor: TextureEditor }) {
   const [options, setOptions] = useState<AiDepthOptions>(defaultAiDepthOptions);
   const [alsoNormal, setAlsoNormal] = useState(true);
   const abort = useRef<AbortController | null>(null);
+  useEffect(() => () => { abort.current?.abort(); abort.current = null; }, []);
   if (!view) return null;
   const hasDiffuse = view.slot("diffuse").has;
   const cached = isAiDepthCached();
   const set = <K extends keyof AiDepthOptions>(key: K, value: AiDepthOptions[K]) => setOptions(o => ({ ...o, [key]: value }));
 
   async function start() {
-    if (!view) return;
+    if (!view || abort.current || editor.busy) return;
     const controller = new AbortController();
     abort.current = controller;
+    onRunningChange?.(true);
     setRunning(true); setDevice(undefined); setLabel(t("assetManager.ai.preparing"));
     try {
       const raw = await editor.diffuseBlob();
@@ -46,12 +58,16 @@ export function AiDepthControls({ editor }: { editor: TextureEditor }) {
       }, controller.signal);
       const depthBlob = await encode(depth);
       const normalBlob = alsoNormal ? await encode(new ImageData(generateNormal(depth.data, depth.width, depth.height), depth.width, depth.height)) : undefined;
+      controller.signal.throwIfAborted();
       await editor.applyAiMaps(depthBlob, normalBlob);
     } catch (error) {
-      if (!(error instanceof AiDepthAborted)) editor.onError(error instanceof Error ? error.message : String(error));
+      if (!controller.signal.aborted && !(error instanceof AiDepthAborted)) editor.onError(error instanceof Error ? error.message : String(error));
     } finally {
-      abort.current = null;
-      setRunning(false); setLabel("");
+      if (abort.current === controller) {
+        abort.current = null;
+        onRunningChange?.(false);
+        setRunning(false); setLabel("");
+      }
     }
   }
 

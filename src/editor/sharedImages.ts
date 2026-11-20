@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from "react";
 import { t } from "../i18n";
 import type { WorldId } from "../game/worlds";
+import { DEFAULT_PICKUP, isItemCategory, type PickupAppearance } from "../game/items";
 import { isImagePurpose, setSharedImages, type DecalSurfaceKind, type ImagePurpose, type SharedImage, type SharedImageType } from "../render/sharedImages";
 import { idb } from "./idb";
 import { applyTransparency, decode, isPng, MAX_PNG_BYTES, type Transparency } from "./imageTools";
 import { sharedConfigured, sharedToken, sharedUpload } from "./sharedAuth";
 import { listSharedObjects, sharedAssetBase } from "./sharedTextures";
+import { derive } from "./textureLibrary";
 
 export interface ImageDraft {
   id: string;
@@ -17,6 +19,8 @@ export interface ImageDraft {
   surface: DecalSurfaceKind;
   transparency: Transparency;
   purpose?: ImagePurpose;
+  pickup?: PickupAppearance;
+  pickupMaps?: { depth?: Blob; normal?: Blob; aiDepth?: boolean };
 }
 
 export const imageAssetId = (world: WorldId, type: SharedImageType, uuid: string) => `${world}_${type}_${uuid}`;
@@ -26,9 +30,17 @@ const isSurface = (value: unknown): value is DecalSurfaceKind =>
 const isTransparencySource = (value: unknown): value is Transparency["source"] =>
   value === "alpha" || value === "colorKey" || value === "none";
 
+function readPickup(value?: Partial<PickupAppearance> | null): PickupAppearance {
+  return {
+    category: isItemCategory(value?.category) ? value.category : DEFAULT_PICKUP.category,
+    height: typeof value?.height === "number" && Number.isFinite(value.height) ? Math.max(0.03, Math.min(2, value.height)) : DEFAULT_PICKUP.height,
+    glow: typeof value?.glow === "number" && Number.isFinite(value.glow) ? Math.max(0, Math.min(2, value.glow)) : DEFAULT_PICKUP.glow,
+  };
+}
+
 // An old draft has no purpose, and an older one may miss a field: normalize both.
 function normalizeDraft(value: Partial<ImageDraft>): ImageDraft {
-  const type: SharedImageType = value.type === "decal" ? "decal" : "portrait";
+  const type: SharedImageType = value.type === "decal" || value.type === "item" ? value.type : "portrait";
   const world: WorldId = value.world === "scifi" ? "scifi" : "fantasy";
   const uuid = typeof value.uuid === "string" && value.uuid ? value.uuid : crypto.randomUUID();
   const transparency = value.transparency;
@@ -45,6 +57,12 @@ function normalizeDraft(value: Partial<ImageDraft>): ImageDraft {
       colorKey: typeof transparency?.colorKey === "string" && /^#[0-9a-f]{6}$/i.test(transparency.colorKey) ? transparency.colorKey : "#ff00ff",
     },
     purpose: type === "portrait" && isImagePurpose(value.purpose) ? value.purpose : undefined,
+    pickup: type === "item" ? readPickup(value.pickup) : undefined,
+    pickupMaps: type === "item" && value.pickupMaps ? {
+      depth: value.pickupMaps.depth instanceof Blob ? value.pickupMaps.depth : undefined,
+      normal: value.pickupMaps.normal instanceof Blob ? value.pickupMaps.normal : undefined,
+      aiDepth: value.pickupMaps.depth instanceof Blob && value.pickupMaps.aiDepth === true,
+    } : undefined,
   };
 }
 
@@ -87,6 +105,7 @@ export async function createImageDraft(world: WorldId, type: SharedImageType, pu
     surface: "wall",
     transparency: { source: "alpha", colorKey: "#ff00ff" },
     purpose: type === "portrait" ? (isImagePurpose(purpose) ? purpose : "portrait") : undefined,
+    pickup: type === "item" ? { ...DEFAULT_PICKUP } : undefined,
   };
   await saveImageDraft(draft);
   return draft;
@@ -134,7 +153,7 @@ export async function discardImageDraft(id: string): Promise<void> {
 }
 
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
-const imageLimit = (type: SharedImageType) => type === "decal" ? 512 : 4096;
+const imageLimit = (type: SharedImageType) => type === "portrait" ? 4096 : 512;
 const revisions = (entries: { name: string }[]) => entries
   .flatMap(({ name }) => /^r[1-9]\d*$/.test(name) ? [Number(name.slice(1))] : [])
   .filter(Number.isSafeInteger).sort((a, b) => b - a);
@@ -146,13 +165,16 @@ async function publishedImage(world: WorldId, type: SharedImageType, uuid: strin
     const response = await fetch(base + "meta.json", init);
     if (response.status === 400 || response.status === 404) continue;
     if (!response.ok) throw new Error(`Asset metadata: HTTP ${response.status}`);
-    const { name, width, height, surface, type: savedType, purpose } = await response.json();
+    const metadata = await response.json().catch(() => null);
+    if (!metadata || typeof metadata !== "object") continue;
+    const { name, width, height, surface, type: savedType, purpose, pickup } = metadata;
     if (savedType !== type || typeof name !== "string" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
       || width < 1 || height < 1 || width > imageLimit(type) || height > imageLimit(type)) continue;
     return {
       id: imageAssetId(world, type, uuid), world, type, name, width, height, url: base + "diffuse.png",
       ...(type === "portrait" && isImagePurpose(purpose) ? { purpose } : {}),
       surface: type === "decal" && isSurface(surface) ? surface : undefined,
+      pickup: type === "item" ? { ...readPickup(pickup), depthUrl: base + "depth.png", normalUrl: base + "normal.png" } : undefined,
     };
   }
 }
@@ -162,7 +184,7 @@ export async function loadSharedImages(world: WorldId, init?: RequestInit) {
   if (!sharedConfigured) return;
   const version = (loads.get(world) ?? 0) + 1;
   loads.set(world, version);
-  const collections = await Promise.all((["portrait", "decal"] as const).map(async (type) => {
+  const collections = await Promise.all((["portrait", "decal", "item"] as const).map(async (type) => {
     const entries = await listSharedObjects(`${world}/${type}`, init);
     return Promise.all(entries.filter(e => uuidPattern.test(e.name)).map(e => publishedImage(world, type, e.name, init)));
   }));
@@ -184,22 +206,38 @@ export async function checkImagePng(file: Blob, name: string, type: SharedImageT
   return image;
 }
 
+export async function resolvePickupMaps(png: Blob, transparency: Transparency, depth?: Blob, normal?: Blob) {
+  const auto = await derive(png, transparency, { depth: !depth, normal: !normal });
+  return { diffuse: auto.diffuse ?? png, depth: depth ?? auto.depth, normal: normal ?? auto.normal };
+}
+
 export async function publishImage(draft: ImageDraft) {
   if (!draft.png) throw new Error(t("assetManager.image.needPng"));
   const name = draft.name.trim();
   if (!name) throw new Error(t("assetManager.image.needName"));
   if (!sharedToken()) throw new Error(t("assetManager.err.signInFirst"));
   const purpose = draft.type === "portrait" ? (isImagePurpose(draft.purpose) ? draft.purpose : "portrait") : undefined;
-  const png = await applyTransparency(draft.png, draft.transparency) ?? draft.png;
-  const { width, height } = await checkImagePng(png, name, draft.type);
+  const { width, height } = await checkImagePng(draft.png, name, draft.type);
+  const maps = draft.type === "item"
+    ? await resolvePickupMaps(draft.png, draft.transparency, draft.pickupMaps?.depth, draft.pickupMaps?.normal)
+    : undefined;
+  if (draft.type === "item" && (!maps?.normal || !maps.depth)) throw new Error(t("assetManager.heightError"));
+  const png = maps ? maps.diffuse : await applyTransparency(draft.png, draft.transparency) ?? draft.png;
   const path = `${draft.world}/${draft.type}/${draft.uuid}`;
   const rev = (revisions(await listSharedObjects(path))[0] ?? 0) + 1;
   const target = `/storage/v1/object/void-textures/${path}/r${rev}/`;
   await sharedUpload(target + "diffuse.png", png, "image/png");
+  if (maps?.normal && maps.depth) {
+    await Promise.all([
+      sharedUpload(target + "normal.png", maps.normal, "image/png"),
+      sharedUpload(target + "depth.png", maps.depth, "image/png"),
+    ]);
+  }
   await sharedUpload(target + "meta.json", JSON.stringify({
     v: 1, type: draft.type, name, width, height, rev,
     ...(purpose ? { purpose } : {}),
     ...(draft.type === "decal" ? { surface: draft.surface } : {}),
+    ...(draft.type === "item" ? { pickup: readPickup(draft.pickup) } : {}),
   }), "application/json");
   await discardImageDraft(draft.id);
   // A failed refresh does not turn a completed publication into a retry.

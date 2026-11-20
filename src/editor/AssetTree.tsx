@@ -7,7 +7,7 @@ import { ITEM_TYPES } from "../game/items";
 import { ACTOR_TYPES } from "../game/actors";
 import { TEXTURE_SETS, textureFolder, textureSetsOfKind } from "../render/textureSets";
 import { fetchDecalManifest } from "../render/decals";
-import { useSharedImages } from "../render/sharedImages";
+import { pickupTexture, useSharedImages } from "../render/sharedImages";
 import { neutralStyle } from "./inspector/parts";
 import { openAssetManager, type Sample } from "./AssetManager";
 import { useTextureVersion } from "./textureLibrary";
@@ -66,7 +66,7 @@ export function AssetTree(p: EditorBarProps) {
         manager:"prop" as const,managerId:`decal:${image.id}`,
       })),
     ]},
-    {id:"item",label:t("assetManager.items"),entries:Object.entries(ITEM_TYPES).filter(([id])=>assetInWorld(id)).map(([id,v])=>({id,label:assetName(v.name),search:v.name,kind:v.category,image:textureFolder("item_"+id).diffuse,active:p.itemChoice===id,pick:()=>choose("item",()=>p.onItemChoice(id)),manager:"item"}))},
+    {id:"item",label:t("assetManager.items"),entries:Object.entries(ITEM_TYPES).filter(([id])=>assetInWorld(id)).map(([id,v])=>({id,label:hasKey("assetTree.name."+v.name)?assetName(v.name):v.name,search:v.name,kind:v.category,image:pickupTexture(id).diffuse,active:p.itemChoice===id,pick:()=>choose("item",()=>p.onItemChoice(id)),manager:"item"}))},
     {id:"robot",label:t("assetManager.npcs"),entries:Object.entries(ACTOR_TYPES).filter(([id])=>assetInWorld(id)).map(([id,v])=>({id,label:assetName(v.name),search:v.name,kind:id,style:{backgroundImage:`url(${import.meta.env.BASE_URL}actors/${v.sheet}/diffuse.png)`,backgroundSize:`${v.cols*100}% ${v.rows*100}%`,backgroundPosition:`0 ${v.rows>1?v.idleRow/(v.rows-1)*100:0}%`},active:p.robotChoice===id,pick:()=>choose("robot",()=>p.onRobotChoice(id)),manager:"actor"}))},
     {id:"light",label:t("assetTree.lights"),entries:(["ceiling","point"] as const).flatMap(place=>[undefined,"flicker","spark","pulse"].map(effect=>({id:`${place}:${effect??""}`,label:`${t(place==="ceiling"?"editorBar.ceilingLamp":"editorBar.pointLight")}${effect?` · ${t(`editorBar.${effect}` as "editorBar.flicker")}`:""}`,kind:t("assetTree.lights"),active:p.lightPlace===place && p.light?.effect===effect,pick:()=>choose("light",()=>{p.onLightPlace(place);p.onAssetEffect("light",effect);})})))},
     {id:"smoke",label:t("editorBar.particles"),entries:(["smoke","fire","mist","groundfog","motes","petals","fireflies"] as const).map(effect=>({id:effect,label:t(`effects.${effect}`),kind:t("editorBar.particles"),active:(p.smoke?.effect??"smoke")===effect,pick:()=>choose("smoke",()=>p.onAssetEffect("smoke",effect))}))},

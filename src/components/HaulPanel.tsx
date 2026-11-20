@@ -1,8 +1,10 @@
 import { ITEM_TYPES } from "../game/items";
+import { pickupTexture, useSharedImages } from "../render/sharedImages";
 
 // The run's haul (see useGameState): what the party has taken so far, how
 // many of each, and what it's all worth at the base.
 export function HaulPanel({ haul, onClose }: { haul: Readonly<Record<string, number>>; onClose: () => void }) {
+  useSharedImages();
   const rows = Object.entries(haul)
     .filter(([, count]) => count > 0)
     .map(([item, count]) => ({ item, count, type: ITEM_TYPES[item] }))
@@ -24,6 +26,7 @@ export function HaulPanel({ haul, onClose }: { haul: Readonly<Record<string, num
           <tbody>
             {rows.map((r) => (
               <tr key={r.item}>
+                <td>{r.type && <img src={pickupTexture(r.item).diffuse} alt="" className="mr-1 h-5 w-5 object-contain [image-rendering:pixelated]"/>}</td>
                 <td className="text-neutral-500 pr-1">{r.type?.category ?? "?"}</td>
                 <td>{r.type?.name ?? r.item}</td>
                 <td className="text-right">{r.count}</td>

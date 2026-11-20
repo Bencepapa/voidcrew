@@ -18,6 +18,8 @@ import { EventFields } from "./inspector/EventFields";
 import { PROP_TYPES } from "../game/props";
 import { ACTOR_TYPES } from "../game/actors";
 import { TEXTURE_SETS } from "../render/textureSets";
+import { pickupTexture } from "../render/sharedImages";
+import { ITEM_TYPES } from "../game/items";
 import { t } from "../i18n";
 
 export type InspectedKind = "prop" | "decal" | "item" | "light" | "actor" | "smoke" | "exit" | "chanceWall" | "door";
@@ -46,7 +48,7 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
  const actor=kind==="actor"&&type?ACTOR_TYPES[type]:undefined;
  const prop=kind==="prop"&&type?PROP_TYPES[type]:undefined;
  const texture=prop && ("texture" in prop?prop.texture:"side" in prop?prop.side:"views" in prop?`${prop.views}_front`:undefined);
- const thumbnail=kind==="decal"&&type?`${import.meta.env.BASE_URL}decals/${type}/diffuse.png`:texture?(TEXTURE_SETS[texture as keyof typeof TEXTURE_SETS]?.diffuse ?? `${import.meta.env.BASE_URL}textures/${texture}/diffuse.png`):undefined;
+ const thumbnail=kind==="item"&&type&&ITEM_TYPES[type]?pickupTexture(type).diffuse:kind==="decal"&&type?`${import.meta.env.BASE_URL}decals/${type}/diffuse.png`:texture?(TEXTURE_SETS[texture as keyof typeof TEXTURE_SETS]?.diffuse ?? `${import.meta.env.BASE_URL}textures/${texture}/diffuse.png`):undefined;
  const kindName=kind?editorToolLabel(kind==="actor"?"robot":kind==="chanceWall"?"wall":kind):"";
  const heading=p.tool==="event"?t(`events.${p.selectedEvent?.kind ?? p.eventKind}`):kind&&selected?(p.inspected?.placing?t("inspector.next",{kind:kindName}):kindName):t("inspector.mapSettings");
  const panel=<aside aria-label={t("editorShell.properties")} style={neutralStyle} className="voidcrew-editor-controls min-w-0 bg-neutral-900 text-[11px] text-neutral-300" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>{if(e.target instanceof HTMLInputElement && e.target.type==="range")e.target.blur();if(e.currentTarget.contains(e.target as Node))e.stopPropagation();}} onChange={e=>{if(e.target instanceof HTMLElement && !isTextEntry(e.target) && !(e.target instanceof HTMLInputElement && ["color","range"].includes(e.target.type)))e.target.blur();}} onClick={e=>{(e.target as HTMLElement).closest("button")?.blur();}} onKeyUp={e=>{if(e.key==="Enter" && e.target instanceof HTMLElement && !isTextEntry(e.target))e.target.blur();}} onWheel={e=>e.stopPropagation()}>
@@ -55,7 +57,7 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
    <span aria-hidden="true" className="text-xl text-neutral-200">{kind&&selected?icons[kind]:"▦"}</span>
    {thumbnail&&<img src={thumbnail} alt="" className="h-10 w-10 shrink-0 object-contain" style={{imageRendering:"pixelated"}}/>}
    {actor&&<span aria-hidden="true" className="h-10 w-10 shrink-0" style={{backgroundImage:`url(${import.meta.env.BASE_URL}actors/${actor.sheet}/diffuse.png)`,backgroundSize:`${actor.cols*100}% ${actor.rows*100}%`,backgroundPosition:`0 ${actor.idleRow/(actor.rows-1)*100}%`,imageRendering:"pixelated"}}/>}
-   <div className="min-w-0"><strong className="block text-neutral-100">{heading}</strong>{type&&<span className="block break-words">{type}</span>}{p.inspected?.cell&&<span className="text-neutral-400">{t("inspector.cell",p.inspected.cell)}</span>}</div>
+   <div className="min-w-0"><strong className="block text-neutral-100">{heading}</strong>{type&&<span className="block break-words">{kind==="item"?ITEM_TYPES[type]?.name ?? type:type}</span>}{p.inspected?.cell&&<span className="text-neutral-400">{t("inspector.cell",p.inspected.cell)}</span>}</div>
   </header>
   <CommitContext.Provider value={commit}><div key={`${p.mapId}:${kind??"map"}`}>{p.tool==="event"?<EventFields {...p} onEventChange={event=>p.onEventChange(event,merge())}/>:<Fields {...props}/>}</div></CommitContext.Provider>
  </aside>;
