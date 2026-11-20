@@ -107,7 +107,7 @@ export function parseTwee(source: string, id: string, knownShops?: ReadonlySet<s
   }
   finish();
 
-  const entries = order.filter(n => passages[n].tags.includes("start") || n === "Start");
+  const entries = order.filter(n => passages[n].tags.includes("start") || /^start(\s|$)/i.test(n));
   const dialogue: Dialogue = { id, title: title || id, entries, passages };
   problems.push(...checkDialogue(dialogue, knownShops));
   return { dialogue, problems };
@@ -117,7 +117,7 @@ export function parseTwee(source: string, id: string, knownShops?: ReadonlySet<s
 export function checkDialogue(d: Dialogue, knownShops?: ReadonlySet<string>): DialogueProblem[] {
   const problems: DialogueProblem[] = [];
   const list = Object.values(d.passages);
-  if (!d.entries.length) problems.push({ severity: "error", message: "No entry passage (tag a passage `start` or name it Start)" });
+  if (!d.entries.length) problems.push({ severity: "error", message: "No entry passage (name a passage `Start` or `Start <name>`, or tag it `start`)" });
   for (const p of list) {
     for (const c of p.choices) {
       if (!(c.to in d.passages)) problems.push({ severity: "error", passage: p.name, message: `Broken link: "${c.label}" points to the missing passage "${c.to}"` });

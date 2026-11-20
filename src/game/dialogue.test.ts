@@ -9,27 +9,26 @@ const sample = (name: string) => readFileSync(`concept/dialogue/samples/${name}`
 {
   const { dialogue: d, problems } = parseTwee(sample("void-fantasy.twee"), "void-fantasy");
   assert.equal(d.title, "Void Fantasy");
-  assert.deepEqual(d.entries, ["Wizard in town", "Smith in town"]);
-  assert.deepEqual(Object.keys(d.passages).sort(), ["Buy/Sell", "Goodbye", "Smith buy", "Smith goodbye", "Smith in town", "Tell me more!", "Untitled Passage", "Wizard in town"]);
-  assert.deepEqual(d.passages["Wizard in town"].choices, [
-    { label: "Tell me more!", to: "Tell me more!" }, { label: "Buy/Sell", to: "Buy/Sell" }, { label: "Goodbye", to: "Goodbye" },
+  assert.deepEqual(d.entries, ["Start Wizard", "Start Smith"]);
+  assert.deepEqual(Object.keys(d.passages).sort(), ["Buy/Sell", "Goodbye Smith", "Goodbye Wizard", "Smith buy", "Start Smith", "Start Wizard", "Tell me more!"]);
+  assert.deepEqual(d.passages["Start Wizard"].choices, [
+    { label: "Tell me more!", to: "Tell me more!" }, { label: "Buy/Sell", to: "Buy/Sell" }, { label: "Goodbye Wizard", to: "Goodbye Wizard" },
   ]);
-  assert.equal(d.passages["Wizard in town"].text, "Welcome to my humble shop traveller!\nDo not fret, look around and buy anything you wish.");
+  assert.equal(d.passages["Start Wizard"].text, "Welcome to my humble shop traveller!\nDo not fret, look around and buy anything you wish.");
   assert.deepEqual(d.passages["Buy/Sell"].commands, [{ kind: "shop", shop: "wizard-shop" }]);
   assert.equal(d.passages["Buy/Sell"].text, "Please make your selection traveller!");
   assert.deepEqual(d.passages["Smith buy"].commands, [{ kind: "shop", shop: "smith-shop" }]);
-  assert.deepEqual(d.passages["Goodbye"].commands, [{ kind: "end" }]);
-  assert.equal(d.passages["Untitled Passage"].text, "");
+  assert.deepEqual(d.passages["Goodbye Wizard"].commands, [{ kind: "end" }]);
   assert.deepEqual(problems, []);
 
-  let s = startDialogue(d, "Wizard in town");
+  let s = startDialogue(d, "Start Wizard");
   assert.equal(s.ended, false);
   s = choose(d, s, 1);
   assert.equal(s.passage, "Buy/Sell");
   assert.equal(s.openedShop, "wizard-shop");
   assert.deepEqual(s.log, ["shop: wizard-shop"]);
   s = choose(d, s, 1);
-  assert.equal(s.passage, "Goodbye");
+  assert.equal(s.passage, "Goodbye Wizard");
   assert.equal(s.ended, true);
   assert.deepEqual(s.log, ["shop: wizard-shop", "end"]);
   assert.equal(choose(d, s, 0), s);
