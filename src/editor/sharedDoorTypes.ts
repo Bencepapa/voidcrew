@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { DOOR_MOTIONS, isDoorTypeId, type DoorType } from "../game/doorTypes";
+import { bundledDefinitions } from "../game/sharedBuiltins";
+import { definitionIdOk } from "../game/sharedContent";
 import { assetInWorld, type WorldId } from "../game/worlds";
 import { TEXTURE_SETS } from "../render/textureSets";
 import { loadHeightGrid } from "../render/reliefMesh";
@@ -103,15 +105,32 @@ function install(world: WorldId, next: Map<string, DoorType>) {
   for (const listener of changeListeners) listener(changed);
 }
 
+const usableDoor = (raw: unknown) => {
+  const definition = readDoorType(raw);
+  return definition?.name.trim() ? definition : undefined;
+};
+
+// The door types `npm run pull:shared` put into the release; the store's newer ones replace them by id.
+function bundledDoors(world: WorldId) {
+  return new Map(Object.entries(bundledDefinitions.door).flatMap(([id, { definition }]) => {
+    const door = definitionIdOk(world, "door", id) ? usableDoor(definition) : undefined;
+    return door ? [[id, door] as const] : [];
+  }));
+}
+
+export function installBundledDoors() {
+  for (const world of ["scifi", "fantasy"] as const) {
+    const rows = bundledDoors(world);
+    if (rows.size) install(world, rows);
+  }
+}
+
 export async function loadSharedDoors(world: WorldId, init?: RequestInit) {
   if (!sharedConfigured) return;
   const version = (loads.get(world) ?? 0) + 1;
   loads.set(world, version);
-  const next = await loadDefinitions(world, "door", raw => {
-    const definition = readDoorType(raw);
-    return definition?.name.trim() ? definition : undefined;
-  }, init);
-  if (!init?.signal?.aborted && loads.get(world) === version) install(world, next);
+  const next = await loadDefinitions(world, "door", usableDoor, init);
+  if (!init?.signal?.aborted && loads.get(world) === version) install(world, new Map([...bundledDoors(world), ...next]));
 }
 
 export async function publishDoor(draft: DoorDraft) {

@@ -1,24 +1,26 @@
 // The runtime registry of dialogue libraries. Sources, later overriding earlier ones with the same id:
 // (a) the .twee files bundled in src/dialogues (the id is the file name without its extension),
-// (b) the local drafts of the Dialogues asset category (IndexedDB, see editor/dialogueDrafts.ts), so edits show without a rebuild.
+// (b) the libraries the shared store has (published from the Dialogues panel),
+// (c) the local drafts of the Dialogues asset category (IndexedDB, see editor/dialogueDrafts.ts), so edits show without a rebuild.
 // Parsed once, cached; rebuilt only when the drafts change.
 import { useSyncExternalStore } from "react";
 import { getDialogueDrafts, subscribeDialogueDrafts } from "../editor/dialogueDrafts";
 import type { Dialogue } from "./dialogue";
 import { buildDialogueCatalogChecked, bundledDialogueId, type CatalogEntry, type DialogueSource } from "./dialogueCatalogCore";
-import { getShopIds } from "./shopCatalog";
+import { getShopIds, subscribeShops } from "./shopCatalog";
 
 const RAW = import.meta.glob<string>("../dialogues/*.twee", { query: "?raw", import: "default", eager: true });
 const bundled: DialogueSource[] = Object.entries(RAW).map(([path, twee]) => ({ id: bundledDialogueId(path), twee }));
 
 let drafts = getDialogueDrafts();
+let shared: readonly DialogueSource[] = [];
 let catalog = new Map<string, CatalogEntry>();
 let libraries: readonly Dialogue[] = [];
 let built = false;
 const listeners = new Set<() => void>();
 
 function rebuild() {
-  catalog = buildDialogueCatalogChecked(getShopIds(), bundled, drafts.map(d => ({ id: d.id, twee: d.twee })));
+  catalog = buildDialogueCatalogChecked(getShopIds(), bundled, shared, drafts.map(d => ({ id: d.id, twee: d.twee })));
   libraries = [...catalog.values()].map(e => e.dialogue);
   built = true;
 }
@@ -30,6 +32,15 @@ subscribeDialogueDrafts(() => {
   rebuild();
   for (const l of listeners) l();
 });
+
+const changed = () => { rebuild(); for (const l of listeners) l(); };
+/** The libraries the shared store has (loaded in the background by editor/sharedCommon.ts); between the bundled files and the local drafts. */
+export function setSharedDialogues(next: readonly DialogueSource[]) {
+  shared = next;
+  changed();
+}
+// a shared shop can make an `@shop` id known
+subscribeShops(() => { if (built) changed(); });
 
 export function getDialogue(libraryId: string): Dialogue | undefined {
   ensure();

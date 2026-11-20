@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { t } from "../i18n";
 import { choose, parseTwee, startDialogue, type DialogueState } from "../game/dialogue";
 import { getShopIds } from "../game/shopCatalog";
+import { sharedConfigured, sharedToken } from "./sharedAuth";
+import { publishDialogue } from "./sharedCommon";
 import { dialogueSlug, deleteDialogueDraft, saveDialogueDraft, useDialogueDrafts } from "./dialogueDrafts";
 
 const button = "rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1 text-left text-neutral-200 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40";
@@ -77,6 +79,17 @@ export function DialoguesPanel({ onError, onNotice }: { onError: (text: string) 
     try { await deleteDialogueDraft(draft.id); onNotice(""); } catch (error) { onError(error instanceof Error ? error.message : String(error)); }
   }
 
+  async function publish() {
+    if (!draft) return;
+    if (!sharedConfigured) { onError(t("assetManager.sharedNotConfigured")); return; }
+    if (!sharedToken()) { onError(t("assetManager.err.signInFirst")); return; }
+    try {
+      const rev = await publishDialogue(draft.id, draft.name, draft.twee);
+      onError("");
+      onNotice(t("dialogue.published", { id: draft.id, rev }));
+    } catch (error) { onError(error instanceof Error ? error.message : String(error)); }
+  }
+
   const selectedPassage = dialogue && passage ? dialogue.passages[passage] : undefined;
   const commandText = (c: string) => {
     if (c.startsWith("shop: ")) return `shop: ${c.slice(6)} (${t("dialogue.wouldShop", { shop: c.slice(6) })})`;
@@ -144,7 +157,11 @@ export function DialoguesPanel({ onError, onNotice }: { onError: (text: string) 
           <span className="text-neutral-400">{t("dialogue.entries")}</span>
           <span>{dialogue.entries.length ? dialogue.entries.join(", ") : t("dialogue.noEntries")}</span>
         </div>
-        <button type="button" className={button + " self-start"} onClick={() => void remove()}>{t("dialogue.delete")}</button>
+        <div className="flex gap-2">
+          <button type="button" className={button} title={t("dialogue.publishHint")} disabled={!sharedConfigured}
+            onClick={() => void publish()}>{t("dialogue.publish")}</button>
+          <button type="button" className={button} onClick={() => void remove()}>{t("dialogue.delete")}</button>
+        </div>
         <details open className="rounded border border-neutral-800 p-2">
           <summary className="cursor-pointer font-semibold">{t("dialogue.problems")} ({parsed.problems.length})</summary>
           {parsed.problems.length ? <ul className="mt-1 flex flex-col gap-1 text-xs">

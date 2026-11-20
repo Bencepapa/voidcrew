@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import sharp from "sharp";
 import { generateMaps } from "../src/render/depthNormal";
+import { actorFiles, bundledActorFolder, COMMON_FOLDER, commonFolder, commonIdOk, readCommonDefinition, revisionNumbers, type CommonKind, type DefinitionKind } from "../src/game/sharedContent";
 
 const [output] = process.argv.slice(2);
 const root = resolve(output ?? ".");
@@ -170,10 +171,99 @@ async function pullImages(world: string, type: "portrait" | "decal") {
   }
 }
 
+// The latest revision folder of `path` whose meta.json is of the wanted type (half-published folders are skipped).
+async function latestMeta(path: string, type: string) {
+  for (const rev of revisionNumbers(await list(path))) {
+    const folder = `${path}/r${rev}/`;
+    const response = await asset(folder + "meta.json");
+    if (response.status === 400 || response.status === 404) continue;
+    if (!response.ok) throw new Error(`Could not read ${folder} metadata (HTTP ${response.status}).`);
+    const meta = await response.json().catch(() => null);
+    if (meta?.type === type) return { rev, folder, meta };
+  }
+}
+
+// Props, door types and NPCs: the definition goes into the catalog (re-checked when the game installs it);
+// an NPC's colour map (png or webp) and normal map go to public/shared-actors/<id>/.
+async function pullDefinitions(world: string, kind: DefinitionKind) {
+  const bundled = (catalog.definitions ??= { prop: {}, door: {}, actor: {} })[kind] ??= {};
+  for (const { name: uuidPart } of await list(`${world}/${kind}`)) {
+    if (!uuid.test(uuidPart)) continue;
+    const id = `${world}_${kind}_${uuidPart}`;
+    const found = await latestMeta(`${world}/${kind}/${uuidPart}`, kind);
+    if (!found || !found.meta.definition || typeof found.meta.definition !== "object") continue;
+    if (Object.hasOwn(bundled, id)) {
+      if (bundled[id].rev !== found.rev) console.warn(`Kept existing ${kind} ${id}; shared revision: ${found.rev}.`);
+      continue;
+    }
+    const definition = found.meta.definition;
+    if (kind === "actor") {
+      const target = join(root, "public", bundledActorFolder(id));
+      if (existsSync(target)) { console.warn(`Kept existing NPC files ${id}.`); continue; }
+      if (typeof definition.name !== "string" || !Number.isSafeInteger(definition.width) || !Number.isSafeInteger(definition.height) ||
+          (definition.diffuseFile !== undefined && definition.diffuseFile !== "diffuse.png" && definition.diffuseFile !== "diffuse.webp")) {
+        console.warn(`Skipped NPC ${id}: invalid definition.`);
+        continue;
+      }
+      const files: Record<string, Buffer> = {};
+      for (const name of actorFiles(definition)) {
+        files[name] = await file(found.folder + name);
+        const info = await sharp(files[name]).metadata();
+        const format = name.endsWith(".webp") ? "webp" : "png";
+        if (info.format !== format || (name.startsWith("diffuse") && (info.width !== definition.width || info.height !== definition.height))) {
+          throw new Error(`Invalid ${format}: ${found.folder}${name}`);
+        }
+      }
+      await mkdir(dirname(target), { recursive: true });
+      const staging = await mkdtemp(join(dirname(target), ".pull-shared-"));
+      for (const [name, bytes] of Object.entries(files)) await writeFile(join(staging, name), bytes);
+      await rename(staging, target);
+    } else {
+      // textures a prop or door uses that are not bundled (they come with their own pull) are worth a warning
+      const used = kind === "prop" ? [definition.texture] : [definition.leaf, definition.frame];
+      for (const texture of used) {
+        if (typeof texture === "string" && texture.includes("_shared_") && !Object.hasOwn(catalog.textures, texture) && !existsSync(join(root, "public/textures", texture))) {
+          console.warn(`${kind} ${id} uses texture ${texture}, which is not bundled (is it published?).`);
+        }
+      }
+    }
+    bundled[id] = { rev: found.rev, definition };
+    await saveCatalog();
+    console.log(`Bundled ${kind} ${id} (r${found.rev}).`);
+  }
+}
+
+// Dialogue libraries (src/dialogues/<id>.twee) and shops (src/shops/<id>.json) are world-independent.
+// A file this script wrote earlier is updated to a newer revision; a hand-made file with the same id is kept.
+async function pullCommon(kind: CommonKind) {
+  const tracked = (catalog[kind === "dialogue" ? "dialogues" : "shops"] ??= {});
+  for (const { name: id } of await list(`${COMMON_FOLDER}/${kind}`)) {
+    if (!commonIdOk(id)) continue;
+    const found = await latestMeta(commonFolder(kind, id), kind);
+    const definition = found && readCommonDefinition(kind, found.meta, id);
+    if (!found || !definition) continue;
+    const target = join(root, kind === "dialogue" ? "src/dialogues" : "src/shops", id + (kind === "dialogue" ? ".twee" : ".json"));
+    const mine = Object.hasOwn(tracked, id);
+    if (existsSync(target) && !(mine && tracked[id] < found.rev)) {
+      if (tracked[id] !== found.rev) console.warn(`Kept existing ${kind} ${id}; shared revision: ${found.rev}.`);
+      continue;
+    }
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, "twee" in definition ? definition.twee.replace(/\r\n?/g, "\n").replace(/\n*$/, "\n") : json(definition));
+    Object.defineProperty(tracked, id, { value: found.rev, enumerable: true, writable: true, configurable: true });
+    await saveCatalog();
+    console.log(`Bundled ${kind} ${id} (r${found.rev}).`);
+  }
+}
+
+await pullCommon("dialogue");
+await pullCommon("shop");
+
 for (const world of ["fantasy", "scifi"]) {
   for (const { name } of await list(world)) await pullTexture(world, name);
   await pullImages(world, "portrait");
   await pullImages(world, "decal");
+  for (const kind of ["prop", "door", "actor"] as const) await pullDefinitions(world, kind);
   const heads = await pages<{ id: string; revision: number }>(offset =>
     request(`/rest/v1/void_map_heads?select=id,revision&world=eq.${world}&order=id&limit=100&offset=${offset}`));
   const versions = catalog.maps[world] ??= {};

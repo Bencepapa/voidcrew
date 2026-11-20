@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { isSharedPropId, PROP_TYPES, type SingleTextureProp } from "../game/props";
+import { bundledDefinitions } from "../game/sharedBuiltins";
+import { definitionIdOk } from "../game/sharedContent";
 import { assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { t } from "../i18n";
 import { isTextureSetId, TEXTURE_SETS, textureFolder } from "../render/textureSets";
@@ -154,16 +156,34 @@ function install(world: WorldId, next: Map<string, SingleTextureProp>) {
   for (const listener of registryListeners) listener(changed);
 }
 
+const usable = (raw: unknown) => {
+  const definition = readDefinition(raw as Partial<SingleTextureProp>);
+  return definition?.name?.trim() && definition.texture ? definition : undefined;
+};
+
+// The props `npm run pull:shared` put into the release; the store's newer ones replace them by id.
+function bundledProps(world: WorldId) {
+  const rows = Object.entries(bundledDefinitions.prop).flatMap(([id, { definition }]) => {
+    const prop = definitionIdOk(world, "prop", id) ? usable(definition) : undefined;
+    return prop ? [[id, prop] as const] : [];
+  });
+  return new Map(rows);
+}
+
+export function installBundledProps() {
+  for (const world of ["scifi", "fantasy"] as const) {
+    const rows = bundledProps(world);
+    if (rows.size) install(world, rows);
+  }
+}
+
 export async function loadSharedProps(world: WorldId, init?: RequestInit) {
   if (!sharedConfigured) return;
   const version = (loads.get(world) ?? 0) + 1;
   loads.set(world, version);
-  const definitions = await loadDefinitions(world, "prop", raw => {
-    const definition = readDefinition(raw as Partial<SingleTextureProp>);
-    return definition?.name?.trim() && definition.texture ? definition : undefined;
-  }, init);
+  const definitions = await loadDefinitions(world, "prop", usable, init);
   if (init?.signal?.aborted || loads.get(world) !== version) return;
-  install(world, definitions);
+  install(world, new Map([...bundledProps(world), ...definitions]));
 }
 
 export async function publishProp(draft: PropDraft) {

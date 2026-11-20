@@ -3,6 +3,8 @@ import { ACTOR_TYPES, type ActorType } from "../game/actors";
 import { ACTOR_ROW_ROLES, defaultActorView, sheetLayout, type ActorRowRole, type ActorView } from "../game/actorSheets";
 import type { WorldId } from "../game/worlds";
 import { setSharedActorOffsets, type ActorOffsets } from "../render/actorOffsets";
+import { bundledDefinitions } from "../game/sharedBuiltins";
+import { bundledActorFolder } from "../game/sharedContent";
 import { t } from "../i18n";
 import { idb } from "./idb";
 import { applyTransparency, decode, encode, isPng, MAX_PNG_BYTES, type Transparency } from "./imageTools";
@@ -214,6 +216,18 @@ function install(entries: Map<string, PublishedActor>) {
   version++;
   for (const listener of listeners) listener();
   for (const listener of changeListeners) listener(changed, revised);
+}
+
+// The NPCs `npm run pull:shared` put into the release (files under public/shared-actors/<id>/).
+// A network answer with another base (a newer revision) replaces them.
+export function installBundledActors() {
+  const entries = new Map<string, PublishedActor>();
+  for (const [id, { definition: raw }] of Object.entries(bundledDefinitions.actor)) {
+    const definition = readDefinition(raw);
+    if (!definition || !/^(scifi|fantasy)_actor_[0-9a-f-]{36}$/.test(id)) continue;
+    entries.set(id, { definition, base: import.meta.env.BASE_URL + bundledActorFolder(id) });
+  }
+  if (entries.size) install(entries);
 }
 
 export async function loadSharedActors(world: WorldId, init?: RequestInit) {

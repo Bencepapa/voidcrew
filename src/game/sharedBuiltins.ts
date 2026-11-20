@@ -15,4 +15,8 @@ interface BundledTexture {
 export const bundledTextures = catalog.textures as Record<string, BundledTexture>;
 
 export const bundledMaps: Record<string, Record<string, number>> = catalog.maps;
+/** Published props, door types and NPCs bundled by `npm run pull:shared`, by asset id (re-checked when installed). */
+export interface BundledDefinition { rev: number; definition: unknown }
+export const bundledDefinitions = (catalog as { definitions?: unknown }).definitions as
+  Record<"prop" | "door" | "actor", Record<string, BundledDefinition>> ?? { prop: {}, door: {}, actor: {} };
 export const bundledImages = (catalog.images ?? {}) as Record<string, Omit<SharedImage, "id" | "url"> & { rev: number }>;

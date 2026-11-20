@@ -1,5 +1,6 @@
-{
+﻿{
   "textures": {},
   "maps": {},
-  "images": {}
+  "images": {},
+  "definitions": { "prop": {}, "door": {}, "actor": {} }
 }

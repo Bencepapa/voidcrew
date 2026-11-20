@@ -12,6 +12,7 @@ import { loadSharedImages } from "./sharedImages";
 import { loadSharedProps } from "./sharedProps";
 import { loadSharedDoors } from "./sharedDoorTypes";
 import { loadSharedActors } from "./sharedActors";
+import { loadSharedDialogues, loadSharedShops } from "./sharedCommon";
 
 const IDLE_DELAY_MS = 1200;
 const TIMEOUT_MS = 10_000;
@@ -104,6 +105,8 @@ async function execute(forGeneration: number) {
       loadSharedProps(activeWorld, { signal: current.signal }),
       loadSharedDoors(activeWorld, { signal: current.signal }),
       loadSharedActors(activeWorld, { signal: current.signal }),
+      loadSharedShops({ signal: current.signal }),
+      loadSharedDialogues({ signal: current.signal }),
     ]);
     loaded = true;
     retried = false;

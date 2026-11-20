@@ -5,7 +5,10 @@ import App from "./App";
 import { START_MAP } from "./game/map";
 import { WORLDS } from "./game/worlds";
 import { ActorEditor } from "./editor/ActorEditor";
+import { installBundledDefinitions } from "./editor/bundledDefinitions";
 import "./index.css";
+
+installBundledDefinitions();
 
 document.documentElement.classList.toggle("theme-fantasy", START_MAP.world === "fantasy");
 document.title = WORLDS[START_MAP.world].name;
