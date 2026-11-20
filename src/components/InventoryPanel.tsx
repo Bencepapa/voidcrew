@@ -10,7 +10,7 @@ import { Avatar } from "./PartyPanel";
 import { cancelDrag, clearSelection, useSelectedSlot, useSlotNotice } from "./slotDrag";
 
 // the arrow keys move between slots: the nearest one that way
-function focusNeighbor(root: HTMLElement, key: string) {
+export function focusNeighbor(root: HTMLElement, key: string) {
   const slots = [...root.querySelectorAll<HTMLElement>("[data-slot]")];
   const here = document.activeElement instanceof HTMLElement && slots.includes(document.activeElement) ? document.activeElement : null;
   if (!here) {

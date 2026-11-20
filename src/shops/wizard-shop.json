@@ -1,0 +1,13 @@
+{
+  "id": "wizard-shop",
+  "name": "Wizard's wares",
+  "buyRate": 1.25,
+  "sellRate": 0.6,
+  "stock": [
+    { "item": "potion_red", "qty": -1 },
+    { "item": "potion_blue", "qty": 6 },
+    { "item": "scroll", "qty": 3 },
+    { "item": "weapon:arcane_staff", "qty": 1 },
+    { "item": "weapon:healing_staff", "price": 260, "qty": 1 }
+  ]
+}

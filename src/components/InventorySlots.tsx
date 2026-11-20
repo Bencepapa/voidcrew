@@ -16,9 +16,17 @@ import { activateSlot, beginDrag, useDrag, useSlotStatus, type MoveFn } from "./
 
 // the backpack's and the hands' own move: see moveItem
 export const moveInInventory: MoveFn = (from, to) => {
+  if (mover) return mover(from, to);
   const result = moveItem(from, to);
   return result.ok ? null : result.reason;
 };
+
+// A window that takes over the moves while it is open (the shop: the party's
+// dock hand boxes, which are always there, must be able to sell to it).
+let mover: MoveFn | null = null;
+export function setMover(fn: MoveFn | null) {
+  mover = fn;
+}
 
 const SIZES = {
   // the crew panel's hand boxes
@@ -82,17 +90,26 @@ export function SlotBox({
   label,
   title,
   tabIndex,
+  tip,
+  badge,
+  onQuick,
 }: {
   slotKey: string;
   slot: Slot | null;
   ghost?: Slot | null;
   onMove: MoveFn;
   size?: SlotSize;
-  // a letter in the corner (L, R)
+  // a letter in the corner (L, R), or - on an item - a short text (a shop's price)
   label?: string;
   // what it is, when it holds nothing
   title: string;
   tabIndex?: number;
+  // more for the tooltip (a shop's price)
+  tip?: string;
+  // the corner's count, instead of the quantity (a shop's "unlimited")
+  badge?: string;
+  // shift+click, double click and shift+Enter: the quick move (a shop's buy and sell)
+  onQuick?: (slotKey: string) => void;
 }) {
   const status = useSlotStatus(slotKey);
   const shown = slot ?? ghost;
@@ -101,6 +118,7 @@ export function SlotBox({
         shown.qty > 1 ? t("inventory.itemTip", { name: itemName(shown.item), qty: shown.qty }) : itemName(shown.item),
         itemRules.twoHanded(shown.item) ? t("inventory.twoHanded") : "",
         itemValue(shown.item) ? t("inventory.valueTip", { n: itemValue(shown.item) }) : "",
+        tip ?? "",
       ]
         .filter(Boolean)
         .join(", ")
@@ -113,7 +131,14 @@ export function SlotBox({
       aria-label={shown ? `${title}: ${text}` : text}
       tabIndex={tabIndex}
       onPointerDown={shown ? (e) => beginDrag(e, slotKey, shown, onMove) : undefined}
-      onClick={() => activateSlot(slotKey, !!shown, onMove)}
+      onClick={(e) => {
+        if (onQuick && shown && e.shiftKey) {
+          onQuick(slotKey);
+          return;
+        }
+        activateSlot(slotKey, !!shown, onMove);
+      }}
+      onDoubleClick={onQuick && shown ? () => onQuick(slotKey) : undefined}
       className={`relative shrink-0 select-none rounded-sm border bg-black/50 outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${SIZES[size]} ${ring[status]} ${shown ? "touch-none cursor-grab" : ""}`}
     >
       {shown && (
@@ -121,12 +146,12 @@ export function SlotBox({
           <ItemIcon item={shown.item} uid={shown.uid} />
         </span>
       )}
-      {slot && slot.qty > 1 && <span className="absolute bottom-0 right-0.5 text-[9px] font-bold leading-none text-neutral-100 [text-shadow:0_0_2px_#000]">{slot.qty}</span>}
+      {slot && (badge || slot.qty > 1) && <span className="absolute bottom-0 right-0.5 text-[9px] font-bold leading-none text-neutral-100 [text-shadow:0_0_2px_#000]">{badge ?? slot.qty}</span>}
       {shown && itemRules.twoHanded(shown.item) && (
         <span className="absolute left-0.5 top-0 text-[8px] leading-none text-amber-300/80">{t("inventory.twoHandedShort")}</span>
       )}
       {label && !shown && <span className="absolute inset-0 flex items-center justify-center text-neutral-600">{label}</span>}
-      {label && shown && <span className="absolute bottom-0 left-0.5 text-[8px] leading-none text-neutral-400">{label}</span>}
+      {label && shown && <span className="absolute bottom-0 left-0.5 text-[8px] leading-none text-neutral-300 [text-shadow:0_0_2px_#000]">{label}</span>}
     </button>
   );
 }
@@ -139,6 +164,10 @@ export function SlotGrid({
   onMove,
   size = "md",
   title,
+  labelOf,
+  tipOf,
+  badgeOf,
+  onQuick,
 }: {
   slots: readonly (Slot | null)[];
   cols: number;
@@ -146,11 +175,27 @@ export function SlotGrid({
   onMove: MoveFn;
   size?: SlotSize;
   title: (index: number) => string;
+  // per cell, for SlotBox's label, tip and badge (a shop's prices)
+  labelOf?: (index: number, slot: Slot) => string | undefined;
+  tipOf?: (index: number, slot: Slot) => string | undefined;
+  badgeOf?: (index: number, slot: Slot) => string | undefined;
+  onQuick?: (slotKey: string) => void;
 }) {
   return (
     <div className="grid w-fit gap-1" style={{ gridTemplateColumns: `repeat(${cols}, max-content)` }}>
       {slots.map((slot, i) => (
-        <SlotBox key={i} slotKey={keyOf(i)} slot={slot} onMove={onMove} size={size} title={title(i)} />
+        <SlotBox
+          key={i}
+          slotKey={keyOf(i)}
+          slot={slot}
+          onMove={onMove}
+          size={size}
+          title={title(i)}
+          label={slot ? labelOf?.(i, slot) : undefined}
+          tip={slot ? tipOf?.(i, slot) : undefined}
+          badge={slot ? badgeOf?.(i, slot) : undefined}
+          onQuick={onQuick}
+        />
       ))}
     </div>
   );
@@ -158,12 +203,14 @@ export function SlotGrid({
 
 // A crewmate's two hands, left and right: what they hold, to drag to and
 // from. A two-handed item shows in the right box and dimmed in the left.
-export function HandBoxes({ crew, name, onMove = moveInInventory, size = "sm", tabbable = true }: {
+export function HandBoxes({ crew, name, onMove = moveInInventory, size = "sm", tabbable = true, tipOf, onQuick }: {
   crew: string;
   name: string;
   onMove?: MoveFn;
   size?: SlotSize;
   tabbable?: boolean;
+  tipOf?: (slot: Slot) => string | undefined;
+  onQuick?: (slotKey: string) => void;
 }) {
   const inventory = useInventory();
   const view = handView(inventory, crew, itemRules);
@@ -178,6 +225,8 @@ export function HandBoxes({ crew, name, onMove = moveInInventory, size = "sm", t
         label={t("inventory.hand.leftShort")}
         title={t("inventory.hand.left", { name })}
         tabIndex={tabbable ? undefined : -1}
+        tip={tipOf && (view.left ?? (view.leftBlocked ? view.right : null)) ? tipOf((view.left ?? view.right)!) : undefined}
+        onQuick={onQuick}
       />
       <SlotBox
         slotKey={locKey(handLoc(crew, RIGHT))}
@@ -187,6 +236,8 @@ export function HandBoxes({ crew, name, onMove = moveInInventory, size = "sm", t
         label={t("inventory.hand.rightShort")}
         title={t("inventory.hand.right", { name })}
         tabIndex={tabbable ? undefined : -1}
+        tip={view.right ? tipOf?.(view.right) : undefined}
+        onQuick={onQuick}
       />
     </div>
   );

@@ -193,6 +193,13 @@ export function sellItem(item: string, count: number) {
   set({ ...meta, stash, credits: meta.credits + n * (ITEM_TYPES[item]?.value ?? 0) });
 }
 
+// credits as a plain counter (a shop's deals): the new total, or false if it would go below 0
+export function setCredits(credits: number): boolean {
+  if (!Number.isFinite(credits) || credits < 0) return false;
+  if (credits !== meta.credits) set({ ...meta, credits: Math.floor(credits) });
+  return true;
+}
+
 export function buyWeapon(type: string): boolean {
   const price = WEAPON_TYPES[type]?.price;
   if (price === undefined || meta.credits < price || !weaponInWorld(type, activeWorld())) return false;

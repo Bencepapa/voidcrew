@@ -307,6 +307,21 @@ export function moveSlot(inv: Inventory, from: Loc, to: Loc, rules: ItemRules): 
   return { ok: true, inv: cur };
 }
 
+// Takes `qty` (default: all) of what's at a place out of the party's things
+// (a sale). A two-handed item shown in the left hand is taken from the right.
+export function takeSlot(inv: Inventory, from: Loc, rules: ItemRules, qty?: number): { inv: Inventory; slot: Slot } | null {
+  if (!validLoc(inv, from)) return null;
+  let source = from;
+  if (from.kind === "hand" && from.hand === LEFT) {
+    const right = handsOf(inv, from.crew)[1];
+    if (right && rules.twoHanded(right.item) && !handsOf(inv, from.crew)[0]) source = handLoc(from.crew, RIGHT);
+  }
+  const lifted = slotAt(inv, source);
+  if (!lifted) return null;
+  const n = Math.max(1, Math.min(Math.floor(qty ?? lifted.qty), lifted.qty));
+  return { inv: put(inv, source, n >= lifted.qty ? null : { ...lifted, qty: lifted.qty - n }), slot: { ...lifted, qty: n } };
+}
+
 // Puts a stack straight into a hand (a purchase, the starting loadout):
 // whatever the hand held goes into the backpack. Null if there's no room for it.
 export function equipHand(inv: Inventory, crew: string, hand: HandIndex, slot: Slot, rules: ItemRules): Inventory | null {

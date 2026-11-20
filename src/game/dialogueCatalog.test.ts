@@ -1,7 +1,7 @@
 // Run: npx tsx src/game/dialogueCatalog.test.ts
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { buildDialogueCatalog, bundledDialogueId } from "./dialogueCatalogCore";
+import { buildDialogueCatalog, buildDialogueCatalogChecked, bundledDialogueId } from "./dialogueCatalogCore";
 
 assert.equal(bundledDialogueId("../dialogues/void-fantasy.twee"), "void-fantasy");
 assert.equal(bundledDialogueId("x\\y\\a.b.twee"), "a.b");
@@ -14,6 +14,15 @@ const base = buildDialogueCatalog(bundled);
 const fantasy = base.get("void-fantasy")!;
 assert.deepEqual(fantasy.dialogue.entries, ["Start Wizard", "Start Smith"]);
 assert.deepEqual(fantasy.problems.filter(p => p.severity === "error"), []);
+
+// @shop ids are checked against the bundled shops (src/shops/*.json): the sample's two are known
+const shopIds = new Set(readdirSync("src/shops").filter(f => f.endsWith(".json")).map(f => f.replace(/\.json$/, "")));
+const checked = buildDialogueCatalogChecked(shopIds, bundled);
+assert.deepEqual(checked.get("void-fantasy")!.problems, fantasy.problems);
+assert.deepEqual(checked.get("void-fantasy")!.problems.filter(p => p.message.startsWith("Unknown shop")), []);
+// ...and an id that is not there warns
+const strict = buildDialogueCatalogChecked(new Set(["wizard-shop"]), bundled);
+assert.deepEqual(strict.get("void-fantasy")!.problems.filter(p => p.message.startsWith("Unknown shop")).map(p => p.passage), ["Smith buy"]);
 
 // a later layer (a local draft) overrides the bundled one with the same id, and adds its own
 const draft = ":: StoryTitle\nMine\n\n:: Start\nHello\n[[Bye->End]]\n\n:: End\n@end\nBye\n";

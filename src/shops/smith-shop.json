@@ -1,0 +1,14 @@
+{
+  "id": "smith-shop",
+  "name": "Smith's forge",
+  "buyRate": 1.2,
+  "sellRate": 0.5,
+  "stock": [
+    { "item": "arrows", "qty": -1 },
+    { "item": "dagger", "qty": 4 },
+    { "item": "sword", "qty": 2 },
+    { "item": "weapon:spear", "qty": 2 },
+    { "item": "weapon:crossbow", "qty": 1 },
+    { "item": "weapon:longbow", "qty": 1 }
+  ]
+}

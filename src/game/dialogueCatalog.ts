@@ -5,7 +5,8 @@
 import { useSyncExternalStore } from "react";
 import { getDialogueDrafts, subscribeDialogueDrafts } from "../editor/dialogueDrafts";
 import type { Dialogue } from "./dialogue";
-import { buildDialogueCatalog, bundledDialogueId, type CatalogEntry, type DialogueSource } from "./dialogueCatalogCore";
+import { buildDialogueCatalogChecked, bundledDialogueId, type CatalogEntry, type DialogueSource } from "./dialogueCatalogCore";
+import { getShopIds } from "./shopCatalog";
 
 const RAW = import.meta.glob<string>("../dialogues/*.twee", { query: "?raw", import: "default", eager: true });
 const bundled: DialogueSource[] = Object.entries(RAW).map(([path, twee]) => ({ id: bundledDialogueId(path), twee }));
@@ -17,7 +18,7 @@ let built = false;
 const listeners = new Set<() => void>();
 
 function rebuild() {
-  catalog = buildDialogueCatalog(bundled, drafts.map(d => ({ id: d.id, twee: d.twee })));
+  catalog = buildDialogueCatalogChecked(getShopIds(), bundled, drafts.map(d => ({ id: d.id, twee: d.twee })));
   libraries = [...catalog.values()].map(e => e.dialogue);
   built = true;
 }

@@ -2424,7 +2424,7 @@ export default function App() {
       )}
       {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
       {activeInteraction && !editMode && (activeInteraction.kind === "dialogue"
-        ? <DialoguePopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>
+        ? <DialoguePopup event={activeInteraction} close={closeInteraction} partyDock={partyDock} crew={crew}/>
         : <InteractionPopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>)}
       {editMode && <PropEditor />}
       {editMode && (

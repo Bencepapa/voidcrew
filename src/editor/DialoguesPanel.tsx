@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { t } from "../i18n";
 import { choose, parseTwee, startDialogue, type DialogueState } from "../game/dialogue";
+import { getShopIds } from "../game/shopCatalog";
 import { dialogueSlug, deleteDialogueDraft, saveDialogueDraft, useDialogueDrafts } from "./dialogueDrafts";
 
 const button = "rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1 text-left text-neutral-200 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40";
@@ -20,7 +21,7 @@ export function DialoguesPanel({ onError, onNotice }: { onError: (text: string) 
   const term = query.trim().toLocaleLowerCase();
   const shown = drafts.filter(d => !term || `${d.name} ${d.id}`.toLocaleLowerCase().includes(term));
   const draft = shown.find(d => d.id === selected) ?? shown[0];
-  const parsed = useMemo(() => draft ? parseTwee(draft.twee, draft.id) : undefined, [draft]);
+  const parsed = useMemo(() => draft ? parseTwee(draft.twee, draft.id, getShopIds()) : undefined, [draft]);
   const dialogue = parsed?.dialogue;
 
   // a new library (or a replaced one) restarts the test

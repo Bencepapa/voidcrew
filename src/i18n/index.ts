@@ -29,6 +29,8 @@ import { editorBarEn } from "./en/editorBar";
 import { minimapEn } from "./en/minimap";
 import { inventoryEn } from "./en/inventory";
 import { inventoryHu } from "./hu/inventory";
+import { shopEn } from "./en/shop";
+import { shopHu } from "./hu/shop";
 import { appHu } from "./hu/app";
 import { assetManagerHu } from "./hu/assetManager";
 import { imageAssetsHu } from "./hu/imageAssets";
@@ -41,8 +43,8 @@ import { minimapHu } from "./hu/minimap";
 import { mapDialogEn } from "./en/mapDialog";
 import { mapDialogHu } from "./hu/mapDialog";
 
-const en = { ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...dialogueEn, ...minimapEn, ...inventoryEn };
-const hu: Partial<Record<Key, string>> = { ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...dialogueHu, ...minimapHu, ...inventoryHu };
+const en = { ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...dialogueEn, ...minimapEn, ...inventoryEn, ...shopEn };
+const hu: Partial<Record<Key, string>> = { ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...dialogueHu, ...minimapHu, ...inventoryHu, ...shopHu };
 
 export type Key = keyof typeof en;
 // whether a key has a string (for optional, data-driven names)

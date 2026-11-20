@@ -3,17 +3,20 @@ import { ACTOR_TYPES } from "../game/actors";
 import { choose, startDialogue, type DialogueState } from "../game/dialogue";
 import { getDialogue, useDialogueLibraries } from "../game/dialogueCatalog";
 import type { Interaction } from "../game/interactions";
+import type { Crewmate } from "../game/types";
 import { t } from "../i18n";
 import { useSharedImages } from "../render/sharedImages";
+import { ShopPanel } from "./ShopPanel";
 
 type DialogueEvent = Extract<Interaction, { kind: "dialogue" }>;
 
 // The talk with an NPC (see dialogue.ts): its portrait on the left, what it says, the choices as buttons
 // (mouse, 1-9, Up/Down + Enter). Modal - the world stands still behind it; Esc closes.
-export function DialoguePopup({ event, close, partyDock }: {
+export function DialoguePopup({ event, close, partyDock, crew }: {
   event: DialogueEvent;
   close: () => void;
   partyDock: HTMLElement | null;
+  crew: Crewmate[];
 }) {
   const images = useSharedImages();
   const libraries = useDialogueLibraries(); // (only to be shown again when a draft changes)
@@ -23,6 +26,8 @@ export function DialoguePopup({ event, close, partyDock }: {
     return d && event.entry in d.passages ? startDialogue(d, event.entry) : null;
   });
   const [selected, setSelected] = useState(0);
+  // the shop window over the talk (a passage with @shop opens it; closing it goes on with the choices)
+  const [shopOpen, setShopOpen] = useState(() => state?.openedShop !== undefined);
   const root = useRef<HTMLElement>(null);
   const [bottomInset, setBottomInset] = useState(0);
 
@@ -36,8 +41,10 @@ export function DialoguePopup({ event, close, partyDock }: {
 
   const pick = (index: number) => {
     if (!dialogue || !state || state.ended || index < 0 || index >= choices.length) return;
-    setState(choose(dialogue, state, index));
+    const next = choose(dialogue, state, index);
+    setState(next);
     setSelected(0);
+    if (next !== state && next.openedShop !== undefined) setShopOpen(true);
   };
 
   useLayoutEffect(() => {
@@ -59,11 +66,13 @@ export function DialoguePopup({ event, close, partyDock }: {
   }, []);
 
   // the keys are the popup's while it's open (the game's keys don't act behind it)
-  const latest = useRef({ choices, selected, pick, close });
-  latest.current = { choices, selected, pick, close };
+  const latest = useRef({ choices, selected, pick, close, shopOpen });
+  latest.current = { choices, selected, pick, close, shopOpen };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      const { choices, selected, pick, close } = latest.current;
+      const { choices, selected, pick, close, shopOpen } = latest.current;
+      // (the shop window's keys are its own)
+      if (shopOpen) return;
       const swallow = () => { e.preventDefault(); e.stopImmediatePropagation(); };
       if (e.key === "Escape") { swallow(); if (!e.repeat) close(); }
       else if (e.key === "Enter") {
@@ -82,9 +91,10 @@ export function DialoguePopup({ event, close, partyDock }: {
     return () => window.removeEventListener("keydown", key, true);
   }, []);
 
-  const shop = state?.openedShop !== undefined ? state.openedShop || event.shop || t("dialogue.popup.ownShop") : null;
+  // (the shop a passage asked for: its id, or the NPC's own)
+  const shopId = state?.openedShop ? state.openedShop : event.shop ?? "";
 
-  return <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4"
+  return <><div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4"
     style={bottomInset > 0 ? { paddingBottom: `calc(1rem + ${bottomInset}px)` } : undefined}
     onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
     <section ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label={t("events.dialogue")}
@@ -103,7 +113,6 @@ export function DialoguePopup({ event, close, partyDock }: {
           ? <p className="text-red-300">{error}</p>
           : <>
             {passage!.text && <p className="whitespace-pre-wrap break-words text-neutral-100">{passage!.text}</p>}
-            {shop !== null && <p className="mt-2 text-sm italic text-amber-300">{t("dialogue.popup.shop", { shop })}</p>}
           </>}
         <div className="mt-3 flex flex-col items-stretch gap-1">
           {choices.map((choice, i) => <button key={i} type="button"
@@ -118,5 +127,7 @@ export function DialoguePopup({ event, close, partyDock }: {
         </div>
       </div>
     </section>
-  </div>;
+  </div>
+  {shopOpen && <ShopPanel shopId={shopId} crew={crew} partyDock={partyDock} onClose={() => setShopOpen(false)}/>}
+  </>;
 }
