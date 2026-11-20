@@ -1,4 +1,5 @@
 import { ACTOR_TYPES } from "../../game/actors";
+import { isSharedActorId } from "../../game/actorSheets";
 import { assetInWorld } from "../../game/worlds";
 import { t, type Key } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
@@ -42,7 +43,7 @@ return <>
                 )}
 </Section>
 <Section kind="actor" section="look">
-<KindChoice label={t("editorBar.npc")} value={p.actor.type} options={Object.keys(ACTOR_TYPES).filter(id => assetInWorld(id)).map(value => ({value,label:value}))} onChange={actor => p.onActorChange({actor})}/>
+<KindChoice label={t("editorBar.npc")} value={p.actor.type} options={Object.entries(ACTOR_TYPES).filter(([id]) => assetInWorld(id)).map(([value, type]) => ({value,label:isSharedActorId(value) ? type.name : value}))} onChange={actor => p.onActorChange({actor})}/>
 </Section>
 <Section kind="actor" section="logic">
 {chanceSlider(p.actor.chance, (chance) => p.onActorChange({ chance }))}

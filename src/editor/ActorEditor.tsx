@@ -1,28 +1,9 @@
-import { SheetViewport } from "./SheetViewport";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { t, useLang, type Key } from "../i18n";
+import { t, useLang } from "../i18n";
 import { ACTOR_TYPES } from "../game/actors";
-import { actorOffsets } from "../render/actorOffsets";
-import type { ActorOffsets } from "../render/actorOffsets";
-
-// Actor sprite editor (dev tool, open with ?editor=actors): nudges each
-// sheet frame into place so the figure stands steady - through the walk
-// cycle, and as it turns - and saves the shifts to src/actors/<sheet>.json,
-// which the game applies (see actorOffsets).
-//
-// Left: the whole sheet (click a frame). Middle: the frame, big, over a
-// ghost of another frame, with the feet's baseline and center line; arrow
-// keys move it (Shift: 5 px). Right: a live preview - walking, turning
-// round, or both.
-
-type PreviewMode = "walk" | "turn" | "both" | "fight";
-type Ghost = "none" | "idle" | "prev" | "next";
-
-const ZOOM = 4;
-const PREVIEW_ZOOM = 3;
-const SHEET_ZOOM = 1.5;
-// the 8 views going round: sheet column, and whether it's mirrored
-const TURN = [0, 1, 2, 3, 4, 3, 2, 1].map((col, i) => ({ col, mirror: i > 4 }));
+import { isSharedActorId } from "../game/actorSheets";
+import { actorOffsets, type ActorOffsets } from "../render/actorOffsets";
+import { ActorAlignment } from "./ActorAlignment";
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -33,10 +14,10 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-export function ActorEditor() {
-  const lang = useLang();
-  const names = Object.keys(ACTOR_TYPES);
-  const [name, setName] = useState(() => { const id = new URLSearchParams(location.search).get("actor"); return id && names.includes(id) ? id : names[0]; });
+export function ActorEditor({ initialActor, onBack }: { initialActor?: string; onBack?: () => void } = {}) {
+  useLang();
+  const names = Object.keys(ACTOR_TYPES).filter(id => !isSharedActorId(id));
+  const [name, setName] = useState(() => { const id = initialActor ?? new URLSearchParams(location.search).get("actor"); return id && names.includes(id) ? id : names[0]; });
   const type = ACTOR_TYPES[name];
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const cellW = image ? image.width / type.cols : 1;
@@ -44,18 +25,18 @@ export function ActorEditor() {
   const count = type.cols * type.rows;
 
   const [offsets, setOffsets] = useState<[number, number][]>([]);
-  const [sel, setSel] = useState({ col: 0, row: 0 });
-  const [ghost, setGhost] = useState<Ghost>("idle");
-  const [mode, setMode] = useState<PreviewMode>("walk");
-  const [fps, setFps] = useState(6);
   const [status, setStatus] = useState("");
   // the sheet's normal map strength in the game (1: as made)
   const [normal, setNormal] = useState(1);
 
+  const loadVersion = useRef(0);
+
   // (re)load the sheet and its saved fixes; `bust` re-reads a regenerated one
   const load = useCallback(
     async (bust = false) => {
+      const version = ++loadVersion.current;
       const img = await loadImage(`${import.meta.env.BASE_URL}actors/${type.sheet}/diffuse.png${bust ? `?${Date.now()}` : ""}`);
+      if (version !== loadVersion.current) return;
       setImage(img);
       const saved = actorOffsets(type.sheet);
       setOffsets(Array.from({ length: type.cols * type.rows }, (_, i) => saved?.offsets[i] ?? [0, 0]));
@@ -65,165 +46,10 @@ export function ActorEditor() {
     [type],
   );
   useEffect(() => {
+    setImage(null);
     load().catch((err) => setStatus(String(err)));
+    return () => { loadVersion.current++; };
   }, [load]);
-
-  const index = (col: number, row: number) => row * type.cols + col;
-  const selIndex = index(sel.col, sel.row);
-
-  // draws a frame into a 2D context at (x, y) = the cell's top-left
-  const drawFrame = useCallback(
-    (ctx: CanvasRenderingContext2D, col: number, row: number, x: number, y: number, zoom: number, mirror = false) => {
-      if (!image) return;
-      const [dx, dy] = offsets[index(col, row)] ?? [0, 0];
-      ctx.save();
-      ctx.imageSmoothingEnabled = false;
-      if (mirror) {
-        ctx.translate(x + cellW * zoom, y);
-        ctx.scale(-1, 1);
-      } else {
-        ctx.translate(x, y);
-      }
-      ctx.drawImage(image, col * cellW, row * cellH, cellW, cellH, dx * zoom, dy * zoom, cellW * zoom, cellH * zoom);
-      ctx.restore();
-    },
-    [image, offsets, cellW, cellH, type],
-  );
-
-  const guides = (ctx: CanvasRenderingContext2D, x: number, y: number, zoom: number) => {
-    ctx.strokeStyle = "rgba(80, 220, 120, 0.7)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    // the feet's baseline and the cell's center line
-    ctx.moveTo(x, y + cellH * zoom - 0.5);
-    ctx.lineTo(x + cellW * zoom, y + cellH * zoom - 0.5);
-    ctx.moveTo(x + (cellW * zoom) / 2 + 0.5, y);
-    ctx.lineTo(x + (cellW * zoom) / 2 + 0.5, y + cellH * zoom);
-    ctx.stroke();
-  };
-
-  // the whole sheet
-  const sheetRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const ctx = sheetRef.current?.getContext("2d");
-    if (!ctx || !image) return;
-    ctx.fillStyle = "#222";
-    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    for (let row = 0; row < type.rows; row++) {
-      for (let col = 0; col < type.cols; col++) {
-        const x = col * cellW * SHEET_ZOOM;
-        const y = row * cellH * SHEET_ZOOM;
-        drawFrame(ctx, col, row, x, y, SHEET_ZOOM);
-        const [dx, dy] = offsets[index(col, row)] ?? [0, 0];
-        ctx.strokeStyle = col === sel.col && row === sel.row ? "#ffd24a" : dx || dy ? "#4a8" : "#444";
-        ctx.lineWidth = col === sel.col && row === sel.row ? 2 : 1;
-        ctx.strokeRect(x + 0.5, y + 0.5, cellW * SHEET_ZOOM - 1, cellH * SHEET_ZOOM - 1);
-      }
-    }
-  }, [image, offsets, sel, drawFrame]);
-
-  // the selected frame, big, over its ghost
-  const frameRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const ctx = frameRef.current?.getContext("2d");
-    if (!ctx || !image) return;
-    ctx.fillStyle = "#1a1a1a";
-    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const walk = type.walkRows;
-    const at = walk.indexOf(sel.row);
-    const ghostRow =
-      ghost === "idle"
-        ? type.idleRow
-        : ghost === "prev" && at >= 0
-          ? walk[(at + walk.length - 1) % walk.length]
-          : ghost === "next" && at >= 0
-            ? walk[(at + 1) % walk.length]
-            : null;
-    if (ghostRow !== null && ghostRow !== sel.row) {
-      ctx.globalAlpha = 0.35;
-      drawFrame(ctx, sel.col, ghostRow, 0, 0, ZOOM);
-      ctx.globalAlpha = 1;
-    }
-    drawFrame(ctx, sel.col, sel.row, 0, 0, ZOOM);
-    guides(ctx, 0, 0, ZOOM);
-  }, [image, offsets, sel, ghost, drawFrame]);
-
-  // the live preview
-  const previewRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    let raf = 0;
-    const start = performance.now();
-    const tick = () => {
-      raf = requestAnimationFrame(tick);
-      const ctx = previewRef.current?.getContext("2d");
-      if (!ctx || !image) return;
-      const step = Math.floor(((performance.now() - start) / 1000) * fps);
-      const walkRow = type.walkRows[step % type.walkRows.length];
-      // walk + turn: a whole walk cycle in each view
-      const view = TURN[Math.floor(step / (mode === "both" ? type.walkRows.length : 1)) % TURN.length];
-      // a fight, in this column: standing, firing twice, falling, the wreck
-      const fight = [
-        type.idleRow,
-        type.idleRow,
-        type.shootRow,
-        type.idleRow,
-        type.shootRow,
-        type.idleRow,
-        ...(type.dieRows ?? []),
-        type.wreckRow,
-        type.wreckRow,
-        type.wreckRow,
-      ].filter((r): r is number => r !== undefined);
-      const still = mode === "walk" || mode === "fight";
-      const col = still ? sel.col : view.col;
-      const row = mode === "turn" ? sel.row : mode === "fight" ? fight[step % fight.length] : walkRow;
-      const mirror = still ? false : view.mirror;
-      ctx.fillStyle = "#1a1a1a";
-      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      drawFrame(ctx, col, row, 0, 0, PREVIEW_ZOOM, mirror);
-      guides(ctx, 0, 0, PREVIEW_ZOOM);
-      ctx.fillStyle = "#8a8";
-      ctx.font = "11px monospace";
-      ctx.fillText(t("editorShell.actorEditor.frameLabel", { col, mirrored: mirror ? t("editorShell.actorEditor.mirrored") : "", row }), 4, 12);
-    };
-    tick();
-    return () => cancelAnimationFrame(raf);
-  }, [image, drawFrame, mode, fps, sel, lang]);
-
-  const nudge = useCallback(
-    (ddx: number, ddy: number) => {
-      setOffsets((prev) => prev.map((o, i) => (i === selIndex ? [o[0] + ddx, o[1] + ddy] : o)));
-    },
-    [selIndex],
-  );
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).tagName === "SELECT") return;
-      const n = e.shiftKey ? 5 : 1;
-      const moves: Record<string, [number, number]> = {
-        ArrowLeft: [-n, 0],
-        ArrowRight: [n, 0],
-        ArrowUp: [0, -n],
-        ArrowDown: [0, n],
-      };
-      if (moves[e.key]) {
-        e.preventDefault();
-        nudge(...moves[e.key]);
-      }
-      // frame to frame: WASD
-      const sels: Record<string, [number, number]> = { a: [-1, 0], d: [1, 0], w: [0, -1], s: [0, 1] };
-      if (sels[e.key]) {
-        const [c, r] = sels[e.key];
-        setSel((s) => ({
-          col: (s.col + c + type.cols) % type.cols,
-          row: (s.row + r + type.rows) % type.rows,
-        }));
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [nudge, type]);
 
   const data = (): ActorOffsets => ({ cell: [cellW, cellH], offsets, ...(normal !== 1 ? { normal } : {}) });
   const save = async () => {
@@ -239,21 +65,22 @@ export function ActorEditor() {
     a.href = URL.createObjectURL(new Blob([JSON.stringify(data(), null, 2)], { type: "application/json" }));
     a.download = `${type.sheet}.json`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
   };
 
-  const [dx, dy] = offsets[selIndex] ?? [0, 0];
   const button = "px-2 py-1 bg-neutral-800 border border-neutral-600 rounded-sm hover:bg-neutral-700";
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-300 p-4 flex flex-col gap-3 text-xs">
+    <div className={`bg-neutral-950 text-neutral-300 p-4 flex flex-col gap-3 text-xs ${onBack ? "min-h-0 overflow-auto" : "min-h-screen"}`}>
       <div className="flex flex-wrap items-center gap-3">
+        {onBack && <button className={button} onClick={onBack}>{t("assetManager.npcSheet.back")}</button>}
         <span className="font-semibold uppercase tracking-wide text-neutral-400">{t("editorShell.actorEditor.title")}</span>
         <select value={name} onChange={(e) => setName(e.target.value)} className="bg-neutral-800 border border-neutral-600 px-1">
           {names.map((n) => (
             <option key={n}>{n}</option>
           ))}
         </select>
-        <button className={button} onClick={() => load(true)}>
+        <button className={button} onClick={() => void load(true).catch(err => setStatus(String(err)))}>
           {t("editorShell.actorEditor.reloadSheet")}
         </button>
         <label className="flex items-center gap-1" title={t("editorShell.actorEditor.normalHint")}>
@@ -271,76 +98,16 @@ export function ActorEditor() {
             className="w-14 bg-neutral-800 border border-neutral-600 px-1 text-right"
           />
         </label>
-        <button className={button} onClick={save}>
+        <button className={button} disabled={!image} onClick={() => void save().catch(err => setStatus(String(err)))}>
           {t("editorShell.save")}
         </button>
-        <button className={button} onClick={download}>
+        <button className={button} disabled={!image} onClick={download}>
           {t("editorShell.actorEditor.downloadJson")}
         </button>
         <span className="text-green-400">{status}</span>
       </div>
 
-      <div className="grid gap-4 items-start md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-1">
-          <span className="text-neutral-500">{t("editorShell.actorEditor.sheetHint")}</span>
-          <SheetViewport key={name} height="min(56vh, 32rem)"><canvas
-            ref={sheetRef}
-            width={cellW * type.cols * SHEET_ZOOM}
-            height={cellH * type.rows * SHEET_ZOOM}
-            className="cursor-pointer"
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              setSel({
-                col: Math.min(type.cols - 1, Math.floor((e.clientX - r.left) / r.width * type.cols)),
-                row: Math.min(type.rows - 1, Math.floor((e.clientY - r.top) / r.height * type.rows)),
-              });
-            }}
-          /></SheetViewport>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <span className="text-neutral-500">
-            {t("editorShell.actorEditor.frameInfo", { col: sel.col, row: sel.row, dx, dy })}
-          </span>
-          <canvas style={{maxHeight:"38vh",maxWidth:"100%",objectFit:"contain",alignSelf:"start"}} ref={frameRef} width={cellW * ZOOM} height={cellH * ZOOM} />
-          <div className="flex flex-wrap items-center gap-2">
-            <span>{t("editorShell.actorEditor.ghost")}</span>
-            {(["none", "idle", "prev", "next"] as Ghost[]).map((g) => (
-              <label key={g} className="flex items-center gap-1">
-                <input type="radio" checked={ghost === g} onChange={() => setGhost(g)} />
-                {t(({ none: "editorShell.actorEditor.ghostNone", idle: "editorShell.actorEditor.ghostIdle", prev: "editorShell.actorEditor.ghostPrev", next: "editorShell.actorEditor.ghostNext" } as Record<Ghost, Key>)[g])}
-              </label>
-            ))}
-            <button className={button} onClick={() => nudge(-dx, -dy)}>
-              {t("editorShell.actorEditor.resetFrame")}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <span className="text-neutral-500">{t("editorShell.actorEditor.preview")}</span>
-          <canvas style={{maxHeight:"38vh",maxWidth:"100%",objectFit:"contain",alignSelf:"start"}} ref={previewRef} width={cellW * PREVIEW_ZOOM} height={cellH * PREVIEW_ZOOM} />
-          <div className="flex flex-wrap items-center gap-2">
-            {(
-              [
-                ["walk", "editorShell.actorEditor.previewWalk"],
-                ["turn", "editorShell.actorEditor.previewTurn"],
-                ["both", "editorShell.actorEditor.previewBoth"],
-                ["fight", "editorShell.actorEditor.previewFight"],
-              ] as [PreviewMode, Key][]
-            ).map(([m, label]) => (
-              <label key={m} className="flex items-center gap-1">
-                <input type="radio" checked={mode === m} onChange={() => setMode(m)} />
-                {t(label)}
-              </label>
-            ))}
-          </div>
-          <label className="flex items-center gap-2">
-            {fps} fps
-            <input type="range" min={1} max={16} value={fps} onChange={(e) => setFps(Number(e.target.value))} />
-          </label>
-        </div>
-      </div>
+      <ActorAlignment key={name} image={image} layout={type} offsets={offsets} onOffsetsChange={setOffsets} />
       <div className="text-neutral-500">
         {t("editorShell.actorEditor.footer", { count, sheet: type.sheet })}
       </div>

@@ -13,7 +13,12 @@ export interface ActorOffsets {
 }
 
 const files = import.meta.glob<ActorOffsets>("../actors/*.json", { eager: true, import: "default" });
+const shared = new Map<string, ActorOffsets>();
+
+export function setSharedActorOffsets(sheet: string, offsets: ActorOffsets) {
+  shared.set(sheet, offsets);
+}
 
 export function actorOffsets(sheet: string): ActorOffsets | undefined {
-  return files[`../actors/${sheet}.json`];
+  return shared.get(sheet) ?? files[`../actors/${sheet}.json`];
 }

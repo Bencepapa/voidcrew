@@ -3,8 +3,8 @@
 // generated Auto maps of shared textures. localStorage is only for tiny things.
 
 const NAME = "voidcrew-assets";
-const VERSION = 2;
-export type Store = "drafts" | "previews" | "auto" | "imageDrafts";
+const VERSION = 3;
+export type Store = "drafts" | "previews" | "auto" | "imageDrafts" | "actorDrafts";
 
 // a real storage quota failure (as opposed to any other IndexedDB error)
 export class StorageFullError extends Error {
@@ -17,13 +17,17 @@ function open(): Promise<IDBDatabase> {
     const request = indexedDB.open(NAME, VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      for (const name of ["drafts", "previews", "auto", "imageDrafts"] as const) {
+      for (const name of ["drafts", "previews", "auto", "imageDrafts", "actorDrafts"] as const) {
         if (db.objectStoreNames.contains(name)) continue;
-        const keyPath = name === "drafts" ? "uuid" : name === "previews" || name === "imageDrafts" ? "id" : undefined;
+        const keyPath = name === "drafts" ? "uuid" : name === "auto" ? undefined : "id";
         db.createObjectStore(name, { keyPath });
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => { db.close(); opened = undefined; };
+      resolve(db);
+    };
     request.onerror = () => { opened = undefined; reject(request.error); };
   });
   return opened;

@@ -15,7 +15,7 @@ import { setSharedTuning, textureTuning, type TextureTuning } from "../render/te
 import { autoRecipe, generateAutoMaps } from "./autoMaps";
 import { idb } from "./idb";
 import { applyTransparency, composeSurface, decode, encode, hasAlpha, splitSurface, type Transparency } from "./imageTools";
-import { draftById, draftId, getDrafts, saveDraft, subscribeDrafts, type MapKey, type MapMode, type MapSlot, type SurfaceKind, type TextureDraft } from "./textureDrafts";
+import { draftById, draftId, getDrafts, saveDraft, subscribeDrafts, type MapKey, type MapMode, type MapSlot, type DraftTextureKind, type TextureDraft } from "./textureDrafts";
 
 const registry = TEXTURE_SETS as Record<string, TextureSetPaths>;
 const flat = { normal: `${import.meta.env.BASE_URL}textures/flat/normal.png`, depth: `${import.meta.env.BASE_URL}textures/flat/depth.png` };
@@ -25,7 +25,7 @@ export interface SharedMeta {
   v: 1;
   type: "texture";
   name: string;
-  kinds: SurfaceKind[];
+  kinds: DraftTextureKind[];
   pixelArt: boolean;
   rev: number;
   transparency: Transparency;
@@ -320,6 +320,11 @@ export function setSharedTextures(world: WorldId, list: SharedInfo[]) {
     if (!old || old.rev !== info.rev) void upgradeShared(info);
   }
   bump();
+}
+
+export function installSharedTexture(info: SharedInfo) {
+  const others = [...infos.values()].filter(row => row.world === info.world && row.id !== info.id);
+  setSharedTextures(info.world, [...others, info]);
 }
 
 // the Auto maps and the transparency of a published texture are made on this side

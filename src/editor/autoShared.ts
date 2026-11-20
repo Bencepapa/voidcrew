@@ -11,6 +11,7 @@ import { applyCachedSharedTextures, loadSharedTextures } from "./sharedTextures"
 import { loadSharedImages } from "./sharedImages";
 import { loadSharedProps } from "./sharedProps";
 import { loadSharedDoors } from "./sharedDoorTypes";
+import { loadSharedActors } from "./sharedActors";
 
 const IDLE_DELAY_MS = 1200;
 const TIMEOUT_MS = 10_000;
@@ -102,6 +103,7 @@ async function execute(forGeneration: number) {
       loadSharedImages(activeWorld, { signal: current.signal }),
       loadSharedProps(activeWorld, { signal: current.signal }),
       loadSharedDoors(activeWorld, { signal: current.signal }),
+      loadSharedActors(activeWorld, { signal: current.signal }),
     ]);
     loaded = true;
     retried = false;

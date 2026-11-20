@@ -87,6 +87,8 @@ tárgy és matrica (egyszerű); prop (panel/billboard/cross); **ajtó-típus** (
 rács) az **„Ajtó + keret" nézettel** (nyitás/zárás animáció, mindkét oldalról); NPC sprite-sheet vágó a böngészőben. A textúrák
 átlátszóságának forrása: alfa csatorna / színkulcs (alap magenta, állítható) / nincs: ez a textúra-panelben már megvan, a többi típusra kiterjesztendő.
 
+**Következő lépés az NPC-szerkesztő után:** PNG/WebP tárolás. Az NPC sprite-sheet színtérképéből a kisebbik, pixelazonos fájl kerüljön a megosztott tárba. Öt beépített NPC sprite-sheeten a veszteségmentes WebP 36–41% megtakarítást adott. A régi PNG-revíziók maradjanak olvashatók. A részletek az [Assets v3 terv 5. szakaszában](editor-ui/asset-manager-content-plan.md#5-építési-sorrend) vannak.
+
 ### D. Lassú jelenet-felépítés: a magasságtérképek lazy betöltése (közepes, mérés előbb)
 
 Indulásnál külön ellenőrizendő a megfelelő világ témája az első képkockától, valamint hogy normál Void Crew indításkor a bázis mögött ne épüljön meg az Engineering jelenet, és hajóra lépéskor közvetlenül a Crew Quarters töltődjön.

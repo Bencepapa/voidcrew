@@ -4,13 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { PROP_TYPES, PROP_RELIEF_SCALE, propEditable, propReliefAmount, propReliefCells } from "../game/props";
+import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propEditable, propReliefAmount, propReliefCells } from "../game/props";
 import { ACTOR_TYPES } from "../game/actors";
+import { actorView, isSharedActorId } from "../game/actorSheets";
+import { actorSheetFiles, actorThumbnail } from "../render/actorSheetFiles";
+import { actorOffsets } from "../render/actorOffsets";
+import { ActorEditor } from "./ActorEditor";
+import { NpcAssetEditor } from "./NpcAssetEditor";
+import { createActorDraft, loadActorDrafts, loadSharedActors, reviseActor, useActorDrafts, useSharedActorVersion, type ActorDraft } from "./sharedActors";
 import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { baseMaps, channels, type Channel, type MaterialMaps } from "./materialMaps";
 import { decode } from "./imageTools";
 import { AutoBadge, ChannelControls, errorText, SignInPopover, TextureFields, UnsavedBar, useTextureEditor } from "./TexturePanel";
-import { draftCounts, draftId, newDraft, saveDraft, useDrafts, type SurfaceKind } from "./textureDrafts";
+import { draftCounts, draftId, isPropTexture, newDraft, saveDraft, useDrafts, type SurfaceKind } from "./textureDrafts";
 import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
 import { loadSharedTextures } from "./sharedTextures";
 import { SharedHttpError, sharedConfigured, sharedToken } from "./sharedAuth";
@@ -23,7 +29,7 @@ import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "
 const button = "rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1 text-left text-neutral-200 hover:bg-neutral-700 aria-pressed:border-amber-400 aria-pressed:bg-amber-400/15 aria-pressed:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40";
 const selectClass = "min-w-0 rounded-sm border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-200";
 export type Sample = "material" | "actor" | "prop" | "item" | "still" | "door";
-type Entry = { key: string; label: string; img: string; groups: string[]; world: WorldId; draft?: ImageDraft; image?: SharedImage; builtinDecal?: string; propDraft?: PropDraft };
+type Entry = { key: string; label: string; img: string; groups: string[]; world: WorldId; draft?: ImageDraft; image?: SharedImage; builtinDecal?: string; propDraft?: PropDraft; actorDraft?: ActorDraft };
 import { ITEM_TYPES } from "../game/items";
 import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { fetchDecalManifest } from "../render/decals";
@@ -32,7 +38,7 @@ import { neutralStyle } from "./inspector/parts";
 import { createImageDraft, loadSharedImages, getImageDrafts, useImageDrafts, type ImageDraft } from "./sharedImages";
 import { ImageAssetInspector, useImageDraftPreview, usePickupDraftMaps } from "./ImageAssetsPanel";
 import { propEdit } from "./propEditState";
-import { createPropDraft, getPropDrafts, loadSharedProps, propTextures, usePropDrafts, useSharedPropVersion, type PropDraft } from "./sharedProps";
+import { attachPropTexture, createPropDraft, getPropDrafts, loadSharedProps, propTextureId, propTextures, reviseSharedProp, usePropDrafts, useSharedPropVersion, type PropDraft } from "./sharedProps";
 import { PropAssetFields } from "./PropAssetFields";
 import { DoorAssemblyPreview, DoorAssetFields } from "./DoorAssetFields";
 import { createDoorDraft, getDoorDrafts, loadSharedDoors, useDoorCatalog, useDoorDrafts } from "./sharedDoorTypes";
@@ -213,6 +219,10 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const imageCatalog = useSharedImages();
+  const actorDrafts = useActorDrafts();
+  const actorVersion = useSharedActorVersion();
+  const [npcEditor, setNpcEditor] = useState<string | ActorDraft | null>(null);
+  const [openingNpc, setOpeningNpc] = useState(false);
   const [sample, setSample] = useState<Sample>("material");
   const [selected, select] = useState("fantasywall1");
   const [world, setWorld] = useState<WorldId | "All">("All");
@@ -277,11 +287,19 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const pickupDrafts = imageDrafts.filter(d => d.type === "item");
   const entries: Entry[] = sample==="material" ? Object.entries(catalog).filter(([,v])=>isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[],world:assetWorld(key)}))
       // (a new draft with no diffuse yet isn't in the registry)
-      .concat(drafts.filter(d=>!catalog[draftId(d)]).map(d=>({key:draftId(d),label:d.name || t("assetManager.untitled"),img:"",groups:d.kinds as string[],world:d.world})))
+      .concat(drafts.filter(d=>!isPropTexture(d.kinds) && !catalog[draftId(d)]).map(d=>({key:draftId(d),label:d.name || t("assetManager.untitled"),img:"",groups:d.kinds as string[],world:d.world})))
     : sample==="door" ? [...doorCatalog.filter(asset => !doorDrafts.some(draft => draft.id === asset.id)), ...doorDrafts]
       .map(({id,world,definition}) => ({ key:id, world, label:definition.name || t("assetManager.untitled"),
         img:catalog[definition.leaf]?.diffuse ?? "", groups:[] }))
-    : sample==="actor" ? Object.entries(ACTOR_TYPES).map(([key,v])=>({key,label:v.name,img:import.meta.env.BASE_URL+"actors/"+v.sheet+"/diffuse.png",groups:[] as string[],world:assetWorld(key)}))
+    : sample==="actor" ? [
+      ...Object.entries(ACTOR_TYPES).map(([key, v]) => ({
+        key, label: actorDrafts.find(d => d.id === key)?.name || v.name, img: actorSheetFiles(v).diffuse,
+        groups: [], world: assetWorld(key), actorDraft: actorDrafts.find(d => d.id === key),
+      })),
+      ...actorDrafts.filter(d => !ACTOR_TYPES[d.id]).map(d => ({
+        key: d.id, label: d.name || t("assetManager.untitled"), img: "", groups: [], world: d.world, actorDraft: d,
+      })),
+    ]
     : sample==="item" ? [
       ...Object.entries(ITEM_TYPES).map(([key,v])=>{
         const image = imageCatalog.find(image=>image.id === key);
@@ -293,18 +311,19 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       ...imageCatalog.filter(image=>image.type==="portrait").map(image=>({key:image.id,label:image.name,img:image.url,groups:[image.purpose ?? "portrait"],world:image.world,image})),
       ...stillDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:[d.purpose ?? "portrait"],world:d.world,draft:d})),
     ]
-    : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:v.name ?? key,img:propImage(key),groups:[v.kind==="billboard"||v.kind==="cross"?"billboard":"3D"],world:assetWorld(key)})),
-      ...propDrafts.map(d=>({key:d.id,label:d.definition.name || t("assetManager.untitled"),img:propTextures(d.world).get(d.definition.texture)?.diffuse ?? "",
+    : [...Object.entries(PROP_TYPES).filter(([key])=>!propDrafts.some(draft=>draft.id===key)).map(([key,v])=>({key,label:v.name ?? key,img:propImage(key),groups:[v.kind==="billboard"||v.kind==="cross"?"billboard":"3D"],world:assetWorld(key)})),
+      ...propDrafts.map(d=>({key:d.id,label:d.definition.name || t("assetManager.untitled"),img:catalog[d.definition.texture]?.diffuse ?? propTextures(d.world).get(d.definition.texture)?.diffuse ?? "",
         groups:[d.definition.kind==="panel"?"3D":"billboard"],world:d.world,propDraft:d})),
       ...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"],world:assetWorld(d),builtinDecal:d})),
       ...imageCatalog.filter(image=>image.type==="decal").map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"],world:image.world,image})),
       ...decalDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:["decal"],world:d.world,draft:d}))];
-  const visible = entries.filter(e=>(world==="All" || (e.draft || e.image || e.propDraft ? e.world===world : assetInWorld(e.key.replace(/^decal:/,""),world))) &&
+  const visible = entries.filter(e=>(world==="All" || (e.draft || e.image || e.propDraft || e.actorDraft ? e.world===world : assetInWorld(e.key.replace(/^decal:/,""),world))) &&
     (sub==="All" || e.groups.includes(sub) || (e.propDraft && e.key===selected && sub!=="decal")));
   const term = query.trim().toLocaleLowerCase();
   const shown = term ? visible.filter(e=>`${e.label} ${e.key}`.toLocaleLowerCase().includes(term)) : visible;
   const entry = shown.find(e=>e.key===selected) ?? shown[0];
   const id = entry?.key ?? "";
+  const selectedActor = sample === "actor" ? ACTOR_TYPES[id] : undefined;
   const doorDraft = sample === "door" ? doorDrafts.find(draft => draft.id === id) : undefined;
   const doorAsset = sample === "door" ? doorDraft ?? doorCatalog.find(asset => asset.id === id) : undefined;
   const selectedImageDraft = imageDrafts.find(d => d.id === id);
@@ -323,6 +342,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const isDecal = sample === "prop" && !!entry && entry.groups.includes("decal");
   const builtinDecalSize = useImageSize(entry?.builtinDecal ? entry.img : undefined);
   const propDraft = entry?.propDraft;
+  const ownedTexture = propDraft && propDraft.definition.texture === propTextureId(propDraft.id) ? propDraft.definition.texture : "";
+  const [propAiTexture, setPropAiTexture] = useState("");
+  const [publishingProp, setPublishingProp] = useState("");
   const prop = sample==="prop" ? propDraft?.definition ?? PROP_TYPES[id] : undefined;
   const propRenderKey = prop && JSON.stringify([prop.kind, prop.size, prop.elevation, prop.wall, prop.relief]);
   const top = prop ? prop.size[1] + ("elevation" in prop ? prop.elevation ?? 0 : 0) : 0;
@@ -338,7 +360,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const primary = propDraft ? propDraft.definition.texture || id : prop ? propTexture(id) : id;
   const maskKey = (group:string, channel:Channel) => [sample,id,group,channel].join(":");
   // the files of the selected texture (they change when a draft changes a map)
-  const texSig = sample==="material" && catalog[id] ? [catalog[id].diffuse,catalog[id].normal,catalog[id].depth,catalog[id].surface,catalog[id].emissive].join("|") : "";
+  const selectedTexture = (sample === "material" || sample === "prop") ? catalog[primary] : undefined;
+  const texSig = selectedTexture ? [selectedTexture.diffuse, selectedTexture.normal, selectedTexture.depth, selectedTexture.surface, selectedTexture.emissive].join("|") : "";
   // a built-in or old shared texture can't be edited: a map imported there is a local preview, kept in IndexedDB
   const previewBlobs = useRef<PreviewMaps>({});
   const previewUrls = useRef<string[]>([]);
@@ -354,14 +377,14 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     setEdits(urls);
   }
   useEffect(() => {
-    if(!open || !id)return;
+    if(!open || !id || npcEditor)return;
     let active=true;
     setGroups({}); showPreview({});
-    if(sample==="still" || sample==="door")return;
+    if(sample==="still" || sample==="door" || (sample==="actor" && !selectedActor))return;
     async function read(){
       let result:Record<string,MaterialMaps>={};
-      if(propDraft && !propDraft.definition.texture){
-        result[id]={};
+      if(propDraft && (!propDraft.definition.texture || (ownedTexture && !selectedTexture))){
+        result[primary]={};
       }else if(selectedDecalDraft){
         result[id]=previewUrl ? {diffuse:previewUrl} : {};
       }else if(isPickupDraft){
@@ -369,8 +392,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       }else if(sample==="item" && entry?.image?.pickup){
         result[id]={diffuse:entry.image.url, depth:entry.image.pickup.depthUrl, normal:entry.image.pickup.normalUrl};
       }else if(sample==="actor"){
-        const actor=ACTOR_TYPES[id], dir=import.meta.env.BASE_URL+"actors/"+actor.sheet+"/";
-        result[id]={diffuse:dir+"diffuse.png",normal:dir+"normal.png",emissive:actor.glow ? dir+"emissive.png" : undefined};
+        const actor = selectedActor!;
+        result[id] = { ...actorSheetFiles(actor), emissive: actor.glow ? import.meta.env.BASE_URL + "actors/" + actor.sheet + "/emissive.png" : undefined };
       }else if(id.startsWith("decal:")){
         const dir=import.meta.env.BASE_URL+"decals/"+id.slice(6)+"/";
         result[id]={diffuse:sharedImage(id.slice(6))?.url ?? dir+"diffuse.png",normal:decals[id.slice(6)]?.normal ? dir+"normal.png" : undefined};
@@ -387,7 +410,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[open,id,sample,primary,prop?.kind,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,isPickupDraft,pickupMaps]);
+  },[open,id,sample,primary,prop?.kind,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,isPickupDraft,pickupMaps,actorVersion,npcEditor,ownedTexture]);
   async function edit(channel: Channel, file?: Blob | "") {
     const next: PreviewMaps = { ...previewBlobs.current, [channel]: file };
     if (file === undefined) delete next[channel];
@@ -400,7 +423,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [rimLight, setRimLight] = useState(true);
   const [turn, setTurn] = useState(0);
   // editing the selected texture (drafts of shared textures): its settings and the channel cards of the maps panel
-  const editor = useTextureEditor(sample==="material" && entry ? id : "", setError, select);
+  const editor = useTextureEditor(ownedTexture || (sample==="material" && entry ? id : ""), setError, select);
   const editable = sample==="material" && !!entry && isEditable(id);
   // the shared textures and images are listed when the window opens (and on Refresh); the old local previews are moved over once
   // (manual: the Refresh button says what happened - or why nothing did; the automatic one on opening stays quiet)
@@ -416,6 +439,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         ...(["scifi","fantasy"] as const).map((world) => loadSharedImages(world)),
         ...(["scifi","fantasy"] as const).map((world) => loadSharedProps(world)),
         ...(["scifi","fantasy"] as const).map((world) => loadSharedDoors(world)),
+        ...(["scifi","fantasy"] as const).map((world) => loadSharedActors(world)),
       ]);
       if (manual) setNotice(t("assetManager.sharedRefreshed"));
     } catch (e) {
@@ -477,11 +501,32 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     try {
       const targetWorld = world === "All" ? activeWorld() : world;
       const draft = createPropDraft(targetWorld, sub === "billboard" ? "billboard" : "panel");
+      await attachPropTexture(draft);
       setQuery("");
       setPose(-1); setTurn(0); setPlacement("Auto");
       pendingScroll.current = draft.id;
       select(draft.id);
     } catch (e) { setError(errorText(e)); }
+  }
+  useEffect(() => {
+    if (open) void loadActorDrafts().catch(reason => setError(errorText(reason)));
+  }, [open]);
+  async function openNpcEditor(entry?: Entry) {
+    setOpeningNpc(true);
+    setError("");
+    try {
+      if (entry) {
+        if (!isSharedActorId(entry.key)) setNpcEditor(entry.key);
+        else setNpcEditor(entry.actorDraft ?? await reviseActor(entry.key, entry.world));
+      } else {
+        const draft = await createActorDraft(world === "All" ? activeWorld() : world);
+        setQuery("");
+        pendingScroll.current = draft.id;
+        select(draft.id);
+        setNpcEditor(draft);
+      }
+    } catch (reason) { setError(errorText(reason)); }
+    finally { setOpeningNpc(false); }
   }
   async function createDoor() {
     try {
@@ -560,7 +605,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const host = useRef<HTMLDivElement>(null);
   const previewRenderer = useRef<THREE.WebGLRenderer | null>(null);
   useEffect(() => {
-    if (!open || preview2D || sample==="door" || !host.current) return;
+    if (!open || npcEditor || preview2D || sample==="door" || !host.current) return;
     const renderer = new THREE.WebGLRenderer({antialias:true});
     renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     host.current.appendChild(renderer.domElement);
@@ -572,11 +617,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       renderer.forceContextLoss();
       renderer.domElement.remove();
     };
-  }, [open, sample, preview2D]);
+  }, [open, sample, preview2D, npcEditor]);
   useEffect(() => {
     const el = host.current;
     const renderer = previewRenderer.current;
-    if (!open || preview2D || sample==="door" || !el || !entry || !groups[primary] || !renderer) return;
+    if (!open || npcEditor || preview2D || sample==="door" || !el || !entry || !groups[primary] || !renderer) return;
     let disposed = false;
     setError("");
     const scene = new THREE.Scene();
@@ -740,9 +785,13 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       animate=time=>{
         const yaw=Math.atan2(camera.position.x,camera.position.z);
         sprite.rotation.y=yaw-object.rotation.y;
-        const direction=((Math.round((yaw-object.rotation.y)/(Math.PI/4))%8)+8)%8;
-        const col=Math.min(direction,8-direction), mirror=direction>4;
+        const { col, mirror } = actorView(actor, sprite.rotation.y);
         const row=pose>=0 ? pose : actor.walkRows[Math.floor(time/180)%actor.walkRows.length] ?? actor.idleRow;
+        const fix = actorOffsets(actor.sheet);
+        const [dx, dy] = fix?.offsets[row * actor.cols + col] ?? [0, 0];
+        const px = fix ? actor.height / fix.cell[1] : 0;
+        const shift = (mirror ? -dx : dx) * px;
+        sprite.position.set(Math.cos(sprite.rotation.y) * shift, actor.height / 2 - dy * px, -Math.sin(sprite.rotation.y) * shift);
         for(const t of [mat.map,mat.normalMap,mat.emissiveMap]) {
           if(!t)continue;
           t.repeat.set((mirror?-1:1)/actor.cols,1/actor.rows);
@@ -785,7 +834,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         }
       }
       void projectSamples().catch(()=>{if(!disposed)setError(t("assetManager.decalError"));});
-    } else if (!propDraft || propDraft.definition.texture) {
+    } else if (!propDraft || groups[primary]?.diffuse) {
       const onWall=!!prop && (placement==="Wall" || (placement==="Auto" && prop.wall));
       if(onWall)object.position.z=-half+(prop?.size[2] ?? .02)/2+.01;
       if(prop && "elevation" in prop)object.position.y=prop.elevation ?? 0;
@@ -942,12 +991,13 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       controls.dispose();
       resources.forEach(r=>r.dispose());
     };
-  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface,preview2D,pickup?.height,pickup?.glow,propRenderKey,primary]);
+  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface,preview2D,pickup?.height,pickup?.glow,propRenderKey,primary,npcEditor]);
   const newInfo: { disabled: boolean; title: string; run?: () => Promise<void> } =
     sample === "material" ? { disabled: false, title: t("assetManager.newTexture"), run: createTexture }
       : sample === "still" ? { disabled: false, title: t("assetManager.newStill"), run: createStill }
         : sample === "item" ? { disabled: false, title: t("assetManager.pickup.new"), run: createPickup }
         : sample === "door" ? { disabled: false, title: t("assetManager.doorType.new"), run: createDoor }
+        : sample === "actor" ? { disabled: openingNpc, title: t("assetManager.npcSheet.new"), run: () => openNpcEditor() }
         : sample === "prop" ? sub === "decal"
           ? { disabled: false, title: t("assetManager.newDecal"), run: createDecal }
           : { disabled: false, title: t("assetManager.propDraft.new"), run: createProp }
@@ -958,9 +1008,13 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   } : undefined);
   const strip = "grid w-8 shrink-0 place-items-start rounded-sm border border-neutral-700 bg-neutral-900 py-2 text-lg text-neutral-400 hover:text-neutral-200";
   return <><button className={button} onClick={openManager}>{t("assetManager.title")}</button>{open && createPortal(
-    <div role="dialog" aria-label={t("assetManager.title")} aria-modal="true" className="fixed inset-0 z-[2147483647] bg-black/75 p-2 text-white pointer-events-auto" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation(); if(e.key==="Escape")requestClose();}}>
+    <div role="dialog" aria-label={t("assetManager.title")} aria-modal="true" className="fixed inset-0 z-[2147483647] bg-black/75 p-2 text-white pointer-events-auto" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation(); if(e.key==="Escape" && !npcEditor && !openingNpc)requestClose();}}>
       <section className="voidcrew-editor-controls flex h-full w-full flex-col rounded-lg border border-neutral-700 bg-neutral-950 p-3 text-neutral-200" style={neutralStyle}>
         <style>{".theme-fantasy .voidcrew-editor-controls .border { box-shadow: none; }"}</style>
+        {typeof npcEditor === "string" ? <ActorEditor key={npcEditor} initialActor={npcEditor} onBack={() => setNpcEditor(null)}/>
+          : npcEditor ? <NpcAssetEditor key={npcEditor.id} initial={npcEditor} onBack={() => setNpcEditor(null)}
+            onPublished={() => { setNpcEditor(null); setNotice(t("assetManager.npcSheet.published")); }}/>
+          : <>
         <header className="mb-2 flex shrink-0 flex-wrap items-center gap-2 border-b border-neutral-700 pb-2">
           <label className="flex items-center gap-1 text-[11px] text-neutral-400">{t("assetManager.mainCategory")}
             <select className={selectClass} value={sample} onChange={e=>changeSample(e.target.value as Sample)}>
@@ -982,7 +1036,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
           <button type="button" className={button + " grid h-7 w-7 place-items-center !p-0"} aria-label={t("assetManager.refresh")} title={t("assetManager.refresh")} onClick={()=>void refreshShared(true)}><RefreshCw size={14} aria-hidden="true"/></button>
           <span className={"min-w-0 flex-1 truncate text-xs " + (error ? "text-red-300" : notice ? "text-emerald-300" : "text-neutral-400")} title={error || notice}>{error || notice || t("assetManager.orbitHint")}</span>
           {signInOpen && <SignInPopover className="fixed left-1/2 top-24 -translate-x-1/2" onDone={()=>{setSignInOpen(false);setError("");void refreshShared(true);}} onCancel={()=>setSignInOpen(false)} onError={setError}/>}
-          <button aria-label={t("assetManager.close")} className={button} onClick={requestClose}>×</button>
+          <button aria-label={t("assetManager.close")} className={button} disabled={openingNpc} onClick={requestClose}>×</button>
         </header>
         <UnsavedBar onError={setError}/>
         <div className="flex min-h-0 flex-1 gap-2">
@@ -998,12 +1052,12 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                 const a=sample==="actor"?ACTOR_TYPES[e.key]:undefined;
                 const status=sample==="material" ? textureStatus(e.key) : undefined;
                 const auto=sample==="material" ? autoChannels(e.key) : [];
-                const draft=!!e.draft || !!e.propDraft || status==="new" || status==="changed" || (sample==="door" && doorDrafts.some(draft => draft.id === e.key));
+                const draft=!!e.draft || !!e.propDraft || !!e.actorDraft || status==="new" || status==="changed" || (sample==="door" && doorDrafts.some(draft => draft.id === e.key));
                 return <button key={e.key} type="button" data-key={e.key}
                   ref={node=>{if(node && pendingScroll.current===e.key){node.scrollIntoView({block:"nearest"});pendingScroll.current=null;}}}
                   className={"flex w-full items-center gap-2 rounded-sm border px-1 py-0.5 text-left text-xs "+(id===e.key?"border-amber-400 bg-amber-400/10 text-amber-100":"border-transparent text-neutral-200 hover:bg-neutral-900")}
                   aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>
-                  {a?<span className="block h-9 w-9 shrink-0" style={{backgroundImage:"url("+e.img+")",backgroundSize:a.cols*100+"% "+a.rows*100+"%",backgroundPosition:"0 "+a.idleRow/Math.max(1,a.rows-1)*100+"%"}}/>
+                  {a?<span className="block h-9 w-9 shrink-0" style={actorThumbnail(a)}/>
                     :e.draft?<DraftThumb draft={e.draft}/>
                     :e.img?<img src={e.img} loading="lazy" alt="" className="h-9 w-9 shrink-0 object-contain"/>
                     :<span className="grid h-9 w-9 shrink-0 place-items-center text-neutral-500">…</span>}
@@ -1019,8 +1073,18 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
           <main className="flex min-w-0 flex-1 flex-col gap-2">
             <div className="flex shrink-0 flex-wrap items-center gap-2"><strong>{entry?.label ?? t("assetManager.noAssets")}</strong>
               {sample==="material" && <>{["Wall","Floor","Ceiling"].map(v=><button className={button} aria-pressed={orientation===v} key={v} onClick={()=>{orient(v);if(v==="Ceiling" || v==="Floor"){const cam=liveCamera.current;if(cam){cam.camera.position.y=v==="Ceiling"?.25:1.7;cam.controls.target.y=v==="Ceiling"?.95:.05;cam.controls.update();}}if(v!=="Wall" && layout==="Block")setLayout("Single");}}>{display(v)}</button>)}{(orientation==="Wall"?["Single","Pair","Block"]:["Single","Pair"]).map(v=><button className={button} aria-pressed={layout===v} key={v} onClick={()=>setLayout(v)}>{display(v)}</button>)}</>}
-              {sample==="actor" && entry && <><label>{t("assetManager.pose")} <select className={selectClass} value={pose} onChange={e=>setPose(+e.target.value)}><option value={-1}>{t("assetManager.walkCycle")}</option>{Array.from({length:ACTOR_TYPES[id].rows},(_,i)=><option key={i} value={i}>{t(i===ACTOR_TYPES[id].idleRow ? "assetManager.idleRow" : "assetManager.row", { n: i+1 })}</option>)}</select></label><a className={button} target="_blank" rel="noreferrer" href={"?editor=actors&actor="+encodeURIComponent(id)}>{t("assetManager.npcEditor")}</a></>}
-              {sample==="prop" && propEditable(prop) && <button className={button} onClick={()=>{setOpen(false);propEdit.set({name:id,part:0});}}>{t("assetManager.propEditor")}</button>}
+              {sample==="actor" && entry && <>
+                {selectedActor && <label>{t("assetManager.pose")} <select className={selectClass} value={pose} onChange={e=>setPose(+e.target.value)}>
+                  <option value={-1}>{t("assetManager.walkCycle")}</option>
+                  {Array.from({length:selectedActor.rows},(_,i)=><option key={i} value={i}>{t(i===selectedActor.idleRow ? "assetManager.idleRow" : "assetManager.row", { n: i+1 })}</option>)}
+                </select></label>}
+                <button className={button} disabled={openingNpc} onClick={() => void openNpcEditor(entry)}>{t("assetManager.npcEditor")}</button>
+              </>}
+              {sample==="prop" && !propDraft && propEditable(prop) && <button className={button} onClick={()=>{
+                if (isSharedPropId(id)) {
+                  try { reviseSharedProp(id); } catch (error) { setError(errorText(error)); }
+                } else { setOpen(false); propEdit.set({name:id,part:0}); }
+              }}>{t("assetManager.propEditor")}</button>}
               {!isDecal && sample==="prop" && <label>{t("assetManager.mount")} <select className={selectClass} value={placement} onChange={e=>setPlacement(e.target.value)}>{["Auto","Floor","Wall"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>}</div>
             {sample==="item" && <div className="flex gap-1">
               <button type="button" className={button} aria-pressed={inventoryPreview} onClick={()=>setInventoryPreview(true)}>{t("assetManager.pickup.icon")}</button>
@@ -1040,7 +1104,23 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               {selectedImageDraft && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName(selectedImageDraft.world)}</p>}
               <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError}/>
             </> : <>
-            {propDraft && <PropAssetFields key={id} draft={propDraft} onError={setError}/>}
+            {propDraft && <PropAssetFields key={id} draft={propDraft}
+              ownedReady={!!editor.view?.slot("diffuse").has}
+              mapsBusy={!!ownedTexture && (editor.busy || propAiTexture === ownedTexture)}
+              onPublishing={busy => setPublishingProp(busy ? id : "")} onError={setError}/>}
+            {ownedTexture && <details open key={ownedTexture} className="rounded border border-neutral-800 p-2">
+              <summary className="cursor-pointer font-semibold">{t("assetManager.propDraft.ownTexture")}</summary>
+              <fieldset className="mt-1" disabled={publishingProp === id}>
+                <TextureFields editor={editor} embedded/>
+                <div className="grid gap-2">
+                  {(["diffuse", "normal", "depth"] as const).map(channel => <div key={channel} className="rounded border border-neutral-700 p-2">
+                    <strong>{display(channel)}</strong>
+                    {groups[primary]?.[channel] && <img src={groups[primary][channel]} alt={display(channel)} className="h-16 w-full object-contain"/>}
+                    <ChannelControls editor={editor} channel={channel} onAiRunning={running => setPropAiTexture(running ? ownedTexture : "")}/>
+                  </div>)}
+                </div>
+              </fieldset>
+            </details>}
             {sample==="material" && <details open className="rounded border border-neutral-800 p-2">
               <summary className="cursor-pointer font-semibold">{t("assetManager.baseColor")}</summary>
               <div className="mt-1 flex flex-col gap-1">
@@ -1080,7 +1160,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                 <label>{t("assetManager.rotation")} <input className="block w-full" type="range" min="-180" max="180" value={turn} onChange={e=>setTurn(+e.target.value)}/></label>
               </div>
             </details>
-            {<details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t(editable ? "assetManager.mapsEditable" : "assetManager.maps")}</summary>{sample==="material" && entry && <div className="mt-1"><TextureFields editor={editor}/></div>}{Object.entries(groups).map(([group,layers])=><section key={group}>{Object.keys(groups).length>1 && <strong>{sample==="material" ? (entry?.label ?? "") : group}</strong>}<div className="mt-1 grid grid-cols-2 gap-2">{channels.map(channel=>{
+            {!ownedTexture && <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t(editable ? "assetManager.mapsEditable" : "assetManager.maps")}</summary>{sample==="material" && entry && <div className="mt-1"><TextureFields editor={editor}/></div>}{Object.entries(groups).map(([group,layers])=><section key={group}>{Object.keys(groups).length>1 && <strong>{sample==="material" ? (entry?.label ?? "") : group}</strong>}<div className="mt-1 grid grid-cols-2 gap-2">{channels.map(channel=>{
               const url=(sample==="material"?edits[channel]:undefined) ?? layers[channel];
               if(!url && sample!=="material")return null;
               if(editable && channel==="glow" && !url)return null;
@@ -1094,6 +1174,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
             })}</div></section>)}</details>}</>}
           </aside> : <button aria-label={t("assetManager.showProperties")} title={t("assetManager.properties")} className={strip} onClick={()=>setPanelOpen(true)}>◀</button>}
         </div>
+        </>}
       </section>
     </div>,document.body)}</>;
 }

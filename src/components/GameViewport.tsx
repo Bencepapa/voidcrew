@@ -52,6 +52,9 @@ import type { LightSpec } from "../game/lights";
 import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
+import { actorSheetFiles } from "../render/actorSheetFiles";
+import { actorView } from "../game/actorSheets";
+import { onSharedActorsChanged } from "../editor/sharedActors";
 import { onTextureTuningSaved, textureTuning } from "../render/textureTuning";
 import { buildEditPreview, changedCells } from "../render/editPreview";
 import type { ActorState, BodyPart } from "../game/actors";
@@ -1579,6 +1582,9 @@ export function GameViewport({
   useEffect(() => onSharedDoorsChanged(ids => {
     if (latestMapRef.current.doors?.some(spec => spec.type && ids.has(spec.type))) setTextureVersion(version => version + 1);
   }), []);
+  useEffect(() => onSharedActorsChanged((_ids, revised) => {
+    if (latestMapRef.current.actors?.some(spec => revised.has(spec.actor))) setTextureVersion(version => version + 1);
+  }), []);
   useEffect(() => onSharedPropsChanged(ids => {
     if (latestMapRef.current.props?.some(spec => ids.has(spec.prop))) setTextureVersion(version => version + 1);
   }), []);
@@ -1971,7 +1977,7 @@ export function GameViewport({
     // clones copy those) and the wall kits'. A material without a depth map
     // shows mid-grey in the depth view.
     const viewMaps = new WeakMap<THREE.Material, { normal?: THREE.Texture; depth?: THREE.Texture }>();
-    function markSprite(mat: THREE.MeshStandardMaterial, normalStrength: number, normalMap: THREE.Texture, depth?: THREE.Texture) {
+    function markSprite(mat: THREE.MeshStandardMaterial, normalStrength: number, normalMap?: THREE.Texture, depth?: THREE.Texture) {
       mat.userData.sprite = true;
       mat.userData.normalBase = normalStrength;
       mat.userData.metalBase = mat.metalness;
@@ -5756,12 +5762,12 @@ export function GameViewport({
       let mat = actorMaterials.get(typeName);
       if (!mat) {
         const type = ACTOR_TYPES[typeName];
-        const base = `${import.meta.env.BASE_URL}actors/${type.sheet}/`;
-        const diffuse = kitTexture(base + "diffuse.png" + bust);
-        const normalUrl = base + "normal.png" + bust;
-        let normalMap = cache.textures.get(normalUrl);
+        const files = actorSheetFiles(type);
+        const diffuse = kitTexture(busted(files.diffuse));
+        const normalUrl = files.normal && busted(files.normal);
+        let normalMap = normalUrl ? cache.textures.get(normalUrl) : undefined;
         const materials = new Set<THREE.MeshStandardMaterial>();
-        if (!normalMap) {
+        if (normalUrl && !normalMap) {
           // (the texture is there at once, its image comes later; the request itself waits for the scene to be shown)
           const texture = new THREE.Texture();
           normalMap = texture;
@@ -5780,11 +5786,14 @@ export function GameViewport({
           if (ready) start();
           else afterReady.push(start);
         }
-        actorNormals.set(typeName, { texture: normalMap, materials });
+        if (normalMap) {
+          actorNormals.set(typeName, { texture: normalMap, materials });
+          normalMap.magFilter = THREE.NearestFilter;
+        }
         diffuse.colorSpace = THREE.SRGBColorSpace;
-        for (const tex of [diffuse, normalMap]) tex.magFilter = THREE.NearestFilter;
+        diffuse.magFilter = THREE.NearestFilter;
         // (already in, from an earlier build of the scene: on at once)
-        mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap: normalMap.image ? normalMap : null, alphaTest: 0.5, roughness: 0.6, metalness: 0.35 });
+        mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap: normalMap?.image ? normalMap : null, alphaTest: 0.5, roughness: 0.6, metalness: 0.35 });
         materials.add(mat);
         // (its sheet's own normal strength - set in the actor editor)
         const normal = actorOffsets(type.sheet)?.normal ?? 1;
@@ -5794,7 +5803,7 @@ export function GameViewport({
       }
       return mat;
     };
-    for (const name of new Set((map.actors ?? []).map((a) => a.actor))) actorMaterial(name);
+    for (const name of new Set((map.actors ?? []).map(a => a.actor))) if (ACTOR_TYPES[name]) actorMaterial(name);
     // the actors' soft shadows: a dark blot fading out to its rim
     const shadowTexture = (() => {
       const size = 64;
@@ -5953,8 +5962,7 @@ export function GameViewport({
         const cx = camX - x;
         const cz = camZ - z;
         const angle = Math.atan2(cx * f.y - cz * f.x, cx * f.x + cz * f.y);
-        const col = Math.min(type.cols - 1, Math.round(Math.abs(angle) / (Math.PI / 4)));
-        const mirror = angle < 0 && col > 0 && col < type.cols - 1;
+        const { col, mirror } = actorView(type, angle);
         // (one that leaps: pushing off, in the air, landing)
         const hopRow = (k: number) => (k < 0.2 ? type.hop!.takeoffRow : k < 0.85 ? type.hop!.airRow : type.idleRow);
         let row = t < 1 ? (type.hop ? hopRow(t) : type.walkRows[Math.floor(t * type.walkRows.length) % type.walkRows.length]) : type.idleRow;

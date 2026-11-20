@@ -34,7 +34,13 @@ export function AiDepthControls({ editor, onRunningChange }: {
   const [options, setOptions] = useState<AiDepthOptions>(defaultAiDepthOptions);
   const [alsoNormal, setAlsoNormal] = useState(true);
   const abort = useRef<AbortController | null>(null);
-  useEffect(() => () => { abort.current?.abort(); abort.current = null; }, []);
+  const runningCallback = useRef(onRunningChange);
+  runningCallback.current = onRunningChange;
+  useEffect(() => () => {
+    if (abort.current) runningCallback.current?.(false);
+    abort.current?.abort();
+    abort.current = null;
+  }, []);
   if (!view) return null;
   const hasDiffuse = view.slot("diffuse").has;
   const cached = isAiDepthCached();

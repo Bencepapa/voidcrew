@@ -5,7 +5,7 @@ import type { SharedImage } from "../render/sharedImages";
 interface BundledTexture {
   rev: number;
   label: string;
-  kinds: ("wall" | "floor" | "ceiling")[];
+  kinds: ("wall" | "floor" | "ceiling" | "propFace")[];
   pixelArt: boolean;
   smooth?: boolean;
   files: string[];

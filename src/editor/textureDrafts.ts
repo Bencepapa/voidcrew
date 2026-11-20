@@ -13,12 +13,13 @@ export const MAP_KEYS: MapKey[] = ["diffuse", "normal", "depth", "gloss", "metal
 export type MapMode = "uploaded" | "auto" | "none";
 export interface MapSlot { mode: MapMode; blob?: Blob }
 export type SurfaceKind = "wall" | "floor" | "ceiling";
+export type DraftTextureKind = SurfaceKind | "propFace";
 
 export interface TextureDraft {
   uuid: string;
   world: WorldId;
   name: string;
-  kinds: SurfaceKind[];
+  kinds: DraftTextureKind[];
   pixelArt: boolean;
   // relief built smooth (slopes): for a continuous depth map; undefined in older drafts = false
   smooth?: boolean;
@@ -37,6 +38,7 @@ export interface TextureDraft {
 
 // the id the texture has in TEXTURE_SETS (and in maps)
 export const draftId = (d: Pick<TextureDraft, "world" | "uuid">) => d.world + "_shared_" + d.uuid;
+export const isPropTexture = (kinds: readonly string[]) => kinds.length === 1 && kinds[0] === "propFace";
 
 export function emptyMaps(): Record<MapKey, MapSlot> {
   return { diffuse: { mode: "uploaded" }, normal: { mode: "auto" }, depth: { mode: "auto" }, gloss: { mode: "none" }, metal: { mode: "none" }, emissive: { mode: "none" } };
@@ -87,9 +89,9 @@ export async function saveDraft(next: TextureDraft): Promise<void> {
   }
 }
 
-export async function newDraft(world: WorldId, name: string): Promise<TextureDraft> {
+export async function newDraft(world: WorldId, name: string, options?: { uuid: string; kinds: DraftTextureKind[] }): Promise<TextureDraft> {
   const draft: TextureDraft = {
-    uuid: crypto.randomUUID(), world, name, kinds: ["wall", "floor", "ceiling"], pixelArt: true, smooth: true,
+    uuid: options?.uuid ?? crypto.randomUUID(), world, name, kinds: options?.kinds ?? ["wall", "floor", "ceiling"], pixelArt: true, smooth: true,
     transparency: defaultTransparency(), diffuseAlpha: false, maps: emptyMaps(), baseRev: 0, updated: Date.now(),
   };
   await saveDraft(draft);
@@ -100,8 +102,4 @@ export async function discardDraft(uuid: string): Promise<void> {
   drafts = drafts.filter(d => d.uuid !== uuid);
   emit();
   try { await persist(() => idb.del("drafts", uuid)); } catch { /* the in-memory state is already gone */ }
-}
-
-export async function discardAllDrafts(): Promise<void> {
-  for (const d of [...drafts]) await discardDraft(d.uuid);
 }

@@ -123,7 +123,7 @@ async function pullTexture(world: string, name: string) {
       }
     }
   }
-  const kinds = (Array.isArray(meta.kinds) ? meta.kinds : []).filter((kind: unknown) => ["wall", "floor", "ceiling"].includes(kind as string));
+  const kinds = (Array.isArray(meta.kinds) ? meta.kinds : []).filter((kind: unknown) => ["wall", "floor", "ceiling", "propFace"].includes(kind as string));
   await mkdir(dirname(target), { recursive: true });
   const staging = await mkdtemp(join(dirname(target), ".pull-shared-"));
   for (const [name, bytes] of Object.entries(files)) await writeFile(join(staging, name), bytes);

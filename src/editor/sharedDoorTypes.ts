@@ -7,6 +7,7 @@ import { t } from "../i18n";
 import { sharedConfigured, sharedToken } from "./sharedAuth";
 import { loadDefinitions, publishDefinition } from "./sharedDefinitions";
 import { textureStatus } from "./textureLibrary";
+import { isPropTexture } from "./textureDrafts";
 
 export interface DoorDraft { id: string; world: WorldId; definition: DoorType }
 
@@ -87,6 +88,7 @@ export function createDoorDraft(world: WorldId) {
 export function doorTextureOptions(world: WorldId) {
   return Object.entries(TEXTURE_SETS).filter(([id, paths]) =>
     id !== "sky" && assetInWorld(id, world) && textureStatus(id) !== "new" &&
+    !(id.startsWith(world + "_shared_") && isPropTexture([paths.kind].flat())) &&
     [paths.kind].flat().some(kind => kind === "door" || kind === "wall" || kind === "propFace"));
 }
 

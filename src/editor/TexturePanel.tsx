@@ -12,7 +12,7 @@ import { deleteSharedTexture, publishDrafts } from "./sharedTextures";
 import { discardImageDraft, useImageDrafts } from "./sharedImages";
 import { discardPropDraft, usePropDrafts } from "./sharedProps";
 import { discardDoorDraft, useDoorDrafts } from "./sharedDoorTypes";
-import { draftById, draftCounts, draftId, discardAllDrafts, discardDraft, MAP_KEYS, saveDraft, useDrafts, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
+import { draftById, draftCounts, draftId, discardDraft, isPropTexture, MAP_KEYS, saveDraft, useDrafts, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
 import type { TextureTuning } from "../render/textureTuning";
 import { AiBadge, AiDepthControls } from "./AiDepthControls";
 import { catalogLabel, convertLegacy, ensureDraft, mapUses, sharedInfo, textureStatus, useTextureVersion } from "./textureLibrary";
@@ -103,7 +103,7 @@ export function useTextureEditor(id: string, onError: (message: string) => void,
 
 // ---- the texture's settings: above the channel cards ----
 
-export function TextureFields({ editor }: { editor: TextureEditor }) {
+export function TextureFields({ editor, embedded = false }: { editor: TextureEditor; embedded?: boolean }) {
   const { id, status, draft, info, view, change, onError, onSelect } = editor;
   const [nameText, setNameText] = useState(view?.name ?? "");
   const nameTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -139,7 +139,7 @@ export function TextureFields({ editor }: { editor: TextureEditor }) {
       {isNew ? t("assetManager.statusNew") : draft ? t("assetManager.statusChanged", { rev: draft.baseRev }) : t("assetManager.statusShared", { rev: info?.rev ?? 0 })}
       {autoKeys.length > 0 && <> · <AutoBadge/> {autoKeys.map(k => t(rowKey(k))).join(", ")}</>}
     </p>
-    <label className="block">{t("assetManager.nameLabel")}
+    {!embedded && <><label className="block">{t("assetManager.nameLabel")}
       <input className="mt-1 block w-full rounded border border-neutral-500 bg-neutral-900 px-2 py-1" value={nameText} maxLength={60}
         onKeyDown={e => { e.stopPropagation(); if (e.key === "Enter") e.currentTarget.blur(); }}
         onChange={e => { const v = e.target.value; setNameText(v); clearTimeout(nameTimer.current); if (draft) nameTimer.current = setTimeout(() => void change(d => { d.name = v; return d; }), 350); }}
@@ -150,12 +150,12 @@ export function TextureFields({ editor }: { editor: TextureEditor }) {
         const on = view.kinds.includes(kind);
         return <label key={kind}><input type="checkbox" checked={on} disabled={on && view.kinds.length === 1} onChange={e => void change(d => { d.kinds = (["wall", "floor", "ceiling"] as SurfaceKind[]).filter(k => k === kind ? e.target.checked : d.kinds.includes(k)); return d; })}/> {t(("assetManager." + kind) as Key)}</label>;
       })}
-    </fieldset>
+    </fieldset></>}
     <label><input type="checkbox" checked={view.pixelArt} onChange={e => void change(d => { d.pixelArt = e.target.checked; return d; })}/> {t("assetManager.pixelArt")}</label>
     <label title={t("assetManager.smoothHint")}><input type="checkbox" checked={view.smooth} onChange={e => void change(d => { d.smooth = e.target.checked; return d; })}/> {t("assetManager.smooth")}</label>
-    <label>{t("assetManager.world")} {isNew
+    {!embedded && <label>{t("assetManager.world")} {isNew
       ? <select className={small} value={view.world} onChange={e => { const world = e.target.value as WorldId; void change(d => { d.world = world; return d; }).then(() => { if (draft) onSelect(world + "_shared_" + draft.uuid); }); }}><option value="fantasy">{t("assetManager.fantasy")}</option><option value="scifi">{t("assetManager.scifi")}</option></select>
-      : <strong>{t(view.world === "fantasy" ? "assetManager.fantasy" : "assetManager.scifi")}</strong>}</label>
+      : <strong>{t(view.world === "fantasy" ? "assetManager.fantasy" : "assetManager.scifi")}</strong>}</label>}
 
     <fieldset className="rounded border border-neutral-800 p-2"><legend className="px-1 text-xs text-neutral-300">{t("assetManager.transparency")}</legend>
       <div className="flex flex-col gap-1">
@@ -172,23 +172,25 @@ export function TextureFields({ editor }: { editor: TextureEditor }) {
         <label><input type="radio" name={"tr-" + id} checked={view.transparency.source === "none"} onChange={() => setSource("none")}/> {t("assetManager.tr.none")}</label>
       </div>
     </fieldset>
-    <div className="flex flex-wrap gap-2">
+    {!embedded && <div className="flex flex-wrap gap-2">
       {draft && <button className={small} onClick={() => { if (!isNew || window.confirm(t("assetManager.confirmDeleteDraft"))) void discardDraft(draft.uuid); }}>{isNew ? t("assetManager.deleteDraft") : t("assetManager.discardChanges")}</button>}
       {deleteButton}
-    </div>
+    </div>}
   </div>;
 }
 
 // ---- the controls of one channel card (Upload / Auto / None / Remove), under its thumbnail ----
 
-export function ChannelControls({ editor, channel }: { editor: TextureEditor; channel: MapKey }) {
+export function ChannelControls({ editor, channel, onAiRunning }: {
+  editor: TextureEditor; channel: MapKey; onAiRunning?: (running: boolean) => void;
+}) {
   const input = useRef<HTMLInputElement>(null);
   const { view } = editor;
   if (!view) return null;
   const slot = view.slot(channel);
   const required = channel === "diffuse";
   return <div className="mt-1 flex flex-col gap-1" onDragOver={e => e.preventDefault()}
-    onDrop={(e: DragEvent) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void editor.chooseFile(channel, f); }}>
+    onDrop={(e: DragEvent) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && !e.currentTarget.closest("fieldset:disabled")) void editor.chooseFile(channel, f); }}>
     {modesOf(channel).length > 1 && <div className="flex flex-wrap gap-1" role="group" aria-label={t(rowKey(channel))}>{modesOf(channel).map(m =>
       <button key={m} className={small} aria-pressed={slot.mode === m} title={m === "auto" ? t("assetManager.autoHint") : undefined} onClick={() => editor.setMode(channel, m, () => input.current?.click())}>{t(modeKey(m))}</button>)}</div>}
     <div className="flex flex-wrap gap-1">
@@ -199,14 +201,14 @@ export function ChannelControls({ editor, channel }: { editor: TextureEditor; ch
     {required && !slot.has && <p className="text-[10px] text-red-300">{t("assetManager.required")}</p>}
     {channel === "depth" && <>
       {editor.draft?.aiDepth && slot.mode === "uploaded" && slot.has && <p className="flex items-center gap-1 text-[10px] text-neutral-300"><AiBadge/>{t("assetManager.ai.status")}</p>}
-      <AiDepthControls editor={editor}/>
+      <AiDepthControls editor={editor} onRunningChange={onAiRunning}/>
     </>}
   </div>;
 }
 // ---- the yellow bar ----
 
 export function UnsavedBar({ onError }: { onError: (message: string) => void }) {
-  const drafts = useDrafts();
+  const drafts = useDrafts().filter(draft => !isPropTexture(draft.kinds));
   // (images - decals and stills - are published one by one from their own properties panel; the bar only reminds)
   const imageDraftList = useImageDrafts();
   const imageDrafts = imageDraftList.length;
@@ -260,16 +262,20 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
           {draft.definition.name || t("assetManager.untitled")}
         </button>
         <button type="button" className="border-l border-yellow-500/70 px-1.5 py-0.5 hover:bg-red-900/60" aria-label={t("assetManager.discard")}
-          onClick={() => {
+          onClick={async () => {
             if (!window.confirm(t("assetManager.image.discardConfirm", { name: draft.definition.name || t("assetManager.untitled") }))) return;
-            try { draft.discard(draft.id); } catch (error) { onError(errorText(error)); }
+            try { await draft.discard(draft.id); } catch (error) { onError(errorText(error)); }
           }}>×</button>
       </span>)}
     </span>}
     {drafts.length > 0 && message && <span className="text-yellow-200/80">{message}</span>}
     {drafts.length > 0 && <>
       <button className={small + " !border-yellow-400"} disabled={busy} onClick={start}>{t("assetManager.publish")}</button>
-      <button className={small} disabled={busy} onClick={() => { if (window.confirm(t("assetManager.confirmDiscard", { n: added, m: changed }))) void discardAllDrafts(); }}>{t("assetManager.discard")}</button>
+      <button className={small} disabled={busy} onClick={() => {
+        if (window.confirm(t("assetManager.confirmDiscard", { n: added, m: changed }))) {
+          void Promise.all(drafts.map(draft => discardDraft(draft.uuid)));
+        }
+      }}>{t("assetManager.discard")}</button>
     </>}
     {login && <SignInPopover className="absolute right-2 top-full mt-1" onDone={() => { setLogin(false); void publish(); }} onCancel={() => setLogin(false)} onError={onError}/>}
   </div>;

@@ -78,7 +78,11 @@ Az ajtólap (rács) és a keret (boltív) **ne kelljen újra feltölteni propké
 4. Prop létrehozása (panel / billboard / cross), a „Használat” jelölők, `fence1` / `arch1` felvétele.
 5. Ajtó-típus, az „Ajtó + keret” nézet, az oldalra kifordulós ajtó mozgása (render + szerkesztő + `DoorSpec.type`).
 6. NPC sprite-sheet vágó (a legnagyobb: előnézet, sorok szerepe, validálás).
-7. Manifest-ellenőrzés az RPG-motor felé (minden hivatkozott azonosító létezik-e).
+7. **PNG/WebP tárolás.** Elsőként az NPC sprite-sheet színtérképénél hasonlítsuk össze az eredeti vagy előállított PNG-t és a veszteségmentes WebP-t. A kisebbik változatot tároljuk, ha a látható színek és az alfa értékei megegyeznek. A normál- és mélységtérképek első körben PNG-k maradnak.
+   - A Supabase `void-textures` bucket MIME-listáját külön migráció bővítse `image/webp`-vel az `image/png` és az `application/json` mellett.
+   - A közzétett revízió metaadata adja meg a színtérkép fájlnevét. A régi, fájlnév nélküli metaadat továbbra is a `diffuse.png` fájlt jelentse. A böngészős betöltő, a vendégnézet, a revízió szerkesztése és a kiadási csomagolás ugyanazt a szabályt kövesse.
+   - Ellenőrizzük a PNG- és WebP-importot, az alfa- és színkulcsos kivágás megőrzését, a régi PNG-revíziók betöltését és a közzétételt mindkét formátumban. A már közzétett revíziókhoz maradjon meg a meglévő fájl.
+8. Manifest-ellenőrzés az RPG-motor felé (minden hivatkozott azonosító létezik-e).
 
 ## 6. Nyitott kérdések
 

@@ -12,6 +12,7 @@ import type { ItemStack, LootSpill } from "./items";
 import { PROP_TYPES, propHeight, propPlacement } from "./props";
 import type { ShipMood } from "./variation";
 import { ACTOR_TYPES, SPOTTED_MS, actorAt, actorFromSpec, actorWake, createActors, partyHitChance, scared, stepActors, type Spotted } from "./actors";
+import { onSharedActorsChanged } from "../editor/sharedActors";
 import { moodOdds } from "./variation";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
@@ -421,6 +422,17 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map.id, actorsKey, updateActors, actorKey]);
+  useEffect(() => onSharedActorsChanged(ids => {
+    const current = mapRef.current;
+    if (!current.actors?.some(spec => ids.has(spec.actor))) return;
+    const occupied = new Set(actorsRef.current.map(a => a.id));
+    const now = gameClock.now();
+    const added = createActors(current, now, alertLevelRef.current, variationRef.current === null,
+      stanceRef.current ?? variationRef.current?.mood.robots)
+      .filter(a => ids.has(a.type) && !occupied.has(a.id))
+      .map(a => killedRef.current.has(actorKey(current, a.id)) ? { ...a, hp: 0, diedAt: now - 1e6 } : a);
+    if (added.length) updateActors([...actorsRef.current, ...added]);
+  }), [actorKey, updateActors]);
   // (defined further down)
   const applyFixtureModeRef = useRef((a: ActorState) => a);
   // reinforcements: when each "arrive" actor comes next (by its index)

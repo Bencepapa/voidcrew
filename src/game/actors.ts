@@ -5,6 +5,7 @@ import { PROP_TYPES } from "./props";
 import { passage } from "./heights";
 import { lineOfSight } from "./visibility";
 import type { Body } from "./heights";
+import { isSharedActorId, type ActorSheetLayout } from "./actorSheets";
 import type { ActorSpec, Direction, GameMap, Vec2, ActorWake } from "./types";
 
 // Moving actors (robots, NPCs, enemies): each stands in a cell, walks cell
@@ -23,14 +24,13 @@ import type { ActorSpec, Direction, GameMap, Vec2, ActorWake } from "./types";
 export type BodyPart = "head" | "torso" | "armL" | "armR" | "legs";
 export const BODY_PARTS: BodyPart[] = ["head", "torso", "armL", "armR", "legs"];
 
-export interface ActorType {
+export interface ActorType extends ActorSheetLayout {
   // for the log, e.g. "A combat robot"
   name: string;
   // sprite sheet: public/actors/<sheet>/ (diffuse.png, normal.png), a grid
   // of `cols` directions x `rows` poses (see scripts/make-actor-sheet.ts)
   sheet: string;
-  cols: number;
-  rows: number;
+  sheetFiles?: { diffuse: string; normal?: string };
   // a sheet cell's width / height
   cellAspect: number;
   // how tall a sheet cell stands (wall heights)
@@ -43,20 +43,8 @@ export interface ActorType {
   moveMs: number;
   // the pause at each patrol point
   waitMs: number;
-  // sheet rows: standing, and the walk cycle over one step
-  idleRow: number;
-  walkRows: number[];
-  // and, if the sheet has them: firing (one row, or a few played in turn
-  // while it fires), falling (in order) and the wreck left lying (without
-  // them it fades out when it dies)
-  shootRow?: number;
-  shootRows?: number[];
-  dieRows?: number[];
-  wreckRow?: number;
   // what its wreck gives when searched (a loot table - see items.ts)
   loot?: string;
-  // the sheet row shown for a moment when it's hit
-  hitRow?: number;
   // a harmless one (a cleaning drone): it takes no notice of the party,
   // never fights, shares a cell with it - and when hit, flees for
   // `fleeMs`, at `fleeSpeed` times its pace. Without a route it wanders.
@@ -1135,7 +1123,7 @@ export interface ActorState {
 export function createActors(map: GameMap, now: number, level = 0, all = false, stance: Stance = "hostile"): ActorState[] {
   return (map.actors ?? []).flatMap((spec, id) => {
     if (!ACTOR_TYPES[spec.actor]) {
-      console.error(`${map.id}: unknown actor "${spec.actor}" at ${spec.cell.x},${spec.cell.y}`);
+      if (!isSharedActorId(spec.actor)) console.error(`${map.id}: unknown actor "${spec.actor}" at ${spec.cell.x},${spec.cell.y}`);
       return [];
     }
     const wake = actorWake(spec, stance);

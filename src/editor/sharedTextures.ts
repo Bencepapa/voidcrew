@@ -13,7 +13,7 @@ import { autoRecipe } from "./autoMaps";
 import { MAX_PNG_BYTES, isPng } from "./imageTools";
 import { SharedHttpError, sharedConfigured, sharedProject, sharedRequest, sharedToken, sharedUpload } from "./sharedAuth";
 import { readSharedCache, writeSharedCache } from "./sharedCache";
-import { draftId, discardDraft, MAP_KEYS, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
+import { draftId, discardDraft, MAP_KEYS, type MapKey, type MapMode, type DraftTextureKind, type TextureDraft } from "./textureDrafts";
 import { setSharedTextures, sharedInfo, surfaceOf, uploaded, type SharedInfo, type SharedMeta } from "./textureLibrary";
 
 const LIST = "/storage/v1/object/list/void-textures";
@@ -50,7 +50,8 @@ function parseMeta(raw: unknown, rev: number): SharedMeta | null {
   const m = raw as Partial<SharedMeta> | null;
   if (!m || typeof m !== "object" || typeof m.name !== "string") return null;
   if (m.type !== undefined && m.type !== "texture") return null;
-  const kinds = (Array.isArray(m.kinds) ? m.kinds : []).filter((k): k is SurfaceKind => k === "wall" || k === "floor" || k === "ceiling");
+  const kinds = (Array.isArray(m.kinds) ? m.kinds : []).filter((k): k is DraftTextureKind =>
+    k === "wall" || k === "floor" || k === "ceiling" || k === "propFace");
   const mode = (v: unknown, fallback: MapMode): MapMode => v === "uploaded" || v === "auto" || v === "none" ? v : fallback;
   const src = m.transparency?.source;
   return {
@@ -164,6 +165,24 @@ function metaOf(d: TextureDraft, rev: number): SharedMeta {
 
 export interface PublishReport { published: string[]; skipped: string[] }
 
+export async function publishTextureRevision(draft: TextureDraft, ask: (d: TextureDraft, theirs: number) => boolean): Promise<SharedInfo | undefined> {
+  const files = await publishFiles(draft);
+  const state = await revisionState(draft.world, draft.uuid);
+  if (state.published !== draft.baseRev && !ask(draft, state.published)) return;
+  const path = `${draft.world}/${draft.uuid}/r${state.next}/`;
+  const folder = "/storage/v1/object/void-textures/" + path;
+  const meta = metaOf(draft, state.next);
+  try {
+    for (const { file, blob } of files) await sharedUpload(folder + file, blob, "image/png");
+    await sharedUpload(folder + "meta.json", JSON.stringify(meta, null, 2), "application/json");
+  } catch (error) {
+    if (error instanceof SharedHttpError && error.status === 415) throw new Error(t("assetManager.err.needSql"));
+    throw error;
+  }
+  return { id: draftId(draft), world: draft.world, uuid: draft.uuid, rev: state.next, legacy: false,
+    meta, base: publicBase() + path };
+}
+
 // Publishes the drafts one after the other. `ask` is asked when the store has a
 // newer revision than the draft started from; answering no skips that texture.
 // A published draft is discarded after the store was read again.
@@ -172,20 +191,11 @@ export async function publishDrafts(list: TextureDraft[], ask: (d: TextureDraft,
   for (const d of list) {
     const name = d.name.trim() || t("assetManager.untitled");
     progress?.(t("assetManager.publishing", { name }));
-    const files = await publishFiles(d);
-    const state = await revisionState(d.world, d.uuid);
-    if (state.published !== d.baseRev && !ask(d, state.published)) { report.skipped.push(draftId(d)); continue; }
-    const folder = `/storage/v1/object/void-textures/${d.world}/${d.uuid}/r${state.next}/`;
-    try {
-      for (const { file, blob } of files) await sharedUpload(folder + file, blob, "image/png");
-      await sharedUpload(folder + "meta.json", JSON.stringify(metaOf(d, state.next), null, 2), "application/json");
-    } catch (error) {
-      if (error instanceof SharedHttpError && error.status === 415) throw new Error(t("assetManager.err.needSql"));
-      throw error;
-    }
-    report.published.push(draftId(d));
-    await loadSharedTextures(d.world);
-    await discardDraft(d.uuid);
+    if (await publishTextureRevision(d, ask)) {
+      report.published.push(draftId(d));
+      await loadSharedTextures(d.world);
+      await discardDraft(d.uuid);
+    } else report.skipped.push(draftId(d));
   }
   return report;
 }

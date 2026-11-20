@@ -3,18 +3,26 @@ import { t } from "../i18n";
 import type { SingleTextureProp } from "../game/props";
 import { NumberField } from "./NumberField";
 import { sharedConfigured, useSharedAuth } from "./sharedAuth";
-import { discardPropDraft, getPropDrafts, PROP_SHAPES, propTextures, publishProp, savePropDraft, type PropDraft } from "./sharedProps";
+import { attachPropTexture, discardPropDraft, getPropDrafts, PROP_SHAPES, propTextureId, propTextures, publishProp, savePropDraft, type PropDraft } from "./sharedProps";
 import { errorText, SignInPopover } from "./TexturePanel";
 import { BUTTON, idle } from "./inspector/parts";
 
 const field = "w-full min-w-0 rounded border border-neutral-600 bg-neutral-900 px-2 py-1";
 
-export function PropAssetFields({ draft, onError }: { draft: PropDraft; onError: (message: string) => void }) {
+export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onError }: {
+  draft: PropDraft;
+  ownedReady: boolean;
+  mapsBusy: boolean;
+  onPublishing: (busy: boolean) => void;
+  onError: (message: string) => void;
+}) {
   const { definition } = draft;
   const auth = useSharedAuth();
   const [busy, setBusy] = useState(false);
   const [signIn, setSignIn] = useState(false);
   const textures = propTextures(draft.world);
+  const own = propTextureId(draft.id);
+  const usesOwnTexture = definition.texture === own;
   const current = () => getPropDrafts().find(row => row.id === draft.id);
 
   function edit(patch: Partial<SingleTextureProp>) {
@@ -28,8 +36,17 @@ export function PropAssetFields({ draft, onError }: { draft: PropDraft; onError:
     const latest = current();
     if (!latest || busy) return;
     setBusy(true);
+    onPublishing(true);
     onError("");
     try { await publishProp(latest); }
+    catch (error) { onError(errorText(error)); }
+    finally { setBusy(false); onPublishing(false); }
+  }
+
+  async function useOwnTexture() {
+    setBusy(true);
+    onError("");
+    try { await attachPropTexture(draft); }
     catch (error) { onError(errorText(error)); }
     finally { setBusy(false); }
   }
@@ -42,7 +59,7 @@ export function PropAssetFields({ draft, onError }: { draft: PropDraft; onError:
 
   return <details open className="rounded border border-neutral-800 p-2">
     <summary className="cursor-pointer font-semibold">{t("assetManager.propDraft.fields")}</summary>
-    <fieldset disabled={busy} className="mt-2 flex min-w-0 flex-col gap-2">
+    <fieldset disabled={busy || mapsBusy} className="mt-2 flex min-w-0 flex-col gap-2">
       <label>{t("assetManager.image.name")}
         <input className={field} value={definition.name ?? ""} maxLength={100} onChange={event => edit({ name: event.target.value })}/>
       </label>
@@ -52,9 +69,13 @@ export function PropAssetFields({ draft, onError }: { draft: PropDraft; onError:
         </select>
       </label>
       <label>{t("assetManager.propDraft.texture")}
-        <select className={field} value={definition.texture} onChange={event => edit({ texture: event.target.value })}>
+        <select className={field} value={definition.texture} onChange={event => {
+          if (event.target.value === own) void useOwnTexture();
+          else edit({ texture: event.target.value });
+        }}>
           <option value="">{t("assetManager.propDraft.pickTexture")}</option>
-          {definition.texture && !textures.has(definition.texture) && <option value={definition.texture}>{definition.texture}</option>}
+          <option value={own}>{t("assetManager.propDraft.ownTexture")}</option>
+          {definition.texture && !usesOwnTexture && !textures.has(definition.texture) && <option value={definition.texture}>{definition.texture}</option>}
           {[...textures].map(([id, texture]) => <option key={id} value={id}>{texture.label}</option>)}
         </select>
       </label>
@@ -65,6 +86,7 @@ export function PropAssetFields({ draft, onError }: { draft: PropDraft; onError:
             size[index] = value;
             edit({ size });
           }}/>)}
+      <p className="text-xs text-neutral-400">{t("assetManager.propDraft.footprintHint")}</p>
       <NumberField label={t("assetManager.propDraft.elevation")} value={definition.elevation ?? 0} min={0} max={8} step={.05}
         defaultValue={0} onChange={elevation => edit({ elevation })}/>
       {definition.kind !== "billboard" && <NumberField label={t("assetManager.reliefDepth")} value={definition.relief ?? 1}
@@ -72,11 +94,11 @@ export function PropAssetFields({ draft, onError }: { draft: PropDraft; onError:
       <label><input type="checkbox" checked={definition.wall ?? false} onChange={event => edit({ wall: event.target.checked })}/> {t("assetManager.propDraft.wall")}</label>
       <label><input type="checkbox" checked={definition.blocks ?? false} onChange={event => edit({ blocks: event.target.checked })}/> {t("assetManager.propDraft.blocks")}</label>
       <div className="flex flex-wrap gap-1">
-        <button type="button" className={`${BUTTON} ${idle}`} disabled={!definition.name?.trim() || !textures.has(definition.texture)}
+        <button type="button" className={`${BUTTON} ${idle}`} disabled={!definition.name?.trim() || !(usesOwnTexture ? ownedReady : textures.has(definition.texture))}
           onClick={startPublish}>{t("assetManager.image.publish")}</button>
-        <button type="button" className={`${BUTTON} ${idle}`} onClick={() => {
+        <button type="button" className={`${BUTTON} ${idle}`} onClick={async () => {
           if (!window.confirm(t("assetManager.image.discardConfirm", { name: definition.name || t("assetManager.untitled") }))) return;
-          try { discardPropDraft(draft.id); } catch (error) { onError(errorText(error)); }
+          try { await discardPropDraft(draft.id); } catch (error) { onError(errorText(error)); }
         }}>{t("assetManager.image.discard")}</button>
       </div>
     </fieldset>

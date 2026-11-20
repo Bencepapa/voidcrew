@@ -27,6 +27,8 @@ import { AssetManager } from "./editor/AssetManager";
 import { loadSharedImages } from "./editor/sharedImages";
 import { loadSharedProps } from "./editor/sharedProps";
 import { doorType, loadSharedDoors } from "./editor/sharedDoorTypes";
+import { loadSharedActors } from "./editor/sharedActors";
+import { isSharedActorId } from "./game/actorSheets";
 import { loadSharedTextures } from "./editor/sharedTextures";
 import { sharedImage } from "./render/sharedImages";
 import { PropEditor } from "./editor/PropEditor";
@@ -384,6 +386,10 @@ export default function App() {
       void loadSharedTextures(map.world).catch(console.warn);
     }
   }, [map.world, needsSharedDoors]);
+  const needsSharedActors = !!map.actors?.some(spec => isSharedActorId(spec.actor) && !ACTOR_TYPES[spec.actor]);
+  useEffect(() => {
+    if (needsSharedActors) void loadSharedActors(map.world).catch(console.warn);
+  }, [map.world, needsSharedActors]);
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");

@@ -17,6 +17,9 @@ import { MapFields } from "./inspector/MapFields";
 import { EventFields } from "./inspector/EventFields";
 import { PROP_TYPES } from "../game/props";
 import { ACTOR_TYPES } from "../game/actors";
+import { isSharedActorId } from "../game/actorSheets";
+import { actorThumbnail } from "../render/actorSheetFiles";
+import { useSharedActorVersion } from "./sharedActors";
 import { TEXTURE_SETS } from "../render/textureSets";
 import { pickupTexture } from "../render/sharedImages";
 import { ITEM_TYPES } from "../game/items";
@@ -31,6 +34,7 @@ const icons = {prop:"◇",decal:"▧",item:"◆",light:"☼",actor:"♙",smoke:"
 // This bridge keeps all existing App callbacks in one place while the toolbar
 // and inspector are portalled into their separate shell docks.
 export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
+ useSharedActorVersion();
  const transaction=useRef(Date.now());
  const commit=useCallback(()=>{transaction.current++;},[]);
  const kind=p.inspected?.kind;
@@ -56,8 +60,8 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
   <header className="sticky top-0 z-10 flex min-w-0 items-center gap-2 bg-neutral-950 p-2 border-b border-neutral-700">
    <span aria-hidden="true" className="text-xl text-neutral-200">{kind&&selected?icons[kind]:"▦"}</span>
    {thumbnail&&<img src={thumbnail} alt="" className="h-10 w-10 shrink-0 object-contain" style={{imageRendering:"pixelated"}}/>}
-   {actor&&<span aria-hidden="true" className="h-10 w-10 shrink-0" style={{backgroundImage:`url(${import.meta.env.BASE_URL}actors/${actor.sheet}/diffuse.png)`,backgroundSize:`${actor.cols*100}% ${actor.rows*100}%`,backgroundPosition:`0 ${actor.idleRow/(actor.rows-1)*100}%`,imageRendering:"pixelated"}}/>}
-   <div className="min-w-0"><strong className="block text-neutral-100">{heading}</strong>{type&&<span className="block break-words">{kind==="item"?ITEM_TYPES[type]?.name ?? type:type}</span>}{p.inspected?.cell&&<span className="text-neutral-400">{t("inspector.cell",p.inspected.cell)}</span>}</div>
+   {actor&&<span aria-hidden="true" className="h-10 w-10 shrink-0" style={actorThumbnail(actor)}/>}
+   <div className="min-w-0"><strong className="block text-neutral-100">{heading}</strong>{type&&<span className="block break-words">{kind==="item"?ITEM_TYPES[type]?.name ?? type:actor&&isSharedActorId(type)?actor.name:type}</span>}{p.inspected?.cell&&<span className="text-neutral-400">{t("inspector.cell",p.inspected.cell)}</span>}</div>
   </header>
   <CommitContext.Provider value={commit}><div key={`${p.mapId}:${kind??"map"}`}>{p.tool==="event"?<EventFields {...p} onEventChange={event=>p.onEventChange(event,merge())}/>:<Fields {...props}/>}</div></CommitContext.Provider>
  </aside>;

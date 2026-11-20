@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from "react";
 import { isSharedPropId, PROP_TYPES, type SingleTextureProp } from "../game/props";
-import { assetInWorld, type WorldId } from "../game/worlds";
+import { assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { t } from "../i18n";
-import { TEXTURE_SETS, textureFolder } from "../render/textureSets";
+import { isTextureSetId, TEXTURE_SETS, textureFolder } from "../render/textureSets";
 import { sharedConfigured, sharedToken } from "./sharedAuth";
 import { loadDefinitions, publishDefinition } from "./sharedDefinitions";
-import { textureStatus } from "./textureLibrary";
+import { installSharedTexture, textureStatus } from "./textureLibrary";
+import { loadSharedTextures, publishTextureRevision } from "./sharedTextures";
+import { discardDraft, draftById, draftsReady, isPropTexture, newDraft } from "./textureDrafts";
 
 export const PROP_SHAPES = ["panel", "billboard", "cross"] as const;
 
@@ -83,15 +85,41 @@ export function createPropDraft(world: WorldId, kind: SingleTextureProp["kind"],
   return draft;
 }
 
-export function discardPropDraft(id: string) {
+// Give the prop's private texture a stable ID across reloads and partial publishes.
+export const propTextureId = (id: string) => id.replace("_prop_", "_shared_");
+
+export function reviseSharedProp(id: string) {
+  const world = assetWorld(id);
+  const definition = installed.get(world)?.get(id);
+  if (definition && !drafts.some(draft => draft.id === id)) savePropDraft({ id, world, definition });
+}
+
+export async function attachPropTexture(draft: PropDraft) {
+  await draftsReady;
+  if (!drafts.some(row => row.id === draft.id)) return;
+  const id = propTextureId(draft.id);
+  if (!draftById(id) && !isTextureSetId(id)) {
+    await newDraft(draft.world, draft.definition.name || t("assetManager.propDraft.ownTexture"), {
+      uuid: draft.id.slice((draft.world + "_prop_").length), kinds: ["propFace"],
+    });
+  }
+  const latest = drafts.find(row => row.id === draft.id);
+  if (latest) savePropDraft({ ...latest, definition: { ...latest.definition, texture: id } });
+}
+
+export async function discardPropDraft(id: string) {
   const next = drafts.filter(row => row.id !== id);
   localStorage.setItem(storageKey, JSON.stringify(next));
   drafts = next;
   for (const listener of listeners) listener();
+  await draftsReady;
+  const texture = draftById(propTextureId(id));
+  if (texture) await discardDraft(texture.uuid);
 }
 
 export function propTextures(world: WorldId) {
-  const sets = Object.entries(TEXTURE_SETS).filter(([id]) => id !== "sky" && assetInWorld(id, world) && textureStatus(id) !== "new");
+  const sets = Object.entries(TEXTURE_SETS).filter(([id, paths]) => id !== "sky" && assetInWorld(id, world) &&
+    textureStatus(id) !== "new" && !(id.startsWith(world + "_shared_") && isPropTexture([paths.kind].flat())));
   const options = new Map(sets.map(([id, paths]) => [id, { label: paths.label, diffuse: paths.diffuse }]));
   for (const [id, prop] of Object.entries(PROP_TYPES)) {
     if (isSharedPropId(id) || !PROP_SHAPES.some(kind => prop.kind === kind) ||
@@ -141,13 +169,29 @@ export async function loadSharedProps(world: WorldId, init?: RequestInit) {
 export async function publishProp(draft: PropDraft) {
   const definition = readDefinition(draft.definition);
   if (!definition?.name?.trim()) throw new Error(t("assetManager.propDraft.needName"));
-  if (!propTextures(draft.world).has(definition.texture)) throw new Error(t("assetManager.propDraft.needTexture"));
   if (!sharedToken()) throw new Error(t("assetManager.err.signInFirst"));
   definition.name = definition.name.trim();
+  if (definition.texture === propTextureId(draft.id)) {
+    await draftsReady;
+    const texture = draftById(definition.texture);
+    if (texture) {
+      if (!texture.maps.diffuse.blob) throw new Error(t("assetManager.required"));
+      const published = await publishTextureRevision({ ...texture, name: definition.name }, (d, theirs) =>
+        window.confirm(t("assetManager.conflict", { name: definition.name!, theirs, mine: d.baseRev })));
+      if (!published) return;
+      installSharedTexture(published);
+      await discardDraft(texture.uuid);
+    } else {
+      if (!isTextureSetId(definition.texture)) await loadSharedTextures(draft.world);
+      if (!isTextureSetId(definition.texture)) throw new Error(t("assetManager.propDraft.needTexture"));
+    }
+  } else if (!propTextures(draft.world).has(definition.texture)) {
+    throw new Error(t("assetManager.propDraft.needTexture"));
+  }
   await publishDefinition(draft.world, "prop", draft.id, definition);
   loads.set(draft.world, (loads.get(draft.world) ?? 0) + 1);
   const next = new Map(installed.get(draft.world));
   next.set(draft.id, definition);
   install(draft.world, next);
-  discardPropDraft(draft.id);
+  await discardPropDraft(draft.id);
 }
