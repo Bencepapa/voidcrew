@@ -5,6 +5,7 @@ import { DIR_VECTOR } from "../game/movement";
 import { PROP_TYPES, propPlacement } from "../game/props";
 import { itemSpot } from "../game/items";
 import type { PropSpec } from "../game/types";
+import { getDialogue } from "../game/dialogueCatalog";
 
 export type Problem = { severity: "error" | "warning"; code: string; cell?: Vec2; key: string; params?: Record<string, string | number> };
 
@@ -74,6 +75,12 @@ export function validateMap(map: GameMap): Problem[] {
   for (const g of groups) for (const e of g.entries) {
 
     for (const relation of ["with", "without"] as const) if (e[relation] && !ids.has(e[relation]!)) add("missingLink", e.cell, { id: e[relation]!, relation });
+  }
+  // an NPC's dialogue must exist (library and entry passage)
+  for (const a of map.actors ?? []) {
+    if (!a.dialogue) continue;
+    const d = getDialogue(a.dialogue.library);
+    if (!d || !(a.dialogue.entry in d.passages)) add("missingDialogue", a.cell, { library: a.dialogue.library, entry: a.dialogue.entry });
   }
   // A wall face exists at solid neighbours or a floor/ceiling height change.
   const surfaceExists = (c: Vec2, surface: string) => {

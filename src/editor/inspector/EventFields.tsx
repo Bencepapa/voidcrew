@@ -12,6 +12,12 @@ export function EventFields({ selectedEvent: event, onEventChange, onEventRemove
   const shared = useSharedImages();
   const commit = useContext(CommitContext);
   if (!event) return <p className="p-2">{t("events.place")}</p>;
+  if (event.kind === "dialogue") return <div className="grid gap-2 p-2">
+    <p>{t("events.dialogue")}: {event.library} / {event.entry}</p>
+    <button type="button" className="justify-self-start rounded border border-neutral-600 px-2 py-1" onClick={onEventRemove}>
+      {t("events.remove")}
+    </button>
+  </div>;
   const images = shared.filter(image => image.world === eventWorld && image.type === "portrait");
   return <div className="grid gap-2 p-2">
     {event.kind === "image" && <label>

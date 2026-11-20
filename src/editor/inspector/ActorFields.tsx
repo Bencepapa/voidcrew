@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { ACTOR_TYPES } from "../../game/actors";
+import { useDialogueLibraries } from "../../game/dialogueCatalog";
+import { useSharedImages } from "../../render/sharedImages";
 import { isSharedActorId } from "../../game/actorSheets";
 import { assetInWorld } from "../../game/worlds";
 import { t, type Key } from "../../i18n";
@@ -23,6 +26,59 @@ const WAKE_LABELS: Record<ActorWake["mode"], Record<number, Key>> = {
     "3": "editorBar.wake.arrive.3"
   }
 };
+const FIELD = "min-w-0 max-w-full flex-1 bg-neutral-800 border border-neutral-700 px-1 py-0.5";
+
+// A friendly NPC to talk to: its dialogue (library + entry passage), portrait and own shop.
+// Picking a dialogue offers "friendly" (switches it on); it can be switched off again.
+function TalkGroup(p: EditorBarProps) {
+ const libraries = useDialogueLibraries();
+ const images = useSharedImages();
+ const key = "voidcrew-inspector:actor:talk";
+ const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) === "true"; } catch { return false; } });
+ const actor = p.actor!;
+ const library = libraries.find(l => l.id === actor.dialogue?.library);
+ const portraits = images.filter(i => i.type === "portrait" && (i.purpose ?? "portrait") === "portrait");
+ const entry = actor.dialogue?.entry;
+ const setLibrary = (id: string) => {
+  if (!id) return p.onActorChange({ dialogue: undefined });
+  const entries = libraries.find(l => l.id === id)?.entries ?? [];
+  p.onActorChange({ dialogue: { library: id, entry: entries[0] ?? "" }, ...(actor.friendly ? {} : { friendly: true }) });
+ };
+ return <details open={open} onToggle={e => { const next = e.currentTarget.open; setOpen(next); try { localStorage.setItem(key, String(next)); } catch { /* storage unavailable */ } }} className="border-t border-neutral-700">
+  <summary className="cursor-pointer select-none px-2 py-2 text-neutral-200 hover:bg-neutral-800">{t("talk.group")}</summary>
+  <div className="flex min-w-0 flex-col gap-2 px-2 pb-3 [&_label]:flex [&_label]:min-w-0 [&_label]:flex-wrap [&_label]:items-center [&_label]:gap-1">
+   <label title={t("talk.friendlyTitle")}>
+    <input type="checkbox" checked={actor.friendly} onChange={e => p.onActorChange({ friendly: e.target.checked })}/>
+    {t("talk.friendly")}
+   </label>
+   <label>{t("talk.library")}
+    <select value={actor.dialogue?.library ?? ""} onChange={e => setLibrary(e.target.value)} className={FIELD}>
+     <option value="">{t("talk.none")}</option>
+     {actor.dialogue && !library && <option value={actor.dialogue.library}>{t("talk.missing", { id: actor.dialogue.library })}</option>}
+     {libraries.map(l => <option key={l.id} value={l.id}>{l.title === l.id ? l.id : `${l.title} (${l.id})`}</option>)}
+    </select>
+   </label>
+   {actor.dialogue && <label>{t("talk.entry")}
+    <select value={entry} onChange={e => p.onActorChange({ dialogue: { library: actor.dialogue!.library, entry: e.target.value } })} className={FIELD}>
+     {entry !== undefined && !library?.entries.includes(entry) && <option value={entry}>{t("talk.missing", { id: entry || "-" })}</option>}
+     {library?.entries.map(name => <option key={name} value={name}>{name}</option>)}
+    </select>
+   </label>}
+   <label>{t("talk.portrait")}
+    <select value={actor.portrait ?? ""} onChange={e => p.onActorChange({ portrait: e.target.value || undefined })} className={FIELD}>
+     <option value="">{t("talk.none")}</option>
+     {actor.portrait && !portraits.some(i => i.id === actor.portrait) && <option value={actor.portrait}>{t("talk.missing", { id: actor.portrait })}</option>}
+     {portraits.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+    </select>
+   </label>
+   <label title={t("talk.shopTitle")}>{t("talk.shop")}
+    <input type="text" value={actor.shop ?? ""} placeholder="-" onChange={e => p.onActorChange({ shop: e.target.value.trim() || undefined })}
+     className="min-w-0 flex-1 bg-neutral-800 border border-neutral-700 px-1"/>
+   </label>
+  </div>
+ </details>;
+}
+
 export function ActorFields(p: EditorBarProps) {
 if (!p.actor) return null;
 return <>
@@ -45,6 +101,7 @@ return <>
 <Section kind="actor" section="look">
 <KindChoice label={t("editorBar.npc")} value={p.actor.type} options={Object.entries(ACTOR_TYPES).filter(([id]) => assetInWorld(id)).map(([value, type]) => ({value,label:isSharedActorId(value) ? type.name : value}))} onChange={actor => p.onActorChange({actor})}/>
 </Section>
+<TalkGroup {...p}/>
 <Section kind="actor" section="logic">
 {chanceSlider(p.actor.chance, (chance) => p.onActorChange({ chance }))}
 {linkFields(p.actor.links, p.linkIds, p.onActorChange)}

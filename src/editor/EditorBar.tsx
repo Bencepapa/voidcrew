@@ -75,7 +75,7 @@ export interface EditorBarProps {
   robotChoice: string | null;
   onRobotChoice: (type: string) => void;
   actor: ActorInfo | null;
-  onActorChange: (patch: { actor?: string; facing?: Direction; chance?: number; wake?: ActorWake } & Linked, merge?: string) => void;
+  onActorChange: (patch: { actor?: string; facing?: Direction; chance?: number; wake?: ActorWake; friendly?: boolean; dialogue?: { library: string; entry: string }; portrait?: string; shop?: string } & Linked, merge?: string) => void;
   onActorClearRoute: () => void;
   onActorDelete: () => void;
   onActorDeselect: () => void;
@@ -204,6 +204,11 @@ export interface ActorInfo {
   links: Linked;
   // waiting for the ship's alert (see ActorWake)
   wake?: ActorWake;
+  // the Talk group: friendly (as set, else its type's default), what it says, its picture and shop
+  friendly: boolean;
+  dialogue?: { library: string; entry: string };
+  portrait?: string;
+  shop?: string;
 }
 
 // a door's lock with a change: none once it has neither a key nor a hack
