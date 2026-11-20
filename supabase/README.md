@@ -37,6 +37,11 @@ void-textures/<world>/<uuid>/r<rev>/diffuse.png    plus normal.png, depth.png, s
 
 The **Portraits and decals** panel uses the same PNG bucket and policies. Images are stored under `<world>/portrait/<uuid>/r<rev>/` or `<world>/decal/<uuid>/r<rev>/`. The release importer includes both image types. Published decals appear in the editor's decal palette.
 
+### Lossless WebP colour maps (NPC sprite sheets)
+
+An NPC's colour map is published as `diffuse.webp` when a lossless WebP is smaller than the PNG and decodes to exactly the same visible pixels, otherwise as `diffuse.png`. The file name is stored in the NPC's `meta.json` (`definition.diffuseFile`; revisions without it use `diffuse.png`). The normal map stays PNG. Run [shared-webp-mime.sql](./shared-webp-mime.sql) once so the bucket accepts `image/webp`; until then the editor falls back to PNG and says so. The 8 MiB limit applies to whichever file is stored.
+
+
 ## Try it from two browsers
 
 1. Open the same game world in two browser profiles. Enter the editor with **Tab**, click **Shared maps** and sign in with different accounts.

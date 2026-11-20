@@ -24,6 +24,7 @@ export const imageAssetsHu = {
   "assetManager.npcSheet.published": "Az NPC közzétéve, és elérhető az assetfában.",
   "assetManager.npcSheet.loadError": "A sprite-sheet betöltése sikertelen.",
   "assetManager.npcSheet.fileError": "Legfeljebb 2048 × 2048 képpontos és 8 MB-os PNG-t vagy WebP-t válassz.",
+  "assetManager.npcSheet.webpRefused": "A tároló még nem engedélyezi a WebP-t: PNG-ként publikálva. Futtasd a supabase/shared-webp-mime.sql fájlt.",
   "assetManager.npcSheet.normalSize": "A normáltérkép mérete egyezzen a sprite-sheet méretével.",
   "assetManager.npcSheet.invalid": "Ellenőrizd a nevet, a rácsot, az animációs sorokat és a képkockák eltolásait.",
   "assetManager.npcSheet.role.unused": "Kihagyva",

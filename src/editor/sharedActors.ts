@@ -6,6 +6,8 @@ import { setSharedActorOffsets, type ActorOffsets } from "../render/actorOffsets
 import { t } from "../i18n";
 import { idb } from "./idb";
 import { applyTransparency, decode, encode, isPng, MAX_PNG_BYTES, type Transparency } from "./imageTools";
+import { encodeSmallestLossless } from "./losslessImage";
+import { SharedHttpError } from "./sharedAuth";
 import { sharedConfigured, sharedToken } from "./sharedAuth";
 import { loadDefinitions, publishDefinition } from "./sharedDefinitions";
 
@@ -23,7 +25,12 @@ interface ActorDefinition {
   directions: ActorView[];
   offsets: Offset[];
   hasNormal: boolean;
+  // File name of the colour map in the revision folder; missing in old revisions = "diffuse.png".
+  diffuseFile?: DiffuseFile;
 }
+
+export type DiffuseFile = "diffuse.png" | "diffuse.webp";
+export const diffuseFileOf = (d: Pick<ActorDefinition, "diffuseFile">): DiffuseFile => d.diffuseFile ?? "diffuse.png";
 
 export interface ActorDraft extends Omit<ActorDefinition, "hasNormal"> {
   id: string;
@@ -60,7 +67,8 @@ function readDefinition(raw: unknown): ActorDefinition | undefined {
       !Array.isArray(d.offsets) || d.offsets.length !== d.cols * d.roles.length ||
       !d.offsets.every(offset => Array.isArray(offset) && offset.length === 2 &&
         offset.every(n => Number.isInteger(n) && Math.abs(n) <= 2048)) ||
-      typeof d.hasNormal !== "boolean") return;
+      typeof d.hasNormal !== "boolean" ||
+      (d.diffuseFile !== undefined && d.diffuseFile !== "diffuse.png" && d.diffuseFile !== "diffuse.webp")) return;
   return d;
 }
 
@@ -139,7 +147,7 @@ export async function reviseActor(id: string, world: WorldId) {
     return response.blob();
   };
   const { hasNormal, ...definition } = asset.definition;
-  const [diffuse, normal] = await Promise.all([read("diffuse.png"), hasNormal ? read("normal.png") : null]);
+  const [diffuse, normal] = await Promise.all([read(diffuseFileOf(asset.definition)), hasNormal ? read("normal.png") : null]);
   return { ...definition, id, world, diffuse, normal, transparency: alpha } satisfies ActorDraft;
 }
 
@@ -193,7 +201,7 @@ function install(entries: Map<string, PublishedActor>) {
     const source = ACTOR_TYPES.robot1;
     const type: ActorType = {
       ...source, ...layout, name: d.name, sheet: id, cellAspect: cell[0] / cell[1], height: d.worldHeight,
-      sheetFiles: { diffuse: entry.base + "diffuse.png", normal: d.hasNormal ? entry.base + "normal.png" : undefined },
+      sheetFiles: { diffuse: entry.base + diffuseFileOf(d), normal: d.hasNormal ? entry.base + "normal.png" : undefined },
       passive: { fleeMs: 7000, fleeSpeed: 2.2 }, body: { ...source.body, headroom: Math.min(d.worldHeight, 1) },
       eyeHeight: d.worldHeight * 0.8, loot: undefined, glow: undefined, crits: [], damage: [0, 0],
     };
@@ -223,16 +231,32 @@ export async function publishActor(draft: ActorDraft) {
   if (!sharedToken()) throw new Error(t("assetManager.err.signInFirst"));
   const { name, cols, roles, width, height, worldHeight, directions, normal } = draft;
   const offsets = Array.from({ length: cols * roles.length }, (_, index): Offset => draft.offsets[index] ?? [0, 0]);
-  const definition = readDefinition({
-    name: name.trim(), width, height, cols, roles, directions, offsets, worldHeight, hasNormal: !!normal,
-  });
-  if (!definition || !draft.diffuse) throw new Error(t("assetManager.npcSheet.invalid"));
+  const meta = { name: name.trim(), width, height, cols, roles, directions, offsets, worldHeight, hasNormal: !!normal };
+  if (!readDefinition(meta) || !draft.diffuse) throw new Error(t("assetManager.npcSheet.invalid"));
+  // The cut-out is applied first, so the stored map already has it.
   const diffuse = (await actorDiffuse(draft))!;
-  if (diffuse.size > MAX_PNG_BYTES) throw new Error(t("assetManager.npcSheet.fileError"));
-  const files = [{ name: "diffuse.png", blob: diffuse }];
-  if (normal) files.push({ name: "normal.png", blob: normal });
-  const base = await publishDefinition(draft.world, "actor", draft.id, definition, files);
+  const best = await encodeSmallestLossless(diffuse);
+  if (best.blob.size > MAX_PNG_BYTES) throw new Error(t("assetManager.npcSheet.fileError"));
+  const upload = (name: DiffuseFile, blob: Blob) => {
+    const definition = readDefinition({ ...meta, diffuseFile: name })!;
+    const files: { name: string; blob: Blob }[] = [{ name, blob }];
+    if (normal) files.push({ name: "normal.png", blob: normal });
+    return publishDefinition(draft.world, "actor", draft.id, definition, files).then(base => ({ definition, base }));
+  };
+  let published;
+  let webpRefused = false;
+  try {
+    published = await upload(best.ext === "webp" ? "diffuse.webp" : "diffuse.png", best.blob);
+  } catch (error) {
+    // The bucket may not allow image/webp yet (supabase/shared-webp-mime.sql): publish the PNG instead.
+    if (best.ext !== "webp" || !(error instanceof SharedHttpError) || ![400, 415, 422].includes(error.status)) throw error;
+    const png = await encode(await decode(best.blob));
+    if (png.size > MAX_PNG_BYTES) throw new Error(t("assetManager.npcSheet.fileError"));
+    published = await upload("diffuse.png", png);
+    webpRefused = true;
+  }
   loads.set(draft.world, (loads.get(draft.world) ?? 0) + 1);
-  install(new Map([[draft.id, { definition, base }]]));
+  install(new Map([[draft.id, published]]));
   await discardActorDraft(draft.id);
+  return { webpRefused };
 }
