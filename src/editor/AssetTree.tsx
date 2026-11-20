@@ -9,6 +9,7 @@ import { TEXTURE_SETS, textureFolder, textureSetsOfKind } from "../render/textur
 import { fetchDecalManifest } from "../render/decals";
 import { pickupTexture, useSharedImages } from "../render/sharedImages";
 import { useSharedPropVersion } from "./sharedProps";
+import { useDoorCatalog } from "./sharedDoorTypes";
 import { neutralStyle } from "./inspector/parts";
 import { openAssetManager, type Sample } from "./AssetManager";
 import { useTextureVersion } from "./textureLibrary";
@@ -31,6 +32,7 @@ export function AssetTree(p: EditorBarProps) {
   const [error, setError] = useState(false);
   const sharedImages = useSharedImages();
   useSharedPropVersion();
+  const doorTypes = useDoorCatalog().filter(type => type.world === p.doorWorld);
   useEffect(() => { let live = true; fetchDecalManifest(import.meta.env.BASE_URL, "").then(m => {if(live)setDecals(Object.keys(m));}).catch(() => {if(live)setError(true);}); return () => {live = false;}; }, []);
   const choose = (tool: EditTool, callback: () => void) => { p.onTool(tool); callback(); };
   const toolEntry = (tool: EditTool, label: string, icon: ReactNode, image?: string): Entry => ({id:tool,tool,label,kind:"",icon,image,active:true,pick:()=>p.onTool(tool),manager:image?"material":undefined});
@@ -47,6 +49,17 @@ export function AssetTree(p: EditorBarProps) {
   // the door entry shows the map's own door (a fantasy map's gate, a ship's sliding door), else the default one
   const doorSet = (TEXTURE_SETS as Record<string,{diffuse:string}>)[p.mapLook.textures?.door ?? ""] ? p.mapLook.textures!.door! : "door1";
   const traverse: Entry[] = [toolEntry("ladder",t("editorBar.ladder"),<ArrowUpFromLine size={28}/>), toolEntry("bridge",t("editorBar.bridge"),<AlignJustify size={28}/>), {...toolEntry("door",t("editorBar.door"),null,(TEXTURE_SETS as Record<string,{diffuse:string}>)[doorSet].diffuse),managerId:doorSet}];
+  const defaultDoor = traverse[2];
+  defaultDoor.active = !p.doorTypeChoice;
+  defaultDoor.pick = () => choose("door", () => p.onDoorTypeChoice());
+  for (const { id, definition } of doorTypes) {
+    traverse.push({
+      id, label: definition.name, kind: t("assetManager.doorType.title"),
+      image: (TEXTURE_SETS as Record<string, { diffuse: string }>)[definition.leaf]?.diffuse,
+      tool: "door", active: p.doorTypeChoice === id, manager: "door",
+      pick: () => choose("door", () => p.onDoorTypeChoice(id)),
+    });
+  }
   const events: Entry[] = [toolEntry("exit",t("editorBar.exit"),<LogOut size={28}/>), toolEntry("start",t("editorBar.start"),<Flag size={28}/>), toolEntry("restricted",t("editorBar.restricted"),<Ban size={28}/>), toolEntry("wall",t("editorBar.chanceWall"),<Dices size={28}/>)];
   for (const kind of ["message", "image"] as const) {
     events.push({

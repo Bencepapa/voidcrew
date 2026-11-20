@@ -3,8 +3,8 @@ import { isSharedPropId, PROP_TYPES, type SingleTextureProp } from "../game/prop
 import { assetInWorld, type WorldId } from "../game/worlds";
 import { t } from "../i18n";
 import { TEXTURE_SETS, textureFolder } from "../render/textureSets";
-import { sharedConfigured, sharedToken, sharedUpload } from "./sharedAuth";
-import { listSharedObjects, sharedAssetBase } from "./sharedTextures";
+import { sharedConfigured, sharedToken } from "./sharedAuth";
+import { loadDefinitions, publishDefinition } from "./sharedDefinitions";
 import { textureStatus } from "./textureLibrary";
 
 export const PROP_SHAPES = ["panel", "billboard", "cross"] as const;
@@ -16,7 +16,6 @@ export interface PropDraft {
 }
 
 const storageKey = "voidcrew:prop-drafts";
-const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const texturePattern = /^[a-z0-9_-]+$/i;
 const bound = (value: unknown, min: number, max: number, fallback: number) =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
@@ -127,29 +126,16 @@ function install(world: WorldId, next: Map<string, SingleTextureProp>) {
   for (const listener of registryListeners) listener(changed);
 }
 
-const revisions = (rows: { name: string }[]) => rows.flatMap(({ name }) =>
-  /^r[1-9]\d*$/.test(name) ? [Number(name.slice(1))] : []).filter(Number.isSafeInteger).sort((a, b) => b - a);
-
 export async function loadSharedProps(world: WorldId, init?: RequestInit) {
   if (!sharedConfigured) return;
   const version = (loads.get(world) ?? 0) + 1;
   loads.set(world, version);
-  const prefix = `${world}/prop`;
-  const rows = await listSharedObjects(prefix, init);
-  const definitions = await Promise.all(rows.filter(({ name }) => uuidPattern.test(name)).map(async ({ name }) => {
-    const path = `${prefix}/${name}`;
-    for (const revision of revisions(await listSharedObjects(path, init))) {
-      const response = await fetch(`${sharedAssetBase()}${path}/r${revision}/meta.json`, init);
-      if (response.status === 400 || response.status === 404) continue;
-      if (!response.ok) throw new Error(`Prop asset: HTTP ${response.status}`);
-      const metadata = await response.json().catch(() => null);
-      if (metadata?.type !== "prop") continue;
-      const definition = readDefinition(metadata.definition);
-      if (definition?.name?.trim() && definition.texture) return [`${world}_prop_${name}`, definition] as const;
-    }
-  }));
+  const definitions = await loadDefinitions(world, "prop", raw => {
+    const definition = readDefinition(raw as Partial<SingleTextureProp>);
+    return definition?.name?.trim() && definition.texture ? definition : undefined;
+  }, init);
   if (init?.signal?.aborted || loads.get(world) !== version) return;
-  install(world, new Map(definitions.filter(row => row !== undefined)));
+  install(world, definitions);
 }
 
 export async function publishProp(draft: PropDraft) {
@@ -158,10 +144,7 @@ export async function publishProp(draft: PropDraft) {
   if (!propTextures(draft.world).has(definition.texture)) throw new Error(t("assetManager.propDraft.needTexture"));
   if (!sharedToken()) throw new Error(t("assetManager.err.signInFirst"));
   definition.name = definition.name.trim();
-  const path = `${draft.world}/prop/${draft.id.slice(draft.world.length + "_prop_".length)}`;
-  const rev = (revisions(await listSharedObjects(path))[0] ?? 0) + 1;
-  await sharedUpload(`/storage/v1/object/void-textures/${path}/r${rev}/meta.json`,
-    JSON.stringify({ v: 1, type: "prop", rev, definition }), "application/json");
+  await publishDefinition(draft.world, "prop", draft.id, definition);
   loads.set(draft.world, (loads.get(draft.world) ?? 0) + 1);
   const next = new Map(installed.get(draft.world));
   next.set(draft.id, definition);

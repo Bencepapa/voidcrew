@@ -26,6 +26,7 @@ import type { SharedMapHead } from "./editor/sharedMapHeads";
 import { AssetManager } from "./editor/AssetManager";
 import { loadSharedImages } from "./editor/sharedImages";
 import { loadSharedProps } from "./editor/sharedProps";
+import { doorType, loadSharedDoors } from "./editor/sharedDoorTypes";
 import { loadSharedTextures } from "./editor/sharedTextures";
 import { sharedImage } from "./render/sharedImages";
 import { PropEditor } from "./editor/PropEditor";
@@ -215,6 +216,7 @@ export default function App() {
   const [selectedDecal, setSelectedDecal] = useState<number | null>(null);
   // the Door tool's selected door (its cell)
   const [selectedDoor, setSelectedDoor] = useState<Vec2 | null>(null);
+  const [doorTypeChoice, setDoorTypeChoice] = useState<string>();
   // the Robot tool: the actor type a click puts in, and the selected actor
   // (its index in the map's actors)
   // (none at first: a click on a floor puts nothing in until one is picked -
@@ -375,6 +377,13 @@ export default function App() {
       void loadSharedTextures(map.world).catch(console.warn);
     }
   }, [map.world, needsSharedProps]);
+  const needsSharedDoors = !!map.doors?.some(spec => spec.type && !doorType(spec.type));
+  useEffect(() => {
+    if (needsSharedDoors) {
+      void loadSharedDoors(map.world).catch(console.warn);
+      void loadSharedTextures(map.world).catch(console.warn);
+    }
+  }, [map.world, needsSharedDoors]);
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");
@@ -974,7 +983,13 @@ export default function App() {
         pushLog(t("app.doorAtParty"), "editor");
         return;
       }
-      result = applyEdit(map.id, (file) => toggleDoor(file, cell));
+      const type = doorTypeChoice && doorTypeChoice.startsWith(map.world + "_") ? doorTypeChoice : undefined;
+      result = applyEdit(map.id, (file) => {
+        const next = toggleDoor(file, cell);
+        return !isDoor && type
+          ? updateDoor(next, cell, { kind: "standard", facing: doorFacingAt(map, cell, dir) }, { type })
+          : next;
+      });
       setSelectedDoor(isDoor ? null : cell);
     } else if (editTool === "decal") {
       // a click on a decal picks it (the right button takes it off); on a
@@ -1493,13 +1508,14 @@ export default function App() {
       offset: spec.offset ?? 0,
       facing: spec.facing,
       kind: spec.kind,
+      type: spec.type,
       label: spec.label ?? "",
       chance: spec.chance ?? 1,
       links: linksOf(spec),
       lock: spec.lock,
     };
   })();
-  const changeDoor = (patch: { kind?: "standard" | "lift"; offset?: number; facing?: Direction; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => {
+  const changeDoor = (patch: { kind?: "standard" | "lift"; type?: string; offset?: number; facing?: Direction; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => {
     if (!selectedDoor) return;
     const cell = selectedDoor;
     const spec = doorAt(map, cell.x, cell.y);
@@ -2412,6 +2428,9 @@ export default function App() {
           onActorDelete={deleteActor}
           onActorDeselect={() => setSelectedActor(null)}
           door={selectedDoorInfo}
+          doorWorld={map.world}
+          doorTypeChoice={doorTypeChoice}
+          onDoorTypeChoice={setDoorTypeChoice}
           onDoorChange={(patch, merge) => changeDoor(patch, Object.keys(patch).join() + (merge ?? ""))}
           onDoorFlip={() =>
             selectedDoorInfo &&

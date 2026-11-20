@@ -338,6 +338,7 @@ export interface LadderSpec {
 
 export interface DoorSpec extends Linked {
   interaction?: Interaction;
+  type?: string;
   cell: Vec2;
   // standard: panel slides up and stays open; lift: panel slides to the
   // right (seen from the front) and closes again after a while

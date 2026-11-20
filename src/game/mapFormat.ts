@@ -87,6 +87,7 @@ export interface MapFile {
     ceilingTexture?: LayerFile<string>;
   };
   doors?: {
+    type?: string;
     interaction?: Interaction;
     x: number;
     y: number;
@@ -344,6 +345,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     faceTextureAt: faceTextures.size ? (x, y, side) => faceTextures.get(`${x},${y},${side}`) : undefined,
     ceilingTextureAt: (x, y) => ceilingTextures[y]?.[x],
     doors: (file.doors ?? []).map((d) => ({
+      type: typeof d.type === "string" ? d.type : undefined,
       interaction: readInteraction(d.interaction),
       cell: { x: d.x, y: d.y },
       kind: d.kind,

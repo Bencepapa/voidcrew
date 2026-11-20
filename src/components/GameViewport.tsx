@@ -73,6 +73,8 @@ import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSe
 import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
 import { mapUsesTexture } from "../editor/textureLibrary";
 import { onSharedPropsChanged } from "../editor/sharedProps";
+import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
+import { doorLeafMotion, type DoorType } from "../game/doorTypes";
 import { onSharedDecalsChanged, onSharedPickupsChanged, pickupTexture, sharedImage } from "../render/sharedImages";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
@@ -1070,6 +1072,7 @@ const PEEK_RETURN_TAU = 0.25;
 
 interface GameViewportProps {
   map: GameMap;
+  doorPreview?: DoorType;
   pos: Vec2;
   dir: Direction;
   // the height stood at: the cell's floor, or a bridge (wall heights)
@@ -1478,6 +1481,7 @@ function verticalFov(fov: number, aspect: number): number {
 }
 
 export function GameViewport({
+  doorPreview,
   map,
   pos,
   dir,
@@ -1572,6 +1576,9 @@ export function GameViewport({
   }, []);
   // a saved per-texture tuning (Asset Manager): the relief meshes rebuilt
   useEffect(() => onTextureTuningSaved(() => setTextureVersion((v) => v + 1)), []);
+  useEffect(() => onSharedDoorsChanged(ids => {
+    if (latestMapRef.current.doors?.some(spec => spec.type && ids.has(spec.type))) setTextureVersion(version => version + 1);
+  }), []);
   useEffect(() => onSharedPropsChanged(ids => {
     if (latestMapRef.current.props?.some(spec => ids.has(spec.prop))) setTextureVersion(version => version + 1);
   }), []);
@@ -1588,7 +1595,11 @@ export function GameViewport({
     let timer: ReturnType<typeof setTimeout> | undefined;
     const off = onSharedTexturesChanged((ids) => {
       // (a map that uses none of them keeps its scene: a full rebuild blanks the view for seconds)
-      if (!ids.some((id) => mapUsesTexture(latestMapRef.current, id))) return;
+      const current = latestMapRef.current;
+      if (!ids.some(id => mapUsesTexture(current, id) || current.doors?.some(spec => {
+        const type = doorType(spec.type);
+        return type?.leaf === id || type?.frame === id;
+      }))) return;
       clearTimeout(timer);
       timer = setTimeout(() => setTextureVersion((v) => v + 1), 800);
     });
@@ -1728,7 +1739,7 @@ export function GameViewport({
   // door panels (the sliding part) by door cell key ("x,y"); userData holds
   // `open` and its `openPos`/`closedPos`
   const doorPanelsRef = useRef<Map<string, THREE.Object3D>>(new Map());
-  const doorAnimsRef = useRef(new Map<string, { panel: THREE.Object3D; from: THREE.Vector3; start: number }>());
+  const doorAnimsRef = useRef(new Map<string, { panel: THREE.Object3D; from: THREE.Vector3; fromYaw: number; start: number }>());
   const openDoorsRef = useRef(openDoors);
   openDoorsRef.current = openDoors;
 
@@ -1739,7 +1750,7 @@ export function GameViewport({
       const open = openDoors.has(key);
       if (panel.userData.open === open) continue;
       panel.userData.open = open;
-      doorAnimsRef.current.set(key, { panel, from: panel.position.clone(), start: gameClock.now() });
+      doorAnimsRef.current.set(key, { panel, from: panel.position.clone(), fromYaw: panel.rotation.y, start: gameClock.now() });
     }
   }, [openDoors]);
 
@@ -1917,7 +1928,7 @@ export function GameViewport({
           phases: Object.fromEntries(Object.entries(phases).map(([k, v]) => [k, { ms: Math.round(v.ms), n: v.n }])),
         };
         Object.assign(window, { __voidcrewBuild: report });
-        if (import.meta.env.DEV || /[?&]profile\b/.test(location.search)) {
+        if (!doorPreview && (import.meta.env.DEV || /[?&]profile\b/.test(location.search))) {
           console.info(`[voidcrew] scene ready in ${Math.round(total)} ms (${newMap ? "new map" : "rebuild"}); build started at ${report.startedAt} ms, ready at ${report.readyAt} ms since the page began`, report.milestones);
           console.table(report.phases);
         }
@@ -2257,7 +2268,6 @@ export function GameViewport({
     const effectLevels = new Map<number, number>();
     const deckLampColor = lampColor(map);
 
-    const frameKit = createWallKit(isTextureSetId(map.textures?.doorFrame) ? map.textures.doorFrame : DOOR_FRAME_SET, false);
     // window panels (see the wall loop), by their wall's surface key
     // and the frame panel each takes: a one-panel window its own, a wider
     // one a left end, middle pieces and a right end
@@ -2322,7 +2332,7 @@ export function GameViewport({
     };
     // the loot items' sprites (all of them: a crate may spill any)
     for (const id of Object.keys(ITEM_TYPES)) {
-      if (!isSharedPickupId(id)) sharedPropKitFor(`item_${id}`);
+      if (!doorPreview && !isSharedPickupId(id)) sharedPropKitFor(`item_${id}`);
     }
     // a prop type's texture sets: a box's side and top, its views, or a
     // cutout's one
@@ -2351,16 +2361,17 @@ export function GameViewport({
     const labelPaintDark: [number, number, number] = labelHex
       ? labelPaint.map((c) => Math.round(c * 0.85)) as [number, number, number]
       : LABEL_PAINT_DARK;
-    const panelKits = new Map<DoorSpec["kind"], WallKit>();
-    const panelKitFor = (kind: DoorSpec["kind"]) => {
-      let kit = panelKits.get(kind);
-      if (!kit) {
-        kit = createWallKit(panelSetFor(kind), false);
-        panelKits.set(kind, kit);
-      }
+    const frameKits = new Map<TextureSetId, WallKit>();
+    const panelKits = new Map<TextureSetId, WallKit>();
+    const doorKitFor = (kits: Map<TextureSetId, WallKit>, set: TextureSetId) => {
+      let kit = kits.get(set);
+      if (!kit) kits.set(set, kit = createWallKit(set, false));
       return kit;
     };
-    const doorCells: { x: number; z: number; spec: DoorSpec; key: string }[] = [];
+    const doorCells: {
+      x: number; z: number; spec: DoorSpec; key: string; frameKit: WallKit; leafKit: WallKit;
+      motion: Pick<DoorType, "motion" | "hinge" | "swingTo" | "angle">;
+    }[] = [];
     // materials made beside the kits' (labeled door panels, see-through
     // bridge decks), kept in step with the material settings like theirs
     const ownMaterials: THREE.MeshStandardMaterial[] = [];
@@ -2639,6 +2650,7 @@ export function GameViewport({
     const group = new THREE.Group();
     scene.add(group);
     doorPanelsRef.current.clear();
+    doorAnimsRef.current.clear();
 
     // decals land on surface panels as they get placed (relief ones arrive
     // asynchronously)
@@ -2669,7 +2681,7 @@ export function GameViewport({
       if (!disposed && settings.decalsEnabled && specs.some(spec => ids.has(spec.decal))) track(decals.reset(specs));
     });
     // dev-only: inspect from the console
-    if (import.meta.env.DEV) Object.assign(window, { __voidcrewDecals: decals });
+    if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewDecals: decals });
 
     let reliefStats: ReliefStats | null = null;
 
@@ -2947,8 +2959,12 @@ export function GameViewport({
 
         if (cellAt(map, x, y) === "door") {
           const spec = doorAt(map, x, y);
-          panelKitFor(spec.kind);
-          doorCells.push({ x, z: y, spec, key: doorCellKey({ x, y }) });
+          const type = doorPreview ?? doorType(spec.type);
+          const frameSet = type?.frame ?? map.textures?.doorFrame;
+          const frameKit = doorKitFor(frameKits, isTextureSetId(frameSet) ? frameSet : DOOR_FRAME_SET);
+          const leafKit = doorKitFor(panelKits, isTextureSetId(type?.leaf) ? type.leaf : panelSetFor(spec.kind));
+          const motion = type ?? { motion: spec.kind === "lift" ? "slide" : "rise", hinge: "left", swingTo: "front", angle: 90 };
+          doorCells.push({ x, z: y, spec, key: doorCellKey({ x, y }), frameKit, leafKit, motion });
         }
       }
     }
@@ -3380,7 +3396,7 @@ export function GameViewport({
           }
           // (drawn from the next sight pass on)
           culledCount = -1;
-          if (import.meta.env.DEV) Object.assign(window, { __voidcrewJoins: { points: joins.length, triangles } });
+          if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewJoins: { points: joins.length, triangles } });
         })
         .catch((err) => console.error("Corner joins failed:", err));
     }
@@ -3390,7 +3406,7 @@ export function GameViewport({
     const deckKits = [
       ...kits,
       ...floorKits.values(),
-      frameKit,
+      ...frameKits.values(),
       ...panelKits.values(),
       ...ceilingKits.values(),
       ...windowKits.values(),
@@ -3536,7 +3552,7 @@ export function GameViewport({
       return buildRelief(kit, { ...shape, coarse: undefined, hybrid: true, smoothCells: cells });
     }
     if (hybrid) {
-      cutout(frameKit.wallMat);
+      for (const kit of frameKits.values()) cutout(kit.wallMat);
       for (const kit of panelKits.values()) cutout(kit.wallMat);
     }
     // a door part's relief shape: stepped (a grid made coarser with the graphics
@@ -3554,31 +3570,46 @@ export function GameViewport({
           // meet the other half's
           holeBackZ: -DOOR_FRAME_HALF_DEPTH,
         };
-        const frame = await buildRelief(frameKit, doorShape(frameShape, false));
-        if (!frame) return;
-        // (none when the graphics setting asks for no distant versions)
-        const frameFar = lodScale && !(hybrid && hybridFarLod <= 1) ? await buildRelief(frameKit, doorShape(frameShape, true)) : null;
-        const hole = frame.holeBounds ?? { minX: -0.35, maxX: 0.35, minY: -wallHeight / 2, maxY: wallHeight * 0.3 };
-        const panelWidth = hole.maxX - hole.minX + 2 * DOOR_PANEL_OVERLAP;
-        // from the floor up behind the frame's header - its foot just clear
-        // of the floor's relief (which rises up to half its depth: the
-        // panel's own relief ledges would flicker against the floorboards)
-        const panelHeight = wallHeight / 2 + hole.maxY + DOOR_PANEL_OVERLAP;
-        const panelLift = reliefDepth / 2 + 0.005;
-        const panelCenterX = (hole.minX + hole.maxX) / 2;
-        // one panel geometry per door kind (each kit has its own depth map)
-        const panelGeos = new Map<DoorSpec["kind"], { near: THREE.BufferGeometry; far: THREE.BufferGeometry | null }>();
-        for (const [kind, kit] of panelKits) {
-          const panelShape = { width: panelWidth, height: panelHeight - panelLift, flushEdges: false };
-          if (hybrid) cutout(kit.wallMat);
-          const panel = await buildRelief(kit, doorShape(panelShape, false));
-          if (!panel) return;
-          const far = lodScale && !(hybrid && hybridFarLod <= 1) ? await buildRelief(kit, doorShape(panelShape, true)) : null;
-          panelGeos.set(kind, { near: panel.geometry, far: far?.geometry ?? null });
+        const withFar = lodScale && !(hybrid && hybridFarLod <= 1);
+        const frames = new Map<WallKit, {
+          near: THREE.BufferGeometry; far: THREE.BufferGeometry | null;
+          width: number; height: number; centerX: number;
+        }>();
+        for (const kit of frameKits.values()) {
+          const frame = await buildRelief(kit, doorShape(frameShape, false));
+          if (!frame || disposed) continue;
+          const far = withFar ? await buildRelief(kit, doorShape(frameShape, true)) : null;
+          const hole = frame.holeBounds ?? { minX: -0.35, maxX: 0.35, maxY: wallHeight * 0.3 };
+          frames.set(kit, {
+            near: frame.geometry, far: far?.geometry ?? null,
+            width: hole.maxX - hole.minX + 2 * DOOR_PANEL_OVERLAP,
+            height: wallHeight / 2 + hole.maxY + DOOR_PANEL_OVERLAP,
+            centerX: (hole.minX + hole.maxX) / 2,
+          });
         }
+        // Keep the leaf clear of the floor relief when shut.
+        const panelLift = reliefDepth / 2 + 0.005;
+        const panelGeos = new Map<WallKit, Map<WallKit, { near: THREE.BufferGeometry; far: THREE.BufferGeometry | null }>>();
 
         for (const cell of doorCells) {
-          const { spec } = cell;
+          if (disposed) return;
+          const { spec, frameKit, leafKit } = cell;
+          const frame = frames.get(frameKit);
+          if (!frame) continue;
+          let leaves = panelGeos.get(frameKit);
+          if (!leaves) panelGeos.set(frameKit, leaves = new Map());
+          let leaf = leaves.get(leafKit);
+          if (!leaf) {
+            const shape = { width: frame.width, height: Math.max(0.01, frame.height - panelLift), flushEdges: false };
+            const near = await buildRelief(leafKit, doorShape(shape, false));
+            if (!near || disposed) continue;
+            const far = withFar ? await buildRelief(leafKit, doorShape(shape, true)) : null;
+            leaf = { near: near.geometry, far: far?.geometry ?? null };
+            leaves.set(leafKit, leaf);
+          }
+          if (disposed) return;
+          const front = spec.label || spec.kind === "lift" ? await labeledPanelMaterial(spec, leafKit) : leafKit.wallMat;
+          if (disposed) return;
           const door = new THREE.Group();
           door.position.set(cell.x, floorY(cell.x, cell.z), cell.z);
           // local +Z = the side the door faces; moved that way to where it
@@ -3591,32 +3622,26 @@ export function GameViewport({
 
           // two halves back to back, each facing out of one side
           for (const side of [1, -1]) {
-            const frameHalf = doorPart(frame.geometry, frameFar?.geometry ?? null, [frameKit.wallMat, frameKit.sideMat]);
+            const frameHalf = doorPart(frame.near, frame.far, [frameKit.wallMat, frameKit.sideMat]);
             frameHalf.position.set(0, wallHeight / 2, side * DOOR_FRAME_HALF_DEPTH);
             frameHalf.rotation.y = side === 1 ? 0 : Math.PI;
             door.add(frameHalf);
           }
 
-          const kit = panelKits.get(spec.kind)!;
-          const front = spec.label || spec.kind === "lift" ? await labeledPanelMaterial(spec, kit) : kit.wallMat;
-          if (disposed) return;
+          const motion = doorLeafMotion(cell.motion, frame.width, frame.height, frame.centerX);
           const slider = new THREE.Group();
           for (const side of [1, -1]) {
-            const geos = panelGeos.get(spec.kind)!;
-            const panelHalf = doorPart(geos.near, geos.far, [front, kit.sideMat]);
-            panelHalf.position.set(panelCenterX, panelLift + (panelHeight - panelLift) / 2, side * DOOR_PANEL_HALF_DEPTH);
+            const panelHalf = doorPart(leaf.near, leaf.far, [front, leafKit.sideMat]);
+            panelHalf.position.set(frame.centerX - motion.closedX, (frame.height + panelLift) / 2, side * DOOR_PANEL_HALF_DEPTH);
             panelHalf.rotation.y = side === 1 ? 0 : Math.PI;
             slider.add(panelHalf);
           }
-          // open: a standard door slides up until its bottom clears the
-          // opening; a lift door slides right (seen from the front, local +X)
-          // into the wall beside the frame
-          const closedPos = new THREE.Vector3();
-          const openPos =
-            spec.kind === "lift" ? new THREE.Vector3(panelWidth, 0, 0) : new THREE.Vector3(0, panelHeight, 0);
+          const closedPos = new THREE.Vector3(motion.closedX, 0, 0);
+          const openPos = new THREE.Vector3(motion.openX, motion.openY, 0);
           const open = openDoorsRef.current.has(cell.key);
           slider.position.copy(open ? openPos : closedPos);
-          slider.userData = { open, openPos, closedPos };
+          slider.rotation.y = open ? motion.openYaw : 0;
+          slider.userData = { open, openPos, closedPos, openYaw: motion.openYaw };
           door.add(slider);
 
           group.add(door);
@@ -5405,7 +5430,7 @@ export function GameViewport({
       // the light grid, roughly: the full bake comes with the rebuild
       bakeSoon();
       // dev: what the quick preview holds (flat quads drawn, old surfaces taken off)
-      if (import.meta.env.DEV) {
+      if (import.meta.env.DEV && !doorPreview) {
         Object.assign(window, { __voidcrewPreview: { changed: changed.size, quads: previewObjects.length, hidden: facingSurfaces.filter((o) => o.userData.editHidden).length } });
       }
     }
@@ -6433,7 +6458,7 @@ export function GameViewport({
       targets.sort((a, b) => a.distance - b.distance);
       aimFrameRef.current = { targets, width: cw, height: ch, zoom: aimZoom, shoot };
       // dev: how long this frame's aiming took (ms), for checking it stays smooth
-      if (import.meta.env.DEV) Object.assign(window, { __voidcrewAimCost: performance.now() - startedAt });
+      if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewAimCost: performance.now() - startedAt });
     }
 
     // The party's cover against each hostile actor near enough to shoot:
@@ -6477,7 +6502,7 @@ export function GameViewport({
         }
         cover.set(actor.id, open / total);
       }
-      if (import.meta.env.DEV) Object.assign(window, { __voidcrewPartyCover: Object.fromEntries(cover) });
+      if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewPartyCover: Object.fromEntries(cover) });
     }
 
     // a shot through a point of the view: the first thing it meets there
@@ -7340,7 +7365,7 @@ export function GameViewport({
       }
       reportHover(target);
       // dev: what's under the pointer, for the console and tests
-      if (import.meta.env.DEV) Object.assign(window, { __voidcrewEditTarget: target });
+      if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewEditTarget: target });
       const tool = editToolRef.current;
       let mode: "wall" | "plate" | "face" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | "smoke" | null = null;
       let color = EDIT_FILL_COLOR;
@@ -7636,7 +7661,9 @@ export function GameViewport({
       for (const [key, anim] of doorAnimsRef.current) {
         const p = Math.min(1, (gameNow - anim.start) / DOOR_OPEN_MS);
         const target: THREE.Vector3 = anim.panel.userData.open ? anim.panel.userData.openPos : anim.panel.userData.closedPos;
-        anim.panel.position.lerpVectors(anim.from, target, easeOutQuad(p));
+        const eased = easeOutQuad(p);
+        anim.panel.position.lerpVectors(anim.from, target, eased);
+        anim.panel.rotation.y = lerp(anim.fromYaw, anim.panel.userData.open ? anim.panel.userData.openYaw : 0, eased);
         if (p >= 1) doorAnimsRef.current.delete(key);
       }
 
@@ -7693,7 +7720,7 @@ export function GameViewport({
       const camZ = cam.z - lookZ * pullback;
 
       // dev-only: the view's actual heading, for checking turn continuity
-      if (import.meta.env.DEV) Object.assign(window, { __voidcrewViewYaw: Math.atan2(lookX, -lookZ) });
+      if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewViewYaw: Math.atan2(lookX, -lookZ) });
 
       // the crew down: the eye falls to the floor (faster and faster, a
       // little bounce) and the head rolls onto its side, looking up a bit
@@ -8063,7 +8090,7 @@ export function GameViewport({
       }
       return { withSmoke, without, again, update, puffs, calls: renderer.info.render.calls };
     };
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV && !doorPreview) {
       Object.assign(window, { __voidcrewSnapshot: snapshot, __voidcrewRenderInfo: renderInfo, __voidcrewScene: group, __voidcrewBench: bench });
     }
 
@@ -8156,6 +8183,7 @@ export function GameViewport({
     };
   }, [
     sceneMap,
+    doorPreview,
     settings.textureSet,
     settings.accentTextureSet,
     settings.accentRatio,

@@ -81,7 +81,10 @@ export interface EditorBarProps {
   onActorDeselect: () => void;
   // the Door tool: the selected door, and what the panel does with it
   door: DoorInfo | null;
-  onDoorChange: (patch: { kind?: "standard" | "lift"; offset?: number; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => void;
+  doorWorld: WorldId;
+  doorTypeChoice?: string;
+  onDoorTypeChoice: (id?: string) => void;
+  onDoorChange: (patch: { kind?: "standard" | "lift"; type?: string; offset?: number; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => void;
   onDoorFlip: () => void;
   onDoorDelete: () => void;
   onDoorDeselect: () => void;
@@ -211,6 +214,7 @@ export interface DoorInfo {
   offset: number;
   facing: Direction;
   kind: "standard" | "lift";
+  type?: string;
   label: string;
   chance: number;
   links: Linked;

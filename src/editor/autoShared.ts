@@ -10,6 +10,7 @@ import { applyCachedSharedMapHeads, refreshSharedMapHeads } from "./sharedMapHea
 import { applyCachedSharedTextures, loadSharedTextures } from "./sharedTextures";
 import { loadSharedImages } from "./sharedImages";
 import { loadSharedProps } from "./sharedProps";
+import { loadSharedDoors } from "./sharedDoorTypes";
 
 const IDLE_DELAY_MS = 1200;
 const TIMEOUT_MS = 10_000;
@@ -100,6 +101,7 @@ async function execute(forGeneration: number) {
       refreshSharedMapHeads(activeWorld, { signal: current.signal }),
       loadSharedImages(activeWorld, { signal: current.signal }),
       loadSharedProps(activeWorld, { signal: current.signal }),
+      loadSharedDoors(activeWorld, { signal: current.signal }),
     ]);
     loaded = true;
     retried = false;

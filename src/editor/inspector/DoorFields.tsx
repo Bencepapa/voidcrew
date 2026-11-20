@@ -3,7 +3,9 @@ import type { EditorBarProps } from "../EditorBar";
 import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle, doorLock } from "./parts";
 
 import { DOOR_EDGE_OFFSET } from "../../game/map";
+import { useDoorCatalog } from "../sharedDoorTypes";
 export function DoorFields(p: EditorBarProps) {
+const types = useDoorCatalog().filter(type => type.world === p.doorWorld);
 if (!p.door) return null;
 return <>
 <Section kind="door" section="transform">
@@ -16,6 +18,11 @@ return <>
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorFlip} title={t("editorBar.turnItRoundItStaysWhereIt")}>{t("editorBar.flipFront")}</button>
 </Section>
 <Section kind="door" section="logic">
+<KindChoice label={t("assetManager.doorType.title")} value={p.door.type ?? ""} options={[
+  { value: "", label: t("editorBar.default") },
+  ...(p.door.type && !types.some(type => type.id === p.door?.type) ? [{ value: p.door.type, label: p.door.type }] : []),
+  ...types.map(type => ({ value: type.id, label: type.definition.name })),
+]} onChange={type => p.onDoorChange({ type: type || undefined })}/>
 <KindChoice label={t("editorBar.kind")} value={p.door.kind} options={[{value:"standard",label:t("editorBar.doorKindStandard")},{value:"lift",label:t("editorBar.doorKindLift")}]} onChange={kind => p.onDoorChange({kind:kind as "standard" | "lift"})}/>
 
 {chanceSlider(p.door.chance, (chance) => p.onDoorChange({ chance }))}
