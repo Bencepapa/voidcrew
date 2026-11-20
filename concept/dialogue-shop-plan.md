@@ -12,49 +12,40 @@ A handover H pontjának kibontása: NPC-párbeszéd Twine-ban szerkesztve, a „
 - **Fegyver:** csapattagonként egy fegyvergomb (`[1] Throwing spear`), a fegyverek a `meta.ts`-ben vásárolhatók.
 - **NPC-k:** ellenséges aktorok; a „vándorló, barátságos” NPC fogalom még nincs.
 
-## 1. Twine formátum
+## 1. Twine formátum (végleges szabályok)
 
-Szerkesztés **Twine 2.6+**-ban, az export **Twee 3** (szöveges, függőség nélkül olvasható: *Build → Export as Twee*). A story formátum mindegy
-(Harlowe/SugarCube makrókat nem értelmezünk). A játék csak ezt a kis szabályt olvassa:
+Szerkesztés **Twine 2.6+**-ban, az export **Twee 3** (*Build → Export as Twee*). A story formátum mindegy (a Harlowe/SugarCube makrókat nem
+értelmezzük, szövegként maradnak). Minta: `concept/dialogue/samples/void-fantasy.twee`, hibás minta: `invalid-duplicate.twee`.
 
-```
-:: Start [start]
-Üdvözöllek, utazó!
-[[Ki vagy te?->Ki]]
-[[Vásárlás->Vasarlas]]
-[[Viszlát->Viszlat]]
-
-:: Ki
-Kovács vagyok, a kovács. Szerszámot és fegyvert árulok.
-[[Vissza->Start]]
-
-:: Vasarlas
-@shop kovacs
-[[Viszlát->Viszlat]]
-
-:: Viszlat
-Vigyázz magadra!
-@end
-```
-
-- **Passzus** = egy NPC-mondat (a szöveg, a parancssorok nélkül).
-- **Választás** = Twine link: `[[felirat->cél]]`, `[[felirat|cél]]` vagy `[[cél]]`. A kezdő passzus a `start` címkéjű vagy a `Start` nevű.
-- **Parancs** = `@`-gal kezdődő sor a passzusban (a szövegtől külön, a végén). Az első változat parancsai:
-  - `@end`: a párbeszéd bezárása.
-  - `@shop <bolt-azonosító>`: megnyitja a bolt-ablakot (lásd 4.); a bolt bezárása után a párbeszéd a passzus választásaival folytatódik.
-  - később: `@give <tárgy> [n]`, `@take <tárgy> [n]`, `@set <kulcs>` és `@if <kulcs>` (feltételes választás), `@gold <n>`.
-- **Nyelv:** egy `.twee` fájl egy nyelvre (a fájlnév vagy egy `[hu]` címke jelzi); a játék a felület nyelvének megfelelőt tölti, ennek hiányában az angolt.
-- **Ellenőrzés importkor:** minden link célja létezik, van kezdő passzus, ismert parancsok, létező bolt- és tárgyazonosítók, elérhetetlen passzusok (figyelmeztetés).
+- **Egy `.twee` fájl = egy párbeszéd-KÖNYVTÁR** (egy Twine-story). A passzusnevek a fájlon belül globálisak, **több NPC osztozik a passzusokon**
+  (pl. egy közös „Goodbye”). **Nincs név-előtag**-konvenció. Ugyanaz a passzusnév kétszer **hiba** (a Twine sem engedi, de kézzel összefésült fájlban előfordul).
+- **Belépő passzusok:** a `start` címkéjű passzusok (és az egy `Start` nevű). Az NPC később kiválaszt egy belépőt (pl. „Wizard in town”). A StoryData `start`
+  mezőjét figyelmen kívül hagyjuk (üres passzusra mutathat). A címke nélküli passzus normális.
+- **Fejléc:** `:: Név [címke1 címke2] {"position":...}`; a név tartalmazhat `/`, szóközt, `!`, `'` jelet, a `\[ \] \{ \}` escape-elhető. `:: StoryTitle` a könyvtár
+  címe, `:: StoryData` (JSON) nem passzus.
+- **Passzus törzse** (CRLF/LF és BOM rendben):
+  - **Választás** = Twine link: `[[felirat->cél]]`, `[[cél<-felirat]]`, `[[felirat|cél]]`, `[[cél]]`; a szövegből kikerül.
+  - **Parancs** = olyan sor, aminek a trimmelt szövege `@`-gal kezdődik; a szövegből kikerül, a passzus megnyitásakor sorban lefut:
+    - `@end`: a párbeszéd bezárása.
+    - `@shop <bolt-azonosító>`: bolt-ablak (lásd 4.); `@shop` azonosító nélkül = **az NPC saját boltja**. A bolt után a párbeszéd a passzus választásaival folytatódik.
+    - később: `@give`, `@take`, `@set`, `@if`, `@gold`.
+  - minden más sor a passzus **szövege** (a szélén az üres sorok levágva, belül a bekezdések maradnak).
+- **Ellenőrzés** (importkor és a Dialogues tesztablakban; `src/game/dialogue.ts`):
+  - **HIBA:** duplikált passzusnév, törött link (a cél nem létezik), nincs belépő passzus.
+  - **FIGYELMEZTETÉS:** ismeretlen parancs (pl. `@wave`, `{kind:"unknown"}`-ként megmarad), `@shop` olyan azonosítóval, ami nincs az (opcionális) ismert boltok között,
+    minden belépőből elérhetetlen passzus (az üres „Untitled Passage” némán kimarad), belépő passzus választás és `@end` nélkül (zsákutca), üres szövegű és választás nélküli passzus.
+- **Nyelv:** egy `.twee` egy nyelvre (a fájlnév vagy egy `[hu]` címke jelzi); a játék a felület nyelvének megfelelőt tölti, ennek hiányában az angolt.
 
 ## 2. Adatmodell
 
-- **Párbeszéd** (megosztott tartalom, az Assets v3 `type: "dialogue"`): `{ id, name, lang, start, passages: { [id]: { text, choices: [{label, to}], commands: [...] } } }`,
-  a `.twee`-ből lefordítva (az eredeti szöveg is mellette marad, hogy újra szerkeszthető legyen). Az Asset Managerben új kategória: **Párbeszédek**
-  (`+ Új` = `.twee` feltöltése vagy beillesztése, ellenőrzés, **tesztablak** a párbeszéd végigjátszásához).
+- **Párbeszéd-könyvtár** (a `.twee`-ből fordítva; később megosztott tartalom, Assets v3 `type: "dialogue"`): `{ id, title, entries: string[], passages: { [név]: { name, tags, text, choices: [{label, to}], commands } } }`,
+  parancs: `{kind:"end"} | {kind:"shop", shop?} | {kind:"unknown", raw}`. Az eredeti `.twee` is mellette marad (újraszerkeszthető). Az `id` a fájlnév slugja.
+  Az Asset Managerben új kategória: **Párbeszédek** (`+ Új` = `.twee` feltöltése vagy beillesztése, ellenőrzés, **tesztablak**); H1-ben csak helyi vázlat (IndexedDB), kiadás nélkül.
 - **Bolt** (megosztott tartalom, `type: "shop"`): `{ id, name, portrait?, stock: [{ item, price?, qty }], buyRate, sellRate }`. A készletet az Asset Managerben szerkeszted
   (a Twine nem készletet ír, csak a `@shop id` parancsot).
-- **NPC:** a lehelyezett NPC kap egy `dialogue` mezőt (párbeszéd-azonosító) és egy `portrait` mezőt (állókép, cél: portré); az NPC `friendly` jelzőt kap (nem támad, a Használat/Space megszólítja).
-- **Esemény:** az `Interaction` kap egy harmadik fajtát: `dialogue` (`{ dialogue: id }`), így falra, ajtóra, propra is tehető, nem csak NPC-re (pl. egy tábla vagy egy bolt pultja).
+- **NPC:** a lehelyezett NPC kap egy `dialogue` mezőt (könyvtár-azonosító) **és egy belépő passzust** (`entry`, a könyvtár `start` passzusai közül), egy `portrait` mezőt (állókép, cél: portré), valamint
+  egy saját boltot (a `@shop` azonosító nélkül ezt nyitja); az NPC `friendly` jelzőt kap (nem támad, a Használat/Space megszólítja).
+- **Esemény:** az `Interaction` kap egy harmadik fajtát: `dialogue` (`{ dialogue: id, entry }`), így falra, ajtóra, propra is tehető, nem csak NPC-re (pl. egy tábla vagy egy bolt pultja).
 
 ## 3. Párbeszéd-ablak
 
@@ -75,7 +66,7 @@ rögtön a kezükbe lehessen húzni.
 
 ## 5. Építési sorrend
 
-1. **H1 – Twine-tábla:** a `.twee` olvasó (tiszta függvény, tesztekkel), a párbeszéd-adat és az ellenőrző, az Asset Manager „Párbeszédek” kategória a feltöltéssel és a tesztablakkal. *(OpenCode/Sonnet medium)*
+1. **H1 – Twine-tábla (KÉSZ):** a `.twee` olvasó (tiszta függvény, tesztekkel), a párbeszéd-adat és az ellenőrző, az Asset Manager „Párbeszédek” kategória a feltöltéssel és a tesztablakkal. *(OpenCode/Sonnet medium)*
 2. **H2 – Párbeszéd-ablak és barátságos NPC:** `dialogue` esemény, portré, választások, `@end`; az NPC `friendly` viselkedés és a Használat/Space megszólítás; az NPC-szerkesztő mezői. *(Sonnet medium)*
 3. **H3 – Inventory-modell és UI:** hátizsák, kezek, húzás hátizsák és kéz között, a fegyverek összekötése a kézzel, a haul átvezetése. Mentés. *(Sonnet high: a legnagyobb)*
 4. **H4 – Bolt:** bolt-adat az Asset Managerben, `@shop`, bolt-ablak, vétel/eladás húzással, kredit. *(Sonnet medium)*
