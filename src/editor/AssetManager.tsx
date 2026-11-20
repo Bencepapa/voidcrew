@@ -1013,7 +1013,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         <style>{".theme-fantasy .voidcrew-editor-controls .border { box-shadow: none; }"}</style>
         {typeof npcEditor === "string" ? <ActorEditor key={npcEditor} initialActor={npcEditor} onBack={() => setNpcEditor(null)}/>
           : npcEditor ? <NpcAssetEditor key={npcEditor.id} initial={npcEditor} onBack={() => setNpcEditor(null)}
-            onPublished={() => { setNpcEditor(null); setNotice(t("assetManager.npcSheet.published")); }}/>
+            onPublished={webpRefused => { setNpcEditor(null); setNotice(t(webpRefused ? "assetManager.npcSheet.webpRefused" : "assetManager.npcSheet.published")); }}/>
           : <>
         <header className="mb-2 flex shrink-0 flex-wrap items-center gap-2 border-b border-neutral-700 pb-2">
           <label className="flex items-center gap-1 text-[11px] text-neutral-400">{t("assetManager.mainCategory")}

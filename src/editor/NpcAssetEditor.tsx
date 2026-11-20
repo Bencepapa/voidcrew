@@ -17,7 +17,7 @@ const sectors = ["front", "frontLeft", "left", "backLeft", "back", "backRight", 
 export function NpcAssetEditor({ initial, onBack, onPublished }: {
   initial: ActorDraft;
   onBack: () => void;
-  onPublished: () => void;
+  onPublished: (webpRefused: boolean) => void;
 }) {
   useLang();
   const [draft, setDraft] = useState(initial);
@@ -87,8 +87,7 @@ export function NpcAssetEditor({ initial, onBack, onPublished }: {
     if (!sharedToken()) { setSignIn(true); return; }
     void run(async () => {
       await saveActorDraft(draft);
-      await publishActor(draft);
-      onPublished();
+      onPublished((await publishActor(draft)).webpRefused);
     });
   }
 
