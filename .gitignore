@@ -14,3 +14,9 @@ dist-*/
 
 # Isolated asset-tree development server cache
 .vite-asset-tree/
+
+# Generated UI-design package (mockups, PDF, QA renders): regenerable, large
+concept/editor-ui/out/
+
+# Handover notes for the coding assistants: local working notes, not part of the repo
+*handover*.md
