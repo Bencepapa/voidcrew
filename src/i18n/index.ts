@@ -22,6 +22,7 @@ import { useSyncExternalStore } from "react";
 import { appEn } from "./en/app";
 import { assetManagerEn } from "./en/assetManager";
 import { imageAssetsEn } from "./en/imageAssets";
+import { dialogueEn } from "./en/dialogue";
 import { commonEn } from "./en/common";
 import { debugEn } from "./en/debug";
 import { editorBarEn } from "./en/editorBar";
@@ -29,6 +30,7 @@ import { minimapEn } from "./en/minimap";
 import { appHu } from "./hu/app";
 import { assetManagerHu } from "./hu/assetManager";
 import { imageAssetsHu } from "./hu/imageAssets";
+import { dialogueHu } from "./hu/dialogue";
 import { commonHu } from "./hu/common";
 import { debugHu } from "./hu/debug";
 import { editorBarHu } from "./hu/editorBar";
@@ -37,8 +39,8 @@ import { minimapHu } from "./hu/minimap";
 import { mapDialogEn } from "./en/mapDialog";
 import { mapDialogHu } from "./hu/mapDialog";
 
-const en = { ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...minimapEn };
-const hu: Partial<Record<Key, string>> = { ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...minimapHu };
+const en = { ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...dialogueEn, ...minimapEn };
+const hu: Partial<Record<Key, string>> = { ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...dialogueHu, ...minimapHu };
 
 export type Key = keyof typeof en;
 // whether a key has a string (for optional, data-driven names)

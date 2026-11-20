@@ -28,7 +28,7 @@ import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "
 
 const button = "rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1 text-left text-neutral-200 hover:bg-neutral-700 aria-pressed:border-amber-400 aria-pressed:bg-amber-400/15 aria-pressed:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40";
 const selectClass = "min-w-0 rounded-sm border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-200";
-export type Sample = "material" | "actor" | "prop" | "item" | "still" | "door";
+export type Sample = "material" | "actor" | "prop" | "item" | "still" | "door" | "dialogue";
 type Entry = { key: string; label: string; img: string; groups: string[]; world: WorldId; draft?: ImageDraft; image?: SharedImage; builtinDecal?: string; propDraft?: PropDraft; actorDraft?: ActorDraft };
 import { ITEM_TYPES } from "../game/items";
 import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/worlds";
@@ -40,6 +40,7 @@ import { ImageAssetInspector, useImageDraftPreview, usePickupDraftMaps } from ".
 import { propEdit } from "./propEditState";
 import { attachPropTexture, createPropDraft, getPropDrafts, loadSharedProps, propTextureId, propTextures, reviseSharedProp, usePropDrafts, useSharedPropVersion, type PropDraft } from "./sharedProps";
 import { PropAssetFields } from "./PropAssetFields";
+import { DialoguesPanel } from "./DialoguesPanel";
 import { DoorAssemblyPreview, DoorAssetFields } from "./DoorAssetFields";
 import { createDoorDraft, getDoorDrafts, loadSharedDoors, useDoorCatalog, useDoorDrafts } from "./sharedDoorTypes";
 import { textureFolder } from "../render/textureSets";
@@ -94,6 +95,7 @@ const categories: { value: Sample; label: Key }[] = [
   { value: "actor", label: "assetManager.npcs" },
   { value: "item", label: "assetManager.pickups" },
   { value: "still", label: "assetManager.stills" },
+  { value: "dialogue", label: "assetManager.dialogues" },
 ];
 const subsOf: Record<Sample, string[]> = {
   material: ["All", "wall", "floor", "ceiling", "traverse"],
@@ -102,6 +104,7 @@ const subsOf: Record<Sample, string[]> = {
   door: ["All"],
   item: ["All"],
   still: ["All", "loading", "portrait", "room"],
+  dialogue: ["All"],
 };
 const subLabel = (sample: Sample, value: string) => {
   if (value === "All") return t("assetManager.all");
@@ -285,7 +288,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const decalDrafts = imageDrafts.filter(d => d.type === "decal");
   const stillDrafts = imageDrafts.filter(d => d.type === "portrait");
   const pickupDrafts = imageDrafts.filter(d => d.type === "item");
-  const entries: Entry[] = sample==="material" ? Object.entries(catalog).filter(([,v])=>isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[],world:assetWorld(key)}))
+  const entries: Entry[] = sample==="dialogue" ? []
+    : sample==="material" ? Object.entries(catalog).filter(([,v])=>isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[],world:assetWorld(key)}))
       // (a new draft with no diffuse yet isn't in the registry)
       .concat(drafts.filter(d=>!isPropTexture(d.kinds) && !catalog[draftId(d)]).map(d=>({key:draftId(d),label:d.name || t("assetManager.untitled"),img:"",groups:d.kinds as string[],world:d.world})))
     : sample==="door" ? [...doorCatalog.filter(asset => !doorDrafts.some(draft => draft.id === asset.id)), ...doorDrafts]
@@ -380,7 +384,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     if(!open || !id || npcEditor)return;
     let active=true;
     setGroups({}); showPreview({});
-    if(sample==="still" || sample==="door" || (sample==="actor" && !selectedActor))return;
+    if(sample==="still" || sample==="door" || sample==="dialogue" || (sample==="actor" && !selectedActor))return;
     async function read(){
       let result:Record<string,MaterialMaps>={};
       if(propDraft && (!propDraft.definition.texture || (ownedTexture && !selectedTexture))){
@@ -1021,7 +1025,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               {categories.map(c=><option key={c.value} value={c.value}>{t(c.label)}</option>)}
             </select>
           </label>
-          <label className="flex items-center gap-1 text-[11px] text-neutral-400">{t("assetManager.subCategory")}
+          {sample!=="dialogue" && <><label className="flex items-center gap-1 text-[11px] text-neutral-400">{t("assetManager.subCategory")}
             <select className={selectClass} value={sub} onChange={e=>setSub(e.target.value)}>
               {subsOf[sample].map(k=><option key={k} value={k}>{subLabel(sample,k)}</option>)}
             </select>
@@ -1032,14 +1036,14 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               <option value="scifi">{t("assetManager.scifi")}</option>
               <option value="fantasy">{t("assetManager.fantasy")}</option>
             </select>
-          </label>
+          </label></>}
           <button type="button" className={button + " grid h-7 w-7 place-items-center !p-0"} aria-label={t("assetManager.refresh")} title={t("assetManager.refresh")} onClick={()=>void refreshShared(true)}><RefreshCw size={14} aria-hidden="true"/></button>
           <span className={"min-w-0 flex-1 truncate text-xs " + (error ? "text-red-300" : notice ? "text-emerald-300" : "text-neutral-400")} title={error || notice}>{error || notice || t("assetManager.orbitHint")}</span>
           {signInOpen && <SignInPopover className="fixed left-1/2 top-24 -translate-x-1/2" onDone={()=>{setSignInOpen(false);setError("");void refreshShared(true);}} onCancel={()=>setSignInOpen(false)} onError={setError}/>}
           <button aria-label={t("assetManager.close")} className={button} disabled={openingNpc} onClick={requestClose}>×</button>
         </header>
         <UnsavedBar onError={setError}/>
-        <div className="flex min-h-0 flex-1 gap-2">
+        {sample==="dialogue" ? <DialoguesPanel onError={setError} onNotice={setNotice}/> : <div className="flex min-h-0 flex-1 gap-2">
           {listOpen ? <aside className="flex w-64 shrink-0 flex-col gap-1 overflow-hidden border-r border-neutral-800 pr-2">
             <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.assets")}</strong><button aria-label={t("assetManager.collapseAssets")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setListOpen(false)}>◀</button></div>
             <div className="flex items-center gap-1">
@@ -1173,7 +1177,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               </div>;
             })}</div></section>)}</details>}</>}
           </aside> : <button aria-label={t("assetManager.showProperties")} title={t("assetManager.properties")} className={strip} onClick={()=>setPanelOpen(true)}>◀</button>}
-        </div>
+        </div>}
         </>}
       </section>
     </div>,document.body)}</>;
