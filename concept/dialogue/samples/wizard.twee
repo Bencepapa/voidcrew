@@ -1,0 +1,42 @@
+:: StoryTitle
+wizard
+
+
+:: StoryData
+{
+  "ifid": "FEDB84A7-5B71-4E3D-BFDC-0297BF45E6C9",
+  "format": "Harlowe",
+  "format-version": "3.3.9",
+  "start": "Wizard in town",
+  "zoom": 1
+}
+
+
+:: Buy/Sell {"position":"1175,475","size":"100,100"}
+Please make your selection traveller!
+
+@shop wizard-shop
+
+[[Let me ask something else->Wizard in town]]
+[[Goodbye->Goodbye]]
+
+
+:: Goodbye {"position":"1025,600","size":"100,100"}
+Goodbye, traveller!
+@end
+
+
+:: Tell me more! {"position":"900,475","size":"100,100"}
+These are some pretty dangerous areas here, but you are safe in our town. Myself is always looking for good ingredients for my magic potions. Look out for herbs and berries on your way, bring me any ingredients and I will pay you good.
+
+[[Let's discuss about something else->Wizard in town]]
+[[Thank you, and farewell->Goodbye]]
+
+
+:: Wizard in town {"position":"1025,350","size":"100,100"}
+Welcome to my humble shop traveller!
+Do not fret, look around and buy anything you wish.
+
+[[Tell me more!]]
+[[Buy/Sell]]
+[[Goodbye]]
