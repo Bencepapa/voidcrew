@@ -1,6 +1,6 @@
 // Things to take home from a derelict: salvage, tech, supplies. On a run
-// they only go into the haul (how many of each); the base turns them into
-// upgrades and credits.
+// they go into the party's backpack (see inventory.ts; what comes home is
+// the haul, how many of each); the base turns them into upgrades and credits.
 
 export type ItemCategory = "salvage" | "tech" | "supplies" | "valuables" | "data";
 export const ITEM_CATEGORIES = ["salvage", "tech", "supplies", "valuables", "data"] as const;
@@ -22,11 +22,17 @@ export interface ItemType {
   category: ItemCategory;
   // what it's worth at the base (credits each)
   value: number;
+  // how many fit one backpack cell (see inventory.ts; DEFAULT_STACK if missing)
+  stack?: number;
+  // holding it takes both hands
+  twoHanded?: boolean;
 }
 
+export const DEFAULT_STACK = 10;
+
 export const ITEM_TYPES: Record<string, ItemType> = {
-  scrap: { name: "Scrap metal", category: "salvage", value: 2 },
-  wiring: { name: "Wiring", category: "salvage", value: 4 },
+  scrap: { name: "Scrap metal", category: "salvage", value: 2, stack: 20 },
+  wiring: { name: "Wiring", category: "salvage", value: 4, stack: 20 },
   circuit: { name: "Circuit board", category: "tech", value: 12 },
   powercell: { name: "Power cell", category: "tech", value: 18 },
   servo: { name: "Servo motor", category: "tech", value: 25 },
@@ -40,10 +46,10 @@ export const ITEM_TYPES: Record<string, ItemType> = {
   potion_blue: { name: "Mana potion", category: "supplies", value: 24 },
   scroll: { name: "Scroll", category: "data", value: 35 },
   purse: { name: "Coin purse", category: "valuables", value: 40 },
-  sword: { name: "Sword", category: "salvage", value: 45 },
+  sword: { name: "Sword", category: "salvage", value: 45, stack: 1 },
   skull: { name: "Skull", category: "salvage", value: 6 },
-  coins: { name: "Gold coins", category: "valuables", value: 25 },
-  dagger: { name: "Dagger", category: "salvage", value: 22 },
+  coins: { name: "Gold coins", category: "valuables", value: 25, stack: 20 },
+  dagger: { name: "Dagger", category: "salvage", value: 22, stack: 1 },
   arrows: { name: "Arrows", category: "supplies", value: 8 },
   gem: { name: "Green gem", category: "valuables", value: 60 },
 };

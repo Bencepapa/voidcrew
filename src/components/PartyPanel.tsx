@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Crewmate } from "../game/types";
 import { gameClock } from "../game/clock";
-import { canSwitch, crewWeapon, switchWeapon, useMeta } from "../game/meta";
+import { canSwitch, crewWeapon, switchWeapon, useInventory } from "../game/inventoryStore";
+import { t } from "../i18n";
+import { HandBoxes } from "./InventorySlots";
 
 function Bar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
@@ -38,7 +40,7 @@ const ROLE_TINT: Record<string, string> = {
 // A crewmate's portrait: public/portraits/<id>.webp (made by
 // scripts/make-portraits.ts) - or, until there is one, their initial on
 // their role's color. Greyed and reddened when down.
-function Avatar({ mate, className }: { mate: Crewmate; className: string }) {
+export function Avatar({ mate, className }: { mate: Crewmate; className: string }) {
   const [missing, setMissing] = useState(false);
   const down = mate.hp === 0;
   return (
@@ -64,9 +66,10 @@ function Avatar({ mate, className }: { mate: Crewmate; className: string }) {
   );
 }
 
-// a crewmate's weapon button: its name over a bar that fills as it cools
+// a crewmate's weapon button: the weapon in their right hand (their left's,
+// when the right holds none), its name over a bar that fills as it cools
 // down; bright when ready - and, with a second weapon, a button beside it
-// to switch (a finger's width on a phone)
+// to swap the hands (a finger's width on a phone)
 function WeaponButton({
   mate,
   index,
@@ -82,8 +85,8 @@ function WeaponButton({
   onUse: (index: number) => void;
   compact?: boolean;
 }) {
-  // (the loadout: re-drawn when a weapon is switched)
-  useMeta();
+  // (the hands: re-drawn when a weapon is switched or moved)
+  useInventory();
   const weapon = crewWeapon(mate.id);
   if (!weapon) return null;
   const left = Math.max(0, readyAt - gameClock.now());
@@ -105,7 +108,7 @@ function WeaponButton({
       </button>
       {canSwitch(mate.id) && (
         <button
-          title={`Switch weapon (Shift+${index + 1})`}
+          title={t("inventory.swapHands",{ key: `Shift+${index + 1}` })}
           aria-label={`Switch ${mate.name}'s weapon`}
           onClick={() => switchWeapon(mate.id)}
           disabled={aiming}
@@ -152,6 +155,7 @@ export function PartyPanel({
               <Bar value={c.hp} max={c.maxHp} color="#dc2626" />
               <Bar value={c.en} max={c.maxEn} color="#2563eb" />
               <Avatar mate={c} className="hidden portrait:block w-full aspect-[4/3]" />
+              <div className="pointer-events-auto"><HandBoxes crew={c.id} name={c.name} tabbable={false} /></div>
               <WeaponButton mate={c} index={i} readyAt={readyAt[i]} aiming={aiming === i} onUse={onWeapon} compact />
             </div>
           </div>
@@ -178,6 +182,7 @@ export function PartyPanel({
             <div className="text-[10px] text-neutral-300">EN {c.en}/{c.maxEn}</div>
             <Bar value={c.en} max={c.maxEn} color="#2563eb" />
             <Avatar mate={c} className="hidden portrait:block w-full aspect-[4/3]" />
+            <HandBoxes crew={c.id} name={c.name} tabbable={false} />
             <WeaponButton mate={c} index={i} readyAt={readyAt[i]} aiming={aiming === i} onUse={onWeapon} />
           </div>
         </div>

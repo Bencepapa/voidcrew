@@ -17,7 +17,9 @@ import { moodOdds } from "./variation";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
 import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
-import { crewWeapon, getMeta, setStoryFlag } from "./meta";
+import { getMeta, setStoryFlag } from "./meta";
+import { addToInventory, crewWeapon, haulOf, startRun, useInventory } from "./inventoryStore";
+import { t } from "../i18n";
 import { HACKER_ROLE, HACK_ENERGY, HACK_MS, conditionsMet, parseAction, triggerMatches, unlockedFlag } from "./story";
 import type { Lock, StoryEvent } from "./story";
 import { lockedAway, planShip } from "./shipPlan";
@@ -1157,10 +1159,12 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   const strafeRight = useCallback(() => step(rightOf(dir)), [step, dir]);
 
   // The run's haul: how many of each item the party has taken (see
-  // items.ts); the containers emptied and the loose items picked up (by
+  // items.ts) - it is carried in the backpack (see inventoryStore.ts), this is
+  // its tally; the containers emptied and the loose items picked up (by
   // variation, deck and index in the deck's full map - a variation leaves
   // some out); and the spills the view shows
-  const [haul, setHaul] = useState<Readonly<Record<string, number>>>({});
+  const inventory = useInventory();
+  const haul = useMemo(() => haulOf(inventory), [inventory]);
   const [looted, setLooted] = useState<ReadonlySet<string>>(() => new Set());
   const [spills, setSpills] = useState<LootSpill[]>([]);
   const spillIdRef = useRef(0);
@@ -1168,14 +1172,12 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     (kind: "prop" | "item", index: number) => `${variation?.seed ?? 0}|${fullMap.id}|${kind === "item" ? "item " : ""}${index}`,
     [variation, fullMap.id],
   );
+  // (into the backpack; what doesn't fit is carried loose, and said so)
   const addToHaul = useCallback((stacks: ItemStack[]) => {
     if (!stacks.length) return;
-    setHaul((h) => {
-      const next = { ...h };
-      for (const s of stacks) next[s.item] = (next[s.item] ?? 0) + s.count;
-      return next;
-    });
-  }, []);
+    const overflowed = addToInventory(stacks);
+    if (overflowed.length) pushLog(t("inventory.packFull", { items: stacksText(overflowed) }), "warn");
+  }, [pushLog]);
   // a container's contents: put in by hand, or rolled from its table
   // (behind a lock that's on in this ship: the vault's on top)
   const behindLock = useMemo(() => lockedAway(map, plan), [map, plan]);
@@ -1452,7 +1454,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     setLightsUp(false);
     alertShownRef.current = 0;
     setAlertShown(0);
-    setHaul({});
+    // (a clean backpack, the loadout in hand again)
+    startRun();
     setLooted(new Set());
     setSpills([]);
     killedRef.current = new Set();

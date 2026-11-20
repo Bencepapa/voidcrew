@@ -8,7 +8,7 @@ interface ActionMenuProps {
   onJumpDown?: () => void;
   // whatever is in front of the party (a lift button, a crate)
   onUse?: () => void;
-  // the haul panel, open or shut
+  // the inventory panel, open or shut
   onInventory?: () => void;
   // translucent variant for the mobile overlay layout
   compact?: boolean;

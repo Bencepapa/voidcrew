@@ -69,7 +69,8 @@ import type { EditSurface, EditTool, Rect, TextureLayer } from "./editor/mapEdit
 import { paintFace } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
-import { bankHaul, crewWeapon, failRun, getMeta, payRevival, revivalBill, switchWeapon, useMeta } from "./game/meta";
+import { bankHaul, failRun, getMeta, payRevival, revivalBill, useMeta } from "./game/meta";
+import { bankRun, crewWeapon, switchWeapon } from "./game/inventoryStore";
 import { WipeScreen } from "./components/WipeScreen";
 import { SHIP_CLASSES, shipOffers } from "./game/ships";
 import type { ShipOffer } from "./game/ships";
@@ -82,7 +83,8 @@ import { PartyPanel } from "./components/PartyPanel";
 import { MoveControls } from "./components/MoveControls";
 import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
-import { HaulPanel } from "./components/HaulPanel";
+import { InventoryPanel } from "./components/InventoryPanel";
+import { DragGhost } from "./components/InventorySlots";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { KeypadPanel } from "./components/KeypadPanel";
 import { AlertMeter } from "./components/AlertMeter";
@@ -186,6 +188,22 @@ export default function App() {
   } = useGameState(variation, interactionBlocksMovement);
   // (the interface's language: everything below renders again when it changes)
   useLang();
+  // The inventory (I, or the Inventory action): modal like a dialogue - the
+  // world stands still and the game's keys are the panel's - so it opens only
+  // while the party is free to act.
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const inventoryShown = inventoryOpen && !editMode && phase === "run" && !runEnd && wipedAt === null && !inLift && !terminal && !keypad && !aim;
+  useEffect(() => {
+    if (inventoryOpen && !inventoryShown) setInventoryOpen(false);
+  }, [inventoryOpen, inventoryShown]);
+  useLayoutEffect(() => {
+    if (!inventoryShown) return;
+    interactionBlocksMovement.current = true;
+    if (document.pointerLockElement) document.exitPointerLock();
+    return () => {
+      interactionBlocksMovement.current = false;
+    };
+  }, [inventoryShown]);
   const [settings, setSettings] = useState<ViewportSettings>(() => ({ ...DEFAULT_SETTINGS, ...map.render }));
   const [settingsMapId, setSettingsMapId] = useState(map.id);
   if (settingsMapId !== map.id) {
@@ -284,7 +302,7 @@ export default function App() {
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
   useEffect(() => setNoclip(viewSettings.noclip), [viewSettings.noclip, setNoclip]);
-  const interactionPausesWorld = activeInteraction?.kind === "image" || activeInteraction?.kind === "dialogue" || (activeInteraction?.kind === "message" && activeInteraction.modal);
+  const interactionPausesWorld = inventoryShown || activeInteraction?.kind === "image" || activeInteraction?.kind === "dialogue" || (activeInteraction?.kind === "message" && activeInteraction.modal);
   useLayoutEffect(() => {
     setWorldFrozen(editMode || !!runEnd || phase !== "run" || interactionPausesWorld);
     gameClock.setPaused(interactionPausesWorld);
@@ -324,7 +342,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", key, true);
   }, [closeInteraction]);
   const openInteraction = (event: Interaction) => {
-    if (editMode || phase !== "run" || inLift || terminal || keypad || aim || runEnd || wipedAt !== null || activeInteractionRef.current) return false;
+    if (editMode || phase !== "run" || inLift || terminal || keypad || aim || runEnd || wipedAt !== null || activeInteractionRef.current || inventoryShown) return false;
     activeInteractionRef.current = event;
     interactionBlocksMovement.current = event.kind === "dialogue" || (event.kind === "message" && event.modal);
     if (document.pointerLockElement) document.exitPointerLock();
@@ -361,6 +379,11 @@ export default function App() {
   const aimRef = useRef(aim);
   aimRef.current = aim;
   const aimWeapon = aim ? (crewWeapon(crew[aim.crew].id) ?? null) : null;
+  // (the weapon dragged out of the aiming crewmate's hands: the aim ends)
+  const aimLost = !!aim && !aimWeapon;
+  useEffect(() => {
+    if (aimLost) cancelAim();
+  }, [aimLost, cancelAim]);
   // the editor's palettes follow the world of the map on screen
   setActiveWorld(map.world);
   // (the background shared-content loader follows the same world)
@@ -401,7 +424,7 @@ export default function App() {
   const finePointer = useMediaQuery("(pointer: fine)");
   const free = useFreeMovement({
     enabled: !grid,
-    frozen: inLift || aim !== null || activeInteraction?.kind === "dialogue" || (activeInteraction?.kind === "message" && activeInteraction.modal),
+    frozen: inLift || aim !== null || inventoryShown || activeInteraction?.kind === "dialogue" || (activeInteraction?.kind === "message" && activeInteraction.modal),
     noclip: viewSettings.noclip,
     map,
     pos,
@@ -414,7 +437,7 @@ export default function App() {
   });
   const view = useViewControls({
     grid,
-    suppressPointerLock: !!activeInteraction,
+    suppressPointerLock: !!activeInteraction || inventoryShown,
     onForward: moveForward,
     onBack: moveBackward,
     onTurnLeft: turnL,
@@ -2247,20 +2270,20 @@ export default function App() {
     fireWeapon(index);
   };
 
-  // the haul panel (I, or the Inventory action)
-  const [haulOpen, setHaulOpen] = useState(false);
-  const toggleHaul = () => setHaulOpen((o) => !o);
+  // the inventory (I, or the Inventory action; the panel closes itself on I and Esc)
+  const toggleInventory = () => setInventoryOpen((o) => !o && phase === "run" && !activeInteractionRef.current);
 
   // Use (Space or Enter) works in both movement modes
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (editMode || runEnd || isTextEntry(e.target)) return;
       if ((e.key === " " || e.key === "Enter") && !aimRef.current && !e.repeat) use();
-      if ((e.key === "i" || e.key === "I") && !aimRef.current) setHaulOpen((o) => !o);
+      if ((e.key === "i" || e.key === "I") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && !aimRef.current) toggleInventory();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [use, editMode, runEnd]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [use, editMode, runEnd, phase]);
 
   const viewport = (
     <GameViewport
@@ -2282,7 +2305,7 @@ export default function App() {
       onInteraction={openInteraction}
       onEditInteraction={selectEventTarget}
       interactionUseRef={interactionUseRef}
-      interactionOpen={!!activeInteraction}
+      interactionOpen={!!activeInteraction || inventoryShown}
       editMode={editMode}
       hiddenLayers={hiddenLayers}
       lockedLayers={lockedLayers}
@@ -2328,7 +2351,8 @@ export default function App() {
         />
       )}
       {!editMode && phase === "run" && !runEnd && <MapTitle key={map.id} map={map} />}
-      {haulOpen && !editMode && !runEnd && <HaulPanel haul={haul} onClose={() => setHaulOpen(false)} />}
+      {inventoryShown && <InventoryPanel crew={crew} partyDock={partyDock} onClose={() => setInventoryOpen(false)} />}
+      {!editMode && <DragGhost />}
       {!editMode && phase === "run" && !runEnd && WORLDS[map.world].loop === "ship" && <AlertMeter alert={alert} compact={compact} powerOn={powerOn} />}
       {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
       {keypad && !editMode && (
@@ -2368,6 +2392,8 @@ export default function App() {
           onContinue={() => {
             // the haul home to the stash, the downed cloned, and back to the base
             bankHaul(haul, ship?.depth ?? getMeta().depth);
+            // (and what the crew holds in hand is their loadout from now on)
+            bankRun();
             payRevival(down);
             nextRun();
             setPhase("base");
@@ -2571,11 +2597,11 @@ export default function App() {
       onTurnRight={turnR}
       onJumpDown={jumpDown ?? undefined}
       onUse={use}
-      onInventory={toggleHaul}
+      onInventory={toggleInventory}
       compact={compact}
     />
   ) : (
-    <ActionMenu onUse={use} onInventory={toggleHaul} compact={compact} />
+    <ActionMenu onUse={use} onInventory={toggleInventory} compact={compact} />
   );
   // the left column's map (edit mode wraps it in the collapsible block below)
   const minimap = (
@@ -2803,7 +2829,7 @@ export default function App() {
               onStrafeRight={strafeRight}
               onUse={use}
               useLabel={useLabel}
-              onInventory={toggleHaul}
+              onInventory={toggleInventory}
               onJumpDown={jumpDown ?? undefined}
             />
           )}

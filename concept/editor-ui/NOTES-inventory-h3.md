@@ -1,0 +1,44 @@
+# Inventory H3 notes (branch feature/inventory-hands)
+
+## What was done
+- Pure rules: `src/game/inventory.ts` (no UI, no storage, rules injected as `ItemRules { stackMax, twoHanded }`). `Inventory = { pack: (Slot|null)[24], hands: Record<crewId, [left, right]>, overflow }`, `Slot = { item, qty, uid? }` (`uid` = an owned weapon's id, never stacks). Functions: `addItem`, `addLoot` (overflow / refuse), `settleOverflow`, `removeItem`, `countOf`, `totals`, `moveSlot(inv, from, to)` (the single move used by drag, click-click and later the shop), `equipHand`, `swapHands`, `equipLoadout`, `inventoryFromHaul` (the haul -> backpack migration), `Loc` + `locKey`/`parseLoc` ("pack:3", "hand:reese:1"). Test: `npx tsx src/game/inventory.test.ts`.
+- Move rules: onto an empty cell it goes; same item stacks (rest stays); another item swaps. Into a hand it takes ONE unit of a stack; what the hand held goes back to where the item came from if free, else any free cell, else the whole move is refused (nothing changes). A two-handed item is stored in the right hand with the left shown dimmed ("2H"); putting it in either hand displaces both hands' items; putting any item in either hand while a two-hander is held displaces the two-hander.
+- Game rules glue: `src/game/itemRules.ts` (`itemRules`: stack size from `ItemType.stack`, default 10; weapons = item id `weapon:<type>`, stack 1; two-handed from `ItemType.twoHanded` / `WeaponType.twoHanded`; `itemName`, `itemValue`, `weaponOf`). `items.ts`: `ItemType.stack?`, `twoHanded?`, `DEFAULT_STACK` (scrap/wiring/coins 20, sword/dagger 1).
+- Weapons data moved to `src/game/weapons.ts` (`WEAPON_TYPES`, `weaponInWorld`, `weaponStats`, `OwnedWeapon`, `MAX_LEVEL`) because `meta.ts` imports `worlds.ts` (`import.meta.env`) and cannot load under tsx; `meta.ts` re-exports them, so no other import changed. Nothing else in the move changed.
+- Live state: `src/game/inventoryStore.ts` (module store like `meta.ts`: `useInventory`, `startRun`, `bankRun`, `addToInventory`, `moveItem`, `changeInventory` (hook for the H4 shop), `haulOf`, `crewWeapon`, `canSwitch`, `switchWeapon`). `crewWeapon/canSwitch/switchWeapon` left `meta.ts` and live here now: the weapon fired is the right hand's weapon (left hand's if the right holds none); the swap button/Shift+1..4 swaps the hands.
+- Starting loadout: at each run start (`startRun`, called by `nextRun` and at module load) every crewmate's `meta.loadout` is put in hand: the weapon in use (`meta.active`) in the right hand, the other in the left (Merlen: both staffs). So default behaviour is unchanged. Pulse rifle, rail rifle, scatter gun, crossbow, longbow are two-handed (they are alone in the starting loadouts; Reese's rifle shows across both hands).
+- Run end: `App.tsx` calls `bankRun()` after `bankHaul` (run banked): the weapons the crew holds become their `meta.loadout` (right = slot 0) via `meta.commitLoadout` (also adopts a weapon item with no owner as a new owned weapon). A lost run (wipe) just reseeds from the old loadout. The base's own loadout screen is unchanged and is read again at the next `startRun`.
+- Haul: `useGameState` no longer has haul state; `haul` is now `haulOf(inventory)` (backpack + hands + overflow, weapons excluded) so `RunSummary`, `WipeScreen`, revival bill and `bankHaul` / base sell-off work unchanged. Pickups call `addToInventory`.
+- Full backpack: nothing is refused or lost. What does not fit becomes "overflow" (carried loose, shown under the grid, still part of the haul, logged "The backpack is full: ..."); it moves into the grid by itself when a move/removal opens room.
+- UI: `InventoryPanel.tsx` (I key and the Inventory action; replaces `HaulPanel.tsx`, deleted): modal, world paused (`gameClock` + world frozen + movement blocked + no pointer lock, like a dialogue), stops above the party dock so the dock's own hand boxes stay reachable; backpack grid, worth, per-crew avatar + two hand boxes, hint/notice line. Reusable parts in `InventorySlots.tsx` (`SlotBox`, `SlotGrid`, `HandBoxes`, `DragGhost`, `ItemIcon`, `moveInInventory`) and the drag/click controller `slotDrag.ts` (knows only `data-slot` keys and an `onMove(from, to) => reason|null` callback; so a shop grid just uses another key prefix and its own onMove).
+- Input: drag with pointer events (works for touch: `touch-none` on filled slots, window listeners in capture phase because the panels stop bubbling); click an item then click a place; keyboard: I opens/closes, arrows move focus between slots, Enter/Space pick up and put down, Esc = cancel drag, then put back, then close. While open all other game keys are swallowed.
+- PartyPanel (bottom crew UI): each crewmate shows two hand boxes (L/R) above the weapon button, both layouts; they are drag/drop targets and sources even with the inventory closed. `Avatar` is exported for the panel.
+- i18n: new area `src/i18n/{en,hu}/inventory.ts` (`inventory.*`), registered in `i18n/index.ts`.
+- If a weapon is dragged out of the hands of the crewmate who is aiming, the aim is cancelled (`App.tsx`).
+
+## Persistence
+- There is no saved run: the old `haul` was React state, lost on reload, and nothing else persisted a run (only `meta` in localStorage: stash, credits, owned weapons, loadout). The backpack and hands follow the same rule (in memory per run). What persists is what already did: the haul goes to `meta.stash` on bank, the weapons held become `meta.loadout`. So there was nothing to migrate in storage; `inventoryFromHaul` (tested) is the haul -> backpack conversion for when a saved haul appears. Old `voidcrew-meta-v1` saves load unchanged (no Meta field was added).
+
+## Not verified
+- No browser run (as instructed). `npx tsc --noEmit` clean, `npm run build` ok, `inventory.test.ts` and the four existing tsx tests pass. The UI (drag feel, touch, focus, layout in the compact/mobile strip, the dock inset on small screens) is read-checked only.
+- The tests cover the pure rules and the game's own rules table; no component or store test (the store imports `meta.ts`, which needs Vite's `import.meta.env`).
+
+## Import cycles
+- None added. New edges: `inventoryStore -> meta, itemRules, inventory, items`; `itemRules -> weapons, items`; `PartyPanel -> InventorySlots -> inventoryStore`; `InventoryPanel -> PartyPanel, InventorySlots`. `meta.ts` does not import the store.
+
+## Open questions
+- Grid size (6x4 = 24 cells) and stack sizes (default 10, scrap/wiring/coins 20, sword/dagger 1), no weight or item size.
+- Two-handed list (pulse rifle, rail rifle, scatter gun, crossbow, longbow) is a guess; the flag is on `WeaponType`/`ItemType`.
+- A weapon stowed in the backpack at the end of a run leaves its owner unarmed next run (loadout = what is in hand). Is that wanted, or should the owned-but-stowed weapon keep a loadout slot?
+- Hands take one unit of a stack (e.g. 1 of 3 medkits); there is no "split stack" yet (shift/ctrl-drag) and no "use item" from a hand (medkit), only weapons act from hands.
+- Credits (`cr`) remain a separate counter; the "credits" item type is still a chip in the backpack.
+- Non-weapon items (swords, daggers) can be held but do nothing in hand.
+- The overflow decision (never lose loot) vs refusing the pickup; the other option is easy to switch (`addToInventory` / `addLoot` returns `refused`).
+
+## How to test (browser)
+1. Start (base screen for Void Crew), board a ship. Bottom crew UI: each crewmate shows an `L` and an `R` box; the right box holds the starting weapon (Reese's pulse rifle shows across both, left dimmed "2H"). `[1] Pulse rifle` etc. work as before.
+2. Press `I` (or the Inventory action): the world stops, the panel shows an empty 6x4 backpack, a Hands list. Esc or `I` closes.
+3. Loot a crate (Space): items appear in the cells and stack. Drag a stack onto another cell, onto a same item (stacks up), onto a different item (swap). Click an item (amber ring) then click a cell or hand. Arrow keys + Enter/Space do the same.
+4. Drag a weapon from a right hand into the backpack: that crewmate's weapon button disappears; drag it back (or into the other crewmate's hand): the button returns. Merlen: both staffs, the swap button (or Shift+3) swaps hands. Drag a two-handed weapon onto a hand holding something: both go away to the pack.
+5. Fill the backpack (24 cells): extra loot is carried loose (line under the grid + log). Finish a run through an exit: the haul (incl. loose) is in the base stash and the weapons you hold are the next loadout.
+6. Phone/compact: hand boxes in the strip, touch drags, the panel above the strip.
