@@ -9,6 +9,7 @@ import { FloatToolbar } from "./editor/FloatToolbar";
 import { ShortcutHelp } from "./editor/ShortcutHelp";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { InteractionPopup } from "./components/InteractionPopup";
+import { DialoguePopup } from "./components/DialoguePopup";
 import { gameClock } from "./game/clock";
 import { interactionAt, type Interaction, type InteractionTarget } from "./game/interactions";
 import { setInteraction } from "./editor/mapEdits";
@@ -59,7 +60,7 @@ import { MIN_HEADROOM } from "./game/heights";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
-import { ACTOR_TYPES } from "./game/actors";
+import { ACTOR_TYPES, isFriendlySpec } from "./game/actors";
 import { DOOR_EDGE_OFFSET, cellAt, ceilingHeight, doorAt, doorFacingAt, floorHeight } from "./game/map";
 import type { Direction, MapLight, PropAnchor, PropSpec, Vec2 } from "./game/types";
 import { DIR_VECTOR, behindOf, rightOf } from "./game/movement";
@@ -181,6 +182,7 @@ export default function App() {
     sceneReady,
     syncPose,
     openDoorAt,
+    faceActor,
   } = useGameState(variation, interactionBlocksMovement);
   // (the interface's language: everything below renders again when it changes)
   useLang();
@@ -282,7 +284,7 @@ export default function App() {
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
   useEffect(() => setNoclip(viewSettings.noclip), [viewSettings.noclip, setNoclip]);
-  const interactionPausesWorld = activeInteraction?.kind === "image" || activeInteraction?.modal === true;
+  const interactionPausesWorld = activeInteraction?.kind === "image" || activeInteraction?.kind === "dialogue" || (activeInteraction?.kind === "message" && activeInteraction.modal);
   useLayoutEffect(() => {
     setWorldFrozen(editMode || !!runEnd || phase !== "run" || interactionPausesWorld);
     gameClock.setPaused(interactionPausesWorld);
@@ -305,7 +307,8 @@ export default function App() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const event = activeInteractionRef.current;
-      if (!event) return;
+      // (a dialogue's keys are the popup's own: Enter picks a choice there)
+      if (!event || event.kind === "dialogue") return;
       if (e.key === "Escape" || e.key === "Enter") {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -323,10 +326,13 @@ export default function App() {
   const openInteraction = (event: Interaction) => {
     if (editMode || phase !== "run" || inLift || terminal || keypad || aim || runEnd || wipedAt !== null || activeInteractionRef.current) return false;
     activeInteractionRef.current = event;
-    interactionBlocksMovement.current = event.kind === "message" && event.modal;
+    interactionBlocksMovement.current = event.kind === "dialogue" || (event.kind === "message" && event.modal);
     if (document.pointerLockElement) document.exitPointerLock();
     setActiveInteraction(event);
-    if (event.text.trim()) pushLog(event.text);
+    if (event.kind === "dialogue") {
+      // (the NPC stops and turns to the party)
+      if (event.actorId !== undefined) faceActor(event.actorId);
+    } else if (event.text.trim()) pushLog(event.text);
     return true;
   };
   const use = useCallback(() => {
@@ -395,7 +401,7 @@ export default function App() {
   const finePointer = useMediaQuery("(pointer: fine)");
   const free = useFreeMovement({
     enabled: !grid,
-    frozen: inLift || aim !== null || (activeInteraction?.kind === "message" && activeInteraction.modal),
+    frozen: inLift || aim !== null || activeInteraction?.kind === "dialogue" || (activeInteraction?.kind === "message" && activeInteraction.modal),
     noclip: viewSettings.noclip,
     map,
     pos,
@@ -1485,7 +1491,7 @@ export default function App() {
   const selectedActorInfo: ActorInfo | null = (() => {
     const spec = selectedActor === null ? undefined : map.actors?.[selectedActor];
     return spec
-      ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length, links: linksOf(spec), wake: spec.wake }
+      ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length, links: linksOf(spec), wake: spec.wake, friendly: isFriendlySpec(spec), dialogue: spec.dialogue, portrait: spec.portrait, shop: spec.shop }
       : null;
   })();
   const changeActor = (patch: Parameters<typeof updateActor>[2], merge?: string) => {
@@ -2391,7 +2397,9 @@ export default function App() {
         />
       )}
       {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
-      {activeInteraction && !editMode && <InteractionPopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>}
+      {activeInteraction && !editMode && (activeInteraction.kind === "dialogue"
+        ? <DialoguePopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>
+        : <InteractionPopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>)}
       {editMode && <PropEditor />}
       {editMode && (
         <Inspector

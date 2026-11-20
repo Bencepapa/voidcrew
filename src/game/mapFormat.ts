@@ -201,6 +201,10 @@ export interface MapFile {
     patrol?: [number, number][];
     chance?: number;
     wake?: ActorWake;
+    friendly?: boolean;
+    dialogue?: { library: string; entry: string };
+    portrait?: string;
+    shop?: string;
     id?: string;
     with?: string;
     without?: string;
@@ -472,6 +476,11 @@ export function parseMap(id: string, file: MapFile): GameMap {
         patrol: (a.patrol ?? []).map(([x, y]) => ({ x, y })),
         chance: a.chance,
         wake: a.wake,
+        friendly: typeof a.friendly === "boolean" ? a.friendly : undefined,
+        dialogue: a.dialogue && typeof a.dialogue.library === "string" && typeof a.dialogue.entry === "string" && a.dialogue.library
+          ? { library: a.dialogue.library, entry: a.dialogue.entry } : undefined,
+        portrait: typeof a.portrait === "string" && a.portrait ? a.portrait : undefined,
+        shop: typeof a.shop === "string" && a.shop ? a.shop : undefined,
         id: a.id,
         with: a.with,
         without: a.without,

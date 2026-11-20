@@ -11,7 +11,7 @@ import { ITEM_TYPES, isSharedPickupId, rollLoot, stacksText, stacksValue } from 
 import type { ItemStack, LootSpill } from "./items";
 import { PROP_TYPES, propHeight, propPlacement } from "./props";
 import type { ShipMood } from "./variation";
-import { ACTOR_TYPES, SPOTTED_MS, actorAt, actorFromSpec, actorWake, createActors, partyHitChance, scared, stepActors, type Spotted } from "./actors";
+import { ACTOR_TYPES, SPOTTED_MS, actorAt, actorFromSpec, actorWake, createActors, faceParty, partyHitChance, scared, stepActors, type Spotted } from "./actors";
 import { onSharedActorsChanged } from "../editor/sharedActors";
 import { moodOdds } from "./variation";
 import type { ActorState } from "./actors";
@@ -318,7 +318,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       lastHuntRef.current = now;
       const party = { ...posRef.current };
       actors = actors.map((a) =>
-        a.diedAt !== null || a.dormant || ACTOR_TYPES[a.type].passive ? a : { ...a, fooled: false, hostile: true, lastSeenAt: now, lastSeenCell: party },
+        a.diedAt !== null || a.dormant || a.friendly || ACTOR_TYPES[a.type].passive ? a : { ...a, fooled: false, hostile: true, lastSeenAt: now, lastSeenCell: party },
       );
     }
     if (actors !== actorsRef.current) updateActorsRef.current(actors);
@@ -599,6 +599,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     return actorsRef.current.filter(
       (a) =>
         a.diedAt === null &&
+        !a.friendly &&
         !a.inVentUntil &&
         sight.has(cellKey(a.cell.x, a.cell.y)) &&
         Math.hypot(a.cell.x - here.x, a.cell.y - here.y) <= range,
@@ -1361,7 +1362,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     stanceRef.current = stance;
     updateActorsRef.current(
       actorsRef.current.map((a) => {
-        if (a.diedAt !== null || ACTOR_TYPES[a.type].passive) return a;
+        if (a.diedAt !== null || a.friendly || ACTOR_TYPES[a.type].passive) return a;
         if (stance === "hostile") return { ...a, dormant: false, fooled: false };
         return { ...a, dormant: stance === "dormant", fooled: stance === "fooled", hostile: false, lastSeenCell: null, volleyLeft: 0 };
       }),
@@ -1573,9 +1574,16 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     });
   }, []);
 
+  // a friendly actor stops to talk: it turns to the party (see faceParty)
+  const faceActor = useCallback((id: number) => {
+    if (!actorsRef.current.some((a) => a.id === id && a.diedAt === null)) return;
+    updateActorsRef.current(actorsRef.current.map((a) => (a.id === id ? faceParty(a, posRef.current, gameClock.now()) : a)));
+  }, []);
+
   return {
     map,
     haul,
+    faceActor,
     lootedProps,
     takenItems,
     lootMarks,

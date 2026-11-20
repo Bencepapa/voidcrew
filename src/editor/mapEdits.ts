@@ -603,6 +603,8 @@ export function setInteraction(file: MapFile, map: Parameters<typeof doorAt>[0],
     case "prop": return updateProp(file, target.index, { interaction });
     case "item": return updateItem(file, target.index, { interaction });
     case "decal": return updateDecal(file, target.index, { interaction });
+    // (an NPC's talk is set in its own inspector, not as an event)
+    case "actor": return file;
   }
 }
 

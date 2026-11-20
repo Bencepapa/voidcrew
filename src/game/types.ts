@@ -135,6 +135,14 @@ export interface ActorSpec extends Linked {
   // what it does until the ship's alert reaches `level` (see useGameState's
   // alert): unset - it's on guard from the start
   wake?: ActorWake;
+  // a friendly one never fights, can't be shot at and wanders near where it
+  // starts; with a `dialogue` Use / a click on it opens that (see dialogue.ts)
+  friendly?: boolean;
+  dialogue?: { library: string; entry: string };
+  // a shared still image (purpose "portrait") shown beside what it says
+  portrait?: string;
+  // its own shop's id (what a parameter-less @shop opens)
+  shop?: string;
 }
 
 // An actor waiting for the ship's alert level (1 suspicious, 2 alert, 3

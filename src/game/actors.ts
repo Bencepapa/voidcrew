@@ -106,6 +106,10 @@ export interface ActorType extends ActorSheetLayout {
   // sharing their cells), drops on the crew only in its cell, and slips into
   // the deck's vents (decals whose action is "vent") to come out of another
   crawler?: boolean;
+  // a friendly one (a townsperson): never fights, can't be aimed at, isn't an
+  // enemy to anyone, wanders a few cells around where it starts and can be
+  // talked to (see ActorSpec.friendly: a placed one may say otherwise)
+  friendly?: boolean;
 }
 
 export type Faction = "robot" | "alien" | "infected" | "survivor";
@@ -997,6 +1001,47 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
     },
     crits: [],
   },
+  // the town smith: friendly, wanders slowly about his forge and talks (his
+  // picture is the hooded mage's for now)
+  smith1: {
+    name: "Smith",
+    sheet: "mage1",
+    cols: 5,
+    rows: 7,
+    cellAspect: 1,
+    height: 0.9,
+    body: { headroom: 0.8, step: 0.25 },
+    eyeHeight: 0.72,
+    moveMs: 1800,
+    waitMs: 2600,
+    idleRow: 0,
+    walkRows: [1, 0, 2, 0],
+    shootRow: 3,
+    hitRow: 4,
+    dieRows: [5],
+    wreckRow: 6,
+    friendly: true,
+    hp: 40,
+    damage: [0, 0],
+    attackRange: 0,
+    attackCooldownMs: 1e9,
+    accuracy: 0,
+    falloff: 0,
+    sight: 0,
+    fieldOfView: 0,
+    huntSight: 0,
+    hearing: 0,
+    alertMs: 0,
+    tactics: { shotPauseMs: 0, retreat: [0, 0], seeksCover: false, advance: false, minRange: 0 },
+    parts: {
+      head: { label: "HEAD", zone: [0.33, 0.04, 0.67, 0.28] },
+      torso: { label: "BODY", zone: [0.25, 0.28, 0.75, 0.62] },
+      armL: { label: "ARM", zone: [0.05, 0.2, 0.3, 0.7] },
+      armR: { label: "ARM", zone: [0.7, 0.2, 0.95, 0.7] },
+      legs: { label: "LEGS", zone: [0.28, 0.62, 0.72, 1] },
+    },
+    crits: [],
+  },
   // a skeleton warrior with a rusty sword and a round shield
   skeleton1: {
     name: "A skeleton",
@@ -1111,6 +1156,20 @@ export interface ActorState {
   playingDead?: boolean;
   // a crawler in the vents: out again then (game time)
   inVentUntil?: number | null;
+  // a friendly one (see ActorType.friendly): it wanders about where it starts
+  friendly?: boolean;
+}
+
+// whether a placed actor is friendly: its own say, else its type's
+export const isFriendlySpec = (spec: ActorSpec): boolean => spec.friendly ?? ACTOR_TYPES[spec.actor]?.friendly ?? false;
+// how far (cells, each way) a friendly one strays from where it starts
+export const FRIENDLY_WANDER = 3;
+
+// A friendly one stopped to talk: it turns to the party. The world stands
+// still while the dialogue is open (the game clock is paused), so this wait
+// only starts to run once it's over: it idles a moment, then wanders on.
+export function faceParty(actor: ActorState, party: Vec2, now: number): ActorState {
+  return { ...actor, facing: toward(actor.cell, party), waitUntil: now + 1500 };
 }
 
 // (the map loader can't check actor types: actors.ts imports the map
@@ -1141,6 +1200,7 @@ export type Stance = "dormant" | "fooled" | "hostile";
 export const STANCE_WAKES_AT = 2;
 export function actorWake(spec: ActorSpec, stance: Stance): ActorWake | undefined {
   if (spec.wake) return spec.wake;
+  if (isFriendlySpec(spec)) return undefined;
   const type = ACTOR_TYPES[spec.actor];
   if (stance === "hostile" || type?.passive || (type?.faction ?? "robot") !== "robot") return undefined;
   return { level: STANCE_WAKES_AT, mode: stance };
@@ -1164,6 +1224,7 @@ export function actorFromSpec(map: GameMap, spec: ActorSpec, id: number, now: nu
     waitUntil: now,
     moveMs: ACTOR_TYPES[spec.actor].moveMs,
     hp: ACTOR_TYPES[spec.actor].hp,
+    friendly: isFriendlySpec(spec) || undefined,
     hostile: false,
     lastSeenAt: -1e9,
     lastSeenCell: null,
@@ -1428,7 +1489,31 @@ export function stepActors(
     // A harmless one: hit, it flees - each step to the neighbouring cell
     // farthest from the party, out of its sight if it can; else it goes
     // about its route, or wanders (on mostly straight, turning now and then)
-    if (type.passive) {
+    // A friendly one takes no notice of the party and never fights: it
+    // wanders slowly, staying within FRIENDLY_WANDER cells of where it
+    // started (never through a door, wall or closed cell), idling between
+    // steps - or, given a patrol route, walks that.
+    if (a.friendly) {
+      if (a.patrol.length < 2) {
+        const home = a.patrol[0] ?? a.cell;
+        const open = neighbours().filter(
+          ({ to, dir }) =>
+            !doorCrossed(map, a.cell, to) &&
+            Math.max(Math.abs(to.x - home.x), Math.abs(to.y - home.y)) <= FRIENDLY_WANDER &&
+            stepY(to, dir) !== null,
+        );
+        if (!open.length || Math.random() < 0.5) {
+          update({ waitUntil: now + type.waitMs * (0.6 + Math.random()) });
+          return a;
+        }
+        const ahead = open.find((n) => n.dir === a.facing);
+        const pick = ahead && Math.random() < 0.5 ? ahead : open[Math.floor(Math.random() * open.length)];
+        stepTo(pick.to, pick.dir);
+        // (a pause after the step, too)
+        update({ waitUntil: now + a.moveMs + type.waitMs * (0.4 + Math.random() * 0.6) });
+        return a;
+      }
+    } else if (type.passive) {
       if (now - a.hitAt < type.passive.fleeMs) {
         let best: { to: Vec2; dir: Direction; score: number } | null = null;
         for (const { to, dir } of neighbours()) {
@@ -1599,13 +1684,13 @@ export function stepActors(
     const a = fighters[i];
     const type = ACTOR_TYPES[a.type];
     const faction = type.faction ?? "robot";
-    if (a.diedAt !== null || a.dormant || a.playingDead || a.panicked || a.inVentUntil || a.ally || type.passive || type.watcher) continue;
+    if (a.diedAt !== null || a.dormant || a.playingDead || a.panicked || a.inVentUntil || a.ally || a.friendly || type.passive || type.watcher) continue;
     if (!type.damage[1] || a.lastAttack === now || now - a.lastAttack < type.attackCooldownMs || now < a.disarmedUntil) continue;
     const eyes = a.y + type.eyeHeight;
     let best: { o: ActorState; d: number } | null = null;
     for (const o of fighters) {
       // (one lying still as if dead fools them all)
-      if (o === a || o.diedAt !== null || o.inVentUntil || o.playingDead) continue;
+      if (o === a || o.diedAt !== null || o.inVentUntil || o.playingDead || o.friendly) continue;
       const how = FOES[faction][ACTOR_TYPES[o.type].faction ?? "robot"];
       if (!how || ACTOR_TYPES[o.type].passive) continue;
       const d = Math.hypot(o.cell.x - a.cell.x, o.cell.y - a.cell.y);
@@ -1641,7 +1726,7 @@ export function stepActors(
       // on the crew's side: the nearest robot in its sight and reach
       if (now - a.lastAttack < type.attackCooldownMs || !type.attackRange) return a;
       const target = actors
-        .filter((o) => o.diedAt === null && !o.ally && o.id !== a.id && !ACTOR_TYPES[o.type].passive && !ACTOR_TYPES[o.type].watcher)
+        .filter((o) => o.diedAt === null && !o.ally && !o.friendly && o.id !== a.id && !ACTOR_TYPES[o.type].passive && !ACTOR_TYPES[o.type].watcher)
         .map((o) => ({ o, d: Math.hypot(o.cell.x - a.cell.x, o.cell.y - a.cell.y) }))
         .filter(({ o, d }) => d <= type.attackRange && lineOfSight(map, a.cell, o.cell, doorOpen, { from: eyes, to: o.y + ACTOR_TYPES[o.type].eyeHeight }))
         .sort((p, q) => p.d - q.d)[0];

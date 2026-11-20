@@ -1,9 +1,14 @@
-import type { Direction, GameMap, Vec2 } from "./types";
+import type { Direction, GameMap, Vec2, ActorSpec } from "./types";
 import type { WallFacePart } from "./mapGeometry";
+import { isFriendlySpec } from "./actors";
 
 export type Interaction = { clickOnly?: true } & (
   | { kind: "message"; text: string; modal: boolean; position: "top" | "center" | "bottom"; timeout?: number }
   | { kind: "image"; text: string; image?: string }
+  // a talk (see dialogue.ts): the library and the passage it starts at; the
+  // portrait shown beside it, the shop a parameter-less @shop opens, the
+  // actor type talking and (a placed NPC) its index in the map's actors
+  | { kind: "dialogue"; library: string; entry: string; portrait?: string; shop?: string; npc?: string; actorId?: number }
 );
 
 export type WallInteractionTarget = { kind: "wall"; cell: Vec2; side: Direction; part?: WallFacePart };
@@ -11,9 +16,22 @@ export type WallInteractionTarget = { kind: "wall"; cell: Vec2; side: Direction;
 export type InteractionTarget =
   | WallInteractionTarget
   | { kind: "door"; cell: Vec2 }
-  | { kind: "decal" | "prop" | "item"; index: number };
+  | { kind: "decal" | "prop" | "item" | "actor"; index: number };
 
 export const sameInteractionCell = (a: Vec2, b: Vec2) => a.x === b.x && a.y === b.y;
+
+// A friendly NPC with a dialogue talks when used (its spec's object is the key:
+// the same event comes back every time, so Use can match what it aimed at).
+const talks = new WeakMap<ActorSpec, Interaction>();
+export function actorInteraction(spec: ActorSpec | undefined, index: number): Interaction | undefined {
+  if (!spec?.dialogue || !isFriendlySpec(spec)) return undefined;
+  let event = talks.get(spec);
+  if (!event || event.kind !== "dialogue" || event.actorId !== index) {
+    event = { kind: "dialogue", library: spec.dialogue.library, entry: spec.dialogue.entry, portrait: spec.portrait, shop: spec.shop, npc: spec.actor, actorId: index };
+    talks.set(spec, event);
+  }
+  return event;
+}
 
 export function interactionAt(map: GameMap, target: InteractionTarget): Interaction | undefined {
   switch (target.kind) {
@@ -22,12 +40,23 @@ export function interactionAt(map: GameMap, target: InteractionTarget): Interact
     case "prop": return map.props?.[target.index]?.interaction;
     case "decal": return map.decals?.[target.index]?.interaction;
     case "item": return map.items?.[target.index]?.interaction;
+    case "actor": return actorInteraction(map.actors?.[target.index], target.index);
   }
 }
 
 export function readInteraction(raw: Interaction | undefined): Interaction | undefined {
-  if (!raw || typeof raw.text !== "string") return undefined;
+  if (!raw) return undefined;
   const click = raw.clickOnly === true ? { clickOnly: true as const } : {};
+  if (raw.kind === "dialogue") {
+    if (typeof raw.library !== "string" || typeof raw.entry !== "string" || !raw.library) return undefined;
+    return {
+      ...click, kind: "dialogue", library: raw.library, entry: raw.entry,
+      portrait: typeof raw.portrait === "string" && raw.portrait ? raw.portrait : undefined,
+      shop: typeof raw.shop === "string" && raw.shop ? raw.shop : undefined,
+      npc: typeof raw.npc === "string" && raw.npc ? raw.npc : undefined,
+    };
+  }
+  if (typeof raw.text !== "string") return undefined;
   if (raw.kind === "image") return { ...click, kind: "image", text: raw.text, image: typeof raw.image === "string" ? raw.image : undefined };
   if (raw.kind !== "message") return undefined;
   return {

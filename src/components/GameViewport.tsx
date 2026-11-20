@@ -20,7 +20,7 @@ import { effectiveViewDistance, loadGraphics } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, isSharedPickupId, itemSpot } from "../game/items";
-import { interactionAt, sameInteractionCell, type Interaction, type InteractionTarget, type WallInteractionTarget } from "../game/interactions";
+import { actorInteraction, interactionAt, sameInteractionCell, type Interaction, type InteractionTarget, type WallInteractionTarget } from "../game/interactions";
 import { wallFaceSpans, type WallFacePart } from "../game/mapGeometry";
 import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
@@ -5999,7 +5999,7 @@ export function GameViewport({
         const focus = aimFocusRef.current;
         const lit = aimingRef.current && focus?.target === actor.id && focus.part ? focus.part : null;
         entry.highlight.part.value = lit ? BODY_PARTS.indexOf(lit) : -1;
-        entry.highlight.outline.value = settingsRef.current.enemyScanner && actor.diedAt === null ? 1 : 0;
+        entry.highlight.outline.value = settingsRef.current.enemyScanner && actor.diedAt === null && !actor.friendly ? 1 : 0;
         // its optics and vents glow - flickering while stunned, out once dead
         const glowMap = type.glow ? glowMapOf(actor.type) : null;
         if (glowMap && entry.highlight.glowMap.value !== glowMap) entry.highlight.glowMap.value = glowMap;
@@ -6196,6 +6196,7 @@ export function GameViewport({
         if (typeof data.decalIndex === "number") return { kind: "decal", index: data.decalIndex };
         if (typeof data.propIndex === "number") return { kind: "prop", index: data.propIndex };
         if (typeof data.itemIndex === "number") return { kind: "item", index: data.itemIndex };
+        if (data.actor === true && typeof data.actorId === "number") return { kind: "actor", index: data.actorId };
         if (data.doorCell) return { kind: "door", cell: data.doorCell as Vec2 };
         if (typeof data.eventSurface === "string") {
           const [x, y, side] = data.eventSurface.split(",");
@@ -6210,7 +6211,7 @@ export function GameViewport({
       const m = latestMapRef.current;
       if (!editing && !m.wallInteractions?.length &&
           !m.doors?.some(d => d.interaction) && !m.decals?.some(d => d.interaction) &&
-          !m.props?.some(p => p.interaction) && !m.items?.some(i => i.interaction)) return null;
+          !m.props?.some(p => p.interaction) && !m.items?.some(i => i.interaction) && !m.actors?.some(a => a.dialogue)) return null;
       interactionRay.far = editing ? (topdown.on ? TOPDOWN_REACH : EDIT_REACH) : interactionReach;
       interactionRay.setFromCamera(ndc, camera);
       let solidDistance = Infinity;
@@ -6221,8 +6222,14 @@ export function GameViewport({
         const layer = objectLayer(hit.object);
         if (editing && layer && lockedLayersRef.current.has(layer)) continue;
         if (layer === "light" || layer === "smoke") continue;
-        const target = interactable(hit.object);
-        if (target && !visibleTexel(hit)) continue;
+        let target = interactable(hit.object);
+        if (target?.kind === "actor") {
+          // (an actor: only a friendly one to talk to, only where its sprite is solid, never in the editor)
+          const id = target.index;
+          const actor = actorsRef.current.find(a => a.id === id);
+          if (editing || !actor || actor.diedAt !== null) target = undefined;
+          else if (hit.uv && alphaAt(actor.type, hit.uv.x, hit.uv.y) < 128) continue;
+        } else if (target && !visibleTexel(hit)) continue;
         if (target?.kind === "decal") {
           if (editing || interactionAt(m, target)) return { target, distance: hit.distance };
           continue;
@@ -6306,6 +6313,18 @@ export function GameViewport({
         const object = interaction && looseItems.get(index)?.obj;
         if (object && drawnChain(object)) consider(interaction, bounds.setFromObject(object).getCenter(center));
       });
+      // a friendly NPC to talk to: its sprite's middle, and a little above and below it
+      for (const actor of actorsRef.current) {
+        const entry = actorMeshes.get(actor.id);
+        const event = actor.friendly && actor.diedAt === null && entry?.mesh.visible ? actorInteraction(m.actors?.[actor.id], actor.id) : undefined;
+        if (!event || !entry) continue;
+        bounds.setFromObject(entry.mesh);
+        bounds.getCenter(center);
+        bounds.getSize(size);
+        consider(event, center);
+        consider(event, new THREE.Vector3(center.x, center.y + size.y / 4, center.z));
+        consider(event, new THREE.Vector3(center.x, center.y - size.y / 4, center.z));
+      }
       m.decals?.forEach(({ interaction }, index) => {
         const point = interaction && decals.center(index);
         if (point) consider(interaction, point);
@@ -6401,7 +6420,7 @@ export function GameViewport({
       const targets: AimTarget[] = [];
       for (const actor of actorsRef.current) {
         const entry = actorMeshes.get(actor.id);
-        if (actor.diedAt !== null || !entry?.mesh.visible) continue;
+        if (actor.diedAt !== null || actor.friendly || !entry?.mesh.visible) continue;
         const distance = Math.hypot(entry.mesh.position.x - camX, entry.mesh.position.z - camZ);
         if (distance > (weapon.range ?? 1) + 0.5) continue;
         entry.mesh.updateMatrixWorld();
@@ -6527,7 +6546,8 @@ export function GameViewport({
         if (id !== undefined) {
           const actor = actorsRef.current.find((a) => a.id === id);
           const entry = actorMeshes.get(id);
-          if (!actor || !entry || actor.diedAt !== null || !hit.uv) continue;
+          // (a friendly one is no target: a shot goes through it)
+          if (!actor || !entry || actor.diedAt !== null || actor.friendly || !hit.uv) continue;
           if (alphaAt(actor.type, hit.uv.x, hit.uv.y) < 128) continue;
           const type = ACTOR_TYPES[actor.type];
           const u = hit.uv.x * type.cols - entry.col;
