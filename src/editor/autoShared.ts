@@ -9,6 +9,7 @@ import { sharedConfigured, sharedProject } from "./sharedAuth";
 import { applyCachedSharedMapHeads, refreshSharedMapHeads } from "./sharedMapHeads";
 import { applyCachedSharedTextures, loadSharedTextures } from "./sharedTextures";
 import { loadSharedImages } from "./sharedImages";
+import { loadSharedProps } from "./sharedProps";
 
 const IDLE_DELAY_MS = 1200;
 const TIMEOUT_MS = 10_000;
@@ -98,6 +99,7 @@ async function execute(forGeneration: number) {
       loadSharedTextures(activeWorld, { signal: current.signal }),
       refreshSharedMapHeads(activeWorld, { signal: current.signal }),
       loadSharedImages(activeWorld, { signal: current.signal }),
+      loadSharedProps(activeWorld, { signal: current.signal }),
     ]);
     loaded = true;
     retried = false;

@@ -8,6 +8,7 @@ import { ACTOR_TYPES } from "../game/actors";
 import { TEXTURE_SETS, textureFolder, textureSetsOfKind } from "../render/textureSets";
 import { fetchDecalManifest } from "../render/decals";
 import { pickupTexture, useSharedImages } from "../render/sharedImages";
+import { useSharedPropVersion } from "./sharedProps";
 import { neutralStyle } from "./inspector/parts";
 import { openAssetManager, type Sample } from "./AssetManager";
 import { useTextureVersion } from "./textureLibrary";
@@ -29,6 +30,7 @@ export function AssetTree(p: EditorBarProps) {
   const [decals, setDecals] = useState<string[]>([]);
   const [error, setError] = useState(false);
   const sharedImages = useSharedImages();
+  useSharedPropVersion();
   useEffect(() => { let live = true; fetchDecalManifest(import.meta.env.BASE_URL, "").then(m => {if(live)setDecals(Object.keys(m));}).catch(() => {if(live)setError(true);}); return () => {live = false;}; }, []);
   const choose = (tool: EditTool, callback: () => void) => { p.onTool(tool); callback(); };
   const toolEntry = (tool: EditTool, label: string, icon: ReactNode, image?: string): Entry => ({id:tool,tool,label,kind:"",icon,image,active:true,pick:()=>p.onTool(tool),manager:image?"material":undefined});
@@ -40,7 +42,7 @@ export function AssetTree(p: EditorBarProps) {
     const kind = ["pillar","chamfer"].includes(v.kind) ? "pillar" : ["billboard","cross"].includes(v.kind) ? "billboard" : "3D";
     if (!query && kind!==propTab) return [];
     const tex = v.kind==="views" ? v.views+"_front" : v.kind==="box" ? v.side : v.kind==="cabin" ? v.door : "texture" in v && v.texture || p.mapLook.textures?.wall || "wall4";
-    return [{id,label:propName(id),kind:kind==="pillar"?t("assetTree.pillar"):kind,image:(TEXTURE_SETS[tex as keyof typeof TEXTURE_SETS] ?? textureFolder(tex)).diffuse,active:p.propChoice===id,pick:()=>choose("prop",()=>p.onPropChoice(id)),manager:"prop" as const}];
+    return [{id,label:v.name ?? propName(id),kind:kind==="pillar"?t("assetTree.pillar"):kind,image:(TEXTURE_SETS[tex as keyof typeof TEXTURE_SETS] ?? textureFolder(tex)).diffuse,active:p.propChoice===id,pick:()=>choose("prop",()=>p.onPropChoice(id)),manager:"prop" as const}];
   });
   // the door entry shows the map's own door (a fantasy map's gate, a ship's sliding door), else the default one
   const doorSet = (TEXTURE_SETS as Record<string,{diffuse:string}>)[p.mapLook.textures?.door ?? ""] ? p.mapLook.textures!.door! : "door1";

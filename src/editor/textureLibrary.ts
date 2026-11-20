@@ -8,6 +8,7 @@ import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { bundledTextures } from "../game/sharedBuiltins";
 import { t } from "../i18n";
 import type { GameMap } from "../game/types";
+import { PROP_TYPES } from "../game/props";
 import type { WorldId } from "../game/worlds";
 import { sharedTexturesChanged } from "../render/sharedTextureEvents";
 import { setSharedTuning, textureTuning, type TextureTuning } from "../render/textureTuning";
@@ -245,6 +246,10 @@ export const mapUses = (id: string): boolean => !!currentMap && mapUsesTexture(c
 // does this map use the texture (its defaults, painted floors / walls / ceilings, riser faces)?
 export function mapUsesTexture(m: GameMap, id: string): boolean {
   if (m.textures && Object.values(m.textures).includes(id)) return true;
+  if (m.props?.some(spec => {
+    const type = PROP_TYPES[spec.prop];
+    return spec.texture === id || (!spec.texture && type && "texture" in type && type.texture === id);
+  })) return true;
   for (let y = 0; y < m.height; y++) for (let x = 0; x < m.width; x++) {
     if (m.floorAt?.(x, y) === id || m.wallTextureAt?.(x, y) === id || m.ceilingTextureAt?.(x, y) === id) return true;
     if (m.faceTextureAt && (["N", "E", "S", "W"] as const).some((d) => m.faceTextureAt!(x, y, d) === id)) return true;

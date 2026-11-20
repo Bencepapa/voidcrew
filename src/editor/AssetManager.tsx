@@ -23,7 +23,7 @@ import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "
 const button = "rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1 text-left text-neutral-200 hover:bg-neutral-700 aria-pressed:border-amber-400 aria-pressed:bg-amber-400/15 aria-pressed:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40";
 const selectClass = "min-w-0 rounded-sm border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-200";
 export type Sample = "material" | "actor" | "prop" | "item" | "still";
-type Entry = { key: string; label: string; img: string; groups: string[]; world: WorldId; draft?: ImageDraft; image?: SharedImage; builtinDecal?: string };
+type Entry = { key: string; label: string; img: string; groups: string[]; world: WorldId; draft?: ImageDraft; image?: SharedImage; builtinDecal?: string; propDraft?: PropDraft };
 import { ITEM_TYPES } from "../game/items";
 import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { fetchDecalManifest } from "../render/decals";
@@ -32,6 +32,8 @@ import { neutralStyle } from "./inspector/parts";
 import { createImageDraft, loadSharedImages, getImageDrafts, useImageDrafts, type ImageDraft } from "./sharedImages";
 import { ImageAssetInspector, useImageDraftPreview, usePickupDraftMaps } from "./ImageAssetsPanel";
 import { propEdit } from "./propEditState";
+import { createPropDraft, getPropDrafts, loadSharedProps, propTextures, usePropDrafts, useSharedPropVersion, type PropDraft } from "./sharedProps";
+import { PropAssetFields } from "./PropAssetFields";
 import { textureFolder } from "../render/textureSets";
 import { saveTextureTuning, setTextureTuning, textureTuning, textureTuningJson, type TextureTuning } from "../render/textureTuning";
 const displayKeys: Record<string,
@@ -214,6 +216,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [query, setQuery] = useState("");
   const drafts = useDrafts();
   const imageDrafts = useImageDrafts();
+  const propDrafts = usePropDrafts();
+  useSharedPropVersion();
   const pendingScroll = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   useTextureVersion();
@@ -222,7 +226,10 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       const {sample, id} = (event as CustomEvent<{sample: Sample; id: string}>).detail;
       const imageDraft = getImageDrafts().find(d => d.id === id);
       // Select the category, sub-category and world that make the item visible.
-      if (imageDraft) {
+      const propDraft = getPropDrafts().find(draft => draft.id === id);
+      if (propDraft) {
+        setSample("prop"); setSub("All"); setWorld(propDraft.world);
+      } else if (imageDraft) {
         // (a local image draft: its category, purpose and world)
         if (imageDraft.type === "decal") { setSample("prop"); setSub("decal"); }
         else if (imageDraft.type === "item") { setSample("item"); setSub("All"); }
@@ -274,11 +281,14 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       ...imageCatalog.filter(image=>image.type==="portrait").map(image=>({key:image.id,label:image.name,img:image.url,groups:[image.purpose ?? "portrait"],world:image.world,image})),
       ...stillDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:[d.purpose ?? "portrait"],world:d.world,draft:d})),
     ]
-    : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:key,img:propImage(key),groups:[v.kind==="billboard"?"billboard":"3D"],world:assetWorld(key)})),
+    : [...Object.entries(PROP_TYPES).map(([key,v])=>({key,label:v.name ?? key,img:propImage(key),groups:[v.kind==="billboard"||v.kind==="cross"?"billboard":"3D"],world:assetWorld(key)})),
+      ...propDrafts.map(d=>({key:d.id,label:d.definition.name || t("assetManager.untitled"),img:propTextures(d.world).get(d.definition.texture)?.diffuse ?? "",
+        groups:[d.definition.kind==="panel"?"3D":"billboard"],world:d.world,propDraft:d})),
       ...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"],world:assetWorld(d),builtinDecal:d})),
       ...imageCatalog.filter(image=>image.type==="decal").map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"],world:image.world,image})),
       ...decalDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:["decal"],world:d.world,draft:d}))];
-  const visible = entries.filter(e=>(world==="All" || (e.draft || e.image ? e.world===world : assetInWorld(e.key.replace(/^decal:/,""),world))) && (sub==="All" || e.groups.includes(sub)));
+  const visible = entries.filter(e=>(world==="All" || (e.draft || e.image || e.propDraft ? e.world===world : assetInWorld(e.key.replace(/^decal:/,""),world))) &&
+    (sub==="All" || e.groups.includes(sub) || (e.propDraft && e.key===selected && sub!=="decal")));
   const term = query.trim().toLocaleLowerCase();
   const shown = term ? visible.filter(e=>`${e.label} ${e.key}`.toLocaleLowerCase().includes(term)) : visible;
   const entry = shown.find(e=>e.key===selected) ?? shown[0];
@@ -298,7 +308,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const previewUrl = selectedDecalDraft ? decalDraftPreview : selectedStillDraft ? stillDraftPreview : isPickupDraft ? pickupDraftPreview : (entry?.img ?? "");
   const isDecal = sample === "prop" && !!entry && entry.groups.includes("decal");
   const builtinDecalSize = useImageSize(entry?.builtinDecal ? entry.img : undefined);
-  const prop = sample==="prop" ? PROP_TYPES[id] : undefined;
+  const propDraft = entry?.propDraft;
+  const prop = sample==="prop" ? propDraft?.definition ?? PROP_TYPES[id] : undefined;
+  const propRenderKey = prop && JSON.stringify([prop.kind, prop.size, prop.elevation, prop.wall, prop.relief]);
   const top = prop ? prop.size[1] + ("elevation" in prop ? prop.elevation ?? 0 : 0) : 0;
   const showCeiling = ceiling==="On" || (ceiling==="Auto" && top<=1);
   const shot = useRef<{position:THREE.Vector3,target:THREE.Vector3} | null>(null);
@@ -309,7 +321,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [view,setView] = useState("textured");
   const [hidden,setHidden] = useState<Record<string,boolean>>({});
   const [edits, setEdits] = useState<MaterialMaps>({});
-  const primary = prop ? propTexture(id) : id;
+  const primary = propDraft ? propDraft.definition.texture || id : prop ? propTexture(id) : id;
   const maskKey = (group:string, channel:Channel) => [sample,id,group,channel].join(":");
   // the files of the selected texture (they change when a draft changes a map)
   const texSig = sample==="material" && catalog[id] ? [catalog[id].diffuse,catalog[id].normal,catalog[id].depth,catalog[id].surface,catalog[id].emissive].join("|") : "";
@@ -334,7 +346,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     if(sample==="still")return;
     async function read(){
       let result:Record<string,MaterialMaps>={};
-      if(selectedDecalDraft){
+      if(propDraft && !propDraft.definition.texture){
+        result[id]={};
+      }else if(selectedDecalDraft){
         result[id]=previewUrl ? {diffuse:previewUrl} : {};
       }else if(isPickupDraft){
         result[id]=pickupMaps ?? {};
@@ -359,7 +373,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[open,id,sample,primary,prop,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,isPickupDraft,pickupMaps]);
+  },[open,id,sample,primary,prop?.kind,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,isPickupDraft,pickupMaps]);
   async function edit(channel: Channel, file?: Blob | "") {
     const next: PreviewMaps = { ...previewBlobs.current, [channel]: file };
     if (file === undefined) delete next[channel];
@@ -386,6 +400,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       await Promise.all([
         ...(["scifi","fantasy"] as const).map((world) => loadSharedTextures(world)),
         ...(["scifi","fantasy"] as const).map((world) => loadSharedImages(world)),
+        ...(["scifi","fantasy"] as const).map((world) => loadSharedProps(world)),
       ]);
       if (manual) setNotice(t("assetManager.sharedRefreshed"));
     } catch (e) {
@@ -443,6 +458,16 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       select(draft.id);
     } catch (e) { setError(errorText(e)); }
   }
+  async function createProp() {
+    try {
+      const targetWorld = world === "All" ? activeWorld() : world;
+      const draft = createPropDraft(targetWorld, sub === "billboard" ? "billboard" : "panel");
+      setQuery("");
+      setPose(-1); setTurn(0); setPlacement("Auto");
+      pendingScroll.current = draft.id;
+      select(draft.id);
+    } catch (e) { setError(errorText(e)); }
+  }
   // closing with local drafts left asks first (the drafts stay on this computer either way)
   function requestClose() {
     const c = draftCounts(drafts);
@@ -474,7 +499,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [saveNote, setSaveNote] = useState("");
   const [copyNote, setCopyNote] = useState("");
   // the texture whose look the sliders tune (an NPC's normal strength is set in the NPC editor, a decal has none)
-  const tuneId = !entry || sample==="actor" || sample==="still" || isDecal || pickup || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : propTexture(id);
+  const tuneId = !entry || sample==="actor" || sample==="still" || isDecal || pickup || propDraft || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : propTexture(id);
   void tuneStamp;
   const tune: TextureTuning | undefined = tuneId ? { ...textureTuning(tuneId) } : undefined;
   const tuneRef = useRef(tune);
@@ -543,7 +568,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     let walked = false;
     const orbitSubject = (event: PointerEvent) => {
       if (event.button!==0 || !walked) return;
-      const selectedProp=sample==="prop" ? PROP_TYPES[id] : undefined;
+      const selectedProp=prop;
       controls.target.copy(object.position);
       controls.target.y+=selectedProp ? selectedProp.size[1]/2 : sample==="material" && orientation==="Floor" ? 0 : .5;
       controls.update();
@@ -737,8 +762,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         }
       }
       void projectSamples().catch(()=>{if(!disposed)setError(t("assetManager.decalError"));});
-    } else {
-      const prop=sample==="prop" ? PROP_TYPES[id] : undefined;
+    } else if (!propDraft || propDraft.definition.texture) {
       const onWall=!!prop && (placement==="Wall" || (placement==="Auto" && prop.wall));
       if(onWall)object.position.z=-half+(prop?.size[2] ?? .02)/2+.01;
       if(prop && "elevation" in prop)object.position.y=prop.elevation ?? 0;
@@ -895,12 +919,14 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       controls.dispose();
       resources.forEach(r=>r.dispose());
     };
-  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface,preview2D,pickup?.height,pickup?.glow]);
+  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface,preview2D,pickup?.height,pickup?.glow,propRenderKey,primary]);
   const newInfo: { disabled: boolean; title: string; run?: () => Promise<void> } =
     sample === "material" ? { disabled: false, title: t("assetManager.newTexture"), run: createTexture }
       : sample === "still" ? { disabled: false, title: t("assetManager.newStill"), run: createStill }
         : sample === "item" ? { disabled: false, title: t("assetManager.pickup.new"), run: createPickup }
-        : sample === "prop" && (sub === "decal" || sub === "All") ? { disabled: false, title: t("assetManager.newDecal"), run: createDecal }
+        : sample === "prop" ? sub === "decal"
+          ? { disabled: false, title: t("assetManager.newDecal"), run: createDecal }
+          : { disabled: false, title: t("assetManager.propDraft.new"), run: createProp }
           : { disabled: true, title: t("assetManager.newUnsupported") };
   const decalImage: SharedImage | undefined = entry?.image ?? (entry?.builtinDecal ? {
     id: entry.builtinDecal, world: entry.world, type: "decal", name: entry.label,
@@ -948,7 +974,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                 const a=sample==="actor"?ACTOR_TYPES[e.key]:undefined;
                 const status=sample==="material" ? textureStatus(e.key) : undefined;
                 const auto=sample==="material" ? autoChannels(e.key) : [];
-                const draft=!!e.draft || status==="new" || status==="changed";
+                const draft=!!e.draft || !!e.propDraft || status==="new" || status==="changed";
                 return <button key={e.key} type="button" data-key={e.key}
                   ref={node=>{if(node && pendingScroll.current===e.key){node.scrollIntoView({block:"nearest"});pendingScroll.current=null;}}}
                   className={"flex w-full items-center gap-2 rounded-sm border px-1 py-0.5 text-left text-xs "+(id===e.key?"border-amber-400 bg-amber-400/10 text-amber-100":"border-transparent text-neutral-200 hover:bg-neutral-900")}
@@ -988,6 +1014,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               {selectedImageDraft && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName(selectedImageDraft.world)}</p>}
               <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError}/>
             </> : <>
+            {propDraft && <PropAssetFields key={id} draft={propDraft} onError={setError}/>}
             {sample==="material" && <details open className="rounded border border-neutral-800 p-2">
               <summary className="cursor-pointer font-semibold">{t("assetManager.baseColor")}</summary>
               <div className="mt-1 flex flex-col gap-1">

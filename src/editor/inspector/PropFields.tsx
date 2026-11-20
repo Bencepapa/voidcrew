@@ -6,10 +6,12 @@ import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle } f
 import { PROP_TYPES, propEditable } from "../../game/props";
 import { propEdit } from "../propEditState";
 import { useTextureVersion } from "../textureLibrary";
+import { useSharedPropVersion } from "../sharedProps";
 import { TEXTURE_SETS, textureSetsOfKind } from "../../render/textureSets";
 
 export function PropFields(p: EditorBarProps) {
 useTextureVersion();
+useSharedPropVersion();
 if (!p.prop) return null;
 // (the sets as they are now: a shared one loaded since counts)
 const PROP_TEXTURES = [...textureSetsOfKind("wall"), ...textureSetsOfKind("propFace")].filter(id => !id.endsWith("_top"));
@@ -22,7 +24,7 @@ return <>
                 )}
 </Section>
 <Section kind="prop" section="look">
-<KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id)).map(value => ({value,label:value}))} onChange={prop => p.onPropChange({prop})}/>
+<KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id)).map(value => ({value,label:PROP_TYPES[value].name ?? value}))} onChange={prop => p.onPropChange({prop})}/>
 
 {p.prop.retexturable && (
                   // (a roof wears any wall-kind set - the user's shared ones too; the other props

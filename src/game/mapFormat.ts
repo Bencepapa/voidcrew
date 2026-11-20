@@ -2,7 +2,7 @@ import { DIR_VECTOR, rightOf } from "./movement";
 import { ITEM_TYPES, isSharedPickupId } from "./items";
 import { readInteraction, type Interaction } from "./interactions";
 import { wallFaceSpans, type WallFacePart } from "./mapGeometry";
-import { PROP_TYPES } from "./props";
+import { PROP_TYPES, isSharedPropId } from "./props";
 import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
 import type { Lock, Terminal, Trigger } from "./story";
 import { cleanRenderLook } from "./renderLook";
@@ -386,7 +386,9 @@ export function parseMap(id: string, file: MapFile): GameMap {
     }),
     windows,
     props: (file.props ?? []).map((p) => {
-      if (!PROP_TYPES[p.prop]) throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);
+      if (!Object.hasOwn(PROP_TYPES, p.prop) && !isSharedPropId(p.prop)) {
+        throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);
+      }
       if (cells[p.y]?.[p.x] !== "floor") throw new Error(`prop at ${p.x},${p.y} isn't in a floor cell`);
       return {
         prop: p.prop,

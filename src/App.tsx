@@ -25,6 +25,8 @@ import { loadSharedMap } from "./editor/sharedMaps";
 import type { SharedMapHead } from "./editor/sharedMapHeads";
 import { AssetManager } from "./editor/AssetManager";
 import { loadSharedImages } from "./editor/sharedImages";
+import { loadSharedProps } from "./editor/sharedProps";
+import { loadSharedTextures } from "./editor/sharedTextures";
 import { sharedImage } from "./render/sharedImages";
 import { PropEditor } from "./editor/PropEditor";
 import {
@@ -49,7 +51,7 @@ import { MAPS, START_MAP } from "./game/map";
 import { WORLDS, assetInWorld, setActiveWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
 import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
-import { PROP_TYPES, flamePosition, propBlocks, propPlacement, propRetexturable } from "./game/props";
+import { PROP_TYPES, flamePosition, isSharedPropId, propBlocks, propPlacement, propRetexturable } from "./game/props";
 import { MIN_HEADROOM } from "./game/heights";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
@@ -366,6 +368,13 @@ export default function App() {
   useEffect(() => {
     if (needsSharedImages) void loadSharedImages(map.world).catch(console.warn);
   }, [map.world, needsSharedImages]);
+  const needsSharedProps = !!map.props?.some(({ prop }) => isSharedPropId(prop) && !PROP_TYPES[prop]);
+  useEffect(() => {
+    if (needsSharedProps) {
+      void loadSharedProps(map.world).catch(console.warn);
+      void loadSharedTextures(map.world).catch(console.warn);
+    }
+  }, [map.world, needsSharedProps]);
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");

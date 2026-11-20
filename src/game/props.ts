@@ -28,6 +28,8 @@ export type PropView = "front" | "side" | "top";
 export type PropFace = "front" | "back" | "right" | "left" | "top";
 
 export type PropType = {
+  name?: string;
+  elevation?: number;
   // extent (cells; height in wall heights): x length, y height, z depth
   size: [number, number, number];
   blocks?: boolean;
@@ -371,8 +373,13 @@ export function propReliefCells(type: PropType): number {
 }
 
 // How tall a prop stands in its cell (wall heights): a pillar reaches the ceiling.
-export function propHeight(map: Pick<GameMap, "floorHeights" | "ceilingHeights">, spec: PropSpec): number {
-  const type = PROP_TYPES[spec.prop];
+export const isSharedPropId = (id: string) =>
+  /^(scifi|fantasy)_prop_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id);
+
+export type SingleTextureProp = Extract<PropType, { kind: "panel" | "billboard" | "cross" }>;
+
+export function propHeight(map: Pick<GameMap, "floorHeights" | "ceilingHeights">, spec: PropSpec, type = PROP_TYPES[spec.prop]): number {
+  if (!type) return 0;
   // (the heights read here, not through map.ts: it imports this module)
   const { x, y } = spec.cell;
   if (type.kind === "pillar" && type.height) return type.height;
@@ -412,8 +419,7 @@ export interface PropPlacement {
 // pushed against (its front is +z, south, unturned)
 const WALL_FACING: Partial<Record<PropAnchor, number>> = { N: 0, NE: 0, NW: 0, S: 180, SE: 180, SW: 180, E: 90, W: 270 };
 
-export function propPlacement(spec: PropSpec): PropPlacement {
-  const type = PROP_TYPES[spec.prop];
+export function propPlacement(spec: PropSpec, type: PropType = PROP_TYPES[spec.prop] ?? { kind: "panel", texture: "", size: [0, 0, 0] }): PropPlacement {
   if (type.kind === "chamfer") {
     // its middle halfway along the cut, flush with the walls it meets
     // (nudged and turned from there as any prop)
@@ -467,7 +473,7 @@ export function flamePosition(spec: PropSpec): [number, number, number] | null {
 export function propBoxes(map: GameMap, cx: number, cy: number) {
   return (map.props ?? [])
     // (a roof is decoration: it hangs over the cell, never in the way)
-    .filter((p) => p.cell.x === cx && p.cell.y === cy && PROP_TYPES[p.prop]?.kind !== "roof")
+    .filter((p) => p.cell.x === cx && p.cell.y === cy && PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "roof")
     .map((p) => {
       const { x, z, reachX, reachZ } = propPlacement(p);
       return { minX: x - reachX, maxX: x + reachX, minZ: z - reachZ, maxZ: z + reachZ, height: (p.elevation ?? 0) + propHeight(map, p) };

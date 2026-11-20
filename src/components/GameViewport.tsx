@@ -49,7 +49,7 @@ import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type 
 import { fireLightColor, generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
-import { PROP_TYPES, PROP_RELIEF_SCALE, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
+import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
 import { onTextureTuningSaved, textureTuning } from "../render/textureTuning";
@@ -72,6 +72,7 @@ import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
 import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
 import { mapUsesTexture } from "../editor/textureLibrary";
+import { onSharedPropsChanged } from "../editor/sharedProps";
 import { onSharedDecalsChanged, onSharedPickupsChanged, pickupTexture, sharedImage } from "../render/sharedImages";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
@@ -1571,6 +1572,9 @@ export function GameViewport({
   }, []);
   // a saved per-texture tuning (Asset Manager): the relief meshes rebuilt
   useEffect(() => onTextureTuningSaved(() => setTextureVersion((v) => v + 1)), []);
+  useEffect(() => onSharedPropsChanged(ids => {
+    if (latestMapRef.current.props?.some(spec => ids.has(spec.prop))) setTextureVersion(version => version + 1);
+  }), []);
   useEffect(() => onSharedPickupsChanged(ids => {
     const current = latestMapRef.current;
     if (current.items?.some(item => ids.has(item.item)) ||
@@ -2144,6 +2148,9 @@ export function GameViewport({
           ? m.lightGridAmbient
           : undefined;
       const lights = mapLights;
+      const sharedPropTypes = Object.fromEntries((m.props ?? [])
+        .filter(({ prop }) => isSharedPropId(prop) && PROP_TYPES[prop])
+        .map(({ prop }) => [prop, PROP_TYPES[prop]]));
       const applyBake = ({ data, ambient, timing }: LightBakeResult) => {
         const applyFrom = performance.now();
         if (timing) {
@@ -2158,9 +2165,9 @@ export function GameViewport({
         tick("light bake", bakeFrom);
       };
       const fallback = () => applyBake({
-        data: packLightGrid(bakeLightGrid(m, lights, wallHeight, options)),
+        data: packLightGrid(bakeLightGrid({ ...m, sharedPropTypes }, lights, wallHeight, options)),
         ambient: ambientDensity === undefined ? undefined
-          : packLightGrid(bakeLightGrid(m, lights, wallHeight, { ...options, perCell: ambientDensity }), true),
+          : packLightGrid(bakeLightGrid({ ...m, sharedPropTypes }, lights, wallHeight, { ...options, perCell: ambientDensity }), true),
       });
       return new Promise<void>((resolve, reject) => {
         let worker: Worker;
@@ -2202,7 +2209,7 @@ export function GameViewport({
         };
         const { width, height, cells, floorHeights, ceilingHeights, props, bridges } = m;
         const request: LightBakeRequest = {
-          map: { width, height, cells, floorHeights, ceilingHeights, props, bridges },
+          map: { width, height, cells, floorHeights, ceilingHeights, props, bridges, sharedPropTypes },
           lights, wallHeight, options, ambientDensity,
         };
         try {
@@ -3843,9 +3850,9 @@ export function GameViewport({
 
       if (type.kind === "billboard") {
         // one flat sprite, turned to the viewer every frame (see billboardProps)
-        const base = `${import.meta.env.BASE_URL}textures/${type.texture}/`;
-        const diffuse = kitTexture(base + "diffuse.png" + bust);
-        const normalMap = kitTexture(base + "normal.png" + bust);
+        const paths = isTextureSetId(type.texture) ? TEXTURE_SETS[type.texture] : textureFolder(type.texture);
+        const diffuse = kitTexture(busted(paths.diffuse));
+        const normalMap = kitTexture(busted(paths.normal));
         diffuse.colorSpace = THREE.SRGBColorSpace;
         for (const tex of [diffuse, normalMap]) tex.magFilter = THREE.NearestFilter;
         const tune = textureTuning(type.texture);
@@ -3866,7 +3873,7 @@ export function GameViewport({
         const geo = new THREE.PlaneGeometry(length, h);
         geometries.push(geo);
         const sprite = new THREE.Mesh(geo, mat);
-        sprite.position.y = h / 2;
+        sprite.position.y = h / 2 + (type.elevation ?? 0) * wallHeight;
         template.add(sprite);
         return template;
       }
@@ -3880,7 +3887,7 @@ export function GameViewport({
           outwardRelief: type.kind === "cross",
         }, propReliefCells(type));
         if (!panel) return null;
-        const y = (type.kind === "panel" ? (type.elevation ?? 0) * wallHeight : 0) + h / 2;
+        const y = (type.elevation ?? 0) * wallHeight + h / 2;
         for (const turn of type.kind === "cross" ? [0, Math.PI / 2] : [0]) {
           face(panel.geometry, kit, [0, y, 0], [0, turn]);
           face(panel.geometry, kit, [0, y, 0], [0, turn + Math.PI], true);
@@ -4203,7 +4210,10 @@ export function GameViewport({
     // being rebuilt (a pillar dragged into a taller room) never blinks out.
     function buildProp(m: GameMap, index: number) {
       const spec = m.props?.[index];
-      if (!spec) return;
+      const definition = spec && PROP_TYPES[spec.prop];
+      if (!spec || !definition) return;
+      const texture = spec.texture ?? ("texture" in definition ? definition.texture : undefined);
+      if (texture && /^(scifi|fantasy)_shared_/.test(texture) && !isTextureSetId(texture)) return;
       const version = propsVersion;
       const key = propBuildKey(m, spec);
       track(async () => {
@@ -4211,7 +4221,7 @@ export function GameViewport({
         if (!made || version !== propsVersion) return;
         const now = propSpecs[index];
         // (changed again meanwhile into something else: that build places it)
-        if (!now || propBuildKey(propsMap, now) !== key) return;
+        if (!now || !PROP_TYPES[now.prop] || propBuildKey(propsMap, now) !== key) return;
         const prop = made.clone();
         placeProp(prop, now);
         prop.userData.prop = true;
@@ -4257,7 +4267,7 @@ export function GameViewport({
     function applyProps(next: GameMap, prev: GameMap) {
       const a = next.props ?? [];
       const b = prev.props ?? [];
-      if (a.length < b.length) {
+      if (a.length < b.length || a.some((spec, index) => !PROP_TYPES[spec.prop] && propObjects.has(index))) {
         clearProps();
         buildProps(next);
         return;
@@ -4265,6 +4275,7 @@ export function GameViewport({
       propSpecs = a;
       propsMap = next;
       a.forEach((spec, i) => {
+        if (!PROP_TYPES[spec.prop]) return;
         if (i < b.length && JSON.stringify(spec) === JSON.stringify(b[i])) return;
         const obj = propObjects.get(i);
         const key = propBuildKey(next, spec);
@@ -7525,9 +7536,9 @@ export function GameViewport({
         add({ kind: "decal", index }, interaction, position.x, position.y, position.z);
       });
       if (!hidden.has("prop")) m.props?.forEach((spec, index) => {
-        if (!spec.interaction) return;
+        if (!spec.interaction || !PROP_TYPES[spec.prop]) return;
         const { x, z, type } = propPlacement(spec);
-        const lift = type.kind === "panel" || type.kind === "views" ? (type.elevation ?? 0) * (spec.scale ?? 1) : 0;
+        const lift = (type.elevation ?? 0) * (spec.scale ?? 1);
         const y = floorY(spec.cell.x, spec.cell.y) + ((spec.elevation ?? 0) + lift + propHeight(m, spec)) * wallHeight + 0.15;
         const inward = type.wall ? 0.3 : 0;
         add({ kind: "prop", index }, spec.interaction,

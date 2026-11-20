@@ -10,6 +10,7 @@ import { hasAlpha, validatePng, type TransparencySource } from "./imageTools";
 import { SharedLoginForm, sharedConfigured, sharedToken, useSharedAuth } from "./sharedAuth";
 import { deleteSharedTexture, publishDrafts } from "./sharedTextures";
 import { discardImageDraft, useImageDrafts } from "./sharedImages";
+import { discardPropDraft, usePropDrafts } from "./sharedProps";
 import { draftById, draftCounts, draftId, discardAllDrafts, discardDraft, MAP_KEYS, saveDraft, useDrafts, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
 import type { TextureTuning } from "../render/textureTuning";
 import { AiBadge, AiDepthControls } from "./AiDepthControls";
@@ -208,6 +209,7 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
   // (images - decals and stills - are published one by one from their own properties panel; the bar only reminds)
   const imageDraftList = useImageDrafts();
   const imageDrafts = imageDraftList.length;
+  const propDrafts = usePropDrafts();
   useSharedAuth();
   const [busy, setBusy] = useState(false);
   const [login, setLogin] = useState(false);
@@ -215,7 +217,7 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
   // a result message fades after a while
   useEffect(() => { if (!message || busy) return; const timer = setTimeout(() => setMessage(""), 8000); return () => clearTimeout(timer); }, [message, busy]);
   const { added, changed } = draftCounts(drafts);
-  if (!drafts.length && !imageDrafts && !message) return null;
+  if (!drafts.length && !imageDrafts && !propDrafts.length && !message) return null;
 
   async function publish() {
     setBusy(true); setMessage("");
@@ -233,6 +235,7 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
   return <div role="status" className="relative mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded border border-yellow-500 bg-yellow-900/40 px-3 py-1 text-sm text-yellow-100">
     {drafts.length > 0 ? <span>{t("assetManager.unsaved", { n: added, m: changed })}</span> : imageDrafts === 0 ? <span>{message}</span> : null}
     {imageDrafts > 0 && <span>{t("assetManager.image.unpublishedBar", { n: imageDrafts })}</span>}
+    {propDrafts.length > 0 && <span>{t("assetManager.propDraft.unpublished", { n: propDrafts.length })}</span>}
     {imageDrafts > 0 && <span className="flex basis-full flex-wrap items-center gap-1">
       {imageDraftList.map(d => <span key={d.id} className="inline-flex items-center overflow-hidden rounded border border-yellow-500/70 text-xs">
         <button type="button" className="px-2 py-0.5 hover:bg-yellow-800/50" title={t("assetManager.image.goToDraft")}
@@ -241,6 +244,19 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
         </button>
         <button type="button" className="border-l border-yellow-500/70 px-1.5 py-0.5 hover:bg-red-900/60" aria-label={t("assetManager.discard")} title={t("assetManager.discard")}
           onClick={() => { if (d.png || window.confirm(t("assetManager.image.discardEmpty"))) void discardImageDraft(d.id); }}>×</button>
+      </span>)}
+    </span>}
+    {propDrafts.length > 0 && <span className="flex basis-full flex-wrap items-center gap-1">
+      {propDrafts.map(draft => <span key={draft.id} className="inline-flex items-center overflow-hidden rounded border border-yellow-500/70 text-xs">
+        <button type="button" className="px-2 py-0.5 hover:bg-yellow-800/50" title={t("assetManager.image.goToDraft")}
+          onClick={() => window.dispatchEvent(new CustomEvent("voidcrew:open-asset", { detail: { sample: "prop", id: draft.id } }))}>
+          {draft.definition.name || t("assetManager.untitled")}
+        </button>
+        <button type="button" className="border-l border-yellow-500/70 px-1.5 py-0.5 hover:bg-red-900/60" aria-label={t("assetManager.discard")}
+          onClick={() => {
+            if (!window.confirm(t("assetManager.image.discardConfirm", { name: draft.definition.name || t("assetManager.untitled") }))) return;
+            try { discardPropDraft(draft.id); } catch (error) { onError(errorText(error)); }
+          }}>×</button>
       </span>)}
     </span>}
     {drafts.length > 0 && message && <span className="text-yellow-200/80">{message}</span>}

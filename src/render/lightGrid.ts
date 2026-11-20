@@ -2,11 +2,13 @@ import { createWeatherUniforms, useWeatherSurface, type WeatherUniforms } from "
 import * as THREE from "three";
 import { ACCENT_GLSL, ACCENT_UNIFORMS } from "./accent";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, cellAt, ceilingHeight, floorHeight } from "../game/mapGeometry";
-import { PROP_TYPES, propHeight, propPlacement } from "../game/props";
+import { PROP_TYPES, propHeight, propPlacement, type PropType } from "../game/props";
 import type { LightSpec } from "../game/lights";
 import type { GameMap } from "../game/types";
 
-export type LightBakeMap = Pick<GameMap, "width" | "height" | "cells" | "floorHeights" | "ceilingHeights" | "props" | "bridges">;
+export type LightBakeMap = Pick<GameMap, "width" | "height" | "cells" | "floorHeights" | "ceilingHeights" | "props" | "bridges"> & {
+  sharedPropTypes?: Record<string, PropType>;
+};
 
 // Baked lighting: a deck's static lights summed up once, on a grid of sample
 // points through its rooms (an irradiance volume, like Quake's light grid),
@@ -418,7 +420,7 @@ interface Occluders {
 
 export function propCastsBakedShadow(spec: NonNullable<GameMap["props"]>[number]): boolean {
   const kind = PROP_TYPES[spec.prop]?.kind;
-  return kind !== "cross" && kind !== "roof";
+  return !!kind && kind !== "cross" && kind !== "roof";
 }
 
 function occludersOf(map: LightBakeMap): Occluders {
@@ -431,10 +433,13 @@ function occludersOf(map: LightBakeMap): Occluders {
     }
   };
   for (const spec of map.props ?? []) {
-    if (!propCastsBakedShadow(spec)) continue;
-    const { x, z, reachX, reachZ } = propPlacement(spec);
-    const bottom = floorHeight(map, spec.cell.x, spec.cell.y) + (spec.elevation ?? 0);
-    add({ minX: x - reachX, maxX: x + reachX, minY: bottom, maxY: bottom + propHeight(map, spec), minZ: z - reachZ, maxZ: z + reachZ });
+    const sharedType = map.sharedPropTypes?.[spec.prop];
+    const type = sharedType ?? PROP_TYPES[spec.prop];
+    if (!type || type.kind === "cross" || type.kind === "roof") continue;
+    const { x, z, reachX, reachZ } = propPlacement(spec, type);
+    const lift = sharedType?.elevation ?? 0;
+    const bottom = floorHeight(map, spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) + lift * (spec.scale ?? 1);
+    add({ minX: x - reachX, maxX: x + reachX, minY: bottom, maxY: bottom + propHeight(map, spec, type), minZ: z - reachZ, maxZ: z + reachZ });
   }
   for (const bridge of map.bridges ?? []) {
     const half = BRIDGE_WIDTH / 2;
