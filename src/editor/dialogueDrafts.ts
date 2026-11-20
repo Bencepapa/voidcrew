@@ -9,6 +9,7 @@ let drafts: readonly DialogueDraft[] = [];
 const listeners = new Set<() => void>();
 const emit = () => { for (const l of listeners) l(); };
 const subscribe = (l: () => void) => { listeners.add(l); return () => void listeners.delete(l); };
+export const subscribeDialogueDrafts = subscribe;
 export const getDialogueDrafts = () => drafts;
 export const useDialogueDrafts = () => useSyncExternalStore(subscribe, getDialogueDrafts);
 
