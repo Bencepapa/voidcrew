@@ -67,7 +67,7 @@ rögtön a kezükbe lehessen húzni.
 ## 5. Építési sorrend
 
 1. **H1 – Twine-tábla (KÉSZ):** a `.twee` olvasó (tiszta függvény, tesztekkel), a párbeszéd-adat és az ellenőrző, az Asset Manager „Párbeszédek” kategória a feltöltéssel és a tesztablakkal. *(OpenCode/Sonnet medium)*
-2. **H2 – Párbeszéd-ablak és barátságos NPC:** `dialogue` esemény, portré, választások, `@end`; az NPC `friendly` viselkedés és a Használat/Space megszólítás; az NPC-szerkesztő mezői. *(Sonnet medium)*
+2. **H2 – Párbeszéd-ablak és barátságos NPC (KÉSZ, böngészőben nem próbálva):** `dialogue` esemény, portré, választások, `@end` (a `@shop` egyelőre csak egy jelölősor); az NPC `friendly` viselkedés és a Használat/Space megszólítás; az NPC-szerkesztő „Talk” csoportja; `smith1`. Lásd `concept/editor-ui/NOTES-dialogue-h2.md`. *(Sonnet medium)*
 3. **H3 – Inventory-modell és UI:** hátizsák, kezek, húzás hátizsák és kéz között, a fegyverek összekötése a kézzel, a haul átvezetése. Mentés. *(Sonnet high: a legnagyobb)*
 4. **H4 – Bolt:** bolt-adat az Asset Managerben, `@shop`, bolt-ablak, vétel/eladás húzással, kredit. *(Sonnet medium)*
 5. **H5 – Kiadás:** a párbeszédek, boltok és NPC-portrék a `pull:shared` csomagba.
