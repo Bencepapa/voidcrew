@@ -1,5 +1,5 @@
 :: StoryTitle
-wizard
+Void Fantasy
 
 
 :: StoryData
@@ -7,7 +7,7 @@ wizard
   "ifid": "FEDB84A7-5B71-4E3D-BFDC-0297BF45E6C9",
   "format": "Harlowe",
   "format-version": "3.3.9",
-  "start": "Wizard in town",
+  "start": "Untitled Passage",
   "zoom": 1
 }
 
@@ -33,10 +33,30 @@ These are some pretty dangerous areas here, but you are safe in our town. Myself
 [[Thank you, and farewell->Goodbye]]
 
 
-:: Wizard in town {"position":"1025,350","size":"100,100"}
+:: Untitled Passage {"position":"800,300","size":"100,100"}
+
+
+
+:: Wizard in town [start] {"position":"1025,350","size":"100,100"}
 Welcome to my humble shop traveller!
 Do not fret, look around and buy anything you wish.
 
 [[Tell me more!]]
 [[Buy/Sell]]
 [[Goodbye]]
+
+
+:: Smith in town [start]
+Kovács vagyok. Fegyvert vagy páncélt keresel?
+[[Vásárlás->Smith buy]]
+[[Viszlát->Smith goodbye]]
+
+
+:: Smith buy
+@shop smith-shop
+[[Viszlát->Smith goodbye]]
+
+
+:: Smith goodbye
+Erős kard, erős kéz!
+@end

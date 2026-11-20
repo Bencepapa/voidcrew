@@ -1,0 +1,17 @@
+:: StoryTitle
+Invalid sample: duplicate passage name, a broken link, an unknown command
+
+
+:: Start [start]
+Hello.
+@wave
+[[Missing passage]]
+[[Goodbye]]
+
+:: Goodbye
+Bye!
+@end
+
+:: Goodbye
+Another farewell with the same name (Twine itself would not allow this).
+@end
