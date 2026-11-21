@@ -11,7 +11,7 @@ import type { TextureSetId } from "../render/textureSets";
 import type { ViewportSettings } from "../components/GameViewport";
 import type { SharedMapHead } from "./sharedMapHeads";
 import type { EditSurface, EditTool } from "./mapEdits";
-import type { Direction, LightEffect, Linked, MapLight, MapLinkTarget } from "../game/types";
+import type { Direction, LightEffect, Linked, MapLight, MapLinkTarget, StairsDirection, StairsStyle } from "../game/types";
 import type { RoofForm } from "../game/roofAutotile";
 
 export interface MapLook {
@@ -166,6 +166,11 @@ export interface EditorBarProps {
   onExitChange: (patch: { name?: string; to?: MapLinkTarget }, merge?: string) => void;
   onExitRemove: () => void;
   onExitDeselect: () => void;
+  // the Stairs tool: the picked staircase (see StairsSpec)
+  stairs: { direction: StairsDirection; style: StairsStyle; name: string; to?: MapLinkTarget } | null;
+  onStairsChange: (patch: { direction?: StairsDirection; style?: StairsStyle; name?: string; to?: MapLinkTarget }, merge?: string) => void;
+  onStairsRemove: () => void;
+  onStairsDeselect: () => void;
   // the Item tool: the item a click puts down, and the selected one
   itemChoice: string;
   onItemChoice: (item: string) => void;
@@ -351,6 +356,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   roofauto: "roofauto.help",
   smoke: "editorBar.clickAWallFloorOrAnythingSmoke",
   exit: "link.exitHelp",
+  stairs: "link.stairsHelp",
   restricted: "editorBar.clickAFloorRestrictedShadedRedOn",
   start: "editorBar.clickAFloorThePartyStartsThere",
   item: "editorBar.clickAFloorOrATableBed",
@@ -360,7 +366,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
 const TOOL_LABELS: Partial<Record<EditTool, Key>> = {
   event: "events.group",
   ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", roofauto: "roofauto.group", decal: "editorBar.decal",
-  robot: "editorBar.npc", item: "editorBar.item", smoke: "editorBar.particles", exit: "editorBar.exit", start: "editorBar.start",
+  robot: "editorBar.npc", item: "editorBar.item", smoke: "editorBar.particles", exit: "editorBar.exit", stairs: "link.stairsTool", start: "editorBar.start",
   restricted: "editorBar.restricted", wall: "editorBar.chanceWall", map: "editorBar.map",
 };
 export function editorToolLabel(tool: EditTool): string {

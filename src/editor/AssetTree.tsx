@@ -1,8 +1,8 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, House, Image, Library, Lock, LockOpen, LogOut, MessageSquare, Store, Tent, Triangle } from "lucide-react";
+import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Footprints, House, Image, Library, Lock, LockOpen, LogOut, MessageSquare, Store, Tent, Triangle } from "lucide-react";
 import { ROOF_FORMS, type RoofForm } from "../game/roofAutotile";
 import { hasKey, t, type Key } from "../i18n";
-import { assetInWorld } from "../game/worlds";
+import { assetInWorld, worldOfMap } from "../game/worlds";
 import { PROP_TYPES } from "../game/props";
 import { ITEM_TYPES } from "../game/items";
 import { ACTOR_TYPES } from "../game/actors";
@@ -53,6 +53,8 @@ export function AssetTree(p: EditorBarProps) {
   // the door entry shows the map's own door (a fantasy map's gate, a ship's sliding door), else the default one
   const doorSet = (TEXTURE_SETS as Record<string,{diffuse:string}>)[p.mapLook.textures?.door ?? ""] ? p.mapLook.textures!.door! : "door1";
   const traverse: Entry[] = [toolEntry("ladder",t("editorBar.ladder"),<ArrowUpFromLine size={28}/>), toolEntry("bridge",t("editorBar.bridge"),<AlignJustify size={28}/>), {...toolEntry("door",t("editorBar.door"),null,(TEXTURE_SETS as Record<string,{diffuse:string}>)[doorSet].diffuse),managerId:doorSet}];
+  // stairs to other maps: the fantasy world's way between levels
+  if (worldOfMap(p.mapId) === "fantasy") traverse.push(toolEntry("stairs", t("link.stairsTool"), <Footprints size={28}/>));
   const defaultDoor = traverse[2];
   defaultDoor.active = !p.doorTypeChoice;
   defaultDoor.pick = () => choose("door", () => p.onDoorTypeChoice());

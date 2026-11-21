@@ -110,6 +110,8 @@ export interface GameMap {
   // where the party can leave the ship (see ExitSpec) - or, with a target,
   // go on to another map
   exits?: ExitSpec[];
+  // stairs up or down to other maps (see StairsSpec)
+  stairs?: StairsSpec[];
   // a picture for the loading screen of this map (a shared still image's id)
   loadingImage?: string;
   // where the crew mustn't be (a vault, the bridge, the engine core): a
@@ -311,6 +313,22 @@ export interface ExitSpec {
   cell: Vec2;
   // for the log and the run's summary, e.g. "Hangar bay"; a gate's name is
   // what another map's link can name as its arrival
+  name?: string;
+  to?: MapLinkTarget;
+}
+
+// A staircase in a floor cell, up or down to another map (see mapLinks.ts):
+// stepping onto it, the party walks onto the stair (the view moves ahead and up
+// or down - turning, if it is a spiral - as the screen fades out) and arrives
+// at the matching stairs of the `to` map. Without a `to` it goes nowhere yet.
+export type StairsDirection = "up" | "down";
+export type StairsStyle = "straight" | "spiral";
+export interface StairsSpec {
+  cell: Vec2;
+  direction: StairsDirection;
+  // unset: straight
+  style?: StairsStyle;
+  // for the log, and what another map's link can name as its arrival
   name?: string;
   to?: MapLinkTarget;
 }

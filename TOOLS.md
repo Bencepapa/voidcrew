@@ -345,6 +345,8 @@ main fields:
 | `items` | loot lying about: `{ "item": "medkit", "x", "y", "count"?, "offset"?: [across, along] }` (plus `chance`, `id`, `with`, `without`) - picked up by stepping in (or Use from the cell before) |
 | `smokes` | smoke emitters: `{ "x", "y", "pos": [across, up, along], "density"?, "size"?, "color"?, "blow"?: { "speed", "yaw", "pitch"? }, "fire"? }` (plus `chance`, `id`, `with`, `without`) |
 | `exits` | ways off the ship: `{ "x", "y", "name"?: "Hangar bay" }` - standing there, Use ends the run. With `"to": { "map": "forest", "arrival"?: "Town road" \| { "x", "y" }, "facing"?: "N", "loadingImage"?: "<shared image id>" }` it is a gate to another map instead (fantasy; see concept/editor-ui/NOTES-level-links.md) |
+| `stairs` | stairs up or down to another map (fantasy): `{ "x", "y", "direction": "up" \| "down", "style"?: "spiral", "name"?, "to"?: { "map", "arrival"?, "facing"?, "loadingImage"? } }` - stepping onto them takes them; without a `to` they go nowhere yet (see concept/editor-ui/NOTES-level-links.md) |
+| `loadingImage` | a shared still image's id: the loading screen behind this map's name (a link's own `to.loadingImage` comes first) |
 | `loot` (containers) | a crate's (or shelf's) contents by hand: `[{ "item": "powercell", "count": 2 }]` (`[]`: empty); unset: rolled from its loot table (src/game/items.ts) |
 | `lights` | ceiling light cells |
 | `doors` | lift / standard doors, facing, label (`label`, `labelVertical`) |

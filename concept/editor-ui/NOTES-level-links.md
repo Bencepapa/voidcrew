@@ -68,3 +68,56 @@ is amber and says GATE.
 
 Files: src/game/mapLinks.ts (+ .test.ts), src/components/GatePrompt.tsx,
 src/editor/inspector/ExitFields.tsx, src/i18n/{en,hu}/links.ts.
+
+## Stage 2 - stairs
+
+A `stairs` list in the map file, a `StairsSpec` in `GameMap.stairs`. It shares
+the link target (`to`), the arrival rules, the transit state and the map swap
+with gates - one `startTransit(link)` in useGameState.ts, only the animation
+differs.
+
+```json
+"stairs": [
+  { "x": 3, "y": 2, "direction": "up", "name": "Tower stairs", "to": { "map": "tower-1" } },
+  { "x": 7, "y": 5, "direction": "down", "style": "spiral", "to": { "map": "cellar", "arrival": "Way up", "facing": "N" } },
+  { "x": 1, "y": 1, "direction": "up" }
+]
+```
+
+`direction` is `up` or `down` (required), `style` is `spiral` or left out
+(straight), `to` as for a gate (without it the stairs go nowhere yet: a log line
+and an editor warning, not a load error). The cell must be a floor cell.
+
+**Arrival**: as for gates, but the way back is looked for among the target's
+links with the *same kind first, and for stairs the other way first* - going up,
+you come out of the target's stairs down. A name can be a gate's or a
+staircase's (`namedPlaces`).
+
+**Game**: stepping onto the cell takes the stairs (no question - the brief says
+"standing on the cell triggers"). The viewport lays a timed offset over the
+camera for `MapTransit.kind === "stairs"` (1.5 s): the eye walks 0.55 cell ahead
+and rises (up) or sinks (down) 0.7 wall heights, a spiral also turns the view
+half round (clockwise up, counter-clockwise down), and the black sheet fades in
+over the last 60 %. Then the same swap / loading screen / fade in as a gate. The
+pose kept in `liveRef` is not touched by the offset, so the arrival starts clean.
+The arrival cell is quiet (no immediate re-trigger); Use (Space) on a staircase
+takes it again, so arriving on the way back and pressing Space returns. In free
+movement just walking over the cell triggers it. Taking stairs is refused (log) if the
+target map doesn't exist or is the map itself; the cell stays quiet until stepped off.
+
+**Marker**: the cheapest thing that reads - a floor plate like the exits' (a
+canvas texture: four steps rising / sinking, a spiral for spiral stairs, UP /
+DOWN, cyan up / violet down, throbbing). No 3D steps.
+
+**Editor**: a *Stairs* entry in the asset tree's Traverse group (fantasy maps
+only), tool `stairs`: click a floor to place (up, straight), click again to
+pick, right click removes. `StairsFields.tsx`: direction, style, name and the
+shared `LinkTargetFields.tsx` (target / arrival / facing, also used by the Exit
+panel). `toggleStairs` / `updateStairs` in mapEdits.ts; stairs are shifted with
+the grid and cleared with their cell like the other lists; validate.ts treats
+them as exits (a map with only stairs has no "no exit" warning) and as gameplay
+objects for the inside-a-wall check. The minimap marks them with the exits'
+marker (same layer toggle; they can't be picked from the minimap).
+
+Files: src/components/GameViewport.tsx (`makeStairsMarker`, the camera offset),
+src/editor/inspector/{StairsFields,LinkTargetFields}.tsx.

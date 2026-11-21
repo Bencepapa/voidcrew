@@ -118,6 +118,7 @@ const TOOLS: Group[] = [
     ],
   },
   { title: "editorBar.exit", rows: [["Click / right click", "editorShell.scExit"]] },
+  { title: "link.stairsTool", rows: [["Click / right click", "editorShell.scStairs"]] },
   { title: "editorBar.start", rows: [["Click", "editorShell.scStart"]] },
   { title: "editorBar.restricted", rows: [["Click", "editorShell.scRestricted"]] },
   { title: "editorBar.chanceWall", rows: [["Click / right click", "editorShell.scChance"]] },

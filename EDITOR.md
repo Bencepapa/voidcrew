@@ -206,6 +206,15 @@ not two editors.
   it asks "Leave X for Y?" (Enter / Space: go, Esc: stay), fades out, and
   arrives in the other map at **Arrives at** - by default its gate that
   leads back here, else its start (see concept/editor-ui/NOTES-level-links.md).
+- **Stairs** (fantasy world, Traverse group): a click on a floor puts stairs
+  there (a cyan UP plate) and picks them; a click on stairs picks them, the
+  right button takes them out. The panel sets up or down (a violet DOWN
+  plate), straight or spiral, a name and where they lead (**Leads to** /
+  **Arrives at** / **Facing**, as for a gate); `stairs` in the map. In the
+  game, stepping onto them takes them: the view walks on and climbs (or
+  sinks, turning on a spiral) while the screen fades out, and the next map
+  fades in at its stairs that lead back (the other way: up arrives at the
+  stairs down) - or at its start. Use on them takes them again.
 - **Decal:** the palette shows every decal (public/decals/index.json); a
   click on a wall, floor or ceiling puts the picked one there, centered on
   the click, and picks it. A click on a decal picks it, the right button

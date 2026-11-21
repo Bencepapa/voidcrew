@@ -28,7 +28,7 @@ import { hasKey, t, type Key } from "../i18n";
 import { HACKER_ROLE, HACK_ENERGY, HACK_MS, conditionsMet, parseAction, triggerMatches, unlockedFlag } from "./story";
 import type { Lock, StoryEvent } from "./story";
 import { lockedAway, planShip } from "./shipPlan";
-import { loadingImageFor, resolveArrival, type LinkKind, type MapLink } from "./mapLinks";
+import { gateLink, loadingImageFor, resolveArrival, stairsLink, type LinkKind, type MapLink } from "./mapLinks";
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 
@@ -62,7 +62,12 @@ export interface MapTransit {
   kind: LinkKind;
   start: number;
   duration: number;
+  // how far into it (0..1) the fade to black begins
+  fadeFrom: number;
   image?: string;
+  // stairs: up or down, and whether the view turns (a spiral) on the way
+  up?: boolean;
+  spiral?: boolean;
 }
 
 // what a gate asks of the party: where it leads, and the question to put
@@ -109,6 +114,10 @@ const LIFT_SETTLE_MS = 700;
 // a gate: the screen fades out this long before the next map is swapped in;
 // once it has loaded the party can act again after TRANSIT_SETTLE_MS
 const GATE_FADE_MS = 700;
+// stairs: the view walks onto them for this long, fading out over the last
+// part of it (from STAIRS_FADE_FROM of the way)
+const STAIRS_MS = 1500;
+const STAIRS_FADE_FROM = 0.4;
 const TRANSIT_SETTLE_MS = 250;
 
 const BLOCKED_MESSAGES: Record<"wall" | "ledge" | "low" | "prop", string> = {
@@ -1159,27 +1168,41 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     }, LIFT_CLOSE_MS + LIFT_RIDE_MS);
   }, [openingDoor, pushLog]);
 
-  // Takes the party through a link (a gate) to another map: the screen fades
-  // out, the next map is swapped in behind it - the party arrives where the
-  // link says (see resolveArrival) - and it fades back in once the map has
-  // loaded. Like a lift ride, it holds still the party until then.
+  // Takes the party through a link (a gate, stairs) to another map: the screen
+  // fades out - for stairs, while the view walks onto them and climbs or sinks
+  // (see GameViewport) - the next map is swapped in behind it, the party arrives
+  // where the link says (see resolveArrival) and it fades back in once the map
+  // has loaded. Like a lift ride, it holds still the party until then.
   const startTransit = useCallback((link: MapLink) => {
     const from = mapRef.current;
     if (!variationRef.current || busy() || openingDoor) return;
+    // (a link that can't be taken asks nothing more of the party until it steps off)
+    const quiet = () => setQuietLink(`${from.id}:${link.cell.x},${link.cell.y}`);
     const to = MAPS[link.to.map];
     if (!to) {
       pushLog(t("link.missing", { map: link.to.map }), "warn");
+      quiet();
       return;
     }
     if (to.id === from.id) {
       pushLog(t("link.self"), "warn");
+      quiet();
       return;
     }
     const arrival = resolveArrival(from, link, to);
-    const started: MapTransit = { kind: link.kind, start: performance.now(), duration: GATE_FADE_MS, image: loadingImageFor(link, to) };
+    const stairs = link.kind === "stairs";
+    const up = link.direction !== "down";
+    const started: MapTransit = {
+      kind: link.kind,
+      start: performance.now(),
+      duration: stairs ? STAIRS_MS : GATE_FADE_MS,
+      fadeFrom: stairs ? STAIRS_FADE_FROM : 0,
+      image: loadingImageFor(link, to),
+      ...(stairs ? { up, spiral: link.style === "spiral" } : {}),
+    };
     transitBusyRef.current = true;
     setTransit(started);
-    pushLog(t("link.go", { name: to.name }));
+    pushLog(t(stairs ? (up ? "link.goUp" : "link.goDown") : "link.go", { name: to.name }));
 
     const arrive = () => {
       transitBusyRef.current = false;
@@ -1434,9 +1457,15 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     if (!containers.length) {
       // a way off the ship underfoot
       const exit = (map.exits ?? []).find((e) => inReach(e.cell, false));
-      // (a gate leads on to another map; any other exit ends the run)
-      if (exit?.to) {
-        startTransit({ kind: "gate", cell: exit.cell, name: exit.name, to: exit.to });
+      // (a staircase or a gate leads on to another map; any other exit ends the run)
+      const stairs = (map.stairs ?? []).find((s) => inReach(s.cell, false));
+      const link = (stairs && stairsLink(stairs)) ?? (exit && gateLink(exit));
+      if (link) {
+        startTransit(link);
+        return;
+      }
+      if (stairs) {
+        pushLog(t("link.stairsNowhere"), "warn");
         return;
       }
       if (exit) {
@@ -1618,9 +1647,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   // stay - the question is not asked again until the party has stepped off).
   // Not while editing, nor while the party can't act (a ride, a terminal...).
   const hereKey = `${map.id}:${pos.x},${pos.y}`;
-  const gateHere = variation !== null && exitHere?.to && Math.abs(floorHeight(map, pos.x, pos.y) - elevation) <= 0.25 + 1e-6
-    ? { kind: "gate" as const, cell: exitHere.cell, name: exitHere.name, to: exitHere.to }
-    : null;
+  const onFloor = variation !== null && Math.abs(floorHeight(map, pos.x, pos.y) - elevation) <= 0.25 + 1e-6;
+  const gateHere = onFloor && exitHere ? gateLink(exitHere) : null;
   // (stepping off the cell the question was put on, or arrived at, brings it back)
   useEffect(() => {
     if (quietLink !== null && quietLink !== hereKey) setQuietLink(null);
@@ -1641,6 +1669,21 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkPrompt?.link, startTransit]);
   const declineLink = useCallback(() => setQuietLink(hereKey), [hereKey]);
+
+  // Stairs ask nothing: stepping onto them takes them (the party arrived on
+  // some, or one that can't be taken, stays quiet until it steps off)
+  const stairsHere = onFloor ? (map.stairs ?? []).find((s) => s.cell.x === pos.x && s.cell.y === pos.y) : undefined;
+  const stairsPath = stairsHere ? stairsLink(stairsHere) : null;
+  useEffect(() => {
+    if (!stairsHere || quietLink === hereKey) return;
+    if (stairsPath) startTransit(stairsPath);
+    else {
+      pushLog(t("link.stairsNowhere"), "warn");
+      setQuietLink(hereKey);
+    }
+    // (a step on the stairs, not a change of what the callbacks close over)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hereKey, !!stairsHere, quietLink, startTransit]);
 
   // a touched (clicked, tapped) interactive decal
   const touch = useCallback(

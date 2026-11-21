@@ -70,6 +70,7 @@ export const editorShellEn = {
   "editorShell.scPickClick": "Place or pick; drag to move (Ctrl: copy)",
   "editorShell.scPickRight": "Remove it",
   "editorShell.scExit": "Place or pick an exit (fantasy: set where it leads - a gate to another map) / remove it",
+  "editorShell.scStairs": "Place or pick stairs (fantasy: up or down, straight or spiral, and the map they lead to) / remove them",
   "editorShell.scStart": "Set the party's start and facing",
   "editorShell.scRestricted": "Toggle a restricted cell",
   "editorShell.scChance": "Make a chance wall or pick it / make it plain",

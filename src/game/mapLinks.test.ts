@@ -1,6 +1,6 @@
 // Run: npx tsx src/game/mapLinks.test.ts
 import assert from "node:assert/strict";
-import { arrivalFacing, linkAt, linkProblems, loadingImageFor, mapLinks, readLinkTarget, resolveArrival, type LinkMap } from "./mapLinks";
+import { arrivalFacing, linkAt, linkProblems, loadingImageFor, mapLinks, namedPlaces, readLinkTarget, resolveArrival, type LinkMap } from "./mapLinks";
 import type { CellType } from "./types";
 
 const grid = (rows: string[]): CellType[][] => rows.map((r) => r.split("").map((c): CellType => (c === "W" ? "wall" : "floor")));
@@ -115,5 +115,45 @@ const named = mk("b", ["WWWW", "W..W", "WWWW"], {
   ],
 });
 assert.deepEqual(linkProblems(named, look).map((p) => p.code), ["linkUnknownArrival", "linkUnknownArrival"]);
+
+// ---- stairs
+const cellar = mk("cellar", ["WWWWW", "W...W", "WWWWW"], {
+  stairs: [
+    { cell: { x: 1, y: 1 }, direction: "up", name: "Cellar stairs", to: { map: "hall" } },
+    { cell: { x: 3, y: 1 }, direction: "down", to: { map: "hall" } },
+    { cell: { x: 2, y: 1 }, direction: "up" },
+  ],
+});
+const hall = mk("hall", ["WWWWWW", "W....W", "W....W", "WWWWWW"], {
+  stairs: [
+    { cell: { x: 1, y: 1 }, direction: "down", style: "spiral", name: "Way down", to: { map: "cellar" } },
+    { cell: { x: 4, y: 1 }, direction: "up", to: { map: "cellar" } },
+  ],
+  exits: [{ cell: { x: 4, y: 2 }, name: "Front door", to: { map: "cellar" } }],
+});
+assert.deepEqual(mapLinks(cellar).map((l) => [l.kind, l.direction]), [["stairs", "up"], ["stairs", "down"]], "stairs with no target go nowhere");
+assert.equal(linkAt(hall, { x: 1, y: 1 })?.style, "spiral");
+assert.deepEqual(namedPlaces(hall).map((p) => p.name), ["Front door", "Way down"]);
+// up arrives at the stairs down, down at the stairs up (the other way first)
+let up = resolveArrival(cellar, linkAt(cellar, { x: 1, y: 1 })!, hall);
+assert.deepEqual([up.via, up.cell], ["back", { x: 1, y: 1 }], "up from the cellar: the hall's way down");
+up = resolveArrival(cellar, linkAt(cellar, { x: 3, y: 1 })!, hall);
+assert.deepEqual([up.via, up.cell], ["back", { x: 4, y: 1 }], "down from the cellar: the hall's stairs up");
+// a gate prefers a gate over stairs, stairs prefer stairs over a gate
+assert.deepEqual(resolveArrival(hall, linkAt(hall, { x: 4, y: 2 })!, cellar).via, "back");
+const gateAndStairs = mk("both", ["WWWWW", "W...W", "WWWWW"], {
+  exits: [{ cell: { x: 3, y: 1 }, to: { map: "hall" } }],
+  stairs: [{ cell: { x: 1, y: 1 }, direction: "up", to: { map: "hall" } }],
+});
+assert.deepEqual(resolveArrival(hall, { kind: "gate", to: { map: "both" } }, gateAndStairs).cell, { x: 3, y: 1 });
+assert.deepEqual(resolveArrival(hall, { kind: "stairs", direction: "down", to: { map: "both" } }, gateAndStairs).cell, { x: 1, y: 1 });
+// a named arrival can be a staircase
+assert.deepEqual(resolveArrival(hall, { kind: "gate", to: { map: "cellar", arrival: "cellar STAIRS" } }, cellar).cell, { x: 1, y: 1 });
+// problems: stairs without a target; the others as for gates
+const sworld: Record<string, LinkMap> = { cellar, hall };
+assert.deepEqual(linkProblems(cellar, (id) => sworld[id]).map((p) => [p.code, p.kind, p.severity]), [["linkNoTarget", "stairs", "warning"]]);
+assert.deepEqual(linkProblems(hall, (id) => sworld[id]).map((p) => p.code), []);
+const strayStairs = mk("stray", ["WWW", "W.W", "WWW"], { stairs: [{ cell: { x: 1, y: 1 }, direction: "down", to: { map: "hall" } }] });
+assert.deepEqual(linkProblems(strayStairs, (id) => sworld[id]).map((p) => [p.code, p.kind]), [["linkNoWayBack", "stairs"]]);
 
 console.log("mapLinks ok");

@@ -910,6 +910,54 @@ function makeExitMarker(gate = false): THREE.CanvasTexture {
   return texture;
 }
 
+// a staircase's floor marker (see StairsSpec): steps rising (up, cyan) or
+// sinking (down, violet) with an arrow above them - or, for a spiral, a spiral
+// turning up or down - and UP / DOWN
+function makeStairsMarker(up: boolean, spiral: boolean): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext("2d")!;
+  ctx.strokeStyle = ctx.fillStyle = up ? "#7fd8ff" : "#d6a8ff";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(8, 8, 112, 112);
+  ctx.lineWidth = 6;
+  ctx.lineJoin = "miter";
+  ctx.beginPath();
+  if (spiral) {
+    // (a spiral winding out from the middle; its arrowhead says which way it turns)
+    const turn = up ? 1 : -1;
+    let x = 64;
+    let y = 52;
+    for (let a = 0; a <= 4.4; a += 0.08) {
+      x = 64 + Math.cos(a * turn - Math.PI / 2) * (4 + a * 6);
+      y = 52 + Math.sin(a * turn - Math.PI / 2) * (4 + a * 6);
+      if (a === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // (four steps; up they rise to the right, down to the left)
+    for (let i = 0; i < 4; i++) {
+      const x = up ? 30 + i * 17 : 98 - i * 17;
+      const y = 78 - i * 11;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      ctx.lineTo(x, y - 11);
+      ctx.lineTo(x + (up ? 17 : -17), y - 11);
+    }
+    ctx.stroke();
+  }
+  ctx.font = "bold 24px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(up ? "UP" : "DOWN", 64, 104);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 // a chalk cross over a whole texture, a few rough strokes (the mark on an
 // emptied container)
 function drawChalkCross(ctx: CanvasRenderingContext2D, w: number, h: number) {
@@ -955,6 +1003,10 @@ const SHAFT_LIGHT_PERIOD_MS = 700;
 const SHAFT_LIGHT_SWEEP = 1.2;
 // a change of map: how long the black sheet takes to clear after arriving (s)
 const TRANSIT_FADE_IN_S = 0.6;
+// taking stairs: how far ahead (cells) the eye walks and how far it climbs or
+// sinks (wall heights) by the end of the ride
+const STAIRS_WALK = 0.55;
+const STAIRS_RISE = 0.7;
 // how far away an interactive decal can be touched (world units)
 const TOUCH_REACH = 1.4;
 // a camera's light on the crew: watching, raising the alarm
@@ -4617,6 +4669,20 @@ export function GameViewport({
       plate.position.set(exit.cell.x, floorY(exit.cell.x, exit.cell.y) + reliefDepth + 0.006, exit.cell.y);
       group.add(plate);
     }
+    // stairs (see StairsSpec): such a plate each, by direction and style
+    const stairsMats = new Map<string, THREE.MeshBasicMaterial>();
+    for (const stairs of map.stairs ?? []) {
+      const key = `${stairs.direction}-${stairs.style ?? "straight"}`;
+      let mat = stairsMats.get(key);
+      if (!mat) {
+        mat = new THREE.MeshBasicMaterial({ map: makeStairsMarker(stairs.direction === "up", stairs.style === "spiral"), transparent: true, depthWrite: false, fog: true });
+        stairsMats.set(key, mat);
+      }
+      const plate = new THREE.Mesh(exitGeo, mat);
+      plate.rotation.x = -Math.PI / 2;
+      plate.position.set(stairs.cell.x, floorY(stairs.cell.x, stairs.cell.y) + reliefDepth + 0.006, stairs.cell.y);
+      group.add(plate);
+    }
 
     // ---- loot ----
     // An item's sprite: an upright relief cutout of its art, standing on
@@ -7786,6 +7852,20 @@ export function GameViewport({
       }
       liveRef.current = cam;
 
+      // Stairs taken (see MapTransit): the eye walks on ahead and climbs or sinks
+      // a floor's worth, turning half round on a spiral - while the sheet fades
+      // to black. (Laid over the pose after it is kept, so arriving starts clean.)
+      let stairsYaw = 0;
+      const stairsRide = transitRef.current?.kind === "stairs" ? transitRef.current : null;
+      if (stairsRide && now - stairsRide.start < stairsRide.duration) {
+        const e = smoothstep(0, 1, (now - stairsRide.start) / stairsRide.duration);
+        const len = Math.hypot(cam.tx - cam.x, cam.tz - cam.z) || 1;
+        const walk = (STAIRS_WALK * e) / len;
+        const dy = (stairsRide.up ? 1 : -1) * STAIRS_RISE * e;
+        cam = { x: cam.x + (cam.tx - cam.x) * walk, z: cam.z + (cam.tz - cam.z) * walk, tx: cam.tx + (cam.tx - cam.x) * walk, tz: cam.tz + (cam.tz - cam.z) * walk, y: cam.y + dy };
+        if (stairsRide.spiral) stairsYaw = (stairsRide.up ? 1 : -1) * Math.PI * e;
+      }
+
       for (const [key, anim] of doorAnimsRef.current) {
         const p = Math.min(1, (gameNow - anim.start) / DOOR_OPEN_MS);
         const target: THREE.Vector3 = anim.panel.userData.open ? anim.panel.userData.openPos : anim.panel.userData.closedPos;
@@ -7812,7 +7892,7 @@ export function GameViewport({
       // next map loads (the loading screen covers it by then), and clears once
       // the party has arrived
       const transitNow = transitRef.current;
-      if (transitNow) fadeLevelRef.current = smoothstep(0, 1, (now - transitNow.start) / transitNow.duration);
+      if (transitNow) fadeLevelRef.current = smoothstep(transitNow.fadeFrom, 1, (now - transitNow.start) / transitNow.duration);
       else if (fadeLevelRef.current > 0) fadeLevelRef.current = Math.max(0, fadeLevelRef.current - dt / TRANSIT_FADE_IN_S);
       if (fadeRef.current) fadeRef.current.style.opacity = String(fadeLevelRef.current);
       const shakeY = shake * (Math.sin(t * 37) * 0.006 + Math.sin(t * 23.3) * 0.004);
@@ -7841,6 +7921,7 @@ export function GameViewport({
         }
         peekYaw = peek.offset;
       }
+      peekYaw += stairsYaw;
       // rotating the facing clockwise (seen from above) by peekYaw
       const fx = fwdX / fwdLen;
       const fz = fwdZ / fwdLen;
@@ -8066,6 +8147,7 @@ export function GameViewport({
       }
       // the exits' plates throb
       exitMat.opacity = gateMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
+      for (const mat of stairsMats.values()) mat.opacity = exitMat.opacity;
       updateTracers();
       camera.updateMatrixWorld();
       updateEditHighlight();
@@ -8301,6 +8383,10 @@ export function GameViewport({
       exitMat.dispose();
       gateMat.map?.dispose();
       gateMat.dispose();
+      for (const mat of stairsMats.values()) {
+        mat.map?.dispose();
+        mat.dispose();
+      }
       scene.remove(smoke.mesh, fire.mesh, petals.mesh, motes.mesh, mist.mesh, flies.mesh);
       motes.dispose(); mist.dispose(); flies.dispose();
       petals.dispose();

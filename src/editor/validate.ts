@@ -1,6 +1,7 @@
 import type { GameMap, Vec2, Linked, Direction } from "../game/types";
 import { MAPS, cellAt, floorHeight, ceilingHeight } from "../game/map";
 import { linkProblems } from "../game/mapLinks";
+import { t } from "../i18n";
 import { passage, jumpDown } from "../game/heights";
 import { DIR_VECTOR } from "../game/movement";
 import { PROP_TYPES, propPlacement } from "../game/props";
@@ -20,9 +21,9 @@ export function validateMap(map: GameMap): Problem[] {
   const open = (c: Vec2) => cellAt(map, c.x, c.y) !== "wall";
   if (!map.start?.cell) add("noStart", undefined, undefined, "error");
 
-  if (!map.exits?.length) add("noExit");
+  if (!map.exits?.length && !map.stairs?.length) add("noExit");
   // gates: where they lead must exist (the way back and the arrival only warn)
-  for (const problem of linkProblems(map, (id) => MAPS[id])) add(problem.code, problem.cell, problem.params, problem.severity);
+  for (const problem of linkProblems(map, (id) => MAPS[id])) add(problem.code, problem.cell, { ...problem.params, kind: t(`link.kind.${problem.kind}`) }, problem.severity);
 
   const reached = new Set<string>();
   const states = new Set<string>();
@@ -123,10 +124,10 @@ export function validateMap(map: GameMap): Problem[] {
 }
 import type { MapFile } from "../game/mapFormat";
 
-type PlacedKind = "prop" | "npc" | "item" | "light" | "smoke" | "exit" | "ladder" | "bridge" | "door" | "chanceWall" | "decal" | "restricted" | "start" | "patrol";
+type PlacedKind = "prop" | "npc" | "item" | "light" | "smoke" | "exit" | "stairs" | "ladder" | "bridge" | "door" | "chanceWall" | "decal" | "restricted" | "start" | "patrol";
 type Placed = { kind: PlacedKind; index: number; cell: Vec2; point?: Vec2; reach?: { x: number; z: number }; data: Record<string, unknown>; field: string };
-const fields = { props: "prop", actors: "npc", items: "item", lights: "light", smokes: "smoke", exits: "exit", ladders: "ladder", bridges: "bridge", doors: "door", chanceWalls: "chanceWall", decals: "decal", restricted: "restricted" } as const;
-const gameplay = new Set<PlacedKind>(["npc", "item", "exit", "ladder", "bridge", "door", "start", "patrol"]);
+const fields = { props: "prop", actors: "npc", items: "item", lights: "light", smokes: "smoke", exits: "exit", stairs: "stairs", ladders: "ladder", bridges: "bridge", doors: "door", chanceWalls: "chanceWall", decals: "decal", restricted: "restricted" } as const;
+const gameplay = new Set<PlacedKind>(["npc", "item", "exit", "stairs", "ladder", "bridge", "door", "start", "patrol"]);
 
 function placedFile(file: MapFile): Placed[] {
   const records: Placed[] = [];
