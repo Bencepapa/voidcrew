@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" width="760" height="400" font-family="Segoe UI, Arial, sans-serif">
+  <title>A párbeszéd-ablak a játékban</title>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+  <rect width="760" height="400" fill="#f6f8fa"/>
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#0f172a">A párbeszéd-ablak (mock-up)</text>
+
+  <rect x="20" y="44" width="500" height="340" rx="8" fill="#262626" stroke="#0a0a0a" stroke-width="2"/>
+  <!-- portrait -->
+  <rect x="38" y="62" width="130" height="170" rx="4" fill="#404040" stroke="#737373"/>
+  <circle cx="103" cy="120" r="30" fill="#737373"/>
+  <path d="M53,222 C53,170 153,170 153,222 z" fill="#737373"/>
+  <text x="75" y="248" font-size="11" fill="#a3a3a3">portré</text>
+  <!-- text -->
+  <rect x="184" y="62" width="320" height="110" rx="4" fill="#171717" stroke="#404040"/>
+  <text x="198" y="86" font-size="13" fill="#e5e5e5">Kovács vagyok. Fegyvert vagy</text>
+  <text x="198" y="106" font-size="13" fill="#e5e5e5">páncélt keresel?</text>
+  <!-- choices -->
+  <g font-size="13" fill="#e5e5e5">
+    <rect x="184" y="184" width="320" height="30" rx="4" fill="#404040" stroke="#737373"/>
+    <text x="196" y="204" fill="#a3a3a3">1</text><text x="216" y="204">Vásárlás</text>
+    <rect x="184" y="222" width="320" height="30" rx="4" fill="#404040" stroke="#737373"/>
+    <text x="196" y="242" fill="#a3a3a3">2</text><text x="216" y="242">Viszlát</text>
+  </g>
+  <text x="38" y="290" font-size="11" fill="#a3a3a3">Billentyűk: 1-9, vagy fel/le nyíl + Enter. Esc: bezár.</text>
+  <text x="38" y="310" font-size="11" fill="#a3a3a3">Egérrel is kattinthatsz a választásokra.</text>
+  <text x="38" y="330" font-size="11" fill="#a3a3a3">A világ megáll, amíg az ablak nyitva van.</text>
+
+  <g font-size="12" fill="#78350f">
+    <text x="545" y="86" font-weight="bold">Portré</text>
+    <text x="545" y="102">az NPC-nél beállított kép;</text>
+    <text x="545" y="118">ha nincs, sziluett</text>
+    <text x="545" y="170" font-weight="bold">Szöveg</text>
+    <text x="545" y="186">a passzus szövege, a</text>
+    <text x="545" y="202">@parancs sorok nélkül</text>
+    <text x="545" y="238" font-weight="bold">Választások</text>
+    <text x="545" y="254">minden [[link]] egy gomb,</text>
+    <text x="545" y="270">a felirat a gomb szövege</text>
+  </g>
+  <g stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3" fill="none" marker-end="url(#ar)">
+    <path d="M540,100 C500,90 300,100 172,110"/>
+    <path d="M540,184 C520,150 520,130 510,120"/>
+    <path d="M540,250 C525,240 515,235 508,232"/>
+  </g>
+</svg>

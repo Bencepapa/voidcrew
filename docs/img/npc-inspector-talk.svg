@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" font-family="Segoe UI, Arial, sans-serif">
+  <title>Az NPC Inspector Beszélgetés csoportja</title>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+  <rect width="760" height="420" fill="#f6f8fa"/>
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#0f172a">A szerkesztő Inspector panelje: Beszélgetés csoport</text>
+
+  <rect x="20" y="44" width="340" height="360" rx="8" fill="#262626" stroke="#0a0a0a" stroke-width="2"/>
+  <rect x="20" y="44" width="340" height="30" rx="8" fill="#171717"/>
+  <text x="34" y="64" font-size="13" fill="#e5e5e5">Inspector: NPC (smith1)</text>
+  <line x1="20" y1="100" x2="360" y2="100" stroke="#404040"/>
+  <text x="34" y="92" font-size="12" fill="#a3a3a3">▸ Transzform ...</text>
+  <line x1="20" y1="120" x2="360" y2="120" stroke="#404040"/>
+  <text x="34" y="116" font-size="12" fill="#a3a3a3">▸ ... (többi csoport)</text>
+
+  <text x="34" y="146" font-size="13" fill="#e5e5e5" font-weight="bold">▾ Beszélgetés</text>
+  <g font-size="12" fill="#d4d4d4">
+    <rect x="34" y="158" width="14" height="14" fill="#404040" stroke="#737373"/><text x="38" y="170" fill="#fbbf24" font-size="13">✓</text>
+    <text x="56" y="170">Barátságos</text>
+
+    <text x="34" y="204">Párbeszéd</text>
+    <rect x="130" y="188" width="214" height="22" fill="#404040" stroke="#737373"/><text x="138" y="204">void-fantasy</text>
+    <text x="330" y="204">▾</text>
+
+    <text x="34" y="244">Belépő passzus</text>
+    <rect x="130" y="228" width="214" height="22" fill="#404040" stroke="#737373"/><text x="138" y="244">Start Smith</text>
+    <text x="330" y="244">▾</text>
+
+    <text x="34" y="284">Portré</text>
+    <rect x="130" y="268" width="214" height="22" fill="#404040" stroke="#737373"/><text x="138" y="284">(nincs)</text>
+    <text x="330" y="284">▾</text>
+
+    <text x="34" y="324">Saját bolt azonosítója</text>
+    <rect x="190" y="308" width="154" height="22" fill="#404040" stroke="#737373"/><text x="198" y="324">smith-shop</text>
+  </g>
+  <text x="34" y="368" font-size="11" fill="#a3a3a3">A Párbeszéd kiválasztása bekapcsolja a Barátságost is</text>
+  <text x="34" y="384" font-size="11" fill="#a3a3a3">(kikapcsolhatod).</text>
+
+  <!-- notes -->
+  <g font-size="12" fill="#78350f">
+    <text x="400" y="86" font-weight="bold">Párbeszéd</text>
+    <text x="400" y="104">A .twee fájl (könyvtár) azonosítója,</text>
+    <text x="400" y="120">a fájlnévből készül.</text>
+
+    <text x="400" y="176" font-weight="bold">Belépő passzus</text>
+    <text x="400" y="194">Innen indul a beszélgetés. A listában a</text>
+    <text x="400" y="210">Start nevű vagy start címkés passzusok vannak.</text>
+
+    <text x="400" y="266" font-weight="bold">Portré</text>
+    <text x="400" y="284">A párbeszéd-ablakban látszó kép (opcionális).</text>
+
+    <text x="400" y="326" font-weight="bold">Saját bolt azonosítója</text>
+    <text x="400" y="344">Ezt nyitja az azonosító nélküli @shop.</text>
+  </g>
+  <g stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3" fill="none" marker-end="url(#ar)">
+    <path d="M394,106 C380,130 360,180 350,196"/>
+    <path d="M394,200 C375,215 365,235 350,240"/>
+    <path d="M394,262 C375,270 365,280 350,284"/>
+    <path d="M394,322 C375,322 365,320 350,320"/>
+  </g>
+</svg>
