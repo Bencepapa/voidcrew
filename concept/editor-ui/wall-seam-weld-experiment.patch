@@ -1,0 +1,535 @@
+﻿diff --git a/src/components/GameViewport.tsx b/src/components/GameViewport.tsx
+index fc554d3..fa2ae47 100644
+--- a/src/components/GameViewport.tsx
++++ b/src/components/GameViewport.tsx
+@@ -1,4 +1,4 @@
+-import { isTextEntry } from "../keyboardFocus";
++﻿import { isTextEntry } from "../keyboardFocus";
+ import { createWeather } from "../render/weather";
+ import { createGroundFog } from "../render/groundFog";
+ import { createFireflies } from "../render/fireflies";
+@@ -32,8 +32,8 @@ import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from ".
+ import { rightOf } from "../game/movement";
+ import { DIR_VECTOR } from "../game/movement";
+ import type { Direction, DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
+-import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type EdgeSegment } from "../render/reliefMesh";
+-import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
++import { createReliefWallGeometry, downsampleHeightGrid, joinEdgeRows, loadHeightGrid, weldEdges, type EdgeSegment } from "../render/reliefMesh";
++import { buildCornerJoins, edgeModes, mergeCornerJoins, weldTargets, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
+ import { generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
+ import { WORLDS } from "../game/worlds";
+ import type { LightSpec } from "../game/lights";
+@@ -2450,8 +2450,10 @@ export function GameViewport({
+       mat: THREE.Material | THREE.Material[],
+       slots: WallSlot[],
+     ) {
++      // (the panels placed, in the slots' order)
++      const placed: THREE.Object3D[] = [];
+       for (const slot of slots) {
+-        placeSurface(slot, geo, far, mat, (o) => (o.rotation.y = slot.rotY));
++        placed.push(placeSurface(slot, geo, far, mat, (o) => (o.rotation.y = slot.rotY)));
+         if (settings.wallProfile !== "relief") continue;
+         const height = variantHeight(slot.variant ?? "full") * wallHeight;
+         const bottom = -height / 2;
+@@ -2502,6 +2504,7 @@ export function GameViewport({
+         skirt.updateMatrixWorld(true);
+         markSurface(skirt);
+       }
++      return placed;
+     }
+ 
+     // wall-style geometry (facing +Z) laid flat, facing up
+@@ -3038,6 +3041,8 @@ export function GameViewport({
+     }
+ 
+     const joinPanels: JoinPanel[] = [];
++    // (what each of them was placed as: a mesh, or a level-of-detail set)
++    const joinObjects: THREE.Object3D[] = [];
+     const wallsPlaced: Promise<unknown>[] = [];
+     const joinedStrips: JoinedStrips[] = [];
+     // Every wall panel's corner modes, from where the panels stand alone (so
+@@ -3063,10 +3068,11 @@ export function GameViewport({
+         )
+           .then(([geo, far]) => {
+             if (!geo) return;
+-            placeWalls(geo, far, wallGeo ? kit.wallMat : [kit.wallMat, kit.sideMat], slots);
++            const placedPanels = placeWalls(geo, far, wallGeo ? kit.wallMat : [kit.wallMat, kit.sideMat], slots);
+             const edge = wallEdges.get(kit)?.get(variant);
+             if (!edge) return;
+-            for (const slot of slots) {
++            const movable = joinEdgeRows(geo) !== null;
++            slots.forEach((slot, i) => {
+               joinPanels.push({
+                 x: slot.x,
+                 z: slot.z,
+@@ -3074,10 +3080,13 @@ export function GameViewport({
+                 rotY: slot.rotY,
+                 width: 1,
+                 edge,
++                // (a smooth one's edges can be moved: see weldTargets)
++                movable,
+                 modes,
+                 material: kit.wallMat,
+               });
+-            }
++              joinObjects.push(placedPanels[i]);
++            });
+           })
+           .catch((err) => console.error("Wall build failed:", err));
+         wallsPlaced.push(placed);
+@@ -3092,6 +3101,30 @@ export function GameViewport({
+       track(Promise.all(wallsPlaced))
+         .then(() => {
+           if (disposed) return;
++          // Where two panels meet side by side with edges of different
++          // heights (another texture, or a pattern not lined up), the edges
++          // are moved to meet halfway: copies of the panels' geometry (shared
++          // between panels that need the same, one to a distinct pair of
++          // profiles) with the edge vertices at their new heights.
++          const welded = new Map<string, THREE.BufferGeometry>();
++          weldTargets(joinPanels).forEach((weld, i) => {
++            if (!weld) return;
++            joinPanels[i].edges = weld.edges;
++            const object = joinObjects[i];
++            const meshes = (object as THREE.LOD).isLOD ? (object as THREE.LOD).levels.map((level) => level.object) : [object];
++            for (const mesh of meshes as THREE.Mesh[]) {
++              const geometry = mesh.geometry;
++              if (joinEdgeRows(geometry) !== weld.edges[0].length + 1) continue;
++              const key = `${geometry.uuid}|${weld.left?.map((z) => z.toFixed(5))}|${weld.right?.map((z) => z.toFixed(5))}`;
++              let copy = welded.get(key);
++              if (!copy) {
++                copy = weldEdges(geometry, weld.left, weld.right);
++                welded.set(key, copy);
++                geometries.push(copy);
++              }
++              mesh.geometry = copy;
++            }
++          });
+           const joins = buildCornerJoins(joinPanels);
+           let triangles = 0;
+           for (const strips of mergeCornerJoins(joins)) {
+@@ -3103,7 +3136,7 @@ export function GameViewport({
+           }
+           // (drawn from the next sight pass on)
+           culledCount = -1;
+-          if (import.meta.env.DEV) Object.assign(window, { __voidcrewJoins: { points: joins.length, triangles } });
++          if (import.meta.env.DEV) Object.assign(window, { __voidcrewJoins: { points: joins.length, triangles, joins, panels: joinPanels, strips: joinedStrips } });
+         })
+         .catch((err) => console.error("Corner joins failed:", err));
+     }
+diff --git a/src/render/cornerJoins.ts b/src/render/cornerJoins.ts
+index e2fc6c9..c9011fa 100644
+--- a/src/render/cornerJoins.ts
++++ b/src/render/cornerJoins.ts
+@@ -31,6 +31,12 @@ export interface JoinPanel {
+   rotY: number;
+   width: number;
+   edge: EdgeSegment[];
++  // its two edges' own profiles, [left, right], where they're no longer the
++  // shared one - after weldTargets
++  edges?: [EdgeSegment[], EdgeSegment[]];
++  // whether its edges' heights can be moved to meet a neighbour's halfway
++  // (a smooth relief's: see weldEdges in reliefMesh.ts)
++  movable?: boolean;
+   // the corner modes it was built with, [left, right] (see edgeModes)
+   modes: [number, number];
+   // the panel's front material: its texture continues over the strip (the
+@@ -145,6 +151,8 @@ interface Piece {
+   panel: number;
+   mode: number;
+   seg?: EdgeSegment;
++  // which of the panel's edge segments (see weldTargets)
++  row?: number;
+ }
+ 
+ interface Side {
+@@ -264,11 +272,77 @@ export function edgeModes(panels: (PanelPlace & { height: number })[]): [number,
+   return modes;
+ }
+ 
++// a panel's side edges' segments as pieces
++const edgePieces = (panels: JoinPanel[]) => (i: number, dir: number) =>
++  (panels[i].edges?.[dir > 0 ? 1 : 0] ?? panels[i].edge).map((seg, row) => ({
++    top: panels[i].y + seg.y0,
++    bottom: panels[i].y + seg.y1,
++    seg,
++    mode: panels[i].modes[dir > 0 ? 1 : 0],
++    row,
++  }));
++
++// What a panel's side edges' heights should be to meet their neighbours
++// halfway - per side, one for each row of the panel's edge, top to bottom (see
++// reliefMesh.ts joinEdgeRows). Where two panels meet side by side, their
++// edges at the same height needn't be: another texture, or one of the same
++// stood at another height, so the pattern doesn't line up. A join strip
++// fills the step between them; better there be none: where both can be
++// moved (`movable`), each edge takes the average of the two (a vertex of one
++// pulled to the middle of the step, the other's pulled to the same point);
++// where only one can, it takes the other's. Panels that need no change are
++// null; `edges` are the panel's profiles as they are then.
++export interface Weld {
++  left?: number[];
++  right?: number[];
++  edges: [EdgeSegment[], EdgeSegment[]];
++}
++export function weldTargets(panels: JoinPanel[]): (Weld | null)[] {
++  // per panel and side, per vertex (the top of each row, and the bottom of
++  // the last): the heights asked for
++  const asked = panels.map((p) => [0, 1].map(() => Array.from({ length: p.edge.length + 1 }, (): number[] => [])));
++  for (const list of gatherSides(panels, edgePieces(panels))) {
++    const { ys, cover, kinds, partner } = meetings(list);
++    const at = list.map((side, i) => cover[i].map((p, k) => (p < 0 ? null : edgeAt(side.pieces[p], ys[k], ys[k + 1]))));
++    list.forEach((s, i) => {
++      for (let k = 0; k < ys.length - 1; k++) {
++        const j = partner[k][i];
++        if (j < 0 || kinds[i][j] !== "straight" || partner[k][j] !== i) continue;
++        const mine = s.pieces[cover[i][k]];
++        const a = at[i][k];
++        const b = at[j][k];
++        if (!a || !b) continue;
++        // (meeting halfway takes both; only one can move: it goes all the way)
++        if (!panels[mine.panel].movable) continue;
++        const f = panels[list[j].pieces[cover[j][k]].panel].movable ? 0.5 : 1;
++        const side = s.uSign > 0 ? 1 : 0;
++        // (the stretch's ends that are the row's own)
++        if (Math.abs(ys[k] - mine.top) < 1e-5) asked[mine.panel][side][mine.row!].push(a.zTop + (b.zTop - a.zTop) * f);
++        if (Math.abs(ys[k + 1] - mine.bottom) < 1e-5) asked[mine.panel][side][mine.row! + 1].push(a.zBottom + (b.zBottom - a.zBottom) * f);
++      }
++    });
++  }
++  return panels.map((panel, i) => {
++    const sides = [0, 1].map((side) => {
++      const profile = panel.edges?.[side] ?? panel.edge;
++      const own = (row: number) => (row < profile.length ? profile[row].z0 : profile[profile.length - 1].z1);
++      const zs = asked[i][side].map((list, row) => (list.length ? list.reduce((sum, z) => sum + z, 0) / list.length : own(row)));
++      const moved = zs.some((z, row) => Math.abs(z - own(row)) > 1e-6);
++      return { zs, moved, profile };
++    });
++    if (!sides.some((s) => s.moved)) return null;
++    const edgeOf = ({ zs, profile }: (typeof sides)[number]) => profile.map((seg, row) => ({ ...seg, z0: zs[row], z1: zs[row + 1] }));
++    return {
++      left: sides[0].moved ? sides[0].zs : undefined,
++      right: sides[1].moved ? sides[1].zs : undefined,
++      edges: [edgeOf(sides[0]), edgeOf(sides[1])],
++    } as Weld;
++  });
++}
++
+ export function buildCornerJoins(panels: JoinPanel[]): CornerJoin[] {
+   const joins: CornerJoin[] = [];
+-  for (const list of gatherSides(panels, (i, dir) =>
+-    panels[i].edge.map((seg) => ({ top: panels[i].y + seg.y0, bottom: panels[i].y + seg.y1, seg, mode: panels[i].modes[dir > 0 ? 1 : 0] })),
+-  )) {
++  for (const list of gatherSides(panels, edgePieces(panels))) {
+     const { ys, cover, kinds, partner } = meetings(list);
+     const at = list.map((side, i) => cover[i].map((p, k) => (p < 0 ? null : edgeAt(side.pieces[p], ys[k], ys[k + 1]))));
+     list.forEach((s, i) => {
+@@ -291,6 +365,9 @@ interface At {
+   zBottom: number;
+   vTop: number;
+   vBottom: number;
++  // the surface's slope across the edge there (see EdgeSegment.sx0)
++  sxTop: number;
++  sxBottom: number;
+   mode: number;
+   panel: number;
+ }
+@@ -300,11 +377,12 @@ function edgeAt(p: Piece, top: number, bottom: number): At {
+   const seg = p.seg!;
+   const z = (y: number) => {
+     const f = p.top === p.bottom ? 0 : (p.top - y) / (p.top - p.bottom);
+-    return [seg.z0 + (seg.z1 - seg.z0) * f, seg.v0 + (seg.v1 - seg.v0) * f];
++    const sx0 = seg.sx0 ?? 0;
++    return [seg.z0 + (seg.z1 - seg.z0) * f, seg.v0 + (seg.v1 - seg.v0) * f, sx0 + ((seg.sx1 ?? 0) - sx0) * f];
+   };
+-  const [zTop, vTop] = z(top);
+-  const [zBottom, vBottom] = z(bottom);
+-  return { zTop, zBottom, vTop, vBottom, mode: p.mode, panel: p.panel };
++  const [zTop, vTop, sxTop] = z(top);
++  const [zBottom, vBottom, sxBottom] = z(bottom);
++  return { zTop, zBottom, vTop, vBottom, sxTop, sxBottom, mode: p.mode, panel: p.panel };
+ }
+ 
+ // a point of a strip's cross-section, with which panel's texture it shows
+@@ -371,9 +449,19 @@ function buildJoin(
+     }
+     const b = P.clone().addScaledVector(B.n, zB).addScaledVector(B.e, mB * zB);
+     if (kind === "straight") {
+-      // side by side: the step face between the two edges
+-      sec = [a, a, a, b, b].map((p, i) => ({ p, owner: i < 3 ? (0 as const) : (1 as const) }));
+-      sec.need = [false, false, true, false];
++      if (owners[0] === owners[1]) {
++        // Side by side, one texture: the step face between the two edges
++        sec = [a, a, a, b, b].map((p, i) => ({ p, owner: i < 3 ? (0 as const) : (1 as const) }));
++        sec.need = [false, false, true, false];
++      } else {
++        // Two textures: the step in two halves meeting halfway (m, the
++        // average of the two heights) - each panel's own edge carried on out
++        // to m, in its own texture - so both panels seem to come together
++        // at an intermediate line.
++        const m = P.clone().addScaledVector(A.n, (zA + zB) / 2);
++        sec = [a, a, m, m, b].map((p, i) => ({ p, owner: i < 3 ? (0 as const) : (1 as const) }));
++        sec.need = [false, true, false, true];
++      }
+     } else {
+       const s = kind === "convex" ? 1 : -1;
+       const aStar = P.clone().addScaledVector(A.n, zA).addScaledVector(A.e, s * zA);
+@@ -389,8 +477,12 @@ function buildJoin(
+   // texture coordinates: along the strip from the owning panel's edge (its
+   // texture runs on round the corner), v at that height
+   const sideOf = (owner: 0 | 1) => (owner === 0 || !B ? A : B);
+-  const uAt = (sec: Pt[], i: number, owner: 0 | 1) => {
++  const uAt = (sec: Sec, i: number, owner: 0 | 1) => {
+     const side = sideOf(owner);
++    // (a step between side by side panels, or a lone edge's cap, runs across
++    // the panel's own edge texels, the texture unchanged along it: the
++    // face is edge on to the panel and shaded as it, see wall)
++    if (!sec.paired) return side.uEdge;
+     // distance along the section from that side's own edge point
+     let s = 0;
+     if (owner === 0) for (let j = 0; j < i; j++) s += sec[j].p.distanceTo(sec[j + 1].p);
+@@ -398,32 +490,59 @@ function buildJoin(
+     return side.uEdge + side.uSign * s;
+   };
+ 
++  // The normal a panel's surface is lit with at its edge there (see
++  // EdgeSegment.sx0): its slope across the edge and along it (from the edge
++  // heights above and below), in the panel's own frame - the wall's facing n,
++  // up, and along the panel (t). A step face, edge on to the panel, is lit
++  // with it, as the panel's own edge vertices are: its own facing, along the
++  // wall, would show it dark or bright against the relief on either side.
++  const surfaceNormal = (side: Side, sx: number, dzdy: number) => {
++    const t = side.e.clone().multiplyScalar(side.uSign);
++    return new THREE.Vector3(-sx * t.x + A.n.x, -dzdy, -sx * t.y + A.n.y).normalize();
++  };
++
+   // triangles per panel material: A's (with the level faces), B's
+   const partsByMaterial = new Map<THREE.Material, JoinPart>();
+   const owners: THREE.Material[] = [];
+-  const tri = (bucket: number, v: [number, number, number, number, number][], n: THREE.Vector3) => {
++  // (`shades`: the normals it's lit with, one to a corner, if not its facing n)
++  const tri = (bucket: number, v: [number, number, number, number, number][], n: THREE.Vector3, shades?: THREE.Vector3[]) => {
+     // wind counter-clockwise as seen from n
+     const p0 = new THREE.Vector3(v[0][0], v[0][1], v[0][2]);
+     const e1 = new THREE.Vector3(v[1][0], v[1][1], v[1][2]).sub(p0);
+     const e2 = new THREE.Vector3(v[2][0], v[2][1], v[2][2]).sub(p0);
+     const g = e1.cross(e2);
+     if (g.lengthSq() < 1e-14) return;
+-    if (g.dot(n) < 0) v = [v[0], v[2], v[1]];
++    if (g.dot(n) < 0) {
++      v = [v[0], v[2], v[1]];
++      if (shades) shades = [shades[0], shades[2], shades[1]];
++    }
+     const mat = owners[bucket];
+     let b = partsByMaterial.get(mat);
+     if (!b) {
+       b = { material: mat, position: [], normal: [], uv: [] };
+       partsByMaterial.set(mat, b);
+     }
+-    for (const [x, y, z, u, vv] of v) {
+-      b.position.push(x, y, z);
+-      b.normal.push(n.x, n.y, n.z);
+-      b.uv.push(u, vv);
+-    }
++    v.forEach(([x, y, z, u, vv], i) => {
++      const shade = shades?.[i] ?? n;
++      b!.position.push(x, y, z);
++      b!.normal.push(shade.x, shade.y, shade.z);
++      b!.uv.push(u, vv);
++    });
+   };
+ 
+   // the strip between two heights' sections (same pieces, so same owners)
+-  const wall = (yT: number, sT: Sec, vT: [number, number], yB: number, sB: Sec, vB: [number, number]) => {
++  // (`nT`, `nB`: the surface normals of A's and B's edges at the top and
++  // bottom - see surfaceNormal)
++  const wall = (
++    yT: number,
++    sT: Sec,
++    vT: [number, number],
++    nT: [THREE.Vector3, THREE.Vector3],
++    yB: number,
++    sB: Sec,
++    vB: [number, number],
++    nB: [THREE.Vector3, THREE.Vector3],
++  ) => {
+     for (let i = 0; i < sT.length - 1; i++) {
+       if (!sT.need![i] && !sB.need![i]) continue;
+       const dT = sT[i + 1].p.clone().sub(sT[i].p);
+@@ -443,19 +562,22 @@ function buildJoin(
+         vOf(v),
+       ];
+       const q = [corner(sT, i, yT, vT), corner(sT, i + 1, yT, vT), corner(sB, i + 1, yB, vB), corner(sB, i, yB, vB)];
++      const shades = [nT[owner], nT[owner], nB[owner], nB[owner]];
+       // each triangle's own facing (the quad's corners needn't be in one
+       // plane - it twists where the section turns between heights), turned
+       // outward
+-      for (const t of [
+-        [q[0], q[1], q[2]],
+-        [q[0], q[2], q[3]],
++      for (const corners of [
++        [0, 1, 2],
++        [0, 2, 3],
+       ]) {
++        const t = corners.map((c) => q[c]);
+         const p = t.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+         const n = p[1].clone().sub(p[0]).cross(p[2].clone().sub(p[0]));
+         if (n.lengthSq() < 1e-14) continue;
+         const o = sT.paired ? R.clone().sub(new THREE.Vector2(p[0].x, p[0].z)) : out;
+         if (n.x * o.x + n.z * o.y < 0) n.negate();
+-        tri(owner, t, n.normalize());
++        // (a step face is lit as the panel's surface it carries on)
++        tri(owner, t, n.normalize(), sT.paired ? undefined : corners.map((c) => shades[c]));
+       }
+     }
+   };
+@@ -527,7 +649,17 @@ function buildJoin(
+       if (prev) level(prev.y, prev.sec, null, prev.v);
+       level(top, null, sT, a.vTop);
+     }
+-    wall(top, sT, vT, bottom, sB, vB);
++    // (the surface's slope along each edge: its heights above and below)
++    const along = (z0: number, z1: number) => (z0 - z1) / (top - bottom);
++    const nT: [THREE.Vector3, THREE.Vector3] = [
++      surfaceNormal(A, a.sxTop, along(a.zTop, a.zBottom)),
++      B && b ? surfaceNormal(B, b.sxTop, along(b.zTop, b.zBottom)) : surfaceNormal(A, a.sxTop, along(a.zTop, a.zBottom)),
++    ];
++    const nB: [THREE.Vector3, THREE.Vector3] = [
++      surfaceNormal(A, a.sxBottom, along(a.zTop, a.zBottom)),
++      B && b ? surfaceNormal(B, b.sxBottom, along(b.zTop, b.zBottom)) : surfaceNormal(A, a.sxBottom, along(a.zTop, a.zBottom)),
++    ];
++    wall(top, sT, vT, nT, bottom, sB, vB, nB);
+     prev = { y: bottom, sec: sB, v: a.vBottom };
+   }
+   if (prev) level(prev.y, prev.sec, null, prev.v);
+diff --git a/src/render/reliefMesh.ts b/src/render/reliefMesh.ts
+index 27ed051..cd7a4c6 100644
+--- a/src/render/reliefMesh.ts
++++ b/src/render/reliefMesh.ts
+@@ -110,6 +110,11 @@ export interface EdgeSegment {
+   z1: number;
+   v0: number;
+   v1: number;
++  // the surface's slope across the edge there (dz/dx, local units) at the top
++  // and the bottom of the piece, as the edge's vertices are lit with (a
++  // smooth relief; absent: level) - a join strip is lit alike
++  sx0?: number;
++  sx1?: number;
+ }
+ 
+ export interface HoleBounds {
+@@ -754,6 +759,11 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
+   // neighbours at different distances still meet vertex on vertex.
+   let edgeZ: ((fy: number) => number) | null = null;
+   let edge: EdgeSegment[] | undefined;
++  // The slope across a joined edge, at row fy: the surface running on past
++  // it, round the wrap-around seam (the panel's last column carried on from
++  // its first) - the same at either edge, so a neighbour of the same profile
++  // has the same one (see the normals below).
++  const edgeSlope = (fy: number) => (gw >= 2 ? (sample(1, fy) - sample(gw - 1, fy)) / (2 * cellW) : 0);
+   if (joinEdges) {
+     const ez = new Float32Array(gh + 1);
+     for (let k = 0; k <= gh; k++) ez[k] = (sample(0, k) + sample(gw, k)) / 2;
+@@ -771,6 +781,8 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
+         z1: ez[k + 1],
+         v0: 1 - (k + r0) / fullH,
+         v1: 1 - (k + 1 + r0) / fullH,
++        sx0: edgeSlope(k),
++        sx1: edgeSlope(k + 1),
+       });
+     }
+   }
+@@ -1076,6 +1088,24 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
+   geometry.setAttribute("uv1", new THREE.BufferAttribute(uvs.slice(), 2));
+   geometry.setIndex(indices);
+   geometry.computeVertexNormals();
++  // A joined side edge's vertices have only their own panel's triangles to
++  // take a normal from, one-sided - and a neighbour's, one-sided the other
++  // way, tilts off the opposite way: two panels of one texture side by
++  // side were lit differently on either side of their seam, a crease down
++  // it (the relief's slope is up to 60 degrees). Both edges take the normal
++  // of the surface running on past them instead, round the wrap-around seam
++  // (the panel's last column carried on from its first): the same slope at
++  // either edge, so a neighbour of the same profile gets the very same
++  // normal there. (From the detailed surface, so every distant version of
++  // the panel agrees.)
++  if (edgeZ && gw >= 2) {
++    // (a joined edge's vertices run along every row: see columns)
++    const slope = new Float32Array(gh + 1);
++    for (let k = 0; k <= gh; k++) slope[k] = edgeSlope(k);
++    const info: JoinEdgeInfo = { left: columns[0].ids, right: columns[mw].ids, slope, cellH };
++    geometry.userData.joinEdge = info;
++    setEdgeNormals(geometry, info);
++  }
+   // (a hybrid one's jambs and skirts are group 1: the side material)
+   geometry.addGroup(0, frontIndexCount, 0);
+   if (indices.length > frontIndexCount) geometry.addGroup(frontIndexCount, indices.length - frontIndexCount, 1);
+@@ -1109,6 +1139,68 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
+   return { geometry, aoMap, triangles: indices.length / 3, levelCount: 0, baked: false, maxZ, holeBounds, lodRise, edge };
+ }
+ 
++// A smooth panel's joined side edges (see joinEdges), kept with its geometry
++// (userData.joinEdge): the vertices along each, one to a row of the detailed
++// surface top to bottom, the slope across the edge at each row (dz/dx - see
++// EdgeSegment.sx0), and the height of a row (world units).
++interface JoinEdgeInfo {
++  left: number[];
++  right: number[];
++  slope: Float32Array;
++  cellH: number;
++}
++
++// The normals of a joined edge's vertices: the surface running on past it,
++// round the wrap-around seam (see the call in createSmoothReliefGeometry),
++// and its slope along the edge as it is now.
++function setEdgeNormals(geometry: THREE.BufferGeometry, info: JoinEdgeInfo) {
++  const position = geometry.getAttribute("position");
++  const normal = geometry.getAttribute("normal") as THREE.BufferAttribute;
++  const n = new THREE.Vector3();
++  for (const ids of [info.left, info.right]) {
++    const rows = ids.length - 1;
++    ids.forEach((id, row) => {
++      const above = position.getZ(ids[Math.max(0, row - 1)]);
++      const below = position.getZ(ids[Math.min(rows, row + 1)]);
++      n.set(-info.slope[row], (below - above) / (2 * info.cellH), 1).normalize();
++      normal.setXYZ(id, n.x, n.y, n.z);
++    });
++  }
++}
++
++// Whether a panel's side edges can be welded (see weldEdges): the heights
++// along each one, from the top, one to a row of its detailed surface - or
++// null for a panel that has no such edges (a stepped relief's are bands)
++export function joinEdgeRows(geometry: THREE.BufferGeometry): number | null {
++  const info = geometry.userData.joinEdge as JoinEdgeInfo | undefined;
++  return info ? info.left.length : null;
++}
++
++// A copy of a smooth panel with its joined side edges at the given heights
++// (one for each row top to bottom, as joinEdgeRows counts them; undefined: as
++// built) - to meet a neighbour of another profile halfway, with no step
++// between them (see cornerJoins.ts weldTargets). Shares what the move leaves
++// alone (the index, the texture coordinates); the normals are made anew.
++export function weldEdges(geometry: THREE.BufferGeometry, left?: number[], right?: number[]): THREE.BufferGeometry {
++  const info = geometry.userData.joinEdge as JoinEdgeInfo;
++  const out = new THREE.BufferGeometry();
++  out.setIndex(geometry.index);
++  out.setAttribute("uv", geometry.getAttribute("uv"));
++  out.setAttribute("uv1", geometry.getAttribute("uv1"));
++  const source = geometry.getAttribute("position");
++  const position = new THREE.BufferAttribute(new Float32Array(source.array), 3);
++  out.setAttribute("position", position);
++  info.left.forEach((id, row) => left && position.setZ(id, left[row]));
++  info.right.forEach((id, row) => right && position.setZ(id, right[row]));
++  for (const g of geometry.groups) out.addGroup(g.start, g.count, g.materialIndex);
++  out.userData.joinEdge = info;
++  out.computeVertexNormals();
++  setEdgeNormals(out, info);
++  out.computeBoundingSphere();
++  out.computeBoundingBox();
++  return out;
++}
++
+ // Horizon-based ambient occlusion over the relief's height field: for each
+ // cell, march 8 directions up to `radius` cells, find the steepest rise
+ // toward the neighbors, and count how much of the sky it blocks
