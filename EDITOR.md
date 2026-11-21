@@ -167,6 +167,15 @@ not two editors.
     texture - a click near a corner puts one there. They move and turn
     like any prop. Decoration: the cell stays walkable (free movement
     collides with a box around it).
+- **Roof (autotile):** the tree's Roof group picks a form (slope only,
+  slope + flat, slope + flat bent); click or drag over floor cells to roof
+  them - the piece, its turn and its height are worked out from the cells
+  roofed and the floor heights, and re-worked at every edit. Right button
+  erases (Shift: the whole roof), Shift + click roofs the whole raised
+  block, Ctrl + click starts a roof of its own. The pieces are ordinary
+  roof props with `auto: "<form>-<n>"` (`detached: true`: a piece changed by
+  hand, which the tool leaves be). Rules and diagrams:
+  `concept/editor-ui/NOTES-roof-autotile.md`.
 - **Item:** the palette picks a loot item (src/game/items.ts); a click on
   a floor - or on the top of a table, a bed, a crate - puts it right there
   and picks it. A click on an item picks it, the right button takes it

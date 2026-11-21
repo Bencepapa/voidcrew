@@ -4,6 +4,7 @@ import { wallFaceSpans } from "../game/mapGeometry";
 import type { Interaction, InteractionTarget } from "../game/interactions";
 import { t } from "../i18n";
 import { PROP_TYPES } from "../game/props";
+import { roofPieceEdited } from "./roofEdits";
 import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
 
 // Edits on a map file (see mapStore.applyEdit): each takes a copy of the
@@ -25,6 +26,7 @@ export type EditTool =
   | "bridge"
   | "door"
   | "prop"
+  | "roofauto"
   | "decal"
   | "robot"
   | "item"
@@ -245,6 +247,7 @@ export function updateProp(file: MapFile, index: number, patch: Partial<PropEntr
   if (!prop) return file;
   const next = { ...prop, ...patch } as Record<string, unknown>;
   for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  if (prop.auto) roofPieceEdited(file, prop, next, patch);
   file.props![index] = next as PropEntry;
   return file;
 }

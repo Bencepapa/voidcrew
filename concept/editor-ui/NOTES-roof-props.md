@@ -120,3 +120,8 @@ walked into, and is not a solid thing under the pieces.
 - Not checked: rotating an inner corner and the Hungarian/English strings other
   than in the Assets list (names exist in en and hu), the editor's
   "problems" checks for a roof on a wall cell.
+
+## Autotile
+
+The Roof tool lays these pieces automatically from the cells roofed and the floor heights: see NOTES-roof-autotile.md.
+

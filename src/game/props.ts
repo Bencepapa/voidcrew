@@ -1,4 +1,5 @@
 import type { GameMap, PropAnchor, PropSpec, Vec2 } from "./types";
+import { ROOF_SHAPES, roofRise, type RoofPieceId, type RoofSegment, type RoofShape } from "./roofPieces";
 
 // 3D props standing in walkable cells (crates, beds, ...), textured like the
 // walls. They sit pushed against a side or a corner of their cell. Small
@@ -148,24 +149,15 @@ export type PropType = {
     }
 );
 
-export interface RoofSegment {
-  kind: "slope" | "flat";
-  // horizontal cells it covers (a slope rises as much as it runs)
-  run: number;
-}
-// how thick a roof is (world units: its underside is this far under its surface)
-export const ROOF_THICKNESS = 0.06;
-function roof(profile: RoofSegment[], corner?: "outer" | "inner"): PropType {
-  const rise = profile.reduce((sum, s) => sum + (s.kind === "slope" ? s.run : 0), 0);
+// (the roof pieces' shapes live in roofPieces.ts, loadable without the build)
+export type { RoofSegment } from "./roofPieces";
+export { ROOF_THICKNESS } from "./roofPieces";
+function roof(id: RoofPieceId): PropType {
+  const shape: RoofShape = ROOF_SHAPES[id];
   // (the height is the rise: stacking the next piece on it puts its surface
   // level with this one's far edge)
-  return { kind: "roof", size: [1, rise, 1], profile, corner };
+  return { kind: "roof", size: [1, roofRise(shape.profile), 1], profile: [...shape.profile], corner: shape.corner };
 }
-const SLOPE: RoofSegment = { kind: "slope", run: 1 };
-const SLOPE_FLAT: RoofSegment[] = [
-  { kind: "slope", run: 0.5 },
-  { kind: "flat", run: 0.5 },
-];
 
 // Parts are measured off the views (see npm run props:views): x across the
 // front view, y up it, z across the side view (+z = the front).
@@ -306,13 +298,13 @@ export const PROP_TYPES: Record<string, PropType> = {
   // roofs (see PropType "roof"): a 45 degree slope across the cell; a slope
   // that bends into a flat half; the flat top; the outer (hip) and inner
   // (valley) corners, each also with the bend
-  roof_slope: roof([SLOPE]),
-  roof_slope_flat: roof(SLOPE_FLAT),
-  roof_flat: roof([{ kind: "flat", run: 1 }]),
-  roof_corner: roof([SLOPE], "outer"),
-  roof_corner_flat: roof(SLOPE_FLAT, "outer"),
-  roof_inner: roof([SLOPE], "inner"),
-  roof_inner_flat: roof(SLOPE_FLAT, "inner"),
+  roof_slope: roof("roof_slope"),
+  roof_slope_flat: roof("roof_slope_flat"),
+  roof_flat: roof("roof_flat"),
+  roof_corner: roof("roof_corner"),
+  roof_corner_flat: roof("roof_corner_flat"),
+  roof_inner: roof("roof_inner"),
+  roof_inner_flat: roof("roof_inner_flat"),
 };
 
 // The prop editor's saves (see src/editor/PropEditor.tsx): src/props/<name>.json

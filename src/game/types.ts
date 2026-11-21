@@ -228,6 +228,13 @@ export interface PropSpec extends Linked {
   // a container's contents put in by hand (see items.ts; [] : empty);
   // unset: rolled from its type's loot table
   loot?: { item: string; count: number }[];
+  // a roof piece the Roof tool laid (see roofAutotile.ts): the id of the roof it
+  // belongs to - "<form>-<n>", e.g. "slope-3". The tool works out the piece, its
+  // turn and height from the cells of the group, again at every edit; a
+  // `detached` one keeps what it was set to (it still counts as part of the roof
+  // for its neighbours)
+  auto?: string;
+  detached?: boolean;
 }
 
 // A smoke emitter (see render/smoke.ts): a leaking pipe, a smouldering

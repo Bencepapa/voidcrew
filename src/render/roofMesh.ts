@@ -1,29 +1,13 @@
 import * as THREE from "three";
-import { ROOF_THICKNESS, type RoofSegment } from "../game/props";
+import { ROOF_THICKNESS, roofProfileAt, type RoofSegment } from "../game/roofPieces";
 
 // The geometry of a roof piece (see props.ts, PropType "roof"): a heightfield
 // over its one-cell footprint, its 45 degree slopes and flat stretches kept
 // exactly planar by cutting the cell along every bend and ridge. In the
 // piece's own space: x across (-0.5..0.5), z the front at +0.5 (where the
-// eave is), y up from the underside's lowest point.
-
-// the profile's height and surface distance (the length of the path along it)
-// `d` cells from the eave; what the profile doesn't cover is flat
-export function roofProfileAt(profile: RoofSegment[], d: number): { h: number; s: number } {
-  let h = 0;
-  let s = 0;
-  let at = 0;
-  for (const seg of profile) {
-    const len = Math.min(seg.run, Math.max(0, d - at));
-    if (seg.kind === "slope") {
-      h += len;
-      s += len * Math.SQRT2;
-    } else s += len;
-    at += seg.run;
-    if (d <= at) return { h, s };
-  }
-  return { h, s: s + (d - at) };
-}
+// eave is), y up from the underside's lowest point. (The profile arithmetic,
+// roofProfileAt, is shared with the roof autotile: see roofPieces.ts.)
+export { roofProfileAt };
 
 export interface RoofGeometry {
   // the upper surface (wall texture with its normal map)

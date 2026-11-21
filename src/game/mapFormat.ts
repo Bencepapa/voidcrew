@@ -3,6 +3,8 @@ import { ITEM_TYPES, isSharedPickupId } from "./items";
 import { readInteraction, type Interaction } from "./interactions";
 import { wallFaceSpans, type WallFacePart } from "./mapGeometry";
 import { PROP_TYPES, isSharedPropId } from "./props";
+import { parseRoofGroup } from "./roofAutotile";
+import { isRoofPieceId } from "./roofPieces";
 import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
 import type { Lock, Terminal, Trigger } from "./story";
 import { cleanRenderLook } from "./renderLook";
@@ -188,6 +190,9 @@ export interface MapFile {
     chance?: number;
     texture?: string;
     loot?: { item: string; count: number }[];
+    // roof autotile (see PropSpec.auto)
+    auto?: string;
+    detached?: boolean;
     id?: string;
     with?: string;
     without?: string;
@@ -397,6 +402,10 @@ export function parseMap(id: string, file: MapFile): GameMap {
         throw new Error(`prop at ${p.x},${p.y}: unknown prop "${p.prop}"`);
       }
       if (cells[p.y]?.[p.x] !== "floor") throw new Error(`prop at ${p.x},${p.y} isn't in a floor cell`);
+      if (p.auto !== undefined) {
+        if (!parseRoofGroup(p.auto)) throw new Error(`prop at ${p.x},${p.y}: "${String(p.auto)}" isn't a roof group (<slope|flat|bent>-<number>)`);
+        if (!isRoofPieceId(p.prop)) throw new Error(`prop at ${p.x},${p.y}: a roof group's piece must be a roof prop, not "${p.prop}"`);
+      }
       return {
         prop: p.prop,
         interaction: readInteraction(p.interaction),
@@ -409,6 +418,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
         chance: p.chance,
         texture: p.texture,
         loot: p.loot,
+        auto: p.auto,
+        detached: p.detached,
         id: p.id,
         with: p.with,
         without: p.without,

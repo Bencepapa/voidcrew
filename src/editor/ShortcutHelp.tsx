@@ -88,6 +88,15 @@ const TOOLS: Group[] = [
     ],
   },
   {
+    title: "roofauto.group",
+    rows: [
+      ["Click / drag", "roofauto.scPaint"],
+      ["Right click / drag", "roofauto.scErase"],
+      ["Shift + click", "roofauto.scBlock"],
+      ["Ctrl + click", "roofauto.scNew"],
+    ],
+  },
+  {
     title: "editorBar.decal",
     rows: [
       ["Click / drag / arrows", "editorShell.scDecalClick"],

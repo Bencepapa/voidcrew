@@ -70,6 +70,8 @@ import { DIR_VECTOR, behindOf, rightOf } from "./game/movement";
 import { fireLightColor, generateLights, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, Rect, TextureLayer } from "./editor/mapEdits";
 import { paintFace } from "./editor/mapEdits";
+import { eraseRoof, eraseRoofGroup, paintRoof, roofFootprint, roofGroupFor, setRoofDetached } from "./editor/roofEdits";
+import type { RoofForm } from "./game/roofAutotile";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
 import { bankHaul, failRun, getMeta, payRevival, revivalBill, useMeta } from "./game/meta";
@@ -235,6 +237,11 @@ export default function App() {
   const [propRotation, setPropRotation] = useState(0);
   // the Prop tool's selected prop (its index in the map's props)
   const [selectedProp, setSelectedProp] = useState<number | null>(null);
+  // the Roof tool: the form it roofs in (see roofAutotile.ts), the roof the stroke under way paints
+  // into, and a counter that gives each stroke one undo step
+  const [roofForm, setRoofForm] = useState<RoofForm>("slope");
+  const roofStroke = useRef<{ id: number; group: string } | null>(null);
+  const roofStrokeSerial = useRef(0);
   // the Decal tool: the decal a click puts on (and its size in surface
   // pixels), how it's turned, and the selected one (its index in the map's
   // decals)
@@ -881,6 +888,53 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode, editTool, selectedProp, selectedDecal, selectedItem, selectedLight, selectedActor, map]);
+  // The Roof tool (see roofAutotile.ts, roofEdits.ts): a stroke over floor cells roofs them - the
+  // pieces, their turns and heights follow from the cells; the right button takes the roof off
+  // (Shift: the whole roof), Shift roofs the whole raised block under the pointer, Ctrl starts a
+  // roof of its own instead of joining the one beside it. A stroke is one undo step.
+  const roofPaint = (target: EditTarget, stroke: { first: boolean; erase: boolean; shift: boolean; ctrl: boolean }) => {
+    // (a wall, or a step's face - that cell is the lower one beside it, not what is pointed at)
+    if (target.kind === "wall" || target.face) return;
+    const file = mapFile(map.id);
+    if (!file) return;
+    const cell = target.cell;
+    if (stroke.first) roofStrokeSerial.current++;
+    const merge = `roof stroke ${roofStrokeSerial.current}`;
+    let result: ReturnType<typeof applyEdit>;
+    let log: string;
+    if (stroke.erase) {
+      const there = file.props?.find((p) => p.x === cell.x && p.y === cell.y && p.auto);
+      if (!there) return;
+      const group = there.auto!;
+      result = applyEdit(map.id, (f) => (stroke.shift ? eraseRoofGroup(f, group) : eraseRoof(f, [cell])), merge);
+      log = stroke.shift ? t("roofauto.erasedRoof", { group }) : t("roofauto.erased", { count: 1 });
+      setSelectedProp(null);
+    } else {
+      let cells: Vec2[] = [cell];
+      if (stroke.shift) {
+        const block = roofFootprint(file, cell);
+        if (!block) {
+          pushLog(t("roofauto.notBlock"), "editor");
+          return;
+        }
+        cells = block;
+      }
+      // (the roof the stroke paints into: the one at or beside its first cell, else a new one)
+      if (stroke.first || !roofStroke.current) roofStroke.current = { id: roofStrokeSerial.current, group: roofGroupFor(file, cell, roofForm, stroke.ctrl) };
+      const group = roofStroke.current.group;
+      const texture = templates.current.prop.texture as string | undefined;
+      result = applyEdit(map.id, (f) => paintRoof(f, cells, group, texture), merge);
+      log = t("roofauto.painted", { count: cells.length, group });
+      setSelectedProp(null);
+    }
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+    else {
+      replaceMap(result.map);
+      // (one line per stroke, not one per cell)
+      if (stroke.first) pushLog(log, "editor");
+    }
+    setEdits((n) => n + 1);
+  };
   // The map editor's edits: a click digs out the wall pointed at or fills in
   // the floor (the Fill tool, or the right button), paints the surface with
   // the set picked in the palette (the right button paints the map's own
@@ -1125,6 +1179,10 @@ export default function App() {
           setSelectedProp(count);
         }
       }
+    } else if (editTool === "roofauto") {
+      // (the view's strokes reach the tool through onEditPaint; this is a click on the minimap)
+      roofPaint(target, { first: true, erase: alt, shift, ctrl: false });
+      return;
     } else if (editTool === "smoke") {
       // a click on an emitter's marker picks it (the right button takes it
       // out); anywhere else it puts one just off the surface pointed at
@@ -1896,6 +1954,7 @@ export default function App() {
       roomHeight: ceilingHeight(map, spec.cell.x, spec.cell.y) - floorHeight(map, spec.cell.x, spec.cell.y),
       // where a prop stacked on it stands: on its top
       top: (spec.elevation ?? 0) + (type?.size[1] ?? 0),
+      auto: spec.auto ? { group: spec.auto, detached: !!spec.detached } : undefined,
     };
   })();
   const changeProp = (patch: Parameters<typeof updateProp>[2], merge?: string) => {
@@ -1932,6 +1991,29 @@ export default function App() {
       return removePropIndex(file, index);
     });
     if (!("error" in result)) replaceMap(result.map);
+    setSelectedProp(null);
+    setEdits((n) => n + 1);
+  };
+  // the selected roof piece of the Roof tool: detached from the autotile (it keeps what it is set to)
+  // or given back to it
+  const roofDetach = (detached: boolean) => {
+    if (selectedProp === null) return;
+    const index = selectedProp;
+    const result = applyEdit(map.id, (file) => setRoofDetached(file, index, detached));
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  // the whole roof the selected piece belongs to, taken away (one undo step)
+  const roofRemove = () => {
+    const group = selectedProp === null ? undefined : map.props?.[selectedProp]?.auto;
+    if (!group) return;
+    const result = applyEdit(map.id, (file) => eraseRoofGroup(file, group));
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+    else {
+      replaceMap(result.map);
+      pushLog(t("roofauto.erasedRoof", { group }), "editor");
+    }
     setSelectedProp(null);
     setEdits((n) => n + 1);
   };
@@ -2340,6 +2422,7 @@ export default function App() {
       lockedLayers={lockedLayers}
       editTool={altHeld && editMode ? "select" : editTool}
       onEdit={onEdit}
+      onEditPaint={(target, stroke) => roofPaint(target, stroke)}
       selectedEvent={editMode && eventTarget && interactionAt(map, eventTarget) ? eventTarget : null}
       selectedLight={selectedLightInfo ? selectedLight : null}
       selectedProp={selectedPropInfo ? selectedProp : null}
@@ -2491,6 +2574,8 @@ export default function App() {
           onToggleLayerLock={toggleLayerLock}
           propChoice={propChoice}
           onPropChoice={setPropChoice}
+          roofForm={roofForm}
+          onRoofForm={setRoofForm}
           propRotation={propRotation}
           onPropRotate={() => setPropRotation((r) => (r + 90) % 360)}
           robotChoice={robotChoice}
@@ -2537,6 +2622,8 @@ export default function App() {
           prop={selectedPropInfo}
           onPropChange={(patch, merge) => changeProp(patch, Object.keys(patch).join() + (merge ?? ""))}
           onPropStack={stackProp}
+          onPropRoofDetach={roofDetach}
+          onPropRoofRemove={roofRemove}
           onPropDelete={deleteProp}
           onPropDeselect={() => setSelectedProp(null)}
           linkIds={linkIds}

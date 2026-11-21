@@ -12,6 +12,7 @@ import type { ViewportSettings } from "../components/GameViewport";
 import type { SharedMapHead } from "./sharedMapHeads";
 import type { EditSurface, EditTool } from "./mapEdits";
 import type { Direction, LightEffect, Linked, MapLight } from "../game/types";
+import type { RoofForm } from "../game/roofAutotile";
 
 export interface MapLook {
   weather?: Weather;
@@ -71,6 +72,9 @@ export interface EditorBarProps {
   onPropChoice: (prop: string) => void;
   propRotation: number;
   onPropRotate: () => void;
+  // the Roof tool: the form it roofs in (see roofAutotile.ts)
+  roofForm: RoofForm;
+  onRoofForm: (form: RoofForm) => void;
   // the Robot tool: the actor type a click puts in, and the selected actor
   robotChoice: string | null;
   onRobotChoice: (type: string) => void;
@@ -172,6 +176,9 @@ export interface EditorBarProps {
   onChanceWallRemove: () => void;
   onChanceWallDeselect: () => void;
   onPropStack: () => void;
+  // a roof piece of the Roof tool: detach it from (or give it back to) the autotile, take the whole roof away
+  onPropRoofDetach: (detached: boolean) => void;
+  onPropRoofRemove: () => void;
   onPropDelete: () => void;
   onPropDeselect: () => void;
   // the Light tool: what a click places (see App), and the selected light
@@ -299,6 +306,8 @@ export interface PropInfo {
   roomHeight: number;
   top: number;
   chance: number;
+  // a piece of an autotiled roof (see PropSpec.auto): its roof, and whether it's detached
+  auto?: { group: string; detached: boolean };
 }
 
 // the selected light as the panel shows it
@@ -336,6 +345,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   robot: "editorBar.pickATypeThenClickAFloor",
   decal: "editorBar.clickAWallFloorOrCeilingThe",
   prop: "editorBar.clickAFloorNearASideOr",
+  roofauto: "roofauto.help",
   smoke: "editorBar.clickAWallFloorOrAnythingSmoke",
   exit: "editorBar.clickAFloorAWayOffThe",
   restricted: "editorBar.clickAFloorRestrictedShadedRedOn",
@@ -346,7 +356,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
 
 const TOOL_LABELS: Partial<Record<EditTool, Key>> = {
   event: "events.group",
-  ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", decal: "editorBar.decal",
+  ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", roofauto: "roofauto.group", decal: "editorBar.decal",
   robot: "editorBar.npc", item: "editorBar.item", smoke: "editorBar.particles", exit: "editorBar.exit", start: "editorBar.start",
   restricted: "editorBar.restricted", wall: "editorBar.chanceWall", map: "editorBar.map",
 };

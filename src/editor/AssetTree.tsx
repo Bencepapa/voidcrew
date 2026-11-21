@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Image, Library, Lock, LockOpen, LogOut, MessageSquare, Store } from "lucide-react";
+import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, House, Image, Library, Lock, LockOpen, LogOut, MessageSquare, Store, Tent, Triangle } from "lucide-react";
+import { ROOF_FORMS, type RoofForm } from "../game/roofAutotile";
 import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld } from "../game/worlds";
 import { PROP_TYPES } from "../game/props";
@@ -72,10 +73,17 @@ export function AssetTree(p: EditorBarProps) {
       pick: () => choose("event", () => p.onEventKind(kind)),
     });
   }
+  // the Roof tool: one entry per form (the tool paints roofs in the form picked)
+  const roofIcons: Record<RoofForm, ReactNode> = {slope: <Triangle size={28}/>, flat: <House size={28}/>, bent: <Tent size={28}/>};
+  const roofs: Entry[] = ROOF_FORMS.map(form => ({
+    ...toolEntry("roofauto", t(`roofauto.${form}`), roofIcons[form]),
+    id: `roof:${form}`, search: t("roofauto.formHint"), active: p.roofForm === form, pick: () => choose("roofauto", () => p.onRoofForm(form)),
+  }));
   const groups: {id:string; label:string; entries:Entry[]; bare?:boolean}[] = [
     {id:"traverse",label:t("traverse.group"),entries:traverse,bare:true},
     {id:"texture",label:t("assetManager.textures"),entries:textures},
     {id:"prop",label:t("assetManager.props"),entries:props},
+    {id:"roof",label:t("roofauto.group"),entries:roofs,bare:true},
     {id:"decal",label:t("assetTree.decals"),entries:[
       ...decals.filter(id=>assetInWorld(id)).map(id=>({id,label:id,kind:t("assetManager.decal"),image:`${import.meta.env.BASE_URL}decals/${id}/diffuse.png`,active:p.decalChoice===id,pick:(button:HTMLButtonElement)=>{const img=button.querySelector("img");choose("decal",()=>p.onDecalChoice({name:id,width:img?.naturalWidth||64,height:img?.naturalHeight||64}));},manager:"prop" as const,managerId:`decal:${id}`})),
       ...sharedImages.filter(image=>image.type==="decal" && assetInWorld(image.id)).map(image=>({

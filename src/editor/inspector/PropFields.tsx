@@ -24,6 +24,14 @@ return <>
                 )}
 </Section>
 <Section kind="prop" section="look">
+{p.prop.auto && <div className="flex flex-col gap-1 border border-neutral-700 p-1">
+<strong className="text-neutral-200">{t("roofauto.piece", { group: p.prop.auto.group })}</strong>
+<span className="text-neutral-400">{t(p.prop.auto.detached ? "roofauto.detachedInfo" : "roofauto.attached")}</span>
+<div className="flex flex-wrap gap-1">
+<button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onPropRoofDetach(!p.prop!.auto!.detached)}>{t(p.prop.auto.detached ? "roofauto.attach" : "roofauto.detach")}</button>
+<button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropRoofRemove}>{t("roofauto.removeRoof")}</button>
+</div>
+</div>}
 <KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id)).map(value => ({value,label:PROP_TYPES[value].name ?? value}))} onChange={prop => p.onPropChange({prop})}/>
 
 {p.prop.retexturable && (

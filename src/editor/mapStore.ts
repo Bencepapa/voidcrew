@@ -5,6 +5,7 @@ import { parseMap } from "../game/mapFormat";
 import type { MapFile } from "../game/mapFormat";
 import type { GameMap } from "../game/types";
 import { formatMapJson, scanLayout } from "./mapJson";
+import { reevaluateRoofs } from "./roofEdits";
 import type { JsonLayout } from "./mapJson";
 import { t } from "../i18n";
 
@@ -135,7 +136,8 @@ export function applyEdit(
   let next: MapFile;
   let map: GameMap;
   try {
-    next = edit(structuredClone(e.file));
+    // (the auto roofs follow what the edit did: roofed cells, floor heights, walls...)
+    next = reevaluateRoofs(edit(structuredClone(e.file)));
     map = parseMap(id, next);
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };

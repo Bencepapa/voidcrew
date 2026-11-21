@@ -989,7 +989,7 @@ const EDIT_PAINT_COLOR = 0x60ff80;
 const EDIT_LIGHT_ADD_COLOR = 0xffe040;
 const EDIT_SELECT_COLOR = 0x80f0ff;
 // the editor tools whose layer can be locked (and the layer each edits)
-const TOOL_LAYER: Partial<Record<EditTool, string>> = { texture: "texture", light: "light", prop: "prop", decal: "decal", robot: "robot", item: "item", smoke: "smoke" };
+const TOOL_LAYER: Partial<Record<EditTool, string>> = { texture: "texture", light: "light", prop: "prop", roofauto: "prop", decal: "decal", robot: "robot", item: "item", smoke: "smoke" };
 // how far off a surface a free-standing light is placed (world units)
 const LIGHT_SPOT_GAP = 0.12;
 // muzzle flashes (see addFlash): the party's, and an actor's (its color,
@@ -1141,6 +1141,10 @@ interface GameViewportProps {
   // copy it (Ctrl held); it returns the index of what is being dragged from
   // then on - for a door dropped, whether the map took it.
   onEditDrag?: (drag: EditDrag, target: EditTarget) => number | boolean | void;
+  // The editor, Roof tool: a stroke painting (or, `erase`, taking off) cells - called for each new
+  // cell the pointer reaches while a button is held; `first` the stroke's first, `id` the same
+  // all along it (one undo step)
+  onEditPaint?: (target: EditTarget, stroke: { id: number; first: boolean; erase: boolean; shift: boolean; ctrl: boolean }) => void;
   // The editor: the wheel (or Alt+drag) over the view raises, scales or turns the
   // selected prop or decal by a step
   onEditAdjust?: (adjust: { what: "height" | "scale" | "rotate"; delta: number }) => void;
@@ -1513,6 +1517,7 @@ export function GameViewport({
   onEdit,
   onEditHover,
   onEditDrag,
+  onEditPaint,
   onEditAdjust,
   selectedLight,
   selectedProp,
@@ -1687,6 +1692,8 @@ export function GameViewport({
   onEditHoverRef.current = onEditHover;
   const onEditDragRef = useRef(onEditDrag);
   onEditDragRef.current = onEditDrag;
+  const onEditPaintRef = useRef(onEditPaint);
+  onEditPaintRef.current = onEditPaint;
   const onEditAdjustRef = useRef(onEditAdjust);
   onEditAdjustRef.current = onEditAdjust;
   const onReadyRef = useRef(onReady);
@@ -6659,6 +6666,9 @@ export function GameViewport({
       doorHome?: { position: THREE.Vector3; rotation: number };
     } | null = null;
     let dragSerial = 0;
+    // The Roof tool's stroke: cells painted (or, the right button, taken off) as the pointer
+    // moves over them with a button held; `last` is the cell it reached last
+    let roofStroke: { pointer: number; id: number; erase: boolean; last: string; shift: boolean; ctrl: boolean } | null = null;
     const dragPlane = new THREE.Plane();
     const dragPoint = new THREE.Vector3();
     // whether a hit is on the thing being dragged (looked through while it is)
@@ -6730,6 +6740,17 @@ export function GameViewport({
       if (topdown.on) e.stopPropagation();
       press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), ndc: viewNdc(e.clientX, e.clientY) };
       dragItem = null;
+      roofStroke = null;
+      // the Roof tool: a press starts a stroke (either button); the cell under it is the first
+      if (editModeRef.current && editToolRef.current === "roofauto" && (e.button === 0 || e.button === 2) && !toolLocked()) {
+        const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
+        if (hit && onEditPaintRef.current) {
+          const stroke = { pointer: e.pointerId, id: ++dragSerial, erase: e.button === 2, last: `${hit.cell.x},${hit.cell.y}`, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
+          roofStroke = stroke;
+          onEditPaintRef.current(hit, { id: stroke.id, first: true, erase: stroke.erase, shift: stroke.shift, ctrl: stroke.ctrl });
+        }
+        return;
+      }
       if (!editModeRef.current || e.button !== 0) return;
       const tool = editToolRef.current;
       if (toolLocked()) return;
@@ -6796,6 +6817,22 @@ export function GameViewport({
     // (heard on the window, in the capture phase: while a drag is on, the view
     // controls underneath mustn't turn the view too)
     const onDragMove = (e: PointerEvent) => {
+      const stroke = roofStroke;
+      if (stroke && stroke.pointer === e.pointerId) {
+        if (!editModeRef.current || !(e.buttons & (stroke.erase ? 2 : 1))) {
+          roofStroke = null;
+          return;
+        }
+        // (the view underneath mustn't turn with it)
+        e.stopPropagation();
+        const target = editTargetAt(viewNdc(e.clientX, e.clientY));
+        const key = target && `${target.cell.x},${target.cell.y}`;
+        if (target && key !== stroke.last) {
+          stroke.last = key!;
+          onEditPaintRef.current?.(target, { id: stroke.id, first: false, erase: stroke.erase, shift: stroke.shift, ctrl: stroke.ctrl });
+        }
+        return;
+      }
       const d = dragItem;
       if (!d || !editModeRef.current || !(e.buttons & 1)) return;
       if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
@@ -6901,6 +6938,12 @@ export function GameViewport({
       const p = press;
       if (p && p.id !== e.pointerId) return;
       press = null;
+      // the Roof tool's strokes did it all (the minimap's clicks reach the tool on their own)
+      if (roofStroke?.pointer === e.pointerId) {
+        roofStroke = null;
+        return;
+      }
+      if (editModeRef.current && editToolRef.current === "roofauto") return;
       // a drag just ended: not a click
       const d = dragItem;
       if (d?.moved) {
