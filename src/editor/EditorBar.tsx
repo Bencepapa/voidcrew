@@ -75,6 +75,9 @@ export interface EditorBarProps {
   // the Roof tool: the form it roofs in (see roofAutotile.ts)
   roofForm: RoofForm;
   onRoofForm: (form: RoofForm) => void;
+  // the texture set the Roof tool's new pieces wear ("": the roof piece's own)
+  roofTexture: string;
+  onRoofTexture: (texture: string) => void;
   // the Robot tool: the actor type a click puts in, and the selected actor
   robotChoice: string | null;
   onRobotChoice: (type: string) => void;

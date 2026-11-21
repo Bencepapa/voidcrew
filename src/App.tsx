@@ -240,6 +240,7 @@ export default function App() {
   // the Roof tool: the form it roofs in (see roofAutotile.ts), the roof the stroke under way paints
   // into, and a counter that gives each stroke one undo step
   const [roofForm, setRoofForm] = useState<RoofForm>("slope");
+  const [roofTexture, setRoofTexture] = useState("");
   const roofStroke = useRef<{ id: number; group: string } | null>(null);
   const roofStrokeSerial = useRef(0);
   // the Decal tool: the decal a click puts on (and its size in surface
@@ -922,7 +923,7 @@ export default function App() {
       // (the roof the stroke paints into: the one at or beside its first cell, else a new one)
       if (stroke.first || !roofStroke.current) roofStroke.current = { id: roofStrokeSerial.current, group: roofGroupFor(file, cell, roofForm, stroke.ctrl) };
       const group = roofStroke.current.group;
-      const texture = templates.current.prop.texture as string | undefined;
+      const texture = roofTexture || undefined;
       result = applyEdit(map.id, (f) => paintRoof(f, cells, group, texture), merge);
       log = t("roofauto.painted", { count: cells.length, group });
       setSelectedProp(null);
@@ -2576,6 +2577,8 @@ export default function App() {
           onPropChoice={setPropChoice}
           roofForm={roofForm}
           onRoofForm={setRoofForm}
+          roofTexture={roofTexture}
+          onRoofTexture={setRoofTexture}
           propRotation={propRotation}
           onPropRotate={() => setPropRotation((r) => (r + 90) % 360)}
           robotChoice={robotChoice}

@@ -185,6 +185,7 @@ export const editorShellEn = {
   "floatBar.mapProperties": "Map properties",
   "traverse.group": "Traverse",
   "roofauto.group": "Roof (autotile)",
+  "roofauto.form": "Form",
   "roofauto.slope": "Slope only",
   "roofauto.flat": "Slope + flat",
   "roofauto.bent": "Slope + flat (bent)",

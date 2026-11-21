@@ -186,6 +186,7 @@ export const editorShellHu: Record<keyof typeof editorShellEn, string> = {
   "floatBar.mapProperties": "Térkép tulajdonságai",
   "traverse.group": "Közlekedés",
   "roofauto.group": "Tető (automata)",
+  "roofauto.form": "Forma",
   "roofauto.slope": "Csak ferde",
   "roofauto.flat": "Ferde és lapos",
   "roofauto.bent": "Ferde és lapos (hajlított)",
