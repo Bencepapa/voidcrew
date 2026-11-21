@@ -1,23 +1,26 @@
 import { useSyncExternalStore } from "react";
 import type { Weapon } from "./combat";
 import {
-  RIGHT,
   addLoot,
+  effectiveHand,
   emptyInventory,
   equipLoadout,
   handsOf,
   moveSlot,
+  moveSome,
+  parseInventory,
   parseLoc,
   settleOverflow,
-  swapHands,
+  splitSlot,
   totals,
+  type HandIndex,
   type Inventory,
   type MoveResult,
   type Slot,
 } from "./inventory";
 import { isWeaponItem, itemRules, weaponItemId, weaponOf, weaponTypeOfItem } from "./itemRules";
-import type { ItemStack } from "./items";
-import { commitLoadout, getMeta, type CarriedWeapon } from "./meta";
+import { ITEM_TYPES, type ItemStack } from "./items";
+import { commitLoadout, getMeta, saveInventory, type CarriedWeapon } from "./meta";
 
 // The run's live inventory (see inventory.ts for the rules): the party's
 // backpack and each crewmate's two hands. Module state like meta.ts, so the
@@ -37,10 +40,40 @@ function seedRun(): Inventory {
   return inv;
 }
 
-let inventory: Inventory = seedRun();
+// What a save may still hold: an item that exists, a weapon that is still owned.
+const isKnown = (slot: Slot): boolean => {
+  const type = weaponTypeOfItem(slot.item);
+  if (type !== null) return slot.uid === undefined ? true : getMeta().weapons.some((w) => w.id === slot.uid);
+  return !!ITEM_TYPES[slot.item];
+};
+
+// The inventory the game starts with: the one saved in the meta (a reload keeps
+// the backpack, the hands and what's carried loose); a crewmate who has no hands
+// in the save (an older one, or a crew that came later) gets their loadout. No
+// save (or an unreadable one): everyone's loadout in hand, an empty backpack.
+function restoreRun(): Inventory {
+  const meta = getMeta();
+  const saved = meta.inventory?.v === 1 ? parseInventory(meta.inventory, itemRules, isKnown) : null;
+  if (!saved) return seedRun();
+  const typeOf = (id: number) => meta.weapons.find((w) => w.id === id)?.type;
+  let inv = saved;
+  for (const [crew, slots] of Object.entries(meta.loadout)) {
+    if (inv.hands[crew]) continue;
+    inv = equipLoadout(inv, crew, slots, meta.active[crew] ?? 0, typeOf, weaponItemId, itemRules);
+  }
+  return inv;
+}
+
+let inventory: Inventory = restoreRun();
 const listeners = new Set<() => void>();
 function set(next: Inventory) {
   inventory = next;
+  saveInventory({
+    v: 1,
+    pack: next.pack.slice(),
+    hands: Object.fromEntries(Object.entries(next.hands).map(([crew, pair]) => [crew, [pair[0], pair[1]]])),
+    overflow: { ...next.overflow },
+  });
   listeners.forEach((l) => l());
 }
 
@@ -94,12 +127,22 @@ export function addToInventory(stacks: ItemStack[]): ItemStack[] {
   return overflowed;
 }
 
-// a drag or click-click move between two places ("pack:3", "hand:reese:1")
-export function moveItem(from: string, to: string): MoveResult {
+// a drag or click-click move between two places ("pack:3", "hand:reese:1");
+// with `qty`, only that many of the stack (a split)
+export function moveItem(from: string, to: string, qty?: number): MoveResult {
   const a = parseLoc(from);
   const b = parseLoc(to);
   if (!a || !b) return { ok: false, reason: "place" };
-  const result = moveSlot(inventory, a, b, itemRules);
+  const result = qty === undefined ? moveSlot(inventory, a, b, itemRules) : moveSome(inventory, a, b, qty, itemRules);
+  if (result.ok) set(settleOverflow(result.inv, itemRules));
+  return result;
+}
+
+// `qty` of the stack at a place into the first free backpack cell
+export function splitItem(from: string, qty: number): MoveResult {
+  const a = parseLoc(from);
+  if (!a) return { ok: false, reason: "place" };
+  const result = splitSlot(inventory, a, qty, itemRules);
   if (result.ok) set(settleOverflow(result.inv, itemRules));
   return result;
 }
@@ -115,26 +158,10 @@ export function changeInventory(fn: (inv: Inventory) => Inventory | null): boole
 
 // --- weapons in hand ---
 
-// the weapon a crewmate fires: the one in the right hand, else the left's
-export function crewWeapon(crewId: string): Weapon | undefined {
-  const hands = handsOf(inventory, crewId);
-  const owned = getMeta().weapons;
-  for (const slot of [hands[RIGHT], hands[0]]) {
-    const weapon = slot && weaponOf(slot.item, slot.uid, owned);
-    if (weapon) return weapon;
-  }
-  return undefined;
-}
-
-// whether a crewmate holds a weapon in each hand, to switch between
-export function canSwitch(crewId: string): boolean {
-  const [left, right] = handsOf(inventory, crewId);
-  return !!left && !!right && isWeaponItem(left.item) && isWeaponItem(right.item);
-}
-
-// the hands swap: the other weapon is the one in use
-export function switchWeapon(crewId: string) {
-  if (!canSwitch(crewId)) return;
-  const next = swapHands(inventory, crewId, itemRules);
-  if (next) set(next);
+// the weapon a crewmate holds in a hand (a two-handed one counts for both),
+// if the hand holds one: each hand fires, and cools down, on its own
+export function handWeapon(crewId: string, hand: HandIndex): Weapon | undefined {
+  const real = effectiveHand(inventory, crewId, hand, itemRules);
+  const slot = handsOf(inventory, crewId)[real];
+  return (slot && weaponOf(slot.item, slot.uid, getMeta().weapons)) || undefined;
 }

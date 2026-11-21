@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 import { ITEM_TYPES } from "./items";
 import { activeWorld } from "./worlds";
 import { WEAPON_TYPES, weaponInWorld, MAX_LEVEL, type OwnedWeapon } from "./weapons";
+import { resolveLoadout } from "./loadout";
+import type { Slot } from "./inventory";
 
 // What lasts between runs - the base: credits, the stash (how many of each
 // item), the weapons owned and who carries which (two slots each), and how
@@ -26,6 +28,18 @@ export interface Meta {
   nextId: number;
   // the story's lasting flags ("story.*" - see story.ts)
   story: string[];
+  // The party's inventory as it was last (see inventoryStore.ts), so a reload
+  // doesn't empty the backpack and hands. Optional and versioned: an older save
+  // has none (the loadout is put in hand then), and anything unreadable is
+  // ignored (see parseInventory in inventory.ts).
+  inventory?: SavedInventory;
+}
+
+export interface SavedInventory {
+  v: 1;
+  pack: (Slot | null)[];
+  hands: Record<string, [Slot | null, Slot | null]>;
+  overflow: Record<string, number>;
 }
 
 // who starts with what: the crew member, their weapon, and (maybe) a second
@@ -106,6 +120,17 @@ function set(next: Meta) {
   listeners.forEach((l) => l());
 }
 
+// The inventory's snapshot into the save. Nobody listens to it, so it doesn't
+// re-render the screens that watch the meta (the inventory has its own store).
+export function saveInventory(saved: SavedInventory) {
+  meta = { ...meta, inventory: saved };
+  try {
+    localStorage.setItem(KEY, JSON.stringify(meta));
+  } catch {
+    // (no storage: it lasts as long as the page)
+  }
+}
+
 export const getMeta = () => meta;
 export function useMeta(): Meta {
   return useSyncExternalStore(
@@ -134,13 +159,12 @@ export function commitLoadout(held: Record<string, [CarriedWeapon | null, Carrie
     weapons.push({ id: nextId, type: w.type, level: 0 });
     return nextId++;
   };
-  const loadout = { ...meta.loadout };
+  const ids: Record<string, [number | null, number | null]> = {};
+  for (const [crew, [right, left]] of Object.entries(held)) ids[crew] = [own(right), own(left)];
+  // (a crewmate holding no weapon keeps their previous one, see loadout.ts)
+  const { loadout, keptPrevious } = resolveLoadout(meta.loadout, ids);
   const active = { ...meta.active };
-  for (const [crew, [right, left]] of Object.entries(held)) {
-    const pair: [number | null, number | null] = [own(right), own(left)];
-    loadout[crew] = pair[0] === null ? [pair[1], null] : pair;
-    active[crew] = 0;
-  }
+  for (const crew of Object.keys(ids)) if (!keptPrevious.includes(crew)) active[crew] = 0;
   for (const type of spare) own({ type });
   set({ ...meta, weapons, loadout, active, nextId });
 }

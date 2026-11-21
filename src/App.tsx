@@ -75,7 +75,7 @@ import type { RoofForm } from "./game/roofAutotile";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
 import { bankHaul, failRun, getMeta, payRevival, revivalBill, useMeta } from "./game/meta";
-import { bankRun, crewWeapon } from "./game/inventoryStore";
+import { bankRun, handWeapon } from "./game/inventoryStore";
 import { LEFT, RIGHT, type HandIndex } from "./game/inventory";
 import { WipeScreen } from "./components/WipeScreen";
 import { SHIP_CLASSES, shipOffers } from "./game/ships";
@@ -393,7 +393,7 @@ export default function App() {
   if (!aim) aimFocusRef.current = null;
   const aimRef = useRef(aim);
   aimRef.current = aim;
-  const aimWeapon = aim ? (crewWeapon(crew[aim.crew].id) ?? null) : null;
+  const aimWeapon = aim ? (handWeapon(crew[aim.crew].id, aim.hand) ?? null) : null;
   // (the weapon dragged out of the aiming crewmate's hands: the aim ends)
   const aimLost = !!aim && !aimWeapon;
   useEffect(() => {
@@ -2537,9 +2537,9 @@ export default function App() {
       )}
       {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
       {activeInteraction && !editMode && (activeInteraction.kind === "dialogue"
-        ? <DialoguePopup event={activeInteraction} close={closeInteraction} partyDock={partyDock} crew={crew}/>
+        ? <DialoguePopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>
         : activeInteraction.kind === "shop"
-        ? <ShopPanel shopId={activeInteraction.shop} crew={crew} partyDock={partyDock} onClose={closeInteraction}
+        ? <ShopPanel shopId={activeInteraction.shop} partyDock={partyDock} onClose={closeInteraction}
             intro={{ portrait: activeInteraction.portrait, text: activeInteraction.greeting?.trim() || t("shop.greeting"), npc: activeInteraction.npc ? ACTOR_TYPES[activeInteraction.npc]?.name : undefined }}/>
         : <InteractionPopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>)}
       {editMode && <PropEditor />}

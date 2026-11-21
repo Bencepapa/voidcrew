@@ -19,7 +19,7 @@ export const shopEn = {
   "shop.priceBuy": "For sale: {n} cr (drag it to your backpack, double click or Shift+click to buy).",
   "shop.priceSell": "The shop pays {n} cr (drag it to the shop, double click or Shift+click to sell).",
   "shop.missing": "The shop \"{id}\" does not exist. Check the shop id in the dialogue or the NPC.",
-  "shop.help": "Drag a shop item to the backpack or a hand to buy one; drag yours to the shop to sell. Click an item for its description. Shift+click or double click: quick buy and sell. Keyboard: arrows move, Enter or Space picks up and puts down, Esc closes. Stock changes last for this session only.",
+  "shop.help": "Drag a shop item to the backpack or a hand to buy one; drag yours to the shop to sell. Click an item for its description. Shift+click or double click: quick buy and sell. To choose how many, let go of the drag with Shift held, or Ctrl+click. Your hand boxes are in the dock below. Keyboard: arrows move, Enter or Space picks up and puts down, Esc closes. Stock changes last for this session only.",
   "shop.fail.poor": "Not enough credits.",
   "shop.fail.soldout": "Sold out.",
   "shop.fail.full": "No room for it.",

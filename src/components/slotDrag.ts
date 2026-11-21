@@ -8,7 +8,8 @@ import type { Slot } from "../game/inventory";
 // game/inventory.ts), and `onMove(from, to)` does the moving - it returns null
 // when it was done, else why not ("full", "empty", "place").
 
-export type MoveFn = (from: string, to: string) => string | null;
+// (`qty`: only that many of the stack, see askQty)
+export type MoveFn = (from: string, to: string, qty?: number) => string | null;
 
 interface DragState {
   from: string;
@@ -85,10 +86,44 @@ export function clearSelection(): boolean {
   emit();
   return true;
 }
+// Esc: an open quantity chooser closes, else a drag in progress is dropped
 export function cancelDrag(): boolean {
+  if (qtyAsk) {
+    cancelQty();
+    return true;
+  }
   if (!cancelActive) return false;
   cancelActive();
   return true;
+}
+
+// --- choosing a quantity ---
+// Shift+drop of a stack, or Ctrl+click on one, opens a small chooser (a number
+// with - and +, see QtyPopover in InventorySlots.tsx) at the pointer; `apply`
+// does the move or deal with the number chosen and returns why not (or null).
+export interface QtyAsk {
+  x: number;
+  y: number;
+  max: number;
+  apply: (qty: number) => string | null;
+}
+let qtyAsk: QtyAsk | null = null;
+export const useQtyAsk = () => useSyncExternalStore(subscribe, () => qtyAsk);
+export function askQty(ask: QtyAsk) {
+  qtyAsk = ask;
+  emit();
+}
+export function cancelQty() {
+  if (!qtyAsk) return;
+  qtyAsk = null;
+  emit();
+}
+export function confirmQty(qty: number) {
+  const ask = qtyAsk;
+  if (!ask) return;
+  qtyAsk = null;
+  emit();
+  say(ask.apply(Math.max(1, Math.min(ask.max, Math.floor(qty) || 1))));
 }
 
 const slotUnder = (x: number, y: number) => document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-slot]")?.dataset.slot ?? null;
@@ -96,7 +131,7 @@ const slotUnder = (x: number, y: number) => document.elementFromPoint(x, y)?.clo
 // A drag from `from` starts at a pointer press on an item; it becomes a drag
 // once the pointer has moved a few pixels (before that it is a click), and
 // ends where the pointer is let go: over another slot, onMove. Esc cancels.
-export function beginDrag(e: ReactPointerEvent, from: string, slot: Slot, onMove: MoveFn) {
+export function beginDrag(e: ReactPointerEvent, from: string, slot: Slot, onMove: MoveFn, maxQty: number = slot.qty) {
   if (drag || (e.pointerType === "mouse" && e.button !== 0)) return;
   const startX = e.clientX;
   const startY = e.clientY;
@@ -113,7 +148,7 @@ export function beginDrag(e: ReactPointerEvent, from: string, slot: Slot, onMove
     window.removeEventListener("pointercancel", cancel, true);
     cancelActive = null;
   };
-  const end = (over: string | null) => {
+  const end = (over: string | null, ev?: PointerEvent) => {
     stop();
     if (!active) return;
     drag = null;
@@ -121,10 +156,15 @@ export function beginDrag(e: ReactPointerEvent, from: string, slot: Slot, onMove
     emit();
     if (over && over !== from) {
       selected = null;
+      // (shift held when it is let go, on a stack: choose how many - a hand takes one anyway)
+      if (ev?.shiftKey && maxQty > 1 && !over.startsWith("hand:")) {
+        askQty({ x: ev.clientX, y: ev.clientY, max: maxQty, apply: (n) => onMove(from, over, n) });
+        return;
+      }
       say(onMove(from, over));
     }
   };
-  const up = (ev: PointerEvent) => end(slotUnder(ev.clientX, ev.clientY));
+  const up = (ev: PointerEvent) => end(slotUnder(ev.clientX, ev.clientY), ev);
   const cancel = () => end(null);
   // (in the capture phase: the panels stop the pointer events' bubbling)
   window.addEventListener("pointermove", move, true);

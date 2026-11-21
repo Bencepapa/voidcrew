@@ -5,8 +5,8 @@ import { stacksText } from "../game/items";
 import { haulOf, useInventory } from "../game/inventoryStore";
 import { activeWorld } from "../game/worlds";
 import { t } from "../i18n";
-import { InfoArea, SlotGrid, moveInInventory, slotOfKey } from "./InventorySlots";
-import { cancelDrag, clearInfo, clearSelection, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
+import { InfoArea, QtyPopover, SlotGrid, moveInInventory, slotOfKey, splitInInventory } from "./InventorySlots";
+import { cancelDrag, cancelQty, clearInfo, clearSelection, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
 
 // the arrow keys move between slots: the nearest one that way
 export function focusNeighbor(root: HTMLElement, key: string) {
@@ -79,6 +79,7 @@ export function InventoryPanel({ partyDock, onClose }: {
     const previous = document.activeElement;
     root.current?.querySelector<HTMLElement>("[data-slot]")?.focus();
     return () => {
+      cancelQty();
       clearSelection();
       clearInfo();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
@@ -91,6 +92,8 @@ export function InventoryPanel({ partyDock, onClose }: {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // (the quantity chooser takes its own typing; only Esc is the panel's)
+      if (e.key !== "Escape" && e.target instanceof Element && e.target.closest("[data-qty]")) return;
       const swallow = () => {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -153,7 +156,9 @@ export function InventoryPanel({ partyDock, onClose }: {
           keyOf={(i) => locKey(packLoc(i))}
           onMove={moveInInventory}
           title={(i) => t("inventory.cell", { n: i + 1 })}
+          onSplit={splitInInventory}
         />
+        <QtyPopover />
         {loose.length > 0 && <div className="text-amber-300/90">{t("inventory.overflow", { items: stacksText(loose) })}</div>}
         {worth > 0 && (
           <div className="flex justify-between border-t border-neutral-700 pt-1">

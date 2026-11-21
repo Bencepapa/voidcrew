@@ -307,6 +307,114 @@ export function moveSlot(inv: Inventory, from: Loc, to: Loc, rules: ItemRules): 
   return { ok: true, inv: cur };
 }
 
+// the hand a thing shown in `hand` is really held in (a two-handed item shown
+// dimmed in the left hand is held in the right one): where its cooldown lives
+export function effectiveHand(inv: Inventory, crew: string, hand: HandIndex, rules: ItemRules): HandIndex {
+  if (hand === LEFT) {
+    const [left, right] = handsOf(inv, crew);
+    if (!left && right && rules.twoHanded(right.item)) return RIGHT;
+  }
+  return hand;
+}
+
+// the usual "half" of a stack for a split: rounded down, at least one
+export const halfOf = (qty: number): number => Math.max(1, Math.floor(qty / 2));
+
+// Moves only `qty` of the stack at `from` to `to` (a split: shift+drag). The
+// same rules as moveSlot, except that a part never swaps with a different item
+// in a cell ("place": it would leave the rest and the displaced one fighting
+// for the cell). The whole stack (or a one-of-a-kind item) is a plain move.
+export function moveSome(inv: Inventory, from: Loc, to: Loc, qty: number, rules: ItemRules): MoveResult {
+  if (!validLoc(inv, from) || !validLoc(inv, to)) return { ok: false, reason: "place" };
+  let source = from;
+  if (from.kind === "hand" && from.hand === LEFT) {
+    const right = handsOf(inv, from.crew)[1];
+    if (right && rules.twoHanded(right.item) && !handsOf(inv, from.crew)[0]) source = handLoc(from.crew, RIGHT);
+  }
+  if (sameLoc(source, to)) return { ok: false, reason: "same" };
+  const lifted = slotAt(inv, source);
+  if (!lifted) return { ok: false, reason: "empty" };
+  const n = Math.max(1, Math.floor(qty));
+  if (n >= lifted.qty || lifted.uid !== undefined) return moveSlot(inv, from, to, rules);
+  if (to.kind === "pack") {
+    const there = inv.pack[to.index];
+    if (there && !same(there, lifted)) return { ok: false, reason: "place" };
+  }
+  const part: Slot = { item: lifted.item, qty: n };
+  const dropped = drop(put(inv, source, { ...lifted, qty: lifted.qty - n }), to, part, rules);
+  if (!dropped) return { ok: false, reason: "full" };
+  let cur = dropped.inv;
+  for (const r of dropped.rest) {
+    const settled = settle(cur, r, source, rules);
+    if (!settled) return { ok: false, reason: "full" };
+    cur = settled;
+  }
+  return { ok: true, inv: cur };
+}
+
+// Splits `qty` off the stack at `from` into the first empty backpack cell.
+export function splitSlot(inv: Inventory, from: Loc, qty: number, rules: ItemRules): MoveResult {
+  const free = inv.pack.findIndex((s) => !s);
+  if (free < 0) return { ok: false, reason: "full" };
+  return moveSome(inv, from, packLoc(free), qty, rules);
+}
+
+// --- saving ---
+
+// An inventory read back from a save (anything may be wrong in it: it is
+// checked, cleaned and padded to `size`). `known` drops items that no longer
+// exist (a weapon not owned any more); a stack beyond its size is split, what
+// doesn't fit the backpack goes to the overflow. Null when `raw` isn't one.
+export function parseInventory(raw: unknown, rules: ItemRules, known: (slot: Slot) => boolean = () => true, size = PACK_SIZE): Inventory | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (!Array.isArray(r.pack)) return null;
+  const slotOf = (v: unknown): Slot | null => {
+    if (!v || typeof v !== "object") return null;
+    const { item, qty, uid } = v as Record<string, unknown>;
+    if (typeof item !== "string" || !item) return null;
+    const n = typeof qty === "number" && Number.isFinite(qty) ? Math.floor(qty) : 1;
+    if (n < 1) return null;
+    const slot: Slot = typeof uid === "number" && Number.isFinite(uid) ? { item, qty: 1, uid } : { item, qty: Math.min(n, Math.max(1, rules.stackMax(item))) };
+    return known(slot) ? slot : null;
+  };
+  let inv = emptyInventory(size);
+  const pack = inv.pack.slice();
+  const extra: Slot[] = [];
+  r.pack.forEach((v, i) => {
+    const s = slotOf(v);
+    if (!s) return;
+    if (i < size) pack[i] = s;
+    else extra.push(s);
+  });
+  inv = { ...inv, pack };
+  const hands: Record<string, Hands> = {};
+  if (r.hands && typeof r.hands === "object") {
+    for (const [crew, pair] of Object.entries(r.hands as Record<string, unknown>)) {
+      if (!Array.isArray(pair)) continue;
+      let left = slotOf(pair[0]);
+      let right = slotOf(pair[1]);
+      // (a two-handed item belongs in the right hand alone)
+      if (left && rules.twoHanded(left.item)) {
+        if (!right) right = left;
+        left = null;
+      }
+      if (right && rules.twoHanded(right.item)) left = null;
+      hands[crew] = [left, right];
+    }
+  }
+  inv = { ...inv, hands };
+  const overflow: Record<string, number> = {};
+  if (r.overflow && typeof r.overflow === "object") {
+    for (const [item, qty] of Object.entries(r.overflow as Record<string, unknown>)) {
+      if (typeof qty === "number" && Number.isFinite(qty) && qty >= 1 && known({ item, qty: 1 })) overflow[item] = Math.floor(qty);
+    }
+  }
+  inv = { ...inv, overflow };
+  for (const s of extra) inv = addLoot(inv, s.item, s.qty, rules, s.uid).inv;
+  return settleOverflow(inv, rules);
+}
+
 // Takes `qty` (default: all) of what's at a place out of the party's things
 // (a sale). A two-handed item shown in the left hand is taken from the right.
 export function takeSlot(inv: Inventory, from: Loc, rules: ItemRules, qty?: number): { inv: Inventory; slot: Slot } | null {

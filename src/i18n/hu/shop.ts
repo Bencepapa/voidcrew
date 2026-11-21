@@ -19,7 +19,7 @@ export const shopHu = {
   "shop.priceBuy": "Eladó: {n} cr (húzd a hátizsákodba, dupla kattintás vagy Shift+kattintás: vétel).",
   "shop.priceSell": "A bolt {n} cr-t fizet (húzd a boltra, dupla kattintás vagy Shift+kattintás: eladás).",
   "shop.missing": "A \"{id}\" bolt nem létezik. Nézd meg a bolt azonosítóját a párbeszédben vagy az NPC-nél.",
-  "shop.help": "Húzz egy bolti tárgyat a hátizsákba vagy egy kézbe, hogy vegyél egyet; húzd a sajátodat a boltra, hogy eladd. Kattints egy tárgyra a leírásáért. Shift+kattintás vagy dupla kattintás: gyors vétel és eladás. Billentyűzet: a nyilak lépnek, az Enter vagy a szóköz felvesz és letesz, az Esc bezár. A készlet változása csak erre a munkamenetre szól.",
+  "shop.help": "Húzz egy bolti tárgyat a hátizsákba vagy egy kézbe, hogy vegyél egyet; húzd a sajátodat a boltra, hogy eladd. Kattints egy tárgyra a leírásáért. Shift+kattintás vagy dupla kattintás: gyors vétel és eladás. Hogy hányat, azt húzás közben a Shift lenyomva tartásával engedd el, vagy Ctrl+kattintás. A kezeid dobozai lent a dokkban vannak. Billentyűzet: a nyilak lépnek, az Enter vagy a szóköz felvesz és letesz, az Esc bezár. A készlet változása csak erre a munkamenetre szól.",
   "shop.fail.poor": "Nincs elég kredit.",
   "shop.fail.soldout": "Elfogyott.",
   "shop.fail.full": "Nincs rá hely.",
