@@ -18,8 +18,12 @@ import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
 import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
 import { getMeta, setStoryFlag } from "./meta";
-import { addToInventory, crewWeapon, haulOf, startRun, useInventory } from "./inventoryStore";
-import { t } from "../i18n";
+import { addToInventory, changeInventory, crewWeapon, getInventory, haulOf, startRun, switchWeapon, useInventory } from "./inventoryStore";
+import { LEFT, handLoc, handView, takeSlot, type HandIndex } from "./inventory";
+import { isWeaponItem, itemRules } from "./itemRules";
+import { itemInfo } from "./itemInfo";
+import { applyUse } from "./itemUse";
+import { hasKey, t, type Key } from "../i18n";
 import { HACKER_ROLE, HACK_ENERGY, HACK_MS, conditionsMet, parseAction, triggerMatches, unlockedFlag } from "./story";
 import type { Lock, StoryEvent } from "./story";
 import { lockedAway, planShip } from "./shipPlan";
@@ -646,6 +650,47 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       setAim({ crew: index });
     },
     [pushLog, targetsInReach],
+  );
+  // A click on a crewmate's hand box: use what the hand holds. A weapon is
+  // used as the weapon button was (the one in the right hand is the one in
+  // use, so a left-hand weapon swaps in first); an item with a use (items.ts)
+  // is used up one at a time; anything else says what it is.
+  const activateHand = useCallback(
+    (index: number, hand: HandIndex): boolean => {
+      const mate = crewRef.current[index];
+      if (!mate) return false;
+      const view = handView(getInventory(), mate.id, itemRules);
+      const slot = hand === LEFT ? (view.left ?? (view.leftBlocked ? view.right : null)) : view.right;
+      if (!slot) return true;
+      if (isWeaponItem(slot.item)) {
+        if (hand === LEFT && !view.leftBlocked && view.right && isWeaponItem(view.right.item)) {
+          if (aimRef.current || busy() || mate.hp === 0) return true;
+          switchWeapon(mate.id);
+        }
+        fireWeapon(index);
+        return true;
+      }
+      const type = ITEM_TYPES[slot.item];
+      if (!type?.use) {
+        const info = itemInfo(slot.item, { t: (key, values) => t(key as Key, values), has: hasKey }, slot.uid, getMeta().weapons);
+        pushLog(`${info.name}: ${info.lines.join(" ")}`);
+        return true;
+      }
+      if (aimRef.current || busy()) return true;
+      const outcome = applyUse(crewRef.current, mate.id, type.use, rollAmount);
+      if (!outcome.ok) {
+        pushLog(outcome.reason === "down" ? `${mate.name} is down.` : `Nobody needs the ${type.name.toLowerCase()} now.`, outcome.reason === "down" ? "danger" : "warn");
+        return true;
+      }
+      changeInventory((inv) => takeSlot(inv, handLoc(mate.id, hand), itemRules, 1)?.inv ?? null);
+      crewRef.current = outcome.crew;
+      setCrew(outcome.crew);
+      const target = outcome.crew.find((c) => c.id === outcome.target)!;
+      const gains = [outcome.hp > 0 ? `+${outcome.hp} HP` : "", outcome.en > 0 ? `+${outcome.en} EN` : ""].filter(Boolean).join(", ");
+      pushLog(`${mate.name} uses the ${type.name.toLowerCase()}${target.id === mate.id ? "" : ` on ${target.name}`}: ${gains}.`, "heal");
+      return true;
+    },
+    [fireWeapon, pushLog],
   );
   // (a burst cut short still cools the weapon down)
   const cancelAim = useCallback(() => {
@@ -1605,6 +1650,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     hurtAt,
     partyCoverRef,
     fireWeapon,
+    activateHand,
     cancelAim,
     resolveShot,
     setImmortalCrew,

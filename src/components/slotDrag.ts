@@ -1,9 +1,9 @@
 import { useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import type { Slot } from "../game/inventory";
 
-// Moving things between slots (the backpack's cells, the hands - and, later,
-// a shop's): by dragging (pointer events, so a finger works too) or by
-// clicking an item and then where it goes. This file knows nothing of the
+// Moving things between slots (the backpack's cells, the hands, a shop's): by
+// dragging (pointer events, so a finger works too), or from the keyboard by
+// picking an item up and putting it down. This file knows nothing of the
 // inventory: a slot is an element with a `data-slot` key (see locKey in
 // game/inventory.ts), and `onMove(from, to)` does the moving - it returns null
 // when it was done, else why not ("full", "empty", "place").
@@ -34,6 +34,7 @@ const subscribe = (l: () => void) => {
 
 export const getDrag = () => drag;
 export const useDrag = () => useSyncExternalStore(subscribe, getDrag);
+export const useDragging = () => useSyncExternalStore(subscribe, () => drag !== null);
 export const useSelectedSlot = () => useSyncExternalStore(subscribe, () => selected);
 // why the last move didn't happen (it clears itself)
 export const useSlotNotice = () => useSyncExternalStore(subscribe, () => notice);
@@ -53,6 +54,30 @@ function say(reason: string | null) {
     }, 2500);
   }
 }
+
+// What the info area describes: the slot last clicked, or - while the pointer
+// or the keyboard focus is on one - that slot.
+let inspected: string | null = null;
+let hovered: string | null = null;
+export const useInfoSlot = () => useSyncExternalStore(subscribe, () => hovered ?? inspected);
+export function inspectSlot(key: string | null) {
+  if (inspected === key) return;
+  inspected = key;
+  emit();
+}
+export function hoverSlot(key: string | null) {
+  if (hovered === key) return;
+  hovered = key;
+  emit();
+}
+export function clearInfo() {
+  inspected = null;
+  hovered = null;
+  emit();
+}
+
+// (the click that ends a drag is not a click)
+export const justDragged = () => performance.now() - lastDragEnd < 120;
 
 export function clearSelection(): boolean {
   if (selected === null) return false;
@@ -108,11 +133,12 @@ export function beginDrag(e: ReactPointerEvent, from: string, slot: Slot, onMove
   cancelActive = cancel;
 }
 
-// A click (or Enter) on a slot: nothing picked up yet, an item is picked up;
-// else what's picked up goes there (the same slot again puts it back).
+// Enter or Space on a slot (the keyboard's way to move things; a mouse click
+// only shows what an item is, a move with the mouse is a drag): nothing held
+// yet, an item is picked up; else what's held goes there (the same slot
+// again puts it back).
 export function activateSlot(key: string, hasItem: boolean, onMove: MoveFn) {
-  // (the click that ends a drag is not a click)
-  if (performance.now() - lastDragEnd < 120) return;
+  if (justDragged()) return;
   if (selected === null) {
     if (hasItem) {
       selected = key;

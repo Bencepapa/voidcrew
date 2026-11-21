@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Crewmate } from "../game/types";
 import { gameClock } from "../game/clock";
-import { canSwitch, crewWeapon, switchWeapon, useInventory } from "../game/inventoryStore";
-import { t } from "../i18n";
-import { HandBoxes } from "./InventorySlots";
+import type { HandIndex } from "../game/inventory";
+import { crewWeapon, useInventory } from "../game/inventoryStore";
+import { HandBoxes, infoLine } from "./InventorySlots";
 
 function Bar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
@@ -66,64 +66,40 @@ export function Avatar({ mate, className }: { mate: Crewmate; className: string 
   );
 }
 
-// a crewmate's weapon button: the weapon in their right hand (their left's,
-// when the right holds none), its name over a bar that fills as it cools
-// down; bright when ready - and, with a second weapon, a button beside it
-// to swap the hands (a finger's width on a phone)
-function WeaponButton({
+// A crewmate's two hand boxes: a click on one uses what it holds (a weapon
+// is fired, a potion drunk, see onUseHand); dragging moves the item. Under
+// them a bar fills as the weapon in use cools down.
+function CrewHands({
   mate,
   index,
   readyAt,
   aiming,
-  onUse,
-  compact,
+  onUseHand,
 }: {
   mate: Crewmate;
   index: number;
   readyAt: number;
   aiming: boolean;
-  onUse: (index: number) => void;
-  compact?: boolean;
+  onUseHand: (index: number, hand: HandIndex) => boolean;
 }) {
-  // (the hands: re-drawn when a weapon is switched or moved)
+  // (the hands: re-drawn when something is moved or used up)
   useInventory();
   const weapon = crewWeapon(mate.id);
-  if (!weapon) return null;
-  const left = Math.max(0, readyAt - gameClock.now());
-  const ready = left === 0 && mate.hp > 0;
-  const fill = 1 - left / weapon.cooldownMs;
+  const left = weapon ? Math.max(0, readyAt - gameClock.now()) : 0;
+  const fill = weapon ? 1 - left / weapon.cooldownMs : 1;
   return (
-    <div className="pointer-events-auto flex gap-0.5">
-      <button
-        onClick={() => onUse(index)}
-        disabled={!ready}
-        className={`relative flex-1 min-w-0 overflow-hidden border text-left rounded-sm ${
-          compact ? "text-[10px] px-1 py-0.5" : "text-[10px] px-1.5 py-1"
-        } ${aiming ? "border-amber-300 text-amber-200" : ready ? "border-emerald-500/70 text-emerald-200 hover:bg-emerald-900/30" : "border-neutral-700 text-neutral-500"}`}
-      >
-        <div className="absolute inset-y-0 left-0 bg-emerald-700/25" style={{ width: `${fill * 100}%` }} />
-        <span className="relative block truncate">
-          [{index + 1}] {weapon.name}
-        </span>
-      </button>
-      {canSwitch(mate.id) && (
-        <button
-          title={t("inventory.swapHands",{ key: `Shift+${index + 1}` })}
-          aria-label={`Switch ${mate.name}'s weapon`}
-          onClick={() => switchWeapon(mate.id)}
-          disabled={aiming}
-          className={`shrink-0 flex items-center justify-center border border-neutral-600 rounded-sm bg-black/40 text-neutral-300 hover:text-amber-200 disabled:opacity-40 ${
-            compact ? "w-7 text-[11px]" : "w-6 text-[11px]"
-          }`}
-        >
-          ⇄
-        </button>
+    <div className={`pointer-events-auto flex flex-col gap-0.5 rounded-sm ${aiming ? "outline outline-1 outline-amber-300" : ""}`}>
+      <HandBoxes crew={mate.id} name={mate.name} tabbable={false} tipOf={infoLine} onUse={(hand) => onUseHand(index, hand)} />
+      {weapon && (
+        <div className="h-1 w-full overflow-hidden rounded-sm bg-neutral-800/70" title={weapon.name}>
+          <div className={`h-full ${left === 0 ? "bg-emerald-500/80" : "bg-emerald-700/60"}`} style={{ width: `${fill * 100}%` }} />
+        </div>
       )}
     </div>
   );
 }
 
-// The crew: name, bars and weapon each - and their portrait, beside their
+// The crew: name, bars and hands each - and their portrait, beside their
 // stats when the screen is wide (landscape), under them when it's tall
 // (portrait).
 export function PartyPanel({
@@ -131,14 +107,15 @@ export function PartyPanel({
   compact,
   readyAt,
   aiming,
-  onWeapon,
+  onUseHand,
 }: {
   crew: Crewmate[];
   compact?: boolean;
   readyAt: number[];
   // the crewmate aiming, if any
   aiming: number | null;
-  onWeapon: (index: number) => void;
+  // a click on a crewmate's hand box: true when it did something
+  onUseHand: (index: number, hand: HandIndex) => boolean;
 }) {
   useCooldownTick(readyAt);
   if (compact) {
@@ -155,8 +132,7 @@ export function PartyPanel({
               <Bar value={c.hp} max={c.maxHp} color="#dc2626" />
               <Bar value={c.en} max={c.maxEn} color="#2563eb" />
               <Avatar mate={c} className="hidden portrait:block w-full aspect-[4/3]" />
-              <div className="pointer-events-auto"><HandBoxes crew={c.id} name={c.name} tabbable={false} /></div>
-              <WeaponButton mate={c} index={i} readyAt={readyAt[i]} aiming={aiming === i} onUse={onWeapon} compact />
+              <CrewHands mate={c} index={i} readyAt={readyAt[i]} aiming={aiming === i} onUseHand={onUseHand} />
             </div>
           </div>
         ))}
@@ -182,8 +158,7 @@ export function PartyPanel({
             <div className="text-[10px] text-neutral-300">EN {c.en}/{c.maxEn}</div>
             <Bar value={c.en} max={c.maxEn} color="#2563eb" />
             <Avatar mate={c} className="hidden portrait:block w-full aspect-[4/3]" />
-            <HandBoxes crew={c.id} name={c.name} tabbable={false} />
-            <WeaponButton mate={c} index={i} readyAt={readyAt[i]} aiming={aiming === i} onUse={onWeapon} />
+            <CrewHands mate={c} index={i} readyAt={readyAt[i]} aiming={aiming === i} onUseHand={onUseHand} />
           </div>
         </div>
       ))}

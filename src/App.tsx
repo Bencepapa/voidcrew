@@ -70,7 +70,8 @@ import { paintFace } from "./editor/mapEdits";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
 import { bankHaul, failRun, getMeta, payRevival, revivalBill, useMeta } from "./game/meta";
-import { bankRun, crewWeapon, switchWeapon } from "./game/inventoryStore";
+import { bankRun, crewWeapon } from "./game/inventoryStore";
+import { LEFT, RIGHT, type HandIndex } from "./game/inventory";
 import { WipeScreen } from "./components/WipeScreen";
 import { SHIP_CLASSES, shipOffers } from "./game/ships";
 import type { ShipOffer } from "./game/ships";
@@ -160,7 +161,7 @@ export default function App() {
     aim,
     hurtAt,
     partyCoverRef,
-    fireWeapon,
+    activateHand,
     cancelAim,
     resolveShot,
     setImmortalCrew,
@@ -2247,27 +2248,24 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editMode]);
 
-  // 1-4: a crewmate's weapon (see combat.ts); aiming needs the pointer
+  // 1-4: the use of what a crewmate holds in the right hand (the weapon,
+  // see combat.ts; aiming needs the pointer); with Shift: the left hand
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const n = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : NaN;
       if (n >= 1 && n <= crew.length && !aim && !editMode && !activeInteractionRef.current) {
-        // with Shift: the crewmate's other weapon in hand
-        if (e.shiftKey) {
-          switchWeapon(crew[n - 1].id);
-          return;
-        }
         if (document.pointerLockElement) document.exitPointerLock();
-        fireWeapon(n - 1);
+        activateHand(n - 1, e.shiftKey ? LEFT : RIGHT);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [crew.length, aim, fireWeapon, editMode]);
-  const onWeapon = (index: number) => {
-    if (editMode || activeInteractionRef.current) return;
+  }, [crew.length, aim, activateHand, editMode]);
+  // a click on a crewmate's hand box: use what it holds (false: not now, the box shows what it is)
+  const onUseHand = (index: number, hand: HandIndex): boolean => {
+    if (editMode || activeInteractionRef.current || inventoryShown) return false;
     if (document.pointerLockElement) document.exitPointerLock();
-    fireWeapon(index);
+    return activateHand(index, hand);
   };
 
   // the inventory (I, or the Inventory action; the panel closes itself on I and Esc)
@@ -2351,7 +2349,7 @@ export default function App() {
         />
       )}
       {!editMode && phase === "run" && !runEnd && <MapTitle key={map.id} map={map} />}
-      {inventoryShown && <InventoryPanel crew={crew} partyDock={partyDock} onClose={() => setInventoryOpen(false)} />}
+      {inventoryShown && <InventoryPanel partyDock={partyDock} onClose={() => setInventoryOpen(false)} />}
       {!editMode && <DragGhost />}
       {!editMode && phase === "run" && !runEnd && WORLDS[map.world].loop === "ship" && <AlertMeter alert={alert} compact={compact} powerOn={powerOn} />}
       {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
@@ -2674,7 +2672,7 @@ export default function App() {
 
         {/* the party at the bottom, the menu (action + debug) under it: scrolls when it is long */}
         <div className="absolute bottom-2 inset-x-2 max-h-[calc(100%-8.5rem)] overflow-y-auto flex flex-col gap-1 pointer-events-none landscape:max-h-none landscape:overflow-visible">
-          {!editMode && !menuOpen && <div ref={setPartyDock}><PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} /></div>}
+          {!editMode && !menuOpen && <div ref={setPartyDock}><PartyPanel crew={crew} compact readyAt={readyAt} aiming={aim?.crew ?? null} onUseHand={onUseHand} /></div>}
           {menuOpen && (
             <div className="pointer-events-auto flex flex-col gap-1 landscape:fixed landscape:top-12 landscape:right-2 landscape:bottom-16 landscape:w-48 landscape:overflow-y-auto">
               {SHOW_ACTION_MENU && actionMenu}
@@ -2834,7 +2832,7 @@ export default function App() {
             />
           )}
           <div ref={setPartyDock} className="flex-1 min-w-0">
-            <PartyPanel crew={crew} readyAt={readyAt} aiming={aim?.crew ?? null} onWeapon={onWeapon} />
+            <PartyPanel crew={crew} readyAt={readyAt} aiming={aim?.crew ?? null} onUseHand={onUseHand} />
           </div>
         </div>
       )}

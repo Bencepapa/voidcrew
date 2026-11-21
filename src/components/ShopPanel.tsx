@@ -9,10 +9,10 @@ import { getShopStock, setShopStock, useShopStock } from "../game/shopStore";
 import type { Crewmate } from "../game/types";
 import { t } from "../i18n";
 import { useSharedImages } from "../render/sharedImages";
-import { HandBoxes, SlotGrid, setMover } from "./InventorySlots";
+import { HandBoxes, InfoArea, SlotGrid, setMover, slotOfKey } from "./InventorySlots";
 import { focusNeighbor } from "./InventoryPanel";
 import { Avatar } from "./PartyPanel";
-import { cancelDrag, clearSelection, useSelectedSlot, useSlotNotice } from "./slotDrag";
+import { cancelDrag, clearInfo, clearSelection, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
 
 const rules: ShopRules = { ...itemRules, value: itemValue };
 const SHOP_PREFIX = "shop:";
@@ -25,11 +25,12 @@ type Msg = { text: string; bad: boolean } | null;
 // The shop window (opened by a dialogue's @shop, see DialoguePopup): the
 // shop's stock on one side, the party's backpack on the other, the crew's hands
 // below. Buy by dragging a stock item to a backpack cell or a hand (one at a
-// time), sell by dragging an item (the whole stack) to the shop; or click an
-// item and then where it goes; shift+click, double click or shift+Enter does
-// the quick one (a buy goes into the backpack, a sale to the shop). The keys
-// are the window's while it's open: arrows move, Enter/Space pick up and put
-// down, Esc cancels what's picked up, then closes the shop. The stock changes
+// time), sell by dragging an item (the whole stack) to the shop; shift+click,
+// double click or shift+Enter does the quick one (a buy goes into the
+// backpack, a sale to the shop). A plain click only shows what the item is
+// and its price (the info area). The keys are the window's while it's open:
+// arrows move, Enter/Space pick up and put down (the keyboard's way of
+// dragging), Esc cancels what's picked up, then closes the shop. The stock changes
 // only for this session (see shopStore.ts).
 export function ShopPanel({ shopId, crew, partyDock, onClose }: {
   shopId: string;
@@ -118,6 +119,7 @@ export function ShopPanel({ shopId, crew, partyDock, onClose }: {
     root.current?.querySelector<HTMLElement>("[data-slot]")?.focus();
     return () => {
       clearSelection();
+      clearInfo();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, []);
@@ -163,6 +165,22 @@ export function ShopPanel({ shopId, crew, partyDock, onClose }: {
     return each > 0 ? t("shop.sellTip", { n: each * slot.qty }) : t("shop.noSale");
   };
   const portrait = def?.portrait ? images.find((image) => image.id === def.portrait) : undefined;
+
+  // the item clicked or under the pointer: what it is, and what it costs or fetches
+  const infoKey = useInfoSlot();
+  let infoSlot: Slot | null = null;
+  let infoPrice: string | undefined;
+  if (infoKey && isShopKey(infoKey)) {
+    infoSlot = shopSlots[Number(infoKey.slice(SHOP_PREFIX.length))] ?? null;
+    const entry = stock[Number(infoKey.slice(SHOP_PREFIX.length))];
+    if (entry) infoPrice = t("shop.priceBuy", { n: buyPrice(rates, entry, rules) });
+  } else if (infoKey) {
+    infoSlot = slotOfKey(inventory, infoKey);
+    if (infoSlot) {
+      const each = sellPrice(rates, infoSlot.item, rules);
+      infoPrice = each > 0 ? t("shop.priceSell", { n: each * infoSlot.qty }) : t("shop.noSale");
+    }
+  }
 
   // what the picked-up item would do: a buy costs, a sale pays
   let hint: string | null = null;
@@ -261,6 +279,7 @@ export function ShopPanel({ shopId, crew, partyDock, onClose }: {
             ))}
           </div>
         </div>
+        <InfoArea slot={infoSlot} empty={t("shop.infoEmpty")} extra={infoPrice} />
         <p className="min-h-[2.2em] text-neutral-500" aria-live="polite">
           {notice ? (
             <span className="text-red-300">{t(`shop.fail.${notice}` as "shop.fail.full")}</span>

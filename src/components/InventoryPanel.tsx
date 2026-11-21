@@ -3,11 +3,10 @@ import { PACK_COLS, packLoc, locKey, parseLoc, slotAt, usedCells } from "../game
 import { itemName, itemValue } from "../game/itemRules";
 import { stacksText } from "../game/items";
 import { haulOf, useInventory } from "../game/inventoryStore";
-import type { Crewmate } from "../game/types";
+import { activeWorld } from "../game/worlds";
 import { t } from "../i18n";
-import { HandBoxes, SlotGrid, moveInInventory } from "./InventorySlots";
-import { Avatar } from "./PartyPanel";
-import { cancelDrag, clearSelection, useSelectedSlot, useSlotNotice } from "./slotDrag";
+import { InfoArea, SlotGrid, moveInInventory, slotOfKey } from "./InventorySlots";
+import { cancelDrag, clearInfo, clearSelection, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
 
 // the arrow keys move between slots: the nearest one that way
 export function focusNeighbor(root: HTMLElement, key: string) {
@@ -41,14 +40,14 @@ export function focusNeighbor(root: HTMLElement, key: string) {
   best?.focus();
 }
 
-// The party's inventory (see game/inventory.ts): the backpack's cells, and
-// each crewmate's two hands. Modal - the world stands still behind it - but
-// it stops above the party's dock (partyDock), so the crew's own hand boxes
-// stay reachable there too. Items move by dragging them, or by clicking one
-// and then its place; the keys are the panel's while it's open (arrows move,
-// Enter and Space pick up and put down, I and Esc close).
-export function InventoryPanel({ crew, partyDock, onClose }: {
-  crew: Crewmate[];
+// The party's inventory (see game/inventory.ts): the backpack's cells. The
+// crew's hands are the hand boxes in the party's dock: the panel is modal -
+// the world stands still behind it - but stops above the dock (partyDock), so
+// those stay reachable. Items move by dragging them (to a cell, to a hand
+// box); a click on one shows what it is (the info area). The keys are the
+// panel's while it's open (arrows move, Enter and Space pick up and put down,
+// I and Esc close).
+export function InventoryPanel({ partyDock, onClose }: {
   partyDock: HTMLElement | null;
   onClose: () => void;
 }) {
@@ -81,6 +80,7 @@ export function InventoryPanel({ crew, partyDock, onClose }: {
     root.current?.querySelector<HTMLElement>("[data-slot]")?.focus();
     return () => {
       clearSelection();
+      clearInfo();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, []);
@@ -122,6 +122,8 @@ export function InventoryPanel({ crew, partyDock, onClose }: {
   const worth = Object.entries(haul).reduce((sum, [item, count]) => sum + count * itemValue(item), 0);
   const loose = Object.entries(inventory.overflow).map(([item, count]) => ({ item, count }));
   const picked = selected ? slotAt(inventory, parseLoc(selected) ?? packLoc(-1)) : null;
+  const infoKey = useInfoSlot();
+  const shown = infoKey ? slotOfKey(inventory, infoKey) : null;
 
   return (
     <div
@@ -153,26 +155,15 @@ export function InventoryPanel({ crew, partyDock, onClose }: {
           title={(i) => t("inventory.cell", { n: i + 1 })}
         />
         {loose.length > 0 && <div className="text-amber-300/90">{t("inventory.overflow", { items: stacksText(loose) })}</div>}
-        <div className="flex justify-between border-t border-neutral-700 pt-1">
-          <span className="text-neutral-400">{t("inventory.worth")}</span>
-          <span>{t("inventory.worthValue", { n: worth })}</span>
-        </div>
-        <div className="border-t border-neutral-700 pt-1">
-          <div className="mb-1 text-neutral-400">{t("inventory.crew")}</div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-            {crew.map((mate) => (
-              <div key={mate.id} className="flex items-center gap-1.5">
-                <Avatar mate={mate} className="h-9 w-9 shrink-0" />
-                <div className="min-w-0">
-                  <div className={`truncate ${mate.hp > 0 ? "text-neutral-200" : "text-red-400"}`}>{mate.name}</div>
-                  <HandBoxes crew={mate.id} name={mate.name} size="md" />
-                </div>
-              </div>
-            ))}
+        {worth > 0 && (
+          <div className="flex justify-between border-t border-neutral-700 pt-1">
+            <span className="text-neutral-400">{t(activeWorld() === "fantasy" ? "inventory.worthFantasy" : "inventory.worth")}</span>
+            <span>{t("inventory.worthValue", { n: worth })}</span>
           </div>
-        </div>
+        )}
+        <InfoArea slot={shown} empty={t("inventory.infoEmpty")} />
         <p className="min-h-[2.2em] text-neutral-500" aria-live="polite">
-          {notice ? <span className="text-red-300">{t(`inventory.fail.${notice}` as "inventory.fail.full")}</span> : picked ? <span className="text-amber-200">{t("inventory.selected", { item: itemName(picked.item) })}</span> : t("inventory.help")}
+          {notice ? <span className="text-red-300">{t(`inventory.fail.${notice}` as "inventory.fail.full")}</span> : picked ? <span className="text-amber-200">{t("inventory.selected", { item: itemName(picked.item) })}</span> : `${t("inventory.hint")} ${t("inventory.help")}`}
         </p>
       </section>
     </div>

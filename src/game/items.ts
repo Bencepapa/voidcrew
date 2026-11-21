@@ -26,6 +26,17 @@ export interface ItemType {
   stack?: number;
   // holding it takes both hands
   twoHanded?: boolean;
+  // what using it from a hand does (see itemUse.ts); without it, it only is
+  use?: ItemUse;
+}
+
+// Using an item (a click on the hand box that holds it): restores hit points
+// and/or energy - to the one holding it ("self") or to the most hurt crewmate
+// ("hurt") - and uses one up.
+export interface ItemUse {
+  hp?: [number, number];
+  en?: [number, number];
+  target: "self" | "hurt";
 }
 
 export const DEFAULT_STACK = 10;
@@ -36,14 +47,14 @@ export const ITEM_TYPES: Record<string, ItemType> = {
   circuit: { name: "Circuit board", category: "tech", value: 12 },
   powercell: { name: "Power cell", category: "tech", value: 18 },
   servo: { name: "Servo motor", category: "tech", value: 25 },
-  medkit: { name: "Medkit", category: "supplies", value: 15 },
+  medkit: { name: "Medkit", category: "supplies", value: 15, use: { hp: [12, 20], target: "hurt" } },
   ammo: { name: "Ammo pack", category: "supplies", value: 8 },
-  rations: { name: "Rations", category: "supplies", value: 5 },
+  rations: { name: "Rations", category: "supplies", value: 5, use: { hp: [2, 4], en: [2, 4], target: "self" } },
   credits: { name: "Credit chip", category: "valuables", value: 50 },
   datachip: { name: "Data chip", category: "data", value: 30 },
   // the fantasy world's
-  potion_red: { name: "Healing potion", category: "supplies", value: 20 },
-  potion_blue: { name: "Mana potion", category: "supplies", value: 24 },
+  potion_red: { name: "Healing potion", category: "supplies", value: 20, use: { hp: [12, 20], target: "self" } },
+  potion_blue: { name: "Mana potion", category: "supplies", value: 24, use: { en: [8, 14], target: "self" } },
   scroll: { name: "Scroll", category: "data", value: 35 },
   purse: { name: "Coin purse", category: "valuables", value: 40 },
   sword: { name: "Sword", category: "salvage", value: 45, stack: 1 },
