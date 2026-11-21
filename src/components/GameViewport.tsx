@@ -1118,6 +1118,8 @@ interface GameViewportProps {
   // the tool the editor has picked: what the highlight says a click does
   editTool?: EditTool;
   onEdit?: (target: EditTarget, alt: boolean, shift: boolean) => void;
+  // the Event tool's selected event: the target it is attached to
+  selectedEvent?: InteractionTarget | null;
   // the Light tool's selected light (its index in the map's lights)
   selectedLight?: number | null;
   // the Prop tool's selected prop (its index in the map's props)
@@ -1514,6 +1516,7 @@ export function GameViewport({
   onEditAdjust,
   selectedLight,
   selectedProp,
+  selectedEvent,
   selectedItem,
   selectedSmoke,
   selectedDecal,
@@ -1664,6 +1667,8 @@ export function GameViewport({
   onEditRef.current = onEdit;
   const selectedLightRef = useRef(selectedLight ?? null);
   selectedLightRef.current = selectedLight ?? null;
+  const selectedEventRef = useRef(selectedEvent ?? null);
+  selectedEventRef.current = selectedEvent ?? null;
   const selectedPropRef = useRef(selectedProp ?? null);
   selectedPropRef.current = selectedProp ?? null;
   const selectedItemRef = useRef(selectedItem ?? null);
@@ -7293,6 +7298,45 @@ export function GameViewport({
       box.scale.set(selectSize.x + pad, selectSize.y + pad, selectSize.z + pad);
     };
     function updateSelectionBox() {
+      // a selected event: framed around what it is attached to (the same frame as for the other kinds)
+      const ev = editModeRef.current ? selectedEventRef.current : null;
+      if (ev) {
+        selectBounds.makeEmpty();
+        let pad = 0.04;
+        if (ev.kind === "actor") {
+          const mesh = actorMeshes.get(ev.index)?.mesh;
+          if (mesh) selectBounds.expandByObject(mesh);
+        } else if (ev.kind === "door") {
+          const obj = doorGroups.get(`${ev.cell.x},${ev.cell.y}`);
+          if (obj) selectBounds.expandByObject(obj);
+        } else if (ev.kind === "decal") {
+          for (const obj of group.children) if (obj.userData.decalIndex === ev.index) selectBounds.expandByObject(obj);
+          pad = 0.03;
+        } else if (ev.kind === "item") {
+          const obj = looseItems.get(ev.index)?.obj;
+          if (obj) selectBounds.expandByObject(obj);
+        } else if (ev.kind === "prop") {
+          const obj = propObjects.get(ev.index);
+          if (obj) selectBounds.expandByObject(obj);
+        } else if (ev.kind === "wall") {
+          // a wall face: around its marker (the face itself is no object of its own)
+          for (const marker of eventMarkers.children) {
+            const t = marker.userData.interactionTarget as InteractionTarget | undefined;
+            if (t?.kind === "wall" && t.side === ev.side && t.part === ev.part && t.cell.x === ev.cell.x && t.cell.y === ev.cell.y) {
+              selectBounds.expandByPoint(marker.position);
+            }
+          }
+          pad = 0.4;
+        }
+        if (!selectBounds.isEmpty()) {
+          selectBounds.getCenter(selectCenter);
+          selectBounds.getSize(selectSize);
+          selectBox.position.copy(selectCenter);
+          selectBox.scale.set(selectSize.x + pad, selectSize.y + pad, selectSize.z + pad);
+          selectBox.visible = true;
+          return;
+        }
+      }
       // a selected actor: framed around its sprite
       const actorIndex = editModeRef.current ? selectedActorRef.current : null;
       const actorEntry = actorIndex === null ? undefined : actorMeshes.get(actorIndex);

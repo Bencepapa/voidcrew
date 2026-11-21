@@ -256,6 +256,7 @@ export default function App() {
   const selecting = editTool === "select" || altHeld;
   // one pick at a time: Select lets go of the other kinds, so the inspector and the keys follow the picked one
   const selectOnly = (kind: "actor" | "item" | "prop" | "decal" | "light" | "smoke" | null, index: number | null = null) => {
+    setEventTarget(null);
     setSelectedActor(kind === "actor" ? index : null);
     setSelectedItem(kind === "item" ? index : null);
     setSelectedProp(kind === "prop" ? index : null);
@@ -2083,6 +2084,26 @@ export default function App() {
       setEventTarget(target);
     }
   };
+  // Delete takes the selected event out (the same edit as the Remove button, so one undo brings it back)
+  const eventKeys = useRef({ eventTarget, remove: () => {} });
+  eventKeys.current = {
+    eventTarget,
+    remove: () => { if (eventTarget && editInteraction(eventTarget)) setEventTarget(null); },
+  };
+  useEffect(() => {
+    if (!editMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" || isTextEntry(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      const { eventTarget: target, remove } = eventKeys.current;
+      if (!target) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      remove();
+    };
+    // before the other keys' handlers
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editMode]);
   // The editor opens with Select; Esc (a click on empty space too) returns to it, V picks it; Alt held acts as it
   useEffect(() => {
     if (editMode) chooseTool("select");
@@ -2309,6 +2330,7 @@ export default function App() {
       lockedLayers={lockedLayers}
       editTool={altHeld && editMode ? "select" : editTool}
       onEdit={onEdit}
+      selectedEvent={editMode && eventTarget && interactionAt(map, eventTarget) ? eventTarget : null}
       selectedLight={selectedLightInfo ? selectedLight : null}
       selectedProp={selectedPropInfo ? selectedProp : null}
       selectedItem={selectedItemInfo ? selectedItem : null}
