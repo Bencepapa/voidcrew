@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 450" width="780" height="450" font-family="Segoe UI, Arial, sans-serif">
+  <title>Egy Twine-történet térképe</title>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="780" height="450" fill="#f6f8fa"/>
+  <rect x="0" y="0" width="780" height="40" fill="#1e293b"/>
+  <text x="16" y="26" font-size="15" fill="#ffffff" font-weight="bold">Kovács kovács (Twine-történet)</text>
+  <rect x="520" y="9" width="70" height="22" rx="4" fill="#334155"/><text x="531" y="25" font-size="12" fill="#e2e8f0">+ Passzus</text>
+  <rect x="598" y="9" width="64" height="22" rx="4" fill="#334155"/><text x="611" y="25" font-size="12" fill="#e2e8f0">Build</text>
+  <rect x="670" y="9" width="90" height="22" rx="4" fill="#334155"/><text x="682" y="25" font-size="12" fill="#e2e8f0">Story &gt; Details</text>
+
+  <!-- arrows -->
+  <path d="M170,170 C100,190 90,300 170,335" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M260,170 C330,190 340,200 420,240" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M480,310 C440,340 380,350 300,368" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+
+  <!-- Start Smith -->
+  <g>
+    <rect x="130" y="80" width="170" height="100" rx="6" fill="#ffffff" stroke="#16a34a" stroke-width="3"/>
+    <rect x="130" y="80" width="170" height="26" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+    <text x="142" y="98" font-size="13" font-weight="bold" fill="#14532d">Start Smith</text>
+    <rect x="236" y="86" width="56" height="15" rx="7" fill="#16a34a"/><text x="244" y="97" font-size="10" fill="#ffffff">start</text>
+    <text x="142" y="124" font-size="11" fill="#334155">Kovács vagyok. Fegyvert</text>
+    <text x="142" y="139" font-size="11" fill="#334155">vagy páncélt keresel?</text>
+    <text x="142" y="164" font-size="10" fill="#64748b">[[Vásárlás-&gt;Smith buy]] ...</text>
+  </g>
+  <!-- Smith buy -->
+  <g>
+    <rect x="410" y="240" width="170" height="100" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+    <rect x="410" y="240" width="170" height="26" rx="6" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/>
+    <text x="422" y="258" font-size="13" font-weight="bold" fill="#0f172a">Smith buy</text>
+    <text x="422" y="286" font-size="11" fill="#b45309">@shop smith-shop</text>
+    <text x="422" y="326" font-size="10" fill="#64748b">[[Viszlát-&gt;Goodbye Smith]]</text>
+  </g>
+  <!-- Goodbye Smith -->
+  <g>
+    <rect x="130" y="335" width="170" height="90" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+    <rect x="130" y="335" width="170" height="26" rx="6" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/>
+    <text x="142" y="353" font-size="13" font-weight="bold" fill="#0f172a">Goodbye Smith</text>
+    <text x="142" y="381" font-size="11" fill="#334155">Erős kard, erős kéz!</text>
+    <text x="142" y="401" font-size="11" fill="#b45309">@end</text>
+  </g>
+
+  <!-- legend -->
+  <rect x="610" y="90" width="150" height="130" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="622" y="112" font-size="12" font-weight="bold" fill="#0f172a">Jelmagyarázat</text>
+  <rect x="622" y="124" width="18" height="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/><text x="648" y="134" font-size="11" fill="#334155">belépő passzus</text>
+  <rect x="622" y="146" width="18" height="12" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><text x="648" y="156" font-size="11" fill="#334155">sima passzus</text>
+  <path d="M622,176 L642,176" stroke="#475569" stroke-width="2" marker-end="url(#ar)"/><text x="648" y="180" font-size="11" fill="#334155">link (választás)</text>
+  <text x="622" y="204" font-size="10" fill="#64748b">A nyíl a cél felé mutat.</text>
+</svg>

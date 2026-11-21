@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 480" width="900" height="480" font-family="Segoe UI, Arial, sans-serif">
+  <title>A void-fantasy példa könyvtár térképe</title>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="900" height="480" fill="#f6f8fa"/>
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#0f172a">void-fantasy.twee: egy könyvtár, két NPC</text>
+
+  <!-- wizard group -->
+  <rect x="20" y="44" width="500" height="420" rx="10" fill="#eef2ff" stroke="#a5b4fc" stroke-dasharray="6 4"/>
+  <text x="34" y="66" font-size="12" fill="#3730a3">A varázsló (Start Wizard)</text>
+  <!-- smith group -->
+  <rect x="560" y="44" width="320" height="420" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-dasharray="6 4"/>
+  <text x="574" y="66" font-size="12" fill="#9a3412">A kovács (Start Smith)</text>
+
+  <!-- wizard arrows -->
+  <path d="M130,162 L130,236" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M230,238 L230,164" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M260,162 L380,236" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M100,150 C30,200 30,380 98,414" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M120,300 L120,384" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M470,238 C490,170 420,120 302,120" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M380,330 C360,370 340,400 302,410" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+
+  <!-- Start Wizard -->
+  <rect x="100" y="88" width="200" height="74" rx="6" fill="#f0fdf4" stroke="#16a34a" stroke-width="3"/>
+  <text x="112" y="108" font-size="13" font-weight="bold" fill="#14532d">Start Wizard</text>
+  <rect x="236" y="94" width="52" height="14" rx="7" fill="#16a34a"/><text x="244" y="104" font-size="10" fill="#ffffff">start</text>
+  <text x="112" y="130" font-size="11" fill="#334155">Welcome to my humble shop</text>
+  <text x="112" y="146" font-size="10" fill="#64748b">3 választás</text>
+
+  <!-- Tell me more -->
+  <rect x="60" y="238" width="200" height="62" rx="6" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text x="72" y="258" font-size="13" font-weight="bold" fill="#0f172a">Tell me more!</text>
+  <text x="72" y="278" font-size="11" fill="#334155">...bring me any ingredients</text>
+
+  <!-- Buy/Sell -->
+  <rect x="300" y="238" width="200" height="92" rx="6" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text x="312" y="258" font-size="13" font-weight="bold" fill="#0f172a">Buy/Sell</text>
+  <text x="312" y="280" font-size="11" fill="#334155">Please make your selection</text>
+  <text x="312" y="300" font-size="11" fill="#b45309">@shop wizard-shop</text>
+
+  <!-- Goodbye Wizard -->
+  <rect x="100" y="386" width="200" height="60" rx="6" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text x="112" y="406" font-size="13" font-weight="bold" fill="#0f172a">Goodbye Wizard</text>
+  <text x="112" y="426" font-size="11" fill="#334155">Goodbye, traveller!</text>
+  <text x="112" y="440" font-size="11" fill="#b45309">@end</text>
+
+  <!-- smith -->
+  <path d="M640,162 C590,230 590,350 640,384" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M780,162 L780,236" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <path d="M780,310 C790,340 760,360 740,384" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+
+  <rect x="610" y="88" width="230" height="74" rx="6" fill="#f0fdf4" stroke="#16a34a" stroke-width="3"/>
+  <text x="622" y="108" font-size="13" font-weight="bold" fill="#14532d">Start Smith</text>
+  <rect x="780" y="94" width="52" height="14" rx="7" fill="#16a34a"/><text x="788" y="104" font-size="10" fill="#ffffff">start</text>
+  <text x="622" y="130" font-size="11" fill="#334155">Kovács vagyok. Fegyvert vagy...</text>
+  <text x="622" y="146" font-size="10" fill="#64748b">2 választás</text>
+
+  <rect x="680" y="238" width="170" height="72" rx="6" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text x="692" y="258" font-size="13" font-weight="bold" fill="#0f172a">Smith buy</text>
+  <text x="692" y="282" font-size="11" fill="#b45309">@shop smith-shop</text>
+
+  <rect x="610" y="386" width="230" height="60" rx="6" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text x="622" y="406" font-size="13" font-weight="bold" fill="#0f172a">Goodbye Smith</text>
+  <text x="622" y="426" font-size="11" fill="#334155">Erős kard, erős kéz!</text>
+  <text x="622" y="440" font-size="11" fill="#b45309">@end</text>
+</svg>

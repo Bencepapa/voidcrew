@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 360" width="900" height="360" font-family="Segoe UI, Arial, sans-serif">
+  <title>A párbeszéd útja a Twine-ból a játékba</title>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="900" height="360" fill="#f6f8fa"/>
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#0f172a">Az út: Twine, import, teszt, közzététel</text>
+
+  <!-- step boxes -->
+  <g>
+    <rect x="20" y="60" width="150" height="110" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+    <circle cx="40" cy="80" r="11" fill="#0284c7"/><text x="36" y="85" font-size="13" fill="#ffffff" font-weight="bold">1</text>
+    <text x="58" y="85" font-size="13" font-weight="bold" fill="#0f172a">Twine</text>
+    <text x="32" y="112" font-size="12" fill="#334155">Megírod a történetet,</text>
+    <text x="32" y="130" font-size="12" fill="#334155">Build &gt; Export As Twee</text>
+    <text x="32" y="152" font-size="11" fill="#64748b">eredmény: .twee fájl</text>
+  </g>
+  <g>
+    <rect x="200" y="60" width="150" height="110" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+    <circle cx="220" cy="80" r="11" fill="#0284c7"/><text x="216" y="85" font-size="13" fill="#ffffff" font-weight="bold">2</text>
+    <text x="238" y="85" font-size="13" font-weight="bold" fill="#0f172a">Szerkesztő</text>
+    <text x="212" y="112" font-size="12" fill="#334155">Assetek &gt; Párbeszédek</text>
+    <text x="212" y="130" font-size="12" fill="#334155">gomb: + Új (importálás)</text>
+    <text x="212" y="152" font-size="11" fill="#64748b">helyi vázlat lesz</text>
+  </g>
+  <g>
+    <rect x="380" y="60" width="150" height="110" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+    <circle cx="400" cy="80" r="11" fill="#0284c7"/><text x="396" y="85" font-size="13" fill="#ffffff" font-weight="bold">3</text>
+    <text x="418" y="85" font-size="13" font-weight="bold" fill="#0f172a">Tesztablak</text>
+    <text x="392" y="112" font-size="12" fill="#334155">Problémák lista, passzusok,</text>
+    <text x="392" y="130" font-size="12" fill="#334155">kipróbálod a választásokat</text>
+    <text x="392" y="152" font-size="11" fill="#64748b">hiba esetén: javítás, újra 1.</text>
+  </g>
+  <g>
+    <rect x="560" y="60" width="150" height="110" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+    <circle cx="580" cy="80" r="11" fill="#0284c7"/><text x="576" y="85" font-size="13" fill="#ffffff" font-weight="bold">4</text>
+    <text x="598" y="85" font-size="13" font-weight="bold" fill="#0f172a">Közzététel</text>
+    <text x="572" y="112" font-size="12" fill="#334155">Publish gomb (belépés kell)</text>
+    <text x="572" y="130" font-size="12" fill="#334155">megosztott tárba kerül</text>
+    <text x="572" y="152" font-size="11" fill="#64748b">új változatként</text>
+  </g>
+  <g>
+    <rect x="740" y="60" width="140" height="110" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="3"/>
+    <circle cx="760" cy="80" r="11" fill="#16a34a"/><text x="756" y="85" font-size="13" fill="#ffffff" font-weight="bold">5</text>
+    <text x="778" y="85" font-size="13" font-weight="bold" fill="#0f172a">Játék</text>
+    <text x="752" y="112" font-size="12" fill="#334155">Vendégként is</text>
+    <text x="752" y="130" font-size="12" fill="#334155">automatikusan betölt</text>
+    <text x="752" y="152" font-size="11" fill="#64748b">NPC-nél kiválasztva</text>
+  </g>
+  <g stroke="#475569" stroke-width="2" fill="none" marker-end="url(#ar)">
+    <path d="M172,115 L198,115"/><path d="M352,115 L378,115"/><path d="M532,115 L558,115"/><path d="M712,115 L738,115"/>
+  </g>
+
+  <!-- lower band: release -->
+  <rect x="20" y="210" width="860" height="130" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="36" y="236" font-size="13" font-weight="bold" fill="#0f172a">Mi történik közben?</text>
+  <text x="36" y="262" font-size="12" fill="#334155">A vázlat csak ezen a számítógépen él (a böngészőben tárolódik). A játék a vázlatot is használja ezen a gépen.</text>
+  <text x="36" y="282" font-size="12" fill="#334155">A közzététel után mindenki megkapja: a vendégek automatikusan betöltik, nem kell semmit telepíteniük.</text>
+  <text x="36" y="302" font-size="12" fill="#334155">A kiadás (a játék csomagja) a közzétett tartalmat a  npm run pull:shared  paranccsal húzza be, ezt a fejlesztő futtatja.</text>
+  <text x="36" y="324" font-size="12" fill="#b45309">Boltot (.json) egyelőre nem itt, hanem fájlként kell megírni, lásd a második útmutatót.</text>
+</svg>
