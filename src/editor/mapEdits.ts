@@ -5,7 +5,7 @@ import type { Interaction, InteractionTarget } from "../game/interactions";
 import { t } from "../i18n";
 import { PROP_TYPES } from "../game/props";
 import { roofPieceEdited } from "./roofEdits";
-import type { Direction, MapLight, PropAnchor, Vec2 } from "../game/types";
+import type { Direction, MapLight, MapLinkTarget, PropAnchor, StairsDirection, StairsStyle, Vec2 } from "../game/types";
 
 // Edits on a map file (see mapStore.applyEdit): each takes a copy of the
 // file and returns it changed.
@@ -32,6 +32,7 @@ export type EditTool =
   | "item"
   | "smoke"
   | "exit"
+  | "stairs"
   | "restricted"
   | "wall"
   | "start"
@@ -358,7 +359,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
     p.y += dy;
   };
   move(file.start);
-  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions]) {
+  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions, file.exits, file.stairs]) {
     for (const item of list ?? []) move(item);
   }
   for (const actor of file.actors ?? []) {
@@ -369,7 +370,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
 
 // every position on the map (to check a strip being cut off is empty)
 function allPositions(file: MapFile): { x: number; y: number }[] {
-  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions];
+  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions, file.exits, file.stairs];
   return [
     file.start,
     ...lists.flatMap((list) => (list ?? []) as { x: number; y: number }[]),
@@ -537,11 +538,55 @@ export function toggleRestricted(file: MapFile, cell: Vec2): MapFile {
   return file;
 }
 
-export function nameExit(file: MapFile, cell: Vec2, name: string | undefined): MapFile {
+// The exit in `cell` changed: its name and where it leads (see ExitSpec) - a
+// key of the patch that is undefined is taken off the exit.
+export function updateExit(file: MapFile, cell: Vec2, patch: { name?: string; to?: MapLinkTarget }): MapFile {
   const exit = file.exits?.find(at(cell));
   if (!exit) return file;
-  if (name) exit.name = name;
-  else delete exit.name;
+  if ("name" in patch) {
+    if (patch.name) exit.name = patch.name;
+    else delete exit.name;
+  }
+  if ("to" in patch) {
+    if (patch.to) exit.to = patch.to;
+    else delete exit.to;
+  }
+  return file;
+}
+
+// A staircase up in `cell` (see StairsSpec), or - if there is one - none.
+export function toggleStairs(file: MapFile, cell: Vec2): MapFile {
+  const stairs = file.stairs ?? (file.stairs = []);
+  const i = stairs.findIndex(at(cell));
+  if (i >= 0) stairs.splice(i, 1);
+  else stairs.push({ x: cell.x, y: cell.y, direction: "up" });
+  if (!stairs.length) delete file.stairs;
+  return file;
+}
+
+// The staircase in `cell` changed: up or down, straight or spiral, its name and
+// where it leads. A key of the patch that is undefined is taken off the stairs
+// (a straight style is just left out).
+export function updateStairs(
+  file: MapFile,
+  cell: Vec2,
+  patch: { direction?: StairsDirection; style?: StairsStyle; name?: string; to?: MapLinkTarget },
+): MapFile {
+  const stairs = file.stairs?.find(at(cell));
+  if (!stairs) return file;
+  if (patch.direction) stairs.direction = patch.direction;
+  if ("style" in patch) {
+    if (patch.style === "spiral") stairs.style = "spiral";
+    else delete stairs.style;
+  }
+  if ("name" in patch) {
+    if (patch.name) stairs.name = patch.name;
+    else delete stairs.name;
+  }
+  if ("to" in patch) {
+    if (patch.to) stairs.to = patch.to;
+    else delete stairs.to;
+  }
   return file;
 }
 
@@ -586,7 +631,7 @@ export function rectCells(rect: Rect): Vec2[] {
   return cells;
 }
 
-const PLACED_LISTS = ["doors", "exits", "smokes", "items", "chanceWalls", "ladders", "bridges", "lights", "props", "actors", "decals", "faceTextures", "wallInteractions"] as const;
+const PLACED_LISTS = ["doors", "exits", "stairs", "smokes", "items", "chanceWalls", "ladders", "bridges", "lights", "props", "actors", "decals", "faceTextures", "wallInteractions"] as const;
 
 export function setInteraction(file: MapFile, map: Parameters<typeof doorAt>[0], target: InteractionTarget, interaction?: Interaction): MapFile {
   switch (target.kind) {

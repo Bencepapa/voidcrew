@@ -52,12 +52,15 @@ import {
   undo,
 } from "./editor/mapStore";
 import { MapTitle } from "./components/MapTitle";
+import { GatePrompt } from "./components/GatePrompt";
+import { LoadingImagePreloader } from "./components/LoadingImagePreloader";
+import { loadingImagesAhead } from "./game/mapLinks";
 import { MapDialog } from "./editor/MapDialog";
 import type { MapDialogMode, MapDialogValues } from "./editor/MapDialog";
 import { MAPS, START_MAP } from "./game/map";
 import { WORLDS, assetInWorld, setActiveWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
-import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, updateExit, toggleExit, toggleStairs, updateStairs, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
 import { PROP_TYPES, flamePosition, isSharedPropId, propBlocks, propPlacement, propRetexturable } from "./game/props";
 import { MIN_HEADROOM } from "./game/heights";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
@@ -162,6 +165,10 @@ export default function App() {
     powerOn,
     inLift,
     ride,
+    transit,
+    linkPrompt,
+    confirmLink,
+    declineLink,
     actors,
     readyAt,
     aim,
@@ -276,6 +283,7 @@ export default function App() {
     setSelectedLight(kind === "light" ? index : null);
     setSelectedSmoke(kind === "smoke" ? index : null);
     setSelectedExit(null);
+    setSelectedStairs(null);
     setSelectedChanceWall(null);
     setSelectedDoor(null);
   };
@@ -409,7 +417,9 @@ export default function App() {
     document.documentElement.classList.toggle("theme-fantasy", map.world === "fantasy");
     document.title = WORLDS[map.world].name;
   }, [map.world]);
-  const needsSharedImages = editMode ||
+  // the loading pictures of this map and of the maps its gates and stairs lead to
+  const loadingImageIds = loadingImagesAhead(map, (id) => MAPS[id]);
+  const needsSharedImages = editMode || loadingImageIds.some((id) => !sharedImage(id)) ||
     (activeInteraction?.kind === "image" && !!activeInteraction.image && !sharedImage(activeInteraction.image)) ||
     !!map.decals?.some(({ decal }) => /^(fantasy|scifi)_decal_/.test(decal) && !sharedImage(decal)) ||
     !!map.items?.some(({ item }) => isSharedPickupId(item) && !sharedImage(item)) ||
@@ -1215,6 +1225,18 @@ export default function App() {
       if (!there && alt) return;
       result = applyEdit(map.id, (file) => toggleExit(file, cell));
       setSelectedExit(there ? null : cell);
+    } else if (editTool === "stairs") {
+      // a click on a floor puts stairs there (or picks the ones there); the right button takes them out
+      if (target.kind === "wall") return;
+      const cell = target.cell;
+      const there = (map.stairs ?? []).some((s) => s.cell.x === cell.x && s.cell.y === cell.y);
+      if (there && !alt) {
+        setSelectedStairs(cell);
+        return;
+      }
+      if (!there && alt) return;
+      result = applyEdit(map.id, (file) => toggleStairs(file, cell));
+      setSelectedStairs(there ? null : cell);
     } else if (editTool === "start") {
       // the party starts here, facing as it faces now; the start itself turns a quarter
       if (target.kind === "wall" || alt) return;
@@ -1771,7 +1793,11 @@ export default function App() {
   // the Exit tool's pick (its cell)
   const [selectedExit, setSelectedExit] = useState<Vec2 | null>(null);
   const selectedExitSpec = selectedExit && (map.exits ?? []).find((e) => e.cell.x === selectedExit.x && e.cell.y === selectedExit.y);
-  const selectedExitInfo = selectedExitSpec ? { name: selectedExitSpec.name ?? "" } : null;
+  const selectedExitInfo = selectedExitSpec ? { name: selectedExitSpec.name ?? "", to: selectedExitSpec.to } : null;
+  // the Stairs tool's pick (its cell)
+  const [selectedStairs, setSelectedStairs] = useState<Vec2 | null>(null);
+  const selectedStairsSpec = selectedStairs && (map.stairs ?? []).find((s) => s.cell.x === selectedStairs.x && s.cell.y === selectedStairs.y);
+  const selectedStairsInfo = selectedStairsSpec ? { direction: selectedStairsSpec.direction, style: selectedStairsSpec.style ?? "straight" as const, name: selectedStairsSpec.name ?? "", to: selectedStairsSpec.to } : null;
   // the Item tool: the palette's item (the pick is further up)
   const [itemChoice, setItemChoice] = useState(Object.keys(ITEM_TYPES)[0]);
   const selectedItemInfo: ItemInfo | null = (() => {
@@ -2142,6 +2168,7 @@ export default function App() {
     setSelectedActor(null);
     setSelectedSmoke(null);
     setSelectedExit(null);
+    setSelectedStairs(null);
     setSelectedChanceWall(null);
     setSelectedDoor(null);
     setEditTool(tool);
@@ -2234,7 +2261,7 @@ export default function App() {
   // Step 2 bridge: observe the existing independent selections without changing
   // their owners. Only a newly selected value wins; clearing it shows Map settings.
   const inspectorPicks = {prop:selectedProp, decal:selectedDecal, item:selectedItem,
-    light:selectedLight, actor:selectedActor, smoke:selectedSmoke, exit:selectedExit,
+    light:selectedLight, actor:selectedActor, smoke:selectedSmoke, exit:selectedExit, stairs:selectedStairs,
     chanceWall:selectedChanceWall, door:selectedDoor};
   const inspectorSelection = useRef<{map:string; picks:typeof inspectorPicks; kind:InspectedKind|null}>({map:map.id,picks:inspectorPicks,kind:null});
   const previousInspector = inspectorSelection.current;
@@ -2252,7 +2279,7 @@ export default function App() {
     item:selectedItem===null?undefined:map.items?.[selectedItem]?.cell,
     light:selectedLight===null?undefined:map.lights?.[selectedLight],
     actor:selectedActor===null?undefined:map.actors?.[selectedActor]?.cell,
-    smoke:selectedSmokeSpec?.cell, exit:selectedExit??undefined,
+    smoke:selectedSmokeSpec?.cell, exit:selectedExit??undefined, stairs:selectedStairs??undefined,
     chanceWall:selectedChanceWall===null?undefined:map.chanceWalls?.[selectedChanceWall]?.cell,
     door:selectedDoor??undefined};
   // Where a tool puts things in and nothing is selected, the inspector shows the settings the next one gets (a kind
@@ -2406,6 +2433,7 @@ export default function App() {
       elevation={elevation}
       openDoors={openDoors}
       ride={ride}
+      transit={transit}
       actors={actors}
       aiming={aimWeapon}
       downAt={wipedAt}
@@ -2466,6 +2494,8 @@ export default function App() {
       )}
       {!editMode && phase === "run" && !runEnd && <MapTitle key={map.id} map={map} />}
       {inventoryShown && <InventoryPanel partyDock={partyDock} onClose={() => setInventoryOpen(false)} />}
+      <LoadingImagePreloader ids={loadingImageIds} />
+      {linkPrompt && !editMode && !runEnd && !activeInteraction && !inventoryShown && <GatePrompt prompt={linkPrompt} onGo={confirmLink} onStay={declineLink} />}
       {!editMode && <DragGhost />}
       {!editMode && phase === "run" && !runEnd && WORLDS[map.world].loop === "ship" && <AlertMeter alert={alert} compact={compact} powerOn={powerOn} />}
       {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
@@ -2608,7 +2638,7 @@ export default function App() {
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
           onRenameMap={renameCurrentMap}
-          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle }}
+          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle, loadingImage: map.loadingImage }}
           onMapLook={changeMapLook}
           renderSettings={settings}
           onRenderSettings={setSettings}
@@ -2642,10 +2672,10 @@ export default function App() {
           onSmokeDelete={deleteSmoke}
           onSmokeDeselect={() => setSelectedSmoke(null)}
           exit={selectedExitInfo}
-          onExitName={(name) => {
+          onExitChange={(patch, merge) => {
             if (!selectedExit) return;
             const cell = selectedExit;
-            const result = applyEdit(map.id, (file) => nameExit(file, cell, name), `exit ${cell.x},${cell.y} name`);
+            const result = applyEdit(map.id, (file) => updateExit(file, cell, patch), `exit ${cell.x},${cell.y} ${Object.keys(patch).join()}${merge ?? ""}`);
             if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
             else replaceMap(result.map);
             setEdits((n) => n + 1);
@@ -2659,6 +2689,24 @@ export default function App() {
             setEdits((n) => n + 1);
           }}
           onExitDeselect={() => setSelectedExit(null)}
+          stairs={selectedStairsInfo}
+          onStairsChange={(patch, merge) => {
+            if (!selectedStairs) return;
+            const cell = selectedStairs;
+            const result = applyEdit(map.id, (file) => updateStairs(file, cell, patch), `stairs ${cell.x},${cell.y} ${Object.keys(patch).join()}${merge ?? ""}`);
+            if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+            else replaceMap(result.map);
+            setEdits((n) => n + 1);
+          }}
+          onStairsRemove={() => {
+            if (!selectedStairs) return;
+            const cell = selectedStairs;
+            const result = applyEdit(map.id, (file) => toggleStairs(file, cell));
+            if (!("error" in result)) replaceMap(result.map);
+            setSelectedStairs(null);
+            setEdits((n) => n + 1);
+          }}
+          onStairsDeselect={() => setSelectedStairs(null)}
           itemChoice={itemChoice}
           onItemChoice={setItemChoice}
           item={selectedItemInfo}

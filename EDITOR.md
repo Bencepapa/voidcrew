@@ -201,7 +201,20 @@ not two editors.
   EXIT plate on the floor) and picks it; a click on one picks it, the
   right button takes it out; its panel sets its name ("Hangar bay" - for
   the log and the run's summary). Standing on it, Use ends the run (`exits`
-  in the map).
+  in the map). In the fantasy world its panel also says **Leads to**: pick
+  another map and the exit is a *gate* (an amber GATE plate): standing on
+  it asks "Leave X for Y?" (Enter / Space: go, Esc: stay), fades out, and
+  arrives in the other map at **Arrives at** - by default its gate that
+  leads back here, else its start (see concept/editor-ui/NOTES-level-links.md).
+- **Stairs** (fantasy world, Traverse group): a click on a floor puts stairs
+  there (a cyan UP plate) and picks them; a click on stairs picks them, the
+  right button takes them out. The panel sets up or down (a violet DOWN
+  plate), straight or spiral, a name and where they lead (**Leads to** /
+  **Arrives at** / **Facing**, as for a gate); `stairs` in the map. In the
+  game, stepping onto them takes them: the view walks on and climbs (or
+  sinks, turning on a spiral) while the screen fades out, and the next map
+  fades in at its stairs that lead back (the other way: up arrives at the
+  stairs down) - or at its start. Use on them takes them again.
 - **Decal:** the palette shows every decal (public/decals/index.json); a
   click on a wall, floor or ceiling puts the picked one there, centered on
   the click, and picks it. A click on a decal picks it, the right button
@@ -222,6 +235,12 @@ The **Map** tool's panel:
 
 - **Map** dropdown: opens another map straight away (no lift ride), at its
   start. The URL's `?map=` follows, so a reload stays on it.
+- **Loading picture:** a shared still image (the Images panel: purpose
+  Loading, Portrait or Room) shown behind the loading screen's text, dimmed,
+  while this map loads (`loadingImage` in the map). A gate's or stairs'
+  own **Loading picture** (`to.loadingImage`) comes first - "arriving
+  through this gate shows the hero before the town" - then the target
+  map's, else the plain screen.
 - **+N / −N, +S / −S, +W / −W, +E / −E:** a row or column of wall added
   at that edge, or cut off (only if it's all wall with nothing placed on
   it). Adding or cutting at the north or west moves everything on the map

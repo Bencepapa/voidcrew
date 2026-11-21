@@ -5,6 +5,7 @@ import { KindChoice, OptionalNumber, CommitContext, Section, slider, BUTTON, idl
 import { MAPS } from "../../game/map";
 import { worldOfMap } from "../../game/worlds";
 import { MapList } from "../MapList";
+import { LoadingImageField } from "./LoadingImageField";
 import type { Direction } from "../../game/types";
 import { useAutoLoadShared } from "../autoSharedPrefs";
 import { useSharedMapHeads } from "../sharedMapHeads";
@@ -69,6 +70,7 @@ return <>
 <label className="flex items-center gap-1" title={t("mapDialog.showTitleHint")}>
   <input type="checkbox" checked={p.mapLook.showTitle ?? false} onChange={(e) => p.onMapLook({ showTitle: e.target.checked })} />
   {t("mapDialog.showTitle")}</label>
+<LoadingImageField value={p.mapLook.loadingImage} world={world} label="link.mapLoadingImage" hint="link.mapLoadingImageHint" onChange={(loadingImage) => p.onMapLook({ loadingImage })} />
 <WeatherFields onCommit={commit} value={p.mapLook.weather} onChange={weather=>p.onMapLook({weather})}/>
 <OptionalNumber label={t("editorBar.bakedLight")} title={t("editorBar.fewSofterLightSpillsToTheCells")} value={p.mapLook.lightGridDensity} min={2} max={12} step={1} defaultValue={3} onChange={v=>p.onMapLook({lightGridDensity:v})}/>
 <OptionalNumber label={t("editorBar.ambient")} title={t("editorBar.theAmbientPartOfTheBakedLight")} value={p.mapLook.lightGridAmbient} min={2} max={4} step={1} defaultValue={3} onChange={v=>p.onMapLook({lightGridAmbient:v})}/>

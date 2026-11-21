@@ -43,6 +43,17 @@ const subscribe = (listener: () => void) => {
   return () => { listeners.delete(listener); };
 };
 export const useSharedImages = () => useSyncExternalStore(subscribe, getSharedImages);
+// Has the browser fetch pictures (shared image ids) ahead of time, so a loading
+// screen shows its picture at once
+const preloaded = new Set<string>();
+export function preloadSharedImages(ids: readonly string[]) {
+  for (const id of ids) {
+    const url = sharedImage(id)?.url;
+    if (!url || preloaded.has(url) || typeof Image === "undefined") continue;
+    preloaded.add(url);
+    new Image().src = url;
+  }
+}
 export function pickupTexture(id: string): TextureSetFiles {
   const image = sharedImage(id);
   return image?.pickup

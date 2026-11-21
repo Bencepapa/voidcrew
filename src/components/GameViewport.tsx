@@ -67,7 +67,7 @@ import { doorCellKey } from "../game/useGameState";
 import { forwardOf } from "../game/freeMovement";
 import type { FreePose } from "../game/freeMovement";
 import type { PeekState } from "./useViewControls";
-import type { LiftRide } from "../game/useGameState";
+import type { LiftRide, MapTransit } from "../game/useGameState";
 import { WALL_ROTATION, surfaceFrame, surfaceKey } from "../render/surfaces";
 import { DecalLibrary, fetchDecalManifest } from "../render/decals";
 import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
@@ -78,7 +78,7 @@ import { mapUsesTexture } from "../editor/textureLibrary";
 import { onSharedPropsChanged } from "../editor/sharedProps";
 import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import { doorLeafMotion, type DoorType } from "../game/doorTypes";
-import { onSharedDecalsChanged, onSharedPickupsChanged, pickupTexture, sharedImage } from "../render/sharedImages";
+import { onSharedDecalsChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 
@@ -884,13 +884,13 @@ const SPILL_OUT_MS = 380;
 const SPILL_REST_MS = 1000;
 const SPILL_IN_MS = 380;
 
-// an exit's floor marker: a green frame with chevrons and EXIT
-function makeExitMarker(): THREE.CanvasTexture {
+// an exit's floor marker: a green frame with chevrons and EXIT - a gate to
+// another map (see mapLinks.ts) is amber, and says GATE
+function makeExitMarker(gate = false): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 128;
   const ctx = canvas.getContext("2d")!;
-  ctx.strokeStyle = "#5dffa0";
-  ctx.fillStyle = "#5dffa0";
+  ctx.strokeStyle = ctx.fillStyle = gate ? "#ffcf5d" : "#5dffa0";
   ctx.lineWidth = 5;
   ctx.strokeRect(8, 8, 112, 112);
   ctx.lineWidth = 6;
@@ -904,7 +904,55 @@ function makeExitMarker(): THREE.CanvasTexture {
   }
   ctx.font = "bold 28px monospace";
   ctx.textAlign = "center";
-  ctx.fillText("EXIT", 64, 102);
+  ctx.fillText(gate ? "GATE" : "EXIT", 64, 102);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+// a staircase's floor marker (see StairsSpec): steps rising (up, cyan) or
+// sinking (down, violet) with an arrow above them - or, for a spiral, a spiral
+// turning up or down - and UP / DOWN
+function makeStairsMarker(up: boolean, spiral: boolean): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext("2d")!;
+  ctx.strokeStyle = ctx.fillStyle = up ? "#7fd8ff" : "#d6a8ff";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(8, 8, 112, 112);
+  ctx.lineWidth = 6;
+  ctx.lineJoin = "miter";
+  ctx.beginPath();
+  if (spiral) {
+    // (a spiral winding out from the middle; its arrowhead says which way it turns)
+    const turn = up ? 1 : -1;
+    let x = 64;
+    let y = 52;
+    for (let a = 0; a <= 4.4; a += 0.08) {
+      x = 64 + Math.cos(a * turn - Math.PI / 2) * (4 + a * 6);
+      y = 52 + Math.sin(a * turn - Math.PI / 2) * (4 + a * 6);
+      if (a === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // (four steps; up they rise to the right, down to the left)
+    for (let i = 0; i < 4; i++) {
+      const x = up ? 30 + i * 17 : 98 - i * 17;
+      const y = 78 - i * 11;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      ctx.lineTo(x, y - 11);
+      ctx.lineTo(x + (up ? 17 : -17), y - 11);
+    }
+    ctx.stroke();
+  }
+  ctx.font = "bold 24px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(up ? "UP" : "DOWN", 64, 104);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
@@ -953,6 +1001,12 @@ const SHAFT_LIGHT_COLOR = 0xffe2b0;
 const SHAFT_LIGHT_INTENSITY = 3.5;
 const SHAFT_LIGHT_PERIOD_MS = 700;
 const SHAFT_LIGHT_SWEEP = 1.2;
+// a change of map: how long the black sheet takes to clear after arriving (s)
+const TRANSIT_FADE_IN_S = 0.6;
+// taking stairs: how far ahead (cells) the eye walks and how far it climbs or
+// sinks (wall heights) by the end of the ride
+const STAIRS_WALK = 0.55;
+const STAIRS_RISE = 0.7;
 // how far away an interactive decal can be touched (world units)
 const TOUCH_REACH = 1.4;
 // a camera's light on the crew: watching, raising the alarm
@@ -1084,6 +1138,10 @@ interface GameViewportProps {
   openDoors: ReadonlySet<string>;
   // a lift ride in progress: the cabin shakes, the shaft's lights sweep by
   ride?: LiftRide | null;
+  // a change of map through a gate: the view fades to black, stays black while
+  // the next map loads, then fades back in (see useGameState's startTransit);
+  // its picture is the loading screen's
+  transit?: MapTransit | null;
   // the deck's moving actors (drawn as sprites, see updateActors)
   actors?: readonly ActorState[];
   // a crewmate aiming this weapon: each frame fills aimFrameRef for the
@@ -1497,6 +1555,7 @@ export function GameViewport({
   elevation,
   openDoors,
   ride,
+  transit,
   actors,
   aiming,
   downAt,
@@ -1656,6 +1715,11 @@ export function GameViewport({
   peekRefRef.current = peekRef;
   const rideRef = useRef(ride);
   rideRef.current = ride;
+  const transitRef = useRef(transit ?? null);
+  transitRef.current = transit ?? null;
+  // the black sheet of a transit over the view (see renderFrame): its element and how black it is
+  const fadeRef = useRef<HTMLDivElement>(null);
+  const fadeLevelRef = useRef(0);
   const onTouchRef = useRef(onTouch);
   onTouchRef.current = onTouch;
   const interactionCallbacks = useRef({ onInteraction, onEditInteraction, interactionOpen });
@@ -4595,13 +4659,28 @@ export function GameViewport({
 
     // ---- exits: a glowing plate on the floor of each way off the ship ----
     const exitMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(), transparent: true, depthWrite: false, fog: true });
+    const gateMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(true), transparent: true, depthWrite: false, fog: true });
     const exitGeo = new THREE.PlaneGeometry(0.8, 0.8);
     geometries.push(exitGeo);
     for (const exit of map.exits ?? []) {
-      const plate = new THREE.Mesh(exitGeo, exitMat);
+      const plate = new THREE.Mesh(exitGeo, exit.to ? gateMat : exitMat);
       plate.rotation.x = -Math.PI / 2;
       // (just above the floor's relief)
       plate.position.set(exit.cell.x, floorY(exit.cell.x, exit.cell.y) + reliefDepth + 0.006, exit.cell.y);
+      group.add(plate);
+    }
+    // stairs (see StairsSpec): such a plate each, by direction and style
+    const stairsMats = new Map<string, THREE.MeshBasicMaterial>();
+    for (const stairs of map.stairs ?? []) {
+      const key = `${stairs.direction}-${stairs.style ?? "straight"}`;
+      let mat = stairsMats.get(key);
+      if (!mat) {
+        mat = new THREE.MeshBasicMaterial({ map: makeStairsMarker(stairs.direction === "up", stairs.style === "spiral"), transparent: true, depthWrite: false, fog: true });
+        stairsMats.set(key, mat);
+      }
+      const plate = new THREE.Mesh(exitGeo, mat);
+      plate.rotation.x = -Math.PI / 2;
+      plate.position.set(stairs.cell.x, floorY(stairs.cell.x, stairs.cell.y) + reliefDepth + 0.006, stairs.cell.y);
       group.add(plate);
     }
 
@@ -7773,6 +7852,20 @@ export function GameViewport({
       }
       liveRef.current = cam;
 
+      // Stairs taken (see MapTransit): the eye walks on ahead and climbs or sinks
+      // a floor's worth, turning half round on a spiral - while the sheet fades
+      // to black. (Laid over the pose after it is kept, so arriving starts clean.)
+      let stairsYaw = 0;
+      const stairsRide = transitRef.current?.kind === "stairs" ? transitRef.current : null;
+      if (stairsRide && now - stairsRide.start < stairsRide.duration) {
+        const e = smoothstep(0, 1, (now - stairsRide.start) / stairsRide.duration);
+        const len = Math.hypot(cam.tx - cam.x, cam.tz - cam.z) || 1;
+        const walk = (STAIRS_WALK * e) / len;
+        const dy = (stairsRide.up ? 1 : -1) * STAIRS_RISE * e;
+        cam = { x: cam.x + (cam.tx - cam.x) * walk, z: cam.z + (cam.tz - cam.z) * walk, tx: cam.tx + (cam.tx - cam.x) * walk, tz: cam.tz + (cam.tz - cam.z) * walk, y: cam.y + dy };
+        if (stairsRide.spiral) stairsYaw = (stairsRide.up ? 1 : -1) * Math.PI * e;
+      }
+
       for (const [key, anim] of doorAnimsRef.current) {
         const p = Math.min(1, (gameNow - anim.start) / DOOR_OPEN_MS);
         const target: THREE.Vector3 = anim.panel.userData.open ? anim.panel.userData.openPos : anim.panel.userData.closedPos;
@@ -7795,6 +7888,13 @@ export function GameViewport({
         shake = smoothstep(0, 0.1, p) * (1 - smoothstep(0.85, 1, p));
         rideDip = 1 - 0.85 * (1 - smoothstep(0, LIFT_DIP_MS, Math.abs(rideElapsed - ride.swapAt)));
       }
+      // A change of map (a gate): the view fades to black, stays black while the
+      // next map loads (the loading screen covers it by then), and clears once
+      // the party has arrived
+      const transitNow = transitRef.current;
+      if (transitNow) fadeLevelRef.current = smoothstep(transitNow.fadeFrom, 1, (now - transitNow.start) / transitNow.duration);
+      else if (fadeLevelRef.current > 0) fadeLevelRef.current = Math.max(0, fadeLevelRef.current - dt / TRANSIT_FADE_IN_S);
+      if (fadeRef.current) fadeRef.current.style.opacity = String(fadeLevelRef.current);
       const shakeY = shake * (Math.sin(t * 37) * 0.006 + Math.sin(t * 23.3) * 0.004);
       // steady while editing: the bob sways the view enough to move what's
       // under the pointer between the floor and the ceiling - and with it
@@ -7821,6 +7921,7 @@ export function GameViewport({
         }
         peekYaw = peek.offset;
       }
+      peekYaw += stairsYaw;
       // rotating the facing clockwise (seen from above) by peekYaw
       const fx = fwdX / fwdLen;
       const fz = fwdZ / fwdLen;
@@ -8045,7 +8146,8 @@ export function GameViewport({
         for (const child of marker.children) if (child.userData.fogShape) child.visible = picked;
       }
       // the exits' plates throb
-      exitMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
+      exitMat.opacity = gateMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
+      for (const mat of stairsMats.values()) mat.opacity = exitMat.opacity;
       updateTracers();
       camera.updateMatrixWorld();
       updateEditHighlight();
@@ -8279,6 +8381,12 @@ export function GameViewport({
       disposeLightGrid(lightGrid);
       exitMat.map?.dispose();
       exitMat.dispose();
+      gateMat.map?.dispose();
+      gateMat.dispose();
+      for (const mat of stairsMats.values()) {
+        mat.map?.dispose();
+        mat.dispose();
+      }
       scene.remove(smoke.mesh, fire.mesh, petals.mesh, motes.mesh, mist.mesh, flies.mesh);
       motes.dispose(); mist.dispose(); flies.dispose();
       petals.dispose();
@@ -8347,27 +8455,40 @@ export function GameViewport({
           {topdownOn ? "\u2B13 Top-down" : "\u2B12 Top-down"}
         </button>
       )}
-      <LoadingScreen loading={loading} inLift={!!ride} title={WORLDS[map.world].loop === "ship" ? "USV HORIZON" : WORLDS[map.world].name.toUpperCase()} />
+      <div ref={fadeRef} className="pointer-events-none absolute inset-0 bg-black opacity-0" />
+      <LoadingScreen loading={loading} image={transit?.image ?? map.loadingImage} inLift={!!ride} title={WORLDS[map.world].loop === "ship" ? "USV HORIZON" : WORLDS[map.world].name.toUpperCase()} />
     </div>
   );
 }
 
 // Shown over the view while a map's scene loads: the deck's name and a
-// progress bar, fading out once it's all built.
-function LoadingScreen({ loading, inLift, title }: { loading: { title: string; progress: number } | null; inLift: boolean; title: string }) {
-  // keep the last title while fading out
+// progress bar, fading out once it's all built. `image`: a shared still
+// image's id (see MapFile.loadingImage, MapLinkTarget.loadingImage) shown
+// behind the text, dimmed so the text stays readable - none: the plain screen.
+function LoadingScreen({ loading, inLift, title, image }: { loading: { title: string; progress: number } | null; inLift: boolean; title: string; image?: string }) {
+  const images = useSharedImages();
+  // keep the last title and picture while fading out
   const [shown, setShown] = useState(loading);
+  const [shownImage, setShownImage] = useState(image);
   useEffect(() => {
-    if (loading) setShown(loading);
-  }, [loading]);
+    if (loading) {
+      setShown(loading);
+      setShownImage(image);
+    }
+  }, [loading, image]);
+  const url = shownImage ? images.find((i) => i.id === shownImage)?.url : undefined;
   return (
     <div
       className={`absolute inset-0 bg-black flex flex-col items-center justify-center gap-3 font-mono transition-opacity duration-500 ${loading ? "opacity-100" : "opacity-0 pointer-events-none"}`}
     >
-      <div className="text-[10px] tracking-[0.3em] text-green-700">{inLift ? "LIFT IN TRANSIT" : title}</div>
-      <div className="text-sm tracking-[0.2em] text-green-400 uppercase">{shown?.title}</div>
-      <div className="w-48 h-1 bg-green-950 overflow-hidden">
-        <div className="h-full bg-green-500 transition-[width] duration-200" style={{ width: `${Math.round((shown?.progress ?? 1) * 100)}%` }} />
+      {url && <img src={url} alt="" draggable={false} className="absolute inset-0 h-full w-full object-cover" />}
+      {url && <div className="absolute inset-0 bg-black/55" />}
+      <div className="relative flex flex-col items-center gap-3" style={url ? { textShadow: "0 1px 6px #000, 0 0 2px #000" } : undefined}>
+        <div className="text-[10px] tracking-[0.3em] text-green-700">{inLift ? "LIFT IN TRANSIT" : title}</div>
+        <div className="text-sm tracking-[0.2em] text-green-400 uppercase">{shown?.title}</div>
+        <div className="w-48 h-1 bg-green-950 overflow-hidden">
+          <div className="h-full bg-green-500 transition-[width] duration-200" style={{ width: `${Math.round((shown?.progress ?? 1) * 100)}%` }} />
+        </div>
       </div>
     </div>
   );

@@ -5,7 +5,8 @@ import { wallFaceSpans, type WallFacePart } from "./mapGeometry";
 import { PROP_TYPES, isSharedPropId } from "./props";
 import { parseRoofGroup } from "./roofAutotile";
 import { isRoofPieceId } from "./roofPieces";
-import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, PropAnchor } from "./types";
+import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, MapLinkTarget, PropAnchor, StairsDirection, StairsStyle } from "./types";
+import { readLinkTarget } from "./mapLinks";
 import type { Lock, Terminal, Trigger } from "./story";
 import { cleanRenderLook } from "./renderLook";
 import { worldOfMap } from "./worlds";
@@ -112,8 +113,15 @@ export interface MapFile {
   // ceiling; texture: a texture set id. Beats the cell's wallTexture on that
   // face; a face with no entry (or no step there any more) uses the cell's.
   faceTextures?: { x: number; y: number; face: Direction; texture: string }[];
-  // ways off the ship (see ExitSpec)
-  exits?: { x: number; y: number; name?: string }[];
+  // ways off the ship (see ExitSpec); with a `to`, a gate to another map:
+  //   { "x": 5, "y": 0, "name": "North gate", "to": { "map": "forest", "arrival": "Town road" } }
+  // `arrival` is a gate's name or a cell { x, y }; `facing` and `loadingImage` are optional too
+  exits?: { x: number; y: number; name?: string; to?: MapLinkTarget }[];
+  // stairs up or down to another map (see StairsSpec); `to` as for an exit's, without it they go nowhere yet:
+  //   { "x": 3, "y": 2, "direction": "up", "style"?: "spiral", "name"?: "Tower stairs", "to": { "map": "tower-1" } }
+  stairs?: { x: number; y: number; direction: StairsDirection; style?: StairsStyle; name?: string; to?: MapLinkTarget }[];
+  // a shared still image's id: the loading screen of this map shows it
+  loadingImage?: string;
   // the cells where the crew mustn't be (see GameMap.restricted)
   restricted?: [number, number][];
   // smoke emitters (see SmokeSpec)
@@ -395,6 +403,11 @@ export function parseMap(id: string, file: MapFile): GameMap {
       doors: file.doors?.map(({ interaction: _interaction, ...door }) => door),
       items: undefined,
       render: undefined,
+      // (only where an exit's plate stands, and whether it's a gate, matters to the scene - not its name or target)
+      exits: file.exits?.map(({ x, y, to }) => ({ x, y, gate: !!readLinkTarget(to) })),
+      // (a staircase's plate: where it is and how it looks)
+      stairs: file.stairs?.map(({ x, y, direction, style }) => ({ x, y, direction, style })),
+      loadingImage: undefined,
     }),
     windows,
     props: (file.props ?? []).map((p) => {
@@ -427,8 +440,23 @@ export function parseMap(id: string, file: MapFile): GameMap {
     }),
     exits: (file.exits ?? []).map((e) => {
       if (cells[e.y]?.[e.x] !== "floor") throw new Error(`exit at ${e.x},${e.y} isn't in a floor cell`);
-      return { cell: { x: e.x, y: e.y }, name: e.name };
+      const to = readLinkTarget(e.to);
+      return { cell: { x: e.x, y: e.y }, name: e.name, ...(to ? { to } : {}) };
     }),
+    stairs: (file.stairs ?? []).map((s) => {
+      const at = `stairs at ${s.x},${s.y}`;
+      if (cells[s.y]?.[s.x] !== "floor") throw new Error(`${at} isn't in a floor cell`);
+      if (s.direction !== "up" && s.direction !== "down") throw new Error(`${at}: direction must be "up" or "down"`);
+      const to = readLinkTarget(s.to);
+      return {
+        cell: { x: s.x, y: s.y },
+        direction: s.direction,
+        ...(s.style === "spiral" ? { style: "spiral" as const } : {}),
+        name: s.name,
+        ...(to ? { to } : {}),
+      };
+    }),
+    loadingImage: typeof file.loadingImage === "string" && file.loadingImage ? file.loadingImage : undefined,
     weather: file.weather ? { ...file.weather, wetness: Math.max(0, Math.min(1, file.weather.wetness ?? (file.weather.type === "rain" ? 0.6 : 0))), snowCover: Math.max(0, Math.min(1, file.weather.snowCover ?? 0.6)), intensity: Math.max(0, Math.min(2, file.weather.intensity ?? 1)) } : undefined,
     smokes: (file.smokes ?? []).map((s) => {
       if (cells[s.y]?.[s.x] === undefined || cells[s.y][s.x] === "wall") throw new Error(`smoke at ${s.x},${s.y} isn't in a walkable cell`);
