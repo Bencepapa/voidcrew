@@ -12,7 +12,7 @@ A futó példánk a repóban lévő **`void-fantasy.twee`** (a `src/dialogues/` 
 2. [A szabályok](#2-a-szabályok)
 3. [A parancsok: @end és @shop](#3-a-parancsok-end-és-shop)
 4. [Az NPC kiválasztja a belépőjét](#4-az-npc-kiválasztja-a-belépőjét)
-5. [Bolt megadása (src/shops/*.json)](#5-bolt-megadása-srcshopsjson)
+5. [Bolt megadása (szerkesztő és src/shops/*.json)](#5-bolt-megadása-srcshopsjson)
 6. [Amit az ellenőrző jelez](#6-amit-az-ellenőrző-jelez)
 7. [Importálás a szerkesztőbe, tesztelés, közzététel](#7-importálás-a-szerkesztőbe-tesztelés-közzététel)
 8. [Kipróbálás a játékban](#8-kipróbálás-a-játékban)
@@ -26,7 +26,7 @@ A futó példánk a repóban lévő **`void-fantasy.twee`** (a `src/dialogues/` 
 Három dolog dolgozik együtt:
 
 1. **A párbeszéd-könyvtár** (`.twee` fájl): a beszélgetés szövege, a választások, a parancsok. Ezt te írod a Twine-ban.
-2. **A bolt** (`.json` fájl): mit árul az NPC és mennyiért. Ezt (egyelőre) fájlként kell megírni.
+2. **A bolt**: mit árul az NPC és mennyiért. Ezt az Asset Manager **Boltok** kategóriájában állítod össze (vagy kézzel megírt `.json` fájlként).
 3. **Az NPC a pályán**: a szerkesztőben beállítod, melyik könyvtár melyik belépő passzusából induljon a beszélgetése.
 
 A játékban az NPC-t megszólítod (Space vagy kattintás), megjelenik a párbeszéd-ablak. Ha a passzusban `@shop` parancs van, megnyílik a bolt-ablak.
@@ -166,13 +166,33 @@ Ugyanazokat a passzusokat osztottan is használhatod: például két NPC belép�
 
 ## 5. Bolt megadása (src/shops/*.json)
 
-> **Fontos:** a **bolt-szerkesztő az Asset Managerben még nincs kész** (a terv neve: H4b). Egyelőre a boltok **`.json` fájlok**, a `src/shops/` mappában. Ha nem szeretnél ilyet kézzel írni, add át a fejlesztőnek ebben a formában, ő bemásolja.
->
-> A Twine nem készletet ír, csak a `@shop azonosító` parancsot. Az árut és az árakat a json adja meg.
+> A Twine nem készletet ír, csak a `@shop azonosító` parancsot. Az árut és az árakat a bolt adja meg: ezt a szerkesztőben állítod össze, vagy `.json` fájlként írod meg.
+
+### Bolt készítése a szerkesztőben
+
+1. Nyisd meg az **Asset menedzsert**, és válaszd a **Boltok** kategóriát.
+2. A bal oldali listában látod az összes boltot. A **lakat** a **beépített** boltot jelzi (a `src/shops/` mappából, ezek csak olvashatók), a **megosztott** felirat a közzétett boltot, a **sárga pont** a **helyi vázlatot**.
+3. Kattints a **+ Új** gombra: létrejön egy üres vázlat. Egy meglévő bolt módosításához jelöld ki, és kattints a **Helyi másolat szerkesztése** gombra: a másolat ezen a gépen lecseréli az eredetit (a **Vázlat eldobása** gombbal visszaállhatsz az eredetire).
+4. Töltsd ki a mezőket:
+   - **Név** és **Azonosító**: az azonosítót írod a Twine-ban a `@shop` után, és ezt választod az NPC **Bolt azonosítója** mezőjében. Csak kisbetű, szám, `-` és `_` lehet. Ha olyan azonosítót adsz, amilyen másik helyi bolt már van, a mező pirosra vált, és nem fogadja el.
+   - **Portré**: a megosztott képek közül a „portré” típusúak.
+   - **Vételi szorzó** és **Eladási szorzó**: a tárgy értékének szorzója (mennyit fizet a csapat, és mennyit fizet a bolt). Ha az eladási szorzó nagyobb a vételinél, a csapat a ki-be vásárlással kreditet csinálhat: a szerkesztő figyelmeztet.
+   - **Készlet**: a **+ Tárgy hozzáadása** gombbal új sor kerül a táblába. Minden sorban válassz **tárgyat** (a sima tárgyak és a fegyverek közül; mellette látszik az **értéke**), opcionálisan adj meg egy **fix árat** (üresen: érték × vételi szorzó; a mező halvány száma mutatja, mennyi lenne), és add meg a **mennyiséget** (vagy pipáld be a **∞** jelölőt: korlátlan). A ▲ ▼ gombok a sorrendet, a × a sor törlését végzik.
+5. A tábla jobb szélén **élő ár** látszik: a **Te fizetsz** oszlop azt mutatja, mennyibe kerül a tárgy a csapatnak, a **Te kapsz** oszlop azt, mennyit fizet érte a bolt (ha „nem veszi meg”, a tárgynak nincs értéke). Ugyanazokkal a képletekkel számol, mint a játék.
+6. Jobb oldalon a **Problémák** lista jelzi, ha valami nem jó. **Hiba** (piros): ismeretlen tárgy, üres tárgy sor, negatív ár vagy mennyiség, érvénytelen azonosító, rossz szorzó: ezt javítani kell, hibával nem lehet közzétenni. **Figyelmeztetés** (sárga): például kétszer szereplő tárgy, nulla darab, 0 kredites tárgy, hiányzó név, vagy az azonosító egy beépített/megosztott boltét takarja.
+
+A vázlat minden változtatásnál **magától mentődik** a böngészőben (ahogy a párbeszéd-vázlatok), és **azonnal a játékban is érvényes**: ha az NPC **Bolt azonosítója** (vagy a Twine `@shop` parancsa) erre az azonosítóra mutat, a szerkesztőből kilépve rögtön kipróbálhatod. Amikor a bolt definíciója megváltozik, a bolt készlete újrakezdődik a munkamenetben.
+
+Gombok jobb oldalon:
+
+- **Közzététel**: a boltot a megosztott tárba teszi, új változatként (bejelentkezés kell hozzá; a rendszer rákérdez). A vendégek automatikusan betöltik, a kiadás a `npm run pull:shared` paranccsal csomagolja be. A helyi vázlat megmarad, és ezen a gépen az érvényes. Hibával nem lehet közzétenni.
+- **Exportálás .json-ként**: letölti a boltot fájlként (`<azonosító>.json`); az `src/shops/` mappába téve beépített bolt lesz.
+- **Törlés** / **Vázlat eldobása**: a helyi vázlatot törli (megerősítést kér, nem vonható vissza).
+- A lista fölötti **Bolt .json fájl importálása** gomb egy `.json` fájlból csinál vázlatot (ha van ilyen azonosítójú vázlat, rákérdez a cserére).
 
 ### A fájl felépítése
 
-A mappában minden bolt egy külön fájl. A mintából (`smith-shop.json`):
+Boltot kézzel is írhatsz. A `src/shops/` mappában minden bolt egy külön fájl. A mintából (`smith-shop.json`):
 
 ```json
 {
@@ -232,7 +252,9 @@ Két forrás van:
 
    `pulse_rifle`, `arc_welder`, `shock_emitter`, `stim_injector`, `sidearm`, `scatter_gun`, `rail_rifle`, `spear`, `crossbow`, `longbow`, `arcane_staff`, `healing_staff`, `trauma_kit`.
 
-Csak **létező** azonosítót írj. Ha új tárgyra van szükséged, az a játék kódjába kerül, ezt kérd a fejlesztőtől.
+3. **A szerkesztőben készített felszedhető tárgyak** (Asset Manager, **Felszedhető tárgyak**) is bekerülnek a tárgylistába. Értéküket a tárgy **Érték** mezője adja; ha üresen hagyod (az **alapérték** jelölő be van pipálva), a kategória alapértéke érvényes: zsákmány 4, technika 15, ellátmány 10, értéktárgyak 40, adatok 30 kredit.
+
+A beépített listából csak **létező** azonosítót írj. Ha új, beépített tárgyra van szükséged, az a játék kódjába kerül, ezt kérd a fejlesztőtől.
 
 ### Hogyan működik a bolt a játékban?
 
@@ -310,7 +332,7 @@ Közzététel után:
 - **A vendégek** (akik nem jelentkeztek be) a közzétett könyvtárat **automatikusan betöltik**, nem kell semmit csinálniuk.
 - **A kiadás** (a játék csomagja) a közzétett tartalmat a `npm run pull:shared` paranccsal húzza be. Ezt a fejlesztő futtatja, neked nem kell.
 
-A **bolt** (`.json`) egyelőre nem itt jelenik meg: azt fájlként kell a `src/shops/` mappába tenni (lásd az 5. részt).
+A **boltot** ugyanígy teszed közzé a **Boltok** kategóriában (lásd az 5. részt).
 
 ## 8. Kipróbálás a játékban
 

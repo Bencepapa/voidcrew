@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { t } from "../i18n";
 import { activeWorld } from "../game/worlds";
 import { DEFAULT_PICKUP, ITEM_CATEGORIES, type PickupAppearance } from "../game/items";
+import { MAX_PICKUP_VALUE, categoryValue, pickupValue } from "../game/pickupValue";
 import type { DecalSurfaceKind, ImagePurpose, SharedImage, SharedImageType } from "../render/sharedImages";
 import { applyTransparency, decode, type Transparency } from "./imageTools";
 import { sharedConfigured, useSharedAuth } from "./sharedAuth";
@@ -96,6 +97,7 @@ function PublishedDetails({ image }: { image: SharedImage }) {
       <p>{t("assetManager.pickup.category")}: {t(`assetManager.pickup.${image.pickup.category}`)}</p>
       <p>{t("assetManager.pickup.height")}: {image.pickup.height}</p>
       <p>{t("assetManager.pickup.glow")}: {image.pickup.glow}</p>
+      <p>{t("assetManager.pickup.value")}: {pickupValue(image.pickup.value, image.pickup.category)} cr</p>
       <div className="grid grid-cols-2 gap-2">
         {(["normal", "depth"] as const).map(channel => <div key={channel}>
           <strong>{t(`assetManager.row.${channel}`)}</strong>
@@ -258,6 +260,16 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
         value={pickup.height} defaultValue={DEFAULT_PICKUP.height} onChange={height => autosavePickup({ height })}/>
       <NumberField label={t("assetManager.pickup.glow")} min={0} max={2} step={0.05}
         value={pickup.glow} defaultValue={DEFAULT_PICKUP.glow} onChange={glow => autosavePickup({ glow })}/>
+      <div className="flex min-w-0 flex-col gap-1" title={t("assetManager.pickup.valueHint")}>
+        <NumberField label={t("assetManager.pickup.value")} min={0} max={MAX_PICKUP_VALUE} step={1} unit="cr"
+          value={pickupValue(pickup.value, pickup.category)} defaultValue={categoryValue(pickup.category)}
+          disabled={pickup.value === undefined} onChange={value => autosavePickup({ value })}/>
+        <label className="flex items-center gap-1 text-xs text-neutral-300">
+          <input type="checkbox" checked={pickup.value === undefined}
+            onChange={event => autosavePickup({ value: event.target.checked ? undefined : categoryValue(pickup.category) })}/>
+          {t("assetManager.pickup.valueAuto", { n: categoryValue(pickup.category) })}
+        </label>
+      </div>
     </>}
 
     <KindChoice label={t("assetManager.image.transparency")} value={current.transparency.source}

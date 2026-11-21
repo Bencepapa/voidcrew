@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { WorldId } from "../game/worlds";
 import { bundledImages } from "../game/sharedBuiltins";
 import { ITEM_TYPES, isSharedPickupId, type PickupAppearance } from "../game/items";
+import { pickupValue } from "../game/pickupValue";
 import { textureFolder, type TextureSetFiles } from "./textureSets";
 
 export type SharedImageType = "portrait" | "decal" | "item";
@@ -74,7 +75,7 @@ export function setSharedImages(world: WorldId, images: SharedImage[]) {
   }
   for (const [id, image] of newPickups) {
     if (!image.pickup) continue;
-    ITEM_TYPES[id] = { name: image.name, category: image.pickup.category, value: 0 };
+    ITEM_TYPES[id] = { name: image.name, category: image.pickup.category, value: pickupValue(image.pickup.value, image.pickup.category) };
     if (JSON.stringify(oldPickups.get(id)) !== JSON.stringify(image)) updatedPickups.add(id);
   }
   for (const listener of listeners) listener();

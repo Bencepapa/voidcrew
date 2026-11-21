@@ -11,6 +11,8 @@ export interface PickupAppearance {
   category: ItemCategory;
   height: number;
   glow: number;
+  // what it is worth (credits each); missing: the category's default (see pickupValue.ts)
+  value?: number;
 }
 
 export const DEFAULT_PICKUP: PickupAppearance = { category: "salvage", height: 0.2, glow: 0 };

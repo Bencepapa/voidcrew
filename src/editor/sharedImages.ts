@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { t } from "../i18n";
 import type { WorldId } from "../game/worlds";
 import { DEFAULT_PICKUP, isItemCategory, type PickupAppearance } from "../game/items";
+import { cleanPickupValue } from "../game/pickupValue";
 import { isImagePurpose, setSharedImages, type DecalSurfaceKind, type ImagePurpose, type SharedImage, type SharedImageType } from "../render/sharedImages";
 import { idb } from "./idb";
 import { applyTransparency, decode, isPng, MAX_PNG_BYTES, type Transparency } from "./imageTools";
@@ -31,10 +32,13 @@ const isTransparencySource = (value: unknown): value is Transparency["source"] =
   value === "alpha" || value === "colorKey" || value === "none";
 
 function readPickup(value?: Partial<PickupAppearance> | null): PickupAppearance {
+  // (the value is optional: an old pickup, or an empty field, has none and gets its category's default when registered)
+  const own = cleanPickupValue(value?.value);
   return {
     category: isItemCategory(value?.category) ? value.category : DEFAULT_PICKUP.category,
     height: typeof value?.height === "number" && Number.isFinite(value.height) ? Math.max(0.03, Math.min(2, value.height)) : DEFAULT_PICKUP.height,
     glow: typeof value?.glow === "number" && Number.isFinite(value.glow) ? Math.max(0, Math.min(2, value.glow)) : DEFAULT_PICKUP.glow,
+    ...(own !== undefined ? { value: own } : {}),
   };
 }
 
