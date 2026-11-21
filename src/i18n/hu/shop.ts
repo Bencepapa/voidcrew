@@ -2,6 +2,7 @@
 export const shopHu = {
   "shop.title": "Bolt",
   "shop.close": "Bezár (Esc)",
+  "shop.greeting": "Üdv! Nézz körül nyugodtan.",
   "shop.credits": "Kredit",
   "shop.stock": "Eladó",
   "shop.backpack": "Hátizsák",

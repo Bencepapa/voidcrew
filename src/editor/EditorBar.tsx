@@ -75,7 +75,7 @@ export interface EditorBarProps {
   robotChoice: string | null;
   onRobotChoice: (type: string) => void;
   actor: ActorInfo | null;
-  onActorChange: (patch: { actor?: string; facing?: Direction; chance?: number; wake?: ActorWake; friendly?: boolean; dialogue?: { library: string; entry: string }; portrait?: string; shop?: string } & Linked, merge?: string) => void;
+  onActorChange: (patch: { actor?: string; facing?: Direction; chance?: number; wake?: ActorWake; friendly?: boolean; dialogue?: { library: string; entry: string }; portrait?: string; shop?: string; greeting?: string } & Linked, merge?: string) => void;
   onActorClearRoute: () => void;
   onActorDelete: () => void;
   onActorDeselect: () => void;
@@ -209,6 +209,7 @@ export interface ActorInfo {
   dialogue?: { library: string; entry: string };
   portrait?: string;
   shop?: string;
+  greeting?: string;
 }
 
 // a door's lock with a change: none once it has neither a key nor a hack

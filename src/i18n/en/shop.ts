@@ -2,6 +2,7 @@
 export const shopEn = {
   "shop.title": "Shop",
   "shop.close": "Close (Esc)",
+  "shop.greeting": "Welcome. Have a look around.",
   "shop.credits": "Credits",
   "shop.stock": "For sale",
   "shop.backpack": "Backpack",

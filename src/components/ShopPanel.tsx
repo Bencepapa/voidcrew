@@ -32,8 +32,10 @@ type Msg = { text: string; bad: boolean } | null;
 // arrows move, Enter/Space pick up and put down (the keyboard's way of
 // dragging), Esc cancels what's picked up, then closes the shop. The stock changes
 // only for this session (see shopStore.ts).
-export function ShopPanel({ shopId, crew, partyDock, onClose }: {
+export function ShopPanel({ shopId, crew, partyDock, onClose, intro }: {
   shopId: string;
+  // simple shop (no dialogue): who greets and what they say, shown above the stock
+  intro?: { portrait?: string; text: string; npc?: string };
   crew: Crewmate[];
   partyDock: HTMLElement | null;
   onClose: () => void;
@@ -165,6 +167,7 @@ export function ShopPanel({ shopId, crew, partyDock, onClose }: {
     return each > 0 ? t("shop.sellTip", { n: each * slot.qty }) : t("shop.noSale");
   };
   const portrait = def?.portrait ? images.find((image) => image.id === def.portrait) : undefined;
+  const introPortrait = intro?.portrait ? images.find((image) => image.id === intro.portrait) : undefined;
 
   // the item clicked or under the pointer: what it is, and what it costs or fetches
   const infoKey = useInfoSlot();
@@ -233,6 +236,24 @@ export function ShopPanel({ shopId, crew, partyDock, onClose }: {
             </button>
           </span>
         </header>
+        {intro && (
+          <div className="flex items-start gap-3">
+            <div className="h-20 w-20 shrink-0 overflow-hidden rounded border border-neutral-700 bg-neutral-900">
+              {introPortrait ? (
+                <img src={introPortrait.url} alt={introPortrait.name} className="h-full w-full object-cover" />
+              ) : (
+                <svg viewBox="0 0 100 100" className="h-full w-full text-neutral-700" role="img" aria-label={t("dialogue.popup.noPortrait")}>
+                  <circle cx="50" cy="36" r="17" fill="currentColor" />
+                  <path d="M16 100c0-24 14-38 34-38s34 14 34 38z" fill="currentColor" />
+                </svg>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              {intro.npc && <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-400">{intro.npc}</p>}
+              <p className="whitespace-pre-wrap break-words rounded border border-neutral-700 bg-neutral-900 p-2 text-[12px] text-neutral-100">{intro.text}</p>
+            </div>
+          </div>
+        )}
         {!def ? (
           <p className="text-red-300">{t("shop.missing", { id: shopId || t("dialogue.popup.ownShop") })}</p>
         ) : (

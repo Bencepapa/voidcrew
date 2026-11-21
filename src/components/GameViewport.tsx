@@ -6216,7 +6216,7 @@ export function GameViewport({
       const m = latestMapRef.current;
       if (!editing && !m.wallInteractions?.length &&
           !m.doors?.some(d => d.interaction) && !m.decals?.some(d => d.interaction) &&
-          !m.props?.some(p => p.interaction) && !m.items?.some(i => i.interaction) && !m.actors?.some(a => a.dialogue)) return null;
+          !m.props?.some(p => p.interaction) && !m.items?.some(i => i.interaction) && !m.actors?.some(a => a.dialogue || a.shop)) return null;
       interactionRay.far = editing ? (topdown.on ? TOPDOWN_REACH : EDIT_REACH) : interactionReach;
       interactionRay.setFromCamera(ndc, camera);
       let solidDistance = Infinity;

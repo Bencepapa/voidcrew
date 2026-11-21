@@ -205,6 +205,7 @@ export interface MapFile {
     dialogue?: { library: string; entry: string };
     portrait?: string;
     shop?: string;
+    greeting?: string;
     id?: string;
     with?: string;
     without?: string;
@@ -481,6 +482,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
           ? { library: a.dialogue.library, entry: a.dialogue.entry } : undefined,
         portrait: typeof a.portrait === "string" && a.portrait ? a.portrait : undefined,
         shop: typeof a.shop === "string" && a.shop ? a.shop : undefined,
+        greeting: typeof a.greeting === "string" && a.greeting.trim() ? a.greeting : undefined,
         id: a.id,
         with: a.with,
         without: a.without,

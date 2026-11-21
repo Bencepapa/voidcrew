@@ -6,7 +6,7 @@ import { useSharedImages } from "../render/sharedImages";
 const alignment = { top: "items-start", center: "items-center", bottom: "items-end" };
 
 export function InteractionPopup({ event, close, partyDock }: {
-  event: Exclude<Interaction, { kind: "dialogue" }>;
+  event: Exclude<Interaction, { kind: "dialogue" | "shop" }>;
   close: () => void;
   partyDock: HTMLElement | null;
 }) {

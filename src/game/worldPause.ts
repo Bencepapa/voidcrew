@@ -4,7 +4,8 @@ import type { Interaction } from "./interactions";
 // world behind it. One place decides, so the clock, the actors, the party's
 // moves and turns, and the view's mouse input can't disagree.
 // The shop window opens inside a dialogue popup, so it's covered by the
-// dialogue being the active interaction (see DialoguePopup).
+// dialogue being the active interaction (see DialoguePopup). The simple shop
+// (a "shop" interaction: ShopPanel with an intro) pauses and blocks the same way.
 export interface WorldPause {
   // the game clock stands still and nothing moves on its own (actors, timers)
   pausesWorld: boolean;
@@ -15,7 +16,7 @@ export interface WorldPause {
 }
 
 export function worldPause(interaction: Interaction | null | undefined, inventoryShown: boolean): WorldPause {
-  const talking = interaction?.kind === "dialogue";
+  const talking = interaction?.kind === "dialogue" || interaction?.kind === "shop";
   const modalMessage = interaction?.kind === "message" && interaction.modal;
   const image = interaction?.kind === "image";
   return {
