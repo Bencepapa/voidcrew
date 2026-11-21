@@ -327,11 +327,19 @@ Ha a beszélgetés helyett piros hibaszöveg jelenik meg, az NPC-nél a könyvt�
 
 Ha módosítod a könyvtárat (újraimportálod ugyanazzal az azonosítóval), az új szöveget a **következő beszélgetésnél** használja a játék, újraindítás nélkül.
 
-> **Készül: egyszerű bolt mód** (fejlesztés alatt, egy másik ágon; lehet, hogy a végső változat eltér)
->
-> Hamarosan lehet egy **egyszerű módja** is a boltnak, amikor **nincs hozzá párbeszéd**: az NPC-nél megadsz egy **bolt azonosítót**, egy **üdvözlő szöveget** (greeting) és egy **portrét**. Ha az NPC-nek van boltja és üdvözlő szövege, de nincs párbeszéde, a megszólításkor **rögtön a bolt-ablak nyílik meg** a portréval és a szöveggel.
->
-> Amíg ez nincs kész, a boltot a fent leírt módon, párbeszéden keresztül (`@shop`) tudod megnyitni.
+## 8b. Egyszerű bolt (párbeszéd nélkül)
+
+Ha nincs szükséged elágazó beszélgetésre, elég egy **portré, egy rövid szöveg és a vásárlás**:
+
+1. Az NPC Inspectorában, a **Beszélgetés** csoportban hagyd üresen a Párbeszéd mezőt.
+2. A **Bolt** listából válaszd ki a bolt azonosítóját (a beépített és a megosztott boltok közül).
+3. Írd be az **Üdvözlés** szöveget (üresen hagyva egy alapértelmezett köszöntés jelenik meg), és válaszd ki a **Portrét**.
+
+A megszólításkor (Space vagy kattintás) **rögtön a bolt-ablak nyílik** a portréval, a névvel és az üdvözlő szöveggel; az NPC a csapat felé fordul, a világ megáll, az Esc bezárja.
+
+Szabály: ha az NPC-hez **van párbeszéd**, mindig az nyílik (és a `@shop` parancs nyitja a boltot). Ha **nincs párbeszéd, de van bolt**, az egyszerű bolt nyílik. Ha egyik sincs, nem történik semmi.
+
+Egyszerű bolt **eseményként** is tehető falra, ajtóra, propra, matricára vagy tárgyra (pl. egy pultra): az esemény-eszközben válaszd az **Egyszerű bolt** fajtát (bolt, portré, üdvözlés).
 
 ## 9. Ellenőrzőlista íróknak
 
