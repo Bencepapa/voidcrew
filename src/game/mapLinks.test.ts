@@ -1,6 +1,6 @@
 // Run: npx tsx src/game/mapLinks.test.ts
 import assert from "node:assert/strict";
-import { arrivalFacing, linkAt, linkProblems, loadingImageFor, mapLinks, namedPlaces, readLinkTarget, resolveArrival, type LinkMap } from "./mapLinks";
+import { arrivalFacing, linkAt, linkProblems, loadingImageFor, loadingImagesAhead, mapLinks, namedPlaces, readLinkTarget, resolveArrival, type LinkMap } from "./mapLinks";
 import type { CellType } from "./types";
 
 const grid = (rows: string[]): CellType[][] => rows.map((r) => r.split("").map((c): CellType => (c === "W" ? "wall" : "floor")));
@@ -91,6 +91,21 @@ assert.equal(loadingImageFor({ to: { map: "a" } }, {}), undefined);
 assert.equal(loadingImageFor(undefined, { loadingImage: "map" }), "map");
 assert.equal(loadingImageFor({ to: { map: "a", loadingImage: "" } }, { loadingImage: "map" }), "map");
 assert.equal(loadingImageFor(undefined, undefined), undefined);
+
+// ---- the pictures ahead
+const pictured = mk("pictured", ["WWWW", "W..W", "WWWW"], {
+  loadingImage: "own",
+  exits: [
+    { cell: { x: 1, y: 1 }, to: { map: "town", loadingImage: "hero" } },
+    { cell: { x: 2, y: 1 }, to: { map: "town" } },
+  ],
+  stairs: [{ cell: { x: 2, y: 1 }, direction: "up", to: { map: "cellar" } }],
+});
+assert.deepEqual(
+  loadingImagesAhead(pictured, (id) => (id === "town" ? { loadingImage: "townpic" } : undefined)),
+  ["own", "hero", "townpic"],
+);
+assert.deepEqual(loadingImagesAhead(mk("plain", ["WWW", "W.W", "WWW"]), () => undefined), []);
 
 // ---- problems
 const world: Record<string, LinkMap> = { town, forest, lonely };

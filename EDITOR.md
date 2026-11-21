@@ -235,6 +235,12 @@ The **Map** tool's panel:
 
 - **Map** dropdown: opens another map straight away (no lift ride), at its
   start. The URL's `?map=` follows, so a reload stays on it.
+- **Loading picture:** a shared still image (the Images panel: purpose
+  Loading, Portrait or Room) shown behind the loading screen's text, dimmed,
+  while this map loads (`loadingImage` in the map). A gate's or stairs'
+  own **Loading picture** (`to.loadingImage`) comes first - "arriving
+  through this gate shows the hero before the town" - then the target
+  map's, else the plain screen.
 - **+N / −N, +S / −S, +W / −W, +E / −E:** a row or column of wall added
   at that edge, or cut off (only if it's all wall with nothing placed on
   it). Adding or cutting at the north or west moves everything on the map

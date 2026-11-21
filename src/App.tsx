@@ -53,6 +53,8 @@ import {
 } from "./editor/mapStore";
 import { MapTitle } from "./components/MapTitle";
 import { GatePrompt } from "./components/GatePrompt";
+import { LoadingImagePreloader } from "./components/LoadingImagePreloader";
+import { loadingImagesAhead } from "./game/mapLinks";
 import { MapDialog } from "./editor/MapDialog";
 import type { MapDialogMode, MapDialogValues } from "./editor/MapDialog";
 import { MAPS, START_MAP } from "./game/map";
@@ -415,7 +417,9 @@ export default function App() {
     document.documentElement.classList.toggle("theme-fantasy", map.world === "fantasy");
     document.title = WORLDS[map.world].name;
   }, [map.world]);
-  const needsSharedImages = editMode ||
+  // the loading pictures of this map and of the maps its gates and stairs lead to
+  const loadingImageIds = loadingImagesAhead(map, (id) => MAPS[id]);
+  const needsSharedImages = editMode || loadingImageIds.some((id) => !sharedImage(id)) ||
     (activeInteraction?.kind === "image" && !!activeInteraction.image && !sharedImage(activeInteraction.image)) ||
     !!map.decals?.some(({ decal }) => /^(fantasy|scifi)_decal_/.test(decal) && !sharedImage(decal)) ||
     !!map.items?.some(({ item }) => isSharedPickupId(item) && !sharedImage(item)) ||
@@ -2490,6 +2494,7 @@ export default function App() {
       )}
       {!editMode && phase === "run" && !runEnd && <MapTitle key={map.id} map={map} />}
       {inventoryShown && <InventoryPanel partyDock={partyDock} onClose={() => setInventoryOpen(false)} />}
+      <LoadingImagePreloader ids={loadingImageIds} />
       {linkPrompt && !editMode && !runEnd && !activeInteraction && !inventoryShown && <GatePrompt prompt={linkPrompt} onGo={confirmLink} onStay={declineLink} />}
       {!editMode && <DragGhost />}
       {!editMode && phase === "run" && !runEnd && WORLDS[map.world].loop === "ship" && <AlertMeter alert={alert} compact={compact} powerOn={powerOn} />}
@@ -2633,7 +2638,7 @@ export default function App() {
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
           onRenameMap={renameCurrentMap}
-          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle }}
+          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle, loadingImage: map.loadingImage }}
           onMapLook={changeMapLook}
           renderSettings={settings}
           onRenderSettings={setSettings}

@@ -132,6 +132,19 @@ export function loadingImageFor(link: Pick<MapLink, "to"> | undefined, target: P
   return link?.to.loadingImage || target?.loadingImage || undefined;
 }
 
+// The loading pictures a map's party may meet soon: its own, those of its links,
+// and those of the maps they lead to - to have them fetched before they're needed
+export function loadingImagesAhead(map: Pick<LinkMap, "exits" | "stairs" | "loadingImage">, lookup: (id: string) => Pick<LinkMap, "loadingImage"> | undefined): string[] {
+  const ids = new Set<string>();
+  if (map.loadingImage) ids.add(map.loadingImage);
+  for (const link of mapLinks(map)) {
+    if (link.to.loadingImage) ids.add(link.to.loadingImage);
+    const image = lookup(link.to.map)?.loadingImage;
+    if (image) ids.add(image);
+  }
+  return [...ids];
+}
+
 export type LinkProblemCode = "linkNoTarget" | "linkUnknownMap" | "linkSelf" | "linkUnknownArrival" | "linkNoWayBack";
 export interface LinkProblem {
   code: LinkProblemCode;

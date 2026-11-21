@@ -78,7 +78,7 @@ import { mapUsesTexture } from "../editor/textureLibrary";
 import { onSharedPropsChanged } from "../editor/sharedProps";
 import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import { doorLeafMotion, type DoorType } from "../game/doorTypes";
-import { onSharedDecalsChanged, onSharedPickupsChanged, pickupTexture, sharedImage } from "../render/sharedImages";
+import { onSharedDecalsChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 
@@ -8456,27 +8456,39 @@ export function GameViewport({
         </button>
       )}
       <div ref={fadeRef} className="pointer-events-none absolute inset-0 bg-black opacity-0" />
-      <LoadingScreen loading={loading} inLift={!!ride} title={WORLDS[map.world].loop === "ship" ? "USV HORIZON" : WORLDS[map.world].name.toUpperCase()} />
+      <LoadingScreen loading={loading} image={transit?.image ?? map.loadingImage} inLift={!!ride} title={WORLDS[map.world].loop === "ship" ? "USV HORIZON" : WORLDS[map.world].name.toUpperCase()} />
     </div>
   );
 }
 
 // Shown over the view while a map's scene loads: the deck's name and a
-// progress bar, fading out once it's all built.
-function LoadingScreen({ loading, inLift, title }: { loading: { title: string; progress: number } | null; inLift: boolean; title: string }) {
-  // keep the last title while fading out
+// progress bar, fading out once it's all built. `image`: a shared still
+// image's id (see MapFile.loadingImage, MapLinkTarget.loadingImage) shown
+// behind the text, dimmed so the text stays readable - none: the plain screen.
+function LoadingScreen({ loading, inLift, title, image }: { loading: { title: string; progress: number } | null; inLift: boolean; title: string; image?: string }) {
+  const images = useSharedImages();
+  // keep the last title and picture while fading out
   const [shown, setShown] = useState(loading);
+  const [shownImage, setShownImage] = useState(image);
   useEffect(() => {
-    if (loading) setShown(loading);
-  }, [loading]);
+    if (loading) {
+      setShown(loading);
+      setShownImage(image);
+    }
+  }, [loading, image]);
+  const url = shownImage ? images.find((i) => i.id === shownImage)?.url : undefined;
   return (
     <div
       className={`absolute inset-0 bg-black flex flex-col items-center justify-center gap-3 font-mono transition-opacity duration-500 ${loading ? "opacity-100" : "opacity-0 pointer-events-none"}`}
     >
-      <div className="text-[10px] tracking-[0.3em] text-green-700">{inLift ? "LIFT IN TRANSIT" : title}</div>
-      <div className="text-sm tracking-[0.2em] text-green-400 uppercase">{shown?.title}</div>
-      <div className="w-48 h-1 bg-green-950 overflow-hidden">
-        <div className="h-full bg-green-500 transition-[width] duration-200" style={{ width: `${Math.round((shown?.progress ?? 1) * 100)}%` }} />
+      {url && <img src={url} alt="" draggable={false} className="absolute inset-0 h-full w-full object-cover" />}
+      {url && <div className="absolute inset-0 bg-black/55" />}
+      <div className="relative flex flex-col items-center gap-3" style={url ? { textShadow: "0 1px 6px #000, 0 0 2px #000" } : undefined}>
+        <div className="text-[10px] tracking-[0.3em] text-green-700">{inLift ? "LIFT IN TRANSIT" : title}</div>
+        <div className="text-sm tracking-[0.2em] text-green-400 uppercase">{shown?.title}</div>
+        <div className="w-48 h-1 bg-green-950 overflow-hidden">
+          <div className="h-full bg-green-500 transition-[width] duration-200" style={{ width: `${Math.round((shown?.progress ?? 1) * 100)}%` }} />
+        </div>
       </div>
     </div>
   );

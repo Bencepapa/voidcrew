@@ -25,6 +25,8 @@ export interface MapLook {
   accent?: { hue: number; range?: number };
   // the "Place – Name" caption on entering (undefined: by default, on when the map has a place)
   showTitle?: boolean;
+  // the loading screen's picture (a shared still image's id; see GameMap.loadingImage)
+  loadingImage?: string;
 }
 // what a prop can wear (see PropSpec.texture): the wall and prop face sets
 // (a box's top comes with its side)

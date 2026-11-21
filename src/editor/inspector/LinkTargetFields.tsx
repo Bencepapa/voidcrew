@@ -3,6 +3,8 @@ import { t, type Key } from "../../i18n";
 import { MAPS } from "../../game/map";
 import { namedPlaces } from "../../game/mapLinks";
 import type { Direction, MapLinkTarget } from "../../game/types";
+import { worldOfMap } from "../../game/worlds";
+import { LoadingImageField } from "./LoadingImageField";
 import { CommitContext } from "./parts";
 
 const FIELD = "min-w-0 max-w-full flex-1 bg-neutral-800 border border-neutral-700 px-1 py-0.5";
@@ -53,6 +55,7 @@ export function LinkTargetFields({ to, mapId, mapIds, noneLabel, onChange }: {
           {FACINGS.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
       </label>
+      <LoadingImageField value={to.loadingImage} world={worldOfMap(mapId)} label="link.loadingImage" hint="link.loadingImageHint" onChange={(loadingImage) => change({ loadingImage })} />
     </>}
   </>;
 }

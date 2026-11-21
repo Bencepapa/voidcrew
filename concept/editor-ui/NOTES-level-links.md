@@ -121,3 +121,91 @@ marker (same layer toggle; they can't be picked from the minimap).
 
 Files: src/components/GameViewport.tsx (`makeStairsMarker`, the camera offset),
 src/editor/inspector/{StairsFields,LinkTargetFields}.tsx.
+## Stage 3 - loading screens with pictures
+
+`GameViewport`'s `LoadingScreen` takes an optional `image` (a shared image id)
+and draws it `object-cover` behind the text with a 55 % black overlay and a
+text shadow; with no image it looks as before. The picture is looked up with
+`useSharedImages()` (render/sharedImages.ts), the registry the dialogue
+portraits use; the screen keeps the last picture while it fades out, like the
+title.
+
+**Priority** (`loadingImageFor`, mapLinks.ts, tested): the link's own
+`to.loadingImage` > the target map's `loadingImage` > none. For a transit the
+winner is worked out when it starts (`MapTransit.image`); other loads (the
+first map, a lift ride, the editor's map switch) use the map's own
+`loadingImage`. A lift ride keeps its "LIFT IN TRANSIT" text over the picture.
+
+**Data**: `MapFile.loadingImage` / `GameMap.loadingImage` and
+`to.loadingImage` on an exit or staircase, all a shared image id:
+
+```json
+{ "name": "Market", "loadingImage": "fantasy_portrait_1b2c...",
+  "exits": [ { "x": 5, "y": 0, "to": { "map": "forest", "loadingImage": "fantasy_portrait_9f..." } } ] }
+```
+
+**Having the picture ready**: `loadingImagesAhead` (pure, tested) lists the
+pictures of the map, its links and the maps they lead to; App adds them to
+`needsSharedImages` (so `loadSharedImages` runs even outside the editor) and
+`LoadingImagePreloader` has the browser fetch them as soon as the registry
+knows them, so the loading screen shows its picture at once. A missing /
+unloaded picture just gives the plain screen.
+
+**Editor**: `LoadingImageField.tsx` - a dropdown of the world's shared still
+images (type "portrait" - the stored type of every still; those with purpose
+"loading" first) with a small preview; in the Map panel (`MapLook.loadingImage`,
+through `changeMapLook`) and in `LinkTargetFields` (the Exit and Stairs panels).
+An id that is not in the registry shows as "missing: <id>".
+
+Files: src/components/LoadingImagePreloader.tsx, src/editor/inspector/LoadingImageField.tsx.
+
+## Choices where the brief and the code differed
+
+- Gate = an `ExitSpec` with `to` (rather than a new element), as the brief
+  allows - the old exits keep ending the run.
+- Gates ask (Enter / Space / Esc prompt); stairs do not ask - stepping on takes them.
+- Self-links (a link to its own map) are refused: free movement keeps its own
+  pose and only re-seats it when the map changes.
+- Shared maps are targeted by their id in `MAPS`; see "Which maps can be targets".
+- `inLift` from the hook now also means "a gate / stairs transit is on" so App's
+  existing freezes (free movement, inventory, interactions) need no new flag.
+- The minimap marks stairs with the exits' marker and does not let them be picked there.
+- The viewport's black sheet is a DOM `div` whose opacity is set every frame
+  from the transit timeline (no React state per frame).
+
+## Not verified in a browser
+
+Nothing below has been run: only `npx tsc --noEmit` and the tsx tests
+(src/game/mapLinks.test.ts and the existing ones). parseMap can't run under tsx
+(`import.meta.env`), so the new exits / stairs / loadingImage parsing is only
+type-checked.
+
+## Hand-test list
+
+Make two fantasy maps A (town) and B (forest) in the editor (save both, so the
+ids are stable).
+1. Exit tool on A's edge: pick B under "Leads to" - the plate turns amber GATE.
+   Problems panel: "B has no way back" warning. Put a gate in B back to A: gone.
+2. Play A: step on the gate - the prompt shows "Leave A for B?"; Esc stays
+   (no prompt again until you step off and on); Enter / Space / the Go button
+   fades out, B loads (loading screen), you arrive on B's gate facing inward,
+   no prompt there; step off and on: the prompt asks to go back to A.
+3. "Arrives at" a named gate in B, and "Facing" - used. An arrival that does not
+   exist: warning in Problems, falls back to the gate back / start.
+4. Delete B from the target list (or type a bad id in the file): editor error
+   "doesn't exist"; in the game the log says the way is blocked.
+5. Both movement modes (grid and free): no moving while the screen fades; free
+   movement lands on the arrival cell.
+6. Sci-fi world: exits without `to` still end the run; Exit panel has only Name.
+7. Stairs tool (Traverse group): place, set up / down, straight / spiral, target.
+   Step on: the view moves ahead and up (down: sinks; spiral: turns), fades,
+   the other map fades in at its stairs of the other direction. Space on the
+   arrival stairs goes back. Stairs without a target: "lead nowhere yet".
+8. Loading pictures: publish a still image (purpose Loading), pick it in the
+   Map panel of B: B's loading screen (also via a lift or `?map=`) shows it,
+   dimmed, text readable. Give the gate's own picture: it wins over B's.
+   Remove both: the old plain screen.
+9. Undo / redo of the target and arrival edits (each dropdown change is a step);
+   grow the map at the north / west edge: exits and stairs move with it.
+10. Shared maps: open one from the shared list and target it from a gate: it
+   works until the page reloads (its local id is per session).
