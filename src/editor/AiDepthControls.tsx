@@ -30,6 +30,7 @@ export function AiDepthControls({ editor, onRunningChange }: {
   const { view } = editor;
   const [running, setRunning] = useState(false);
   const [label, setLabel] = useState("");
+  const [fraction, setFraction] = useState<number | undefined>();
   const [device, setDevice] = useState<AiDepthDevice | undefined>();
   const [options, setOptions] = useState<AiDepthOptions>(defaultAiDepthOptions);
   const [alsoNormal, setAlsoNormal] = useState(true);
@@ -58,6 +59,7 @@ export function AiDepthControls({ editor, onRunningChange }: {
       const image = await decode((await applyTransparency(raw, view.transparency)) ?? raw);
       const depth = await generateAiDepth(image, { ...options, pixelArt: view.pixelArt }, p => {
         if (p.stage === "backend") setDevice(p.device);
+        setFraction(p.stage === "download" ? p.fraction : undefined);
         setLabel(p.stage === "download" ? t("assetManager.ai.downloading", { percent: Math.round(p.fraction * 100) })
           : p.stage === "run" ? t("assetManager.ai.running") : p.stage === "post" ? t("assetManager.ai.finishing")
           : p.stage === "load" ? t("assetManager.ai.loading") : t("assetManager.ai.preparing"));
@@ -72,7 +74,7 @@ export function AiDepthControls({ editor, onRunningChange }: {
       if (abort.current === controller) {
         abort.current = null;
         onRunningChange?.(false);
-        setRunning(false); setLabel("");
+        setRunning(false); setLabel(""); setFraction(undefined);
       }
     }
   }
@@ -80,8 +82,15 @@ export function AiDepthControls({ editor, onRunningChange }: {
   return <details className="mt-1 border-t border-neutral-700 pt-1 text-[11px]">
     <summary className="flex cursor-pointer select-none items-center gap-1 text-neutral-200">
       <AiBadge/>{t("assetManager.ai.section")}
-      {running && <span role="status" className="ml-1 truncate text-[10px] text-sky-200">{label}</span>}
     </summary>
+    {running && <div role="status" className="mt-1">
+      <div className="whitespace-normal break-words text-[10px] text-sky-200">{label}</div>
+      <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded bg-neutral-700">
+        {fraction === undefined
+          ? <div className="h-full w-1/3 animate-pulse rounded bg-sky-400"/>
+          : <div className="h-full rounded bg-sky-400 transition-[width]" style={{ width: `${Math.round(fraction * 100)}%` }}/>}
+      </div>
+    </div>}
     <div className="mt-1 flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-1">
         <button className={small} disabled={running || editor.busy || !hasDiffuse} title={t("assetManager.ai.hint", { size: t("assetManager.ai.size") })} onClick={() => void start()}>
