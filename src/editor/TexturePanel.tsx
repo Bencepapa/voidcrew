@@ -11,6 +11,8 @@ import { SharedLoginForm, sharedConfigured, sharedToken, useSharedAuth } from ".
 import { deleteSharedTexture, publishDrafts } from "./sharedTextures";
 import { discardImageDraft, useImageDrafts } from "./sharedImages";
 import { discardPropDraft, usePropDrafts } from "./sharedProps";
+import { useDialogueDrafts } from "./dialogueDrafts";
+import { useShopDrafts } from "./shopDrafts";
 import { discardDoorDraft, useDoorDrafts } from "./sharedDoorTypes";
 import { draftById, draftCounts, draftId, discardDraft, isPropTexture, MAP_KEYS, saveDraft, useDrafts, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
 import type { TextureTuning } from "../render/textureTuning";
@@ -214,6 +216,8 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
   const imageDrafts = imageDraftList.length;
   const propDrafts = usePropDrafts();
   const doorDrafts = useDoorDrafts();
+  const dialogueDrafts = useDialogueDrafts();
+  const shopDrafts = useShopDrafts();
   const modelDrafts = [
     ...propDrafts.map(draft => ({ ...draft, sample: "prop", discard: discardPropDraft })),
     ...doorDrafts.map(draft => ({ ...draft, sample: "door", discard: discardDoorDraft })),
@@ -225,7 +229,7 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
   // a result message fades after a while
   useEffect(() => { if (!message || busy) return; const timer = setTimeout(() => setMessage(""), 8000); return () => clearTimeout(timer); }, [message, busy]);
   const { added, changed } = draftCounts(drafts);
-  if (!drafts.length && !imageDrafts && !modelDrafts.length && !message) return null;
+  if (!drafts.length && !imageDrafts && !modelDrafts.length && !dialogueDrafts.length && !shopDrafts.length && !message) return null;
 
   async function publish() {
     setBusy(true); setMessage("");
@@ -245,6 +249,8 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
     {imageDrafts > 0 && <span>{t("assetManager.image.unpublishedBar", { n: imageDrafts })}</span>}
     {propDrafts.length > 0 && <span>{t("assetManager.propDraft.unpublished", { n: propDrafts.length })}</span>}
     {doorDrafts.length > 0 && <span>{t("assetManager.doorType.unpublished", { n: doorDrafts.length })}</span>}
+    {dialogueDrafts.length > 0 && <span>{t("assetManager.dialogueDraft.unpublished", { n: dialogueDrafts.length })}</span>}
+    {shopDrafts.length > 0 && <span>{t("assetManager.shopDraft.unpublished", { n: shopDrafts.length })}</span>}
     {imageDrafts > 0 && <span className="flex basis-full flex-wrap items-center gap-1">
       {imageDraftList.map(d => <span key={d.id} className="inline-flex items-center overflow-hidden rounded border border-yellow-500/70 text-xs">
         <button type="button" className="px-2 py-0.5 hover:bg-yellow-800/50" title={t("assetManager.image.goToDraft")}

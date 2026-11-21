@@ -16,6 +16,8 @@ import { TEXTURE_SETS, type TextureSetPaths } from "../render/textureSets";
 import { baseMaps, channels, type Channel, type MaterialMaps } from "./materialMaps";
 import { decode } from "./imageTools";
 import { AutoBadge, ChannelControls, errorText, SignInPopover, TextureFields, UnsavedBar, useTextureEditor } from "./TexturePanel";
+import { useDialogueDrafts } from "./dialogueDrafts";
+import { useShopDrafts } from "./shopDrafts";
 import { draftCounts, draftId, isPropTexture, newDraft, saveDraft, useDrafts, type SurfaceKind } from "./textureDrafts";
 import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
 import { loadSharedTextures } from "./sharedTextures";
@@ -238,6 +240,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const imageDrafts = useImageDrafts();
   const propDrafts = usePropDrafts();
   const doorDrafts = useDoorDrafts();
+  const dialogueDrafts = useDialogueDrafts();
+  const shopDrafts = useShopDrafts();
   const doorCatalog = useDoorCatalog();
   useSharedPropVersion();
   const pendingScroll = useRef<string | null>(null);
@@ -548,7 +552,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   // closing with local drafts left asks first (the drafts stay on this computer either way)
   function requestClose() {
     const c = draftCounts(drafts);
-    if (!drafts.length || window.confirm(t("assetManager.closeWarning", { n: c.added, m: c.changed }))) setOpen(false);
+    // (the other kinds of local drafts count too: images, props, door types, NPCs, dialogues, shops)
+    const others = imageDrafts.length + propDrafts.length + doorDrafts.length + actorDrafts.length + dialogueDrafts.length + shopDrafts.length;
+    if (!drafts.length && !others) { setOpen(false); return; }
+    const message = others ? t("assetManager.closeWarningAll", { n: c.added + c.changed + others }) : t("assetManager.closeWarning", { n: c.added, m: c.changed });
+    if (window.confirm(message)) setOpen(false);
   }
   // the dialog always opens in the world the editor is working in
   function openManager() {
