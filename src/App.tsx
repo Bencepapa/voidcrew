@@ -85,6 +85,7 @@ import { MoveControls } from "./components/MoveControls";
 import { LogPanel } from "./components/LogPanel";
 import { ActionMenu } from "./components/ActionMenu";
 import { InventoryPanel } from "./components/InventoryPanel";
+import { worldPause } from "./game/worldPause";
 import { DragGhost } from "./components/InventorySlots";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { KeypadPanel } from "./components/KeypadPanel";
@@ -303,7 +304,8 @@ export default function App() {
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
   useEffect(() => setNoclip(viewSettings.noclip), [viewSettings.noclip, setNoclip]);
-  const interactionPausesWorld = inventoryShown || activeInteraction?.kind === "image" || activeInteraction?.kind === "dialogue" || (activeInteraction?.kind === "message" && activeInteraction.modal);
+  const worldPaused = worldPause(activeInteraction, inventoryShown);
+  const interactionPausesWorld = worldPaused.pausesWorld;
   useLayoutEffect(() => {
     setWorldFrozen(editMode || !!runEnd || phase !== "run" || interactionPausesWorld);
     gameClock.setPaused(interactionPausesWorld);
@@ -425,7 +427,7 @@ export default function App() {
   const finePointer = useMediaQuery("(pointer: fine)");
   const free = useFreeMovement({
     enabled: !grid,
-    frozen: inLift || aim !== null || inventoryShown || activeInteraction?.kind === "dialogue" || (activeInteraction?.kind === "message" && activeInteraction.modal),
+    frozen: inLift || aim !== null || worldPaused.blocksParty,
     noclip: viewSettings.noclip,
     map,
     pos,
@@ -438,7 +440,8 @@ export default function App() {
   });
   const view = useViewControls({
     grid,
-    suppressPointerLock: !!activeInteraction || inventoryShown,
+    suppressPointerLock: worldPaused.blocksView,
+    blocked: worldPaused.blocksView,
     onForward: moveForward,
     onBack: moveBackward,
     onTurnLeft: turnL,

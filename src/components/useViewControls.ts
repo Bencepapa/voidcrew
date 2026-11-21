@@ -53,6 +53,10 @@ interface ViewControlsOptions {
   // glance around (grid movement)
   editing?: boolean;
   suppressPointerLock?: boolean;
+  // a window is open over the view (dialogue, shop, inventory): the popups sit
+  // inside the view's element, so their pointer events bubble up to these
+  // handlers - none of them may glance, turn, step or capture the mouse then
+  blocked?: boolean;
 }
 
 const clampPeek = (v: number) => Math.max(-MAX_PEEK, Math.min(MAX_PEEK, v));
@@ -114,9 +118,19 @@ export function useViewControls(opts: ViewControlsOptions) {
     if ((opts.grid || opts.editing) && document.pointerLockElement) document.exitPointerLock();
   }, [opts.grid, opts.editing]);
 
+  // a window opening over the view: a drag in progress is dropped and the
+  // glance round is let go (the viewport eases it back)
+  useEffect(() => {
+    if (!opts.blocked) return;
+    drag.current = null;
+    peekRef.current.held = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+  }, [opts.blocked]);
+
   const handlers = {
     onPointerDown(e: PointerEvent<HTMLElement>) {
       const o = latest.current;
+      if (o.blocked) return;
       if (!o.grid) {
         if (e.pointerType === "mouse" && o.editing) {
           drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, peek: false, startOffset: 0, axis: null, peekX: e.clientX };
@@ -152,6 +166,7 @@ export function useViewControls(opts: ViewControlsOptions) {
 
     onPointerMove(e: PointerEvent<HTMLElement>) {
       const o = latest.current;
+      if (o.blocked) return;
       // editing: a mouse drag looks up and down too (past the same dead zone)
       if (o.editing && e.pointerType === "mouse" && e.buttons) {
         const d0 = drag.current;
@@ -200,6 +215,10 @@ export function useViewControls(opts: ViewControlsOptions) {
       const d = drag.current;
       if (!d || d.id !== e.pointerId) return;
       drag.current = null;
+      if (o.blocked) {
+        peekRef.current.held = false;
+        return;
+      }
       if (!o.grid) return;
       const peek = peekRef.current;
       const dx = e.clientX - d.x;
