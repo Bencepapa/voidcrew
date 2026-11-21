@@ -6,6 +6,8 @@ import { PROP_TYPES, propPlacement } from "../game/props";
 import { itemSpot } from "../game/items";
 import type { PropSpec } from "../game/types";
 import { getDialogue } from "../game/dialogueCatalog";
+import { getShopIds } from "../game/shopCatalog";
+import { simpleShopRefs, unknownShops } from "../game/simpleShop";
 
 export type Problem = { severity: "error" | "warning"; code: string; cell?: Vec2; key: string; params?: Record<string, string | number> };
 
@@ -82,6 +84,8 @@ export function validateMap(map: GameMap): Problem[] {
     const d = getDialogue(a.dialogue.library);
     if (!d || !(a.dialogue.entry in d.passages)) add("missingDialogue", a.cell, { library: a.dialogue.library, entry: a.dialogue.entry });
   }
+  // a simple shop (an NPC without a dialogue, a shop event) must name a known shop
+  for (const r of unknownShops(simpleShopRefs(map), getShopIds())) add("missingShop", r.cell, { shop: r.shop });
   // A wall face exists at solid neighbours or a floor/ceiling height change.
   const surfaceExists = (c: Vec2, surface: string) => {
     if (!open(c)) return false;

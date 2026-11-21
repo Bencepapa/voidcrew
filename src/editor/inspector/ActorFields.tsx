@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ACTOR_TYPES } from "../../game/actors";
 import { useDialogueLibraries } from "../../game/dialogueCatalog";
+import { useShopIds } from "../../game/shopCatalog";
 import { useSharedImages } from "../../render/sharedImages";
 import { isSharedActorId } from "../../game/actorSheets";
 import { assetInWorld } from "../../game/worlds";
@@ -28,11 +29,13 @@ const WAKE_LABELS: Record<ActorWake["mode"], Record<number, Key>> = {
 };
 const FIELD = "min-w-0 max-w-full flex-1 bg-neutral-800 border border-neutral-700 px-1 py-0.5";
 
-// A friendly NPC to talk to: its dialogue (library + entry passage), portrait and own shop.
+// A friendly NPC to talk to: its dialogue (library + entry passage), portrait and shop.
+// Without a dialogue its shop opens directly (the simple shop, with the greeting).
 // Picking a dialogue offers "friendly" (switches it on); it can be switched off again.
 function TalkGroup(p: EditorBarProps) {
  const libraries = useDialogueLibraries();
  const images = useSharedImages();
+ const shopIds = useShopIds();
  const key = "voidcrew-inspector:actor:talk";
  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) === "true"; } catch { return false; } });
  const actor = p.actor!;
@@ -72,9 +75,17 @@ function TalkGroup(p: EditorBarProps) {
     </select>
    </label>
    <label title={t("talk.shopTitle")}>{t("talk.shop")}
-    <input type="text" value={actor.shop ?? ""} placeholder="-" onChange={e => p.onActorChange({ shop: e.target.value.trim() || undefined })}
-     className="min-w-0 flex-1 bg-neutral-800 border border-neutral-700 px-1"/>
+    <select value={actor.shop ?? ""} onChange={e => p.onActorChange({ shop: e.target.value || undefined, ...(e.target.value && !actor.friendly ? { friendly: true } : {}) })} className={FIELD}>
+     <option value="">{t("talk.none")}</option>
+     {actor.shop && !shopIds.includes(actor.shop) && <option value={actor.shop}>{t("talk.unknownShop", { id: actor.shop })}</option>}
+     {shopIds.map(id => <option key={id} value={id}>{id}</option>)}
+    </select>
    </label>
+   {!actor.dialogue && <label title={t("talk.greetingTitle")} className="!items-start">{t("talk.greeting")}
+    <textarea rows={2} value={actor.greeting ?? ""} onChange={e => p.onActorChange({ greeting: e.target.value || undefined })}
+     className="min-w-0 max-w-full flex-1 bg-neutral-800 border border-neutral-700 px-1 py-0.5"/>
+   </label>}
+   {!actor.dialogue && <p className="text-neutral-400">{actor.shop ? t("talk.directHint") : t("talk.noShopHint")}</p>}
   </div>
  </details>;
 }

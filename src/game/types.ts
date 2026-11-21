@@ -143,6 +143,9 @@ export interface ActorSpec extends Linked {
   portrait?: string;
   // its own shop's id (what a parameter-less @shop opens)
   shop?: string;
+  // what it says in the simple shop (a friendly NPC with a shop but no dialogue
+  // opens the shop directly); empty: a default greeting
+  greeting?: string;
 }
 
 // An actor waiting for the ship's alert level (1 suspicious, 2 alert, 3

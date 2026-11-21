@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Image, Library, Lock, LockOpen, LogOut, MessageSquare } from "lucide-react";
+import { AlignJustify, ArrowUpFromLine, Ban, Dices, Eye, EyeOff, Flag, Image, Library, Lock, LockOpen, LogOut, MessageSquare, Store } from "lucide-react";
 import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld } from "../game/worlds";
 import { PROP_TYPES } from "../game/props";
@@ -64,9 +64,9 @@ export function AssetTree(p: EditorBarProps) {
     });
   }
   const events: Entry[] = [toolEntry("exit",t("editorBar.exit"),<LogOut size={28}/>), toolEntry("start",t("editorBar.start"),<Flag size={28}/>), toolEntry("restricted",t("editorBar.restricted"),<Ban size={28}/>), toolEntry("wall",t("editorBar.chanceWall"),<Dices size={28}/>)];
-  for (const kind of ["message", "image"] as const) {
+  for (const kind of ["message", "image", "shop"] as const) {
     events.push({
-      ...toolEntry("event", t(`events.${kind}`), kind === "message" ? <MessageSquare size={28}/> : <Image size={28}/>),
+      ...toolEntry("event", t(`events.${kind}`), kind === "message" ? <MessageSquare size={28}/> : kind === "shop" ? <Store size={28}/> : <Image size={28}/>),
       id: kind,
       active: p.eventKind === kind,
       pick: () => choose("event", () => p.onEventKind(kind)),

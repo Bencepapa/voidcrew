@@ -10,6 +10,8 @@ import { ShortcutHelp } from "./editor/ShortcutHelp";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { InteractionPopup } from "./components/InteractionPopup";
 import { DialoguePopup } from "./components/DialoguePopup";
+import { ShopPanel } from "./components/ShopPanel";
+import { getShopIds } from "./game/shopCatalog";
 import { gameClock } from "./game/clock";
 import { interactionAt, type Interaction, type InteractionTarget } from "./game/interactions";
 import { setInteraction } from "./editor/mapEdits";
@@ -330,7 +332,8 @@ export default function App() {
     const key = (e: KeyboardEvent) => {
       const event = activeInteractionRef.current;
       // (a dialogue's keys are the popup's own: Enter picks a choice there)
-      if (!event || event.kind === "dialogue") return;
+      // (the simple shop's keys are the shop window's own)
+      if (!event || event.kind === "dialogue" || event.kind === "shop") return;
       if (e.key === "Escape" || e.key === "Enter") {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -348,10 +351,10 @@ export default function App() {
   const openInteraction = (event: Interaction) => {
     if (editMode || phase !== "run" || inLift || terminal || keypad || aim || runEnd || wipedAt !== null || activeInteractionRef.current || inventoryShown) return false;
     activeInteractionRef.current = event;
-    interactionBlocksMovement.current = event.kind === "dialogue" || (event.kind === "message" && event.modal);
+    interactionBlocksMovement.current = event.kind === "dialogue" || event.kind === "shop" || (event.kind === "message" && event.modal);
     if (document.pointerLockElement) document.exitPointerLock();
     setActiveInteraction(event);
-    if (event.kind === "dialogue") {
+    if (event.kind === "dialogue" || event.kind === "shop") {
       // (the NPC stops and turns to the party)
       if (event.actorId !== undefined) faceActor(event.actorId);
     } else if (event.text.trim()) pushLog(event.text);
@@ -1519,7 +1522,7 @@ export default function App() {
   const selectedActorInfo: ActorInfo | null = (() => {
     const spec = selectedActor === null ? undefined : map.actors?.[selectedActor];
     return spec
-      ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length, links: linksOf(spec), wake: spec.wake, friendly: isFriendlySpec(spec), dialogue: spec.dialogue, portrait: spec.portrait, shop: spec.shop }
+      ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length, links: linksOf(spec), wake: spec.wake, friendly: isFriendlySpec(spec), dialogue: spec.dialogue, portrait: spec.portrait, shop: spec.shop, greeting: spec.greeting }
       : null;
   })();
   const changeActor = (patch: Parameters<typeof updateActor>[2], merge?: string) => {
@@ -2080,6 +2083,8 @@ export default function App() {
     }
     const event: Interaction = existing ?? (eventKind === "image"
       ? { kind: "image", text: "" }
+      : eventKind === "shop"
+      ? { kind: "shop", shop: [...getShopIds()].sort()[0] ?? "" }
       : { kind: "message", text: "", modal: false, position: "center" });
     if (existing || editInteraction(target, event)) {
       if (editTool !== "event") chooseTool("event");
@@ -2448,6 +2453,9 @@ export default function App() {
       {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
       {activeInteraction && !editMode && (activeInteraction.kind === "dialogue"
         ? <DialoguePopup event={activeInteraction} close={closeInteraction} partyDock={partyDock} crew={crew}/>
+        : activeInteraction.kind === "shop"
+        ? <ShopPanel shopId={activeInteraction.shop} crew={crew} partyDock={partyDock} onClose={closeInteraction}
+            intro={{ portrait: activeInteraction.portrait, text: activeInteraction.greeting?.trim() || t("shop.greeting"), npc: activeInteraction.npc ? ACTOR_TYPES[activeInteraction.npc]?.name : undefined }}/>
         : <InteractionPopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>)}
       {editMode && <PropEditor />}
       {editMode && (

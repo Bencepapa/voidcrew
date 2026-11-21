@@ -3,6 +3,7 @@
 //     `npm run pull:shared` also writes the published shops there),
 // (b) the shops the shared store has (loaded in the background by editor/sharedCommon.ts).
 // Shop editing in the Asset Manager comes later (H4b).
+import { useSyncExternalStore } from "react";
 import { parseShop, type ShopDef } from "./shop";
 
 const RAW = import.meta.glob<unknown>("../shops/*.json", { import: "default", eager: true });
@@ -21,6 +22,7 @@ const listeners = new Set<() => void>();
 /** Replaces the shared layer (what the store has now). */
 export function setSharedShops(shared: ReadonlyMap<string, ShopDef>) {
   shops = new Map([...bundled, ...shared]);
+  idList = null;
   for (const l of listeners) l();
 }
 export const subscribeShops = (l: () => void) => { listeners.add(l); return () => void listeners.delete(l); };
@@ -28,3 +30,9 @@ export const subscribeShops = (l: () => void) => { listeners.add(l); return () =
 /** The shop as it is defined (its starting stock); undefined if there is none with this id. */
 export const getShopDef = (id: string): ShopDef | undefined => shops.get(id);
 export const getShopIds = (): ReadonlySet<string> => new Set(shops.keys());
+
+let idList: readonly string[] | null = null;
+/** The known shop ids, sorted (the editor's selectors; re-rendered when the shared layer changes). */
+export function useShopIds(): readonly string[] {
+  return useSyncExternalStore(subscribeShops, () => (idList ??= [...shops.keys()].sort()));
+}
