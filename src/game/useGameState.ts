@@ -28,6 +28,7 @@ import { hasKey, t, type Key } from "../i18n";
 import { HACKER_ROLE, HACK_ENERGY, HACK_MS, conditionsMet, parseAction, triggerMatches, unlockedFlag } from "./story";
 import type { Lock, StoryEvent } from "./story";
 import { lockedAway, planShip } from "./shipPlan";
+import { loadingImageFor, resolveArrival, type LinkKind, type MapLink } from "./mapLinks";
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 
@@ -51,6 +52,25 @@ export interface LiftRide {
   duration: number;
   swapAt: number;
   up: boolean;
+}
+
+// A change of map through a link (a gate - see mapLinks.ts) in progress
+// (performance.now() times), for the viewport: the screen fades to black over
+// `duration` ms, the next map is swapped in behind it, and it fades back in
+// once that has loaded. `image`: the loading screen's picture on the way.
+export interface MapTransit {
+  kind: LinkKind;
+  start: number;
+  duration: number;
+  image?: string;
+}
+
+// what a gate asks of the party: where it leads, and the question to put
+export interface LinkPrompt {
+  link: MapLink;
+  // the names of the map left and of the one it leads to
+  from: string;
+  to: string;
 }
 
 let logId = 0;
@@ -86,6 +106,10 @@ const LIFT_RIDE_MS = 3600;
 const LIFT_SWAP_AT = 1700;
 // after a slow load, the cabin sits still this long before the doors open
 const LIFT_SETTLE_MS = 700;
+// a gate: the screen fades out this long before the next map is swapped in;
+// once it has loaded the party can act again after TRANSIT_SETTLE_MS
+const GATE_FADE_MS = 700;
+const TRANSIT_SETTLE_MS = 250;
 
 const BLOCKED_MESSAGES: Record<"wall" | "ledge" | "low" | "prop", string> = {
   wall: "A bulkhead blocks the way.",
@@ -183,6 +207,13 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   // the doors open there); `ride` is its travelling part
   const [inLift, setInLift] = useState(false);
   const [ride, setRide] = useState<LiftRide | null>(null);
+  // a gate is taking the party to another map (from the confirmation until the
+  // new map has loaded and faded in)
+  const [transit, setTransit] = useState<MapTransit | null>(null);
+  const transitBusyRef = useRef(false);
+  // the link cell ("<map>:<x>,<y>") that asks nothing of the party - the one it
+  // just arrived at, or stayed on - until it steps off it
+  const [quietLink, setQuietLink] = useState<string | null>(null);
 
   const pushLog = useCallback((text: string, kind?: LogKind) => {
     setLog((prev) => [...prev.slice(-200), { id: logId++, text, kind }]);
@@ -255,6 +286,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   const busy = () =>
     interactionBlocksMovement.current ||
     wipedRef.current !== null ||
+    transitBusyRef.current ||
     performance.now() < busyUntilRef.current ||
     readyMapRef.current !== mapRef.current.id ||
     aimRef.current !== null ||
@@ -1127,6 +1159,49 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     }, LIFT_CLOSE_MS + LIFT_RIDE_MS);
   }, [openingDoor, pushLog]);
 
+  // Takes the party through a link (a gate) to another map: the screen fades
+  // out, the next map is swapped in behind it - the party arrives where the
+  // link says (see resolveArrival) - and it fades back in once the map has
+  // loaded. Like a lift ride, it holds still the party until then.
+  const startTransit = useCallback((link: MapLink) => {
+    const from = mapRef.current;
+    if (!variationRef.current || busy() || openingDoor) return;
+    const to = MAPS[link.to.map];
+    if (!to) {
+      pushLog(t("link.missing", { map: link.to.map }), "warn");
+      return;
+    }
+    if (to.id === from.id) {
+      pushLog(t("link.self"), "warn");
+      return;
+    }
+    const arrival = resolveArrival(from, link, to);
+    const started: MapTransit = { kind: link.kind, start: performance.now(), duration: GATE_FADE_MS, image: loadingImageFor(link, to) };
+    transitBusyRef.current = true;
+    setTransit(started);
+    pushLog(t("link.go", { name: to.name }));
+
+    const arrive = () => {
+      transitBusyRef.current = false;
+      setTransit(null);
+      pushLog(t("link.arrive", { name: to.name }));
+    };
+    setTimeout(() => {
+      closeTimers.current.forEach((timer) => clearTimeout(timer));
+      closeTimers.current.clear();
+      prevPosRef.current = arrival.cell;
+      readyMapRef.current = null;
+      pendingArrivalRef.current = { mapId: to.id, arrive: () => setTimeout(arrive, TRANSIT_SETTLE_MS) };
+      setMap(to);
+      setPos(arrival.cell);
+      setDir(arrival.facing);
+      setElevation(floorHeight(to, arrival.cell.x, arrival.cell.y));
+      setOpenDoors(new Set());
+      // (arriving on a gate doesn't ask to leave again)
+      setQuietLink(`${to.id}:${arrival.cell.x},${arrival.cell.y}`);
+    }, started.duration);
+  }, [openingDoor, pushLog]);
+
   // steps one cell in `moveDir` while keeping the current facing
   const step = useCallback((moveDir: Direction) => {
     if (openingDoor || busy()) return;
@@ -1359,6 +1434,11 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     if (!containers.length) {
       // a way off the ship underfoot
       const exit = (map.exits ?? []).find((e) => inReach(e.cell, false));
+      // (a gate leads on to another map; any other exit ends the run)
+      if (exit?.to) {
+        startTransit({ kind: "gate", cell: exit.cell, name: exit.name, to: exit.to });
+        return;
+      }
       if (exit) {
         setRunEnd({ exit: exit.name ?? "the airlock", at: gameClock.now() });
         return;
@@ -1395,7 +1475,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       setSpills((prev) => [...prev.slice(-8), ...newSpills]);
     }
     setLooted((prev) => new Set([...prev, ...keys]));
-  }, [map, pos, dir, startLift, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey, showTerminal, openDoors, doorLock, openLock, raiseFlag]);
+  }, [map, pos, dir, startLift, startTransit, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey, showTerminal, openDoors, doorLock, openLock, raiseFlag]);
 
   // The breaker: the ship's power back on (if it's down)
   const throwBreaker = () => {
@@ -1529,10 +1609,38 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   }, []);
   // standing on a way out says so
   const exitHere = (map.exits ?? []).find((e) => e.cell.x === pos.x && e.cell.y === pos.y);
-  const exitName = exitHere ? (exitHere.name ?? "An airlock") : null;
+  const exitName = exitHere && !exitHere.to ? (exitHere.name ?? "An airlock") : null;
   useEffect(() => {
     if (exitName) pushLog(`${exitName}: Use (Space) to leave the ship.`);
   }, [exitName, pushLog]);
+
+  // Standing on a gate asks whether to go through it (Enter / Space: go, Esc:
+  // stay - the question is not asked again until the party has stepped off).
+  // Not while editing, nor while the party can't act (a ride, a terminal...).
+  const hereKey = `${map.id}:${pos.x},${pos.y}`;
+  const gateHere = variation !== null && exitHere?.to && Math.abs(floorHeight(map, pos.x, pos.y) - elevation) <= 0.25 + 1e-6
+    ? { kind: "gate" as const, cell: exitHere.cell, name: exitHere.name, to: exitHere.to }
+    : null;
+  // (stepping off the cell the question was put on, or arrived at, brings it back)
+  useEffect(() => {
+    if (quietLink !== null && quietLink !== hereKey) setQuietLink(null);
+  }, [quietLink, hereKey]);
+  const gateTarget = gateHere ? MAPS[gateHere.to.map] : undefined;
+  useEffect(() => {
+    // (said once on stepping onto a gate that leads nowhere)
+    if (gateHere && !gateTarget && quietLink !== hereKey) pushLog(t("link.missing", { map: gateHere.to.map }), "warn");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hereKey, !!gateHere, !!gateTarget, pushLog]);
+  const linkPrompt: LinkPrompt | null =
+    gateHere && gateTarget && gateTarget.id !== map.id && quietLink !== hereKey && !transit && !inLift && wipedAt === null && !terminal && !keypad && !aim
+      ? { link: gateHere, from: map.name, to: gateTarget.name }
+      : null;
+  const confirmLink = useCallback(() => {
+    const here = linkPrompt?.link;
+    if (here) startTransit(here);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkPrompt?.link, startTransit]);
+  const declineLink = useCallback(() => setQuietLink(hereKey), [hereKey]);
 
   // a touched (clicked, tapped) interactive decal
   const touch = useCallback(
@@ -1664,8 +1772,13 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     jumpDown: jump,
     use,
     touch,
-    inLift,
+    // (a lift ride, or a gate's change of map: nothing else can be done meanwhile)
+    inLift: inLift || transit !== null,
     ride,
+    transit,
+    linkPrompt,
+    confirmLink,
+    declineLink,
     crew,
     log,
     moveForward,

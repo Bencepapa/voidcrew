@@ -69,7 +69,7 @@ export const editorShellEn = {
   "editorShell.scNpcShift": "Add a patrol point / remove it",
   "editorShell.scPickClick": "Place or pick; drag to move (Ctrl: copy)",
   "editorShell.scPickRight": "Remove it",
-  "editorShell.scExit": "Place or pick a way off the ship / remove it",
+  "editorShell.scExit": "Place or pick an exit (fantasy: set where it leads - a gate to another map) / remove it",
   "editorShell.scStart": "Set the party's start and facing",
   "editorShell.scRestricted": "Toggle a restricted cell",
   "editorShell.scChance": "Make a chance wall or pick it / make it plain",

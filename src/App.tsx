@@ -52,12 +52,13 @@ import {
   undo,
 } from "./editor/mapStore";
 import { MapTitle } from "./components/MapTitle";
+import { GatePrompt } from "./components/GatePrompt";
 import { MapDialog } from "./editor/MapDialog";
 import type { MapDialogMode, MapDialogValues } from "./editor/MapDialog";
 import { MAPS, START_MAP } from "./game/map";
 import { WORLDS, assetInWorld, setActiveWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
-import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, nameExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, updateExit, toggleExit, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
 import { PROP_TYPES, flamePosition, isSharedPropId, propBlocks, propPlacement, propRetexturable } from "./game/props";
 import { MIN_HEADROOM } from "./game/heights";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
@@ -162,6 +163,10 @@ export default function App() {
     powerOn,
     inLift,
     ride,
+    transit,
+    linkPrompt,
+    confirmLink,
+    declineLink,
     actors,
     readyAt,
     aim,
@@ -1771,7 +1776,7 @@ export default function App() {
   // the Exit tool's pick (its cell)
   const [selectedExit, setSelectedExit] = useState<Vec2 | null>(null);
   const selectedExitSpec = selectedExit && (map.exits ?? []).find((e) => e.cell.x === selectedExit.x && e.cell.y === selectedExit.y);
-  const selectedExitInfo = selectedExitSpec ? { name: selectedExitSpec.name ?? "" } : null;
+  const selectedExitInfo = selectedExitSpec ? { name: selectedExitSpec.name ?? "", to: selectedExitSpec.to } : null;
   // the Item tool: the palette's item (the pick is further up)
   const [itemChoice, setItemChoice] = useState(Object.keys(ITEM_TYPES)[0]);
   const selectedItemInfo: ItemInfo | null = (() => {
@@ -2406,6 +2411,7 @@ export default function App() {
       elevation={elevation}
       openDoors={openDoors}
       ride={ride}
+      transit={transit}
       actors={actors}
       aiming={aimWeapon}
       downAt={wipedAt}
@@ -2466,6 +2472,7 @@ export default function App() {
       )}
       {!editMode && phase === "run" && !runEnd && <MapTitle key={map.id} map={map} />}
       {inventoryShown && <InventoryPanel partyDock={partyDock} onClose={() => setInventoryOpen(false)} />}
+      {linkPrompt && !editMode && !runEnd && !activeInteraction && !inventoryShown && <GatePrompt prompt={linkPrompt} onGo={confirmLink} onStay={declineLink} />}
       {!editMode && <DragGhost />}
       {!editMode && phase === "run" && !runEnd && WORLDS[map.world].loop === "ship" && <AlertMeter alert={alert} compact={compact} powerOn={powerOn} />}
       {terminal && !editMode && <TerminalPanel title={terminal.title} text={terminal.text} onClose={closeTerminal} />}
@@ -2642,10 +2649,10 @@ export default function App() {
           onSmokeDelete={deleteSmoke}
           onSmokeDeselect={() => setSelectedSmoke(null)}
           exit={selectedExitInfo}
-          onExitName={(name) => {
+          onExitChange={(patch, merge) => {
             if (!selectedExit) return;
             const cell = selectedExit;
-            const result = applyEdit(map.id, (file) => nameExit(file, cell, name), `exit ${cell.x},${cell.y} name`);
+            const result = applyEdit(map.id, (file) => updateExit(file, cell, patch), `exit ${cell.x},${cell.y} ${Object.keys(patch).join()}${merge ?? ""}`);
             if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
             else replaceMap(result.map);
             setEdits((n) => n + 1);

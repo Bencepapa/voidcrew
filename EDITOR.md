@@ -201,7 +201,11 @@ not two editors.
   EXIT plate on the floor) and picks it; a click on one picks it, the
   right button takes it out; its panel sets its name ("Hangar bay" - for
   the log and the run's summary). Standing on it, Use ends the run (`exits`
-  in the map).
+  in the map). In the fantasy world its panel also says **Leads to**: pick
+  another map and the exit is a *gate* (an amber GATE plate): standing on
+  it asks "Leave X for Y?" (Enter / Space: go, Esc: stay), fades out, and
+  arrives in the other map at **Arrives at** - by default its gate that
+  leads back here, else its start (see concept/editor-ui/NOTES-level-links.md).
 - **Decal:** the palette shows every decal (public/decals/index.json); a
   click on a wall, floor or ceiling puts the picked one there, centered on
   the click, and picks it. A click on a decal picks it, the right button

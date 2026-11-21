@@ -11,7 +11,7 @@ import type { TextureSetId } from "../render/textureSets";
 import type { ViewportSettings } from "../components/GameViewport";
 import type { SharedMapHead } from "./sharedMapHeads";
 import type { EditSurface, EditTool } from "./mapEdits";
-import type { Direction, LightEffect, Linked, MapLight } from "../game/types";
+import type { Direction, LightEffect, Linked, MapLight, MapLinkTarget } from "../game/types";
 import type { RoofForm } from "../game/roofAutotile";
 
 export interface MapLook {
@@ -161,9 +161,9 @@ export interface EditorBarProps {
   ) => void;
   onSmokeDelete: () => void;
   onSmokeDeselect: () => void;
-  // the Exit tool: the picked exit's name
-  exit: { name: string } | null;
-  onExitName: (name: string | undefined) => void;
+  // the Exit tool: the picked exit's name and, if it is a gate, where it leads
+  exit: { name: string; to?: MapLinkTarget } | null;
+  onExitChange: (patch: { name?: string; to?: MapLinkTarget }, merge?: string) => void;
   onExitRemove: () => void;
   onExitDeselect: () => void;
   // the Item tool: the item a click puts down, and the selected one
@@ -350,7 +350,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   prop: "editorBar.clickAFloorNearASideOr",
   roofauto: "roofauto.help",
   smoke: "editorBar.clickAWallFloorOrAnythingSmoke",
-  exit: "editorBar.clickAFloorAWayOffThe",
+  exit: "link.exitHelp",
   restricted: "editorBar.clickAFloorRestrictedShadedRedOn",
   start: "editorBar.clickAFloorThePartyStartsThere",
   item: "editorBar.clickAFloorOrATableBed",

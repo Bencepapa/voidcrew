@@ -70,7 +70,7 @@ export const editorShellHu: Record<keyof typeof editorShellEn, string> = {
   "editorShell.scNpcShift": "Útvonalpont hozzáadása / eltávolítás",
   "editorShell.scPickClick": "Elhelyezés vagy kijelölés; húzás: mozgatás (Ctrl: másolat)",
   "editorShell.scPickRight": "Eltávolítás",
-  "editorShell.scExit": "Kijárat elhelyezése vagy kijelölése / eltávolítása",
+  "editorShell.scExit": "Kijárat elhelyezése vagy kijelölése (fantasy: hova vezet - kapu másik pályára) / eltávolítása",
   "editorShell.scStart": "A csapat kezdőhelye és nézési iránya",
   "editorShell.scRestricted": "Tiltott mező be- / kikapcsolása",
   "editorShell.scChance": "Esélyfal készítése vagy kijelölése / rendes fallá tétele",

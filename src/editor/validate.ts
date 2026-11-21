@@ -1,5 +1,6 @@
 import type { GameMap, Vec2, Linked, Direction } from "../game/types";
-import { cellAt, floorHeight, ceilingHeight } from "../game/map";
+import { MAPS, cellAt, floorHeight, ceilingHeight } from "../game/map";
+import { linkProblems } from "../game/mapLinks";
 import { passage, jumpDown } from "../game/heights";
 import { DIR_VECTOR } from "../game/movement";
 import { PROP_TYPES, propPlacement } from "../game/props";
@@ -20,6 +21,8 @@ export function validateMap(map: GameMap): Problem[] {
   if (!map.start?.cell) add("noStart", undefined, undefined, "error");
 
   if (!map.exits?.length) add("noExit");
+  // gates: where they lead must exist (the way back and the arrival only warn)
+  for (const problem of linkProblems(map, (id) => MAPS[id])) add(problem.code, problem.cell, problem.params, problem.severity);
 
   const reached = new Set<string>();
   const states = new Set<string>();

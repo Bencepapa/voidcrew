@@ -107,8 +107,11 @@ export interface GameMap {
   props?: PropSpec[];
   // loot lying about
   items?: MapItem[];
-  // where the party can leave the ship (see ExitSpec)
+  // where the party can leave the ship (see ExitSpec) - or, with a target,
+  // go on to another map
   exits?: ExitSpec[];
+  // a picture for the loading screen of this map (a shared still image's id)
+  loadingImage?: string;
   // where the crew mustn't be (a vault, the bridge, the engine core): a
   // camera or a robot taking it for crew still calls it in here
   restricted?: Vec2[];
@@ -284,12 +287,32 @@ export interface SmokeSpec extends Linked {
   chance?: number;
 }
 
+// Where a link between maps (a gate, stairs - see mapLinks.ts) leads: the
+// target map's id, where in it the party arrives, and the picture of the
+// loading screen shown on the way there.
+export interface MapLinkTarget {
+  // the target map's id (its file name)
+  map: string;
+  // where the party arrives in it: the name of one of its gates / stairs, or a
+  // cell. Unset: the target's link that leads back to this map, else its start.
+  arrival?: string | Vec2;
+  // the way the party faces on arriving (unset: toward open ground)
+  facing?: Direction;
+  // a shared still image (see render/sharedImages.ts) the loading screen shows
+  // on the way through this link - over the target map's own (MapFile.loadingImage)
+  loadingImage?: string;
+}
+
 // A way off the ship - a hangar bay, an airlock, an escape pod: standing in
-// its cell, Use ends the run (see useGameState's leaveShip).
+// its cell, Use ends the run (see useGameState's leaveShip). With a `to` it
+// is a gate instead: it takes the party to another map (a city gate, the
+// edge of a map) and the run goes on there.
 export interface ExitSpec {
   cell: Vec2;
-  // for the log and the run's summary, e.g. "Hangar bay"
+  // for the log and the run's summary, e.g. "Hangar bay"; a gate's name is
+  // what another map's link can name as its arrival
   name?: string;
+  to?: MapLinkTarget;
 }
 
 // A loot item lying in a walkable cell (see items.ts): picked up by
