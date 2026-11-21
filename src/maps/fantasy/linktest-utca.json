@@ -1,0 +1,23 @@
+{
+  "name": "Utca",
+  "place": "Linkteszt",
+  "showTitle": true,
+  "deck": 2,
+  "start": { "x": 3, "y": 3, "facing": "E" },
+  "layout": [
+    "WWWWWWWWWW",
+    "W........W",
+    "W........W",
+    "W........W",
+    "W........W",
+    "W........W",
+    "W........W",
+    "WWWWWWWWWW"
+  ],
+  "exits": [
+    { "x": 8, "y": 3, "name": "Erdei kapu", "to": { "map": "linktest-pince", "arrival": "Erdei kapu", "facing": "E" } }
+  ],
+  "stairs": [
+    { "x": 2, "y": 5, "direction": "down", "name": "Pinceletaro", "to": { "map": "linktest-pince" } }
+  ]
+}

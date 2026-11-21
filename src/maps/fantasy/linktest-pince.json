@@ -1,0 +1,23 @@
+{
+  "name": "Pince",
+  "place": "Linkteszt",
+  "showTitle": true,
+  "deck": 1,
+  "start": { "x": 4, "y": 3, "facing": "W" },
+  "layout": [
+    "WWWWWWWWWW",
+    "W........W",
+    "W........W",
+    "W........W",
+    "W........W",
+    "W........W",
+    "W........W",
+    "WWWWWWWWWW"
+  ],
+  "exits": [
+    { "x": 1, "y": 3, "name": "Erdei kapu", "to": { "map": "linktest-utca", "arrival": "Erdei kapu", "facing": "W" } }
+  ],
+  "stairs": [
+    { "x": 7, "y": 2, "direction": "up", "style": "spiral", "name": "Csigalepcso", "to": { "map": "linktest-utca" } }
+  ]
+}

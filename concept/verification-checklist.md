@@ -37,6 +37,7 @@ Pipálható lista: húzd ki, ami rendben van; ami nem, azt írd le (melyik lép�
 - [ ] **Bolt-szerkesztő (Assets → Boltok):** új bolt létrehozása, tételek és árak, helyi piszkozat, közzététel; a játékban az `@shop` ezt nyitja. `npm run pull:shared` utáni diff.
 - [ ] **Felvehető tárgyak értéke:** a szerkesztőben tett tárgyak értéke kategóriánként (hulladék 4, tech 15, készlet 10, értéktárgy 40, adat 30), a bázison eladva ennyit ér.
 - [ ] **Tető-autotile** (a részletes próbalista: `concept/editor-ui/NOTES-roof-autotile.md`, „Testing by hand”): Tető (automata) a fában, festés/törlés/Shift+kattintás, kijelölt elem leválasztása, a **textúra a jobb oldali panelen** az eszköz kiválasztásakor (kő/cserép a pöttyös helyett).
+- [ ] **Átjárók (kapu, lépcső, töltőkép):** a részletes lista a `concept/editor-ui/NOTES-level-links.md`-ben (10 pont). Gyors próba: két kész tesztpálya, `linktest-utca` (Linkteszt – Utca) és `linktest-pince`: az utca keleti kapuja a pincébe visz (a „Leave … for …?” kérdés, Enter = megy, Esc = marad, nem kérdez újra, amíg le nem lépsz a celláról), a pince nyugati kapuja vissza; az utca lépcsője lefelé, a pince csigalépcsője felfelé (kameramozgás + fade); töltőkép: Assets-ben közzétett állókép a Térkép panelen, a kapun külön is megadható.
 - [ ] **Magyar útmutatók:** `docs/twine-utmutato.md` és `docs/parbeszed-es-bolt-szerkeszto.md` átolvasása, az ábrák (`docs/img/*.svg`) olvashatók-e.
 
 ## Következő kérések / megjegyzések
