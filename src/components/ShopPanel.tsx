@@ -6,13 +6,11 @@ import { getMeta, setCredits, useMeta } from "../game/meta";
 import { UNLIMITED, buy, buyPrice, sell, sellPrice, type Deal, type ShopRules } from "../game/shop";
 import { getShopDef } from "../game/shopCatalog";
 import { getShopStock, setShopStock, useShopStock } from "../game/shopStore";
-import type { Crewmate } from "../game/types";
 import { t } from "../i18n";
 import { useSharedImages } from "../render/sharedImages";
-import { HandBoxes, InfoArea, SlotGrid, setMover, slotOfKey } from "./InventorySlots";
+import { InfoArea, QtyPopover, SlotGrid, setMover, slotOfKey } from "./InventorySlots";
 import { focusNeighbor } from "./InventoryPanel";
-import { Avatar } from "./PartyPanel";
-import { cancelDrag, clearInfo, clearSelection, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
+import { cancelDrag, cancelQty, clearInfo, clearSelection, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
 
 const rules: ShopRules = { ...itemRules, value: itemValue };
 const SHOP_PREFIX = "shop:";
@@ -23,20 +21,21 @@ const isShopKey = (key: string) => key.startsWith(SHOP_PREFIX);
 type Msg = { text: string; bad: boolean } | null;
 
 // The shop window (opened by a dialogue's @shop, see DialoguePopup): the
-// shop's stock on one side, the party's backpack on the other, the crew's hands
-// below. Buy by dragging a stock item to a backpack cell or a hand (one at a
-// time), sell by dragging an item (the whole stack) to the shop; shift+click,
-// double click or shift+Enter does the quick one (a buy goes into the
-// backpack, a sale to the shop). A plain click only shows what the item is
+// shop's stock on one side, the party's backpack on the other. The crew's hand
+// boxes are the party dock's (it stays usable above this window: a hand can sell
+// to the shop, a purchase can go into a hand). Buy by dragging a stock item to a
+// backpack cell or a hand (one at a time), sell by dragging an item (the whole
+// stack) to the shop; shift+click, double click or shift+Enter does the quick
+// one (a buy goes into the backpack, a sale to the shop). Letting go of a drag
+// with Shift held, or Ctrl+click, asks how many first (QtyPopover). A plain click only shows what the item is
 // and its price (the info area). The keys are the window's while it's open:
 // arrows move, Enter/Space pick up and put down (the keyboard's way of
 // dragging), Esc cancels what's picked up, then closes the shop. The stock changes
 // only for this session (see shopStore.ts).
-export function ShopPanel({ shopId, crew, partyDock, onClose, intro }: {
+export function ShopPanel({ shopId, partyDock, onClose, intro }: {
   shopId: string;
   // simple shop (no dialogue): who greets and what they say, shown above the stock
   intro?: { portrait?: string; text: string; npc?: string };
-  crew: Crewmate[];
   partyDock: HTMLElement | null;
   onClose: () => void;
 }) {
@@ -79,35 +78,42 @@ export function ShopPanel({ shopId, crew, partyDock, onClose, intro }: {
     setMsg({ text: t(bought ? "shop.bought" : "shop.sold", { item: itemName(deal.item), qty: deal.qty, n: deal.amount }), bad: false });
     return null;
   };
-  const doBuy = (index: number, to: string | null): string | null => {
+  // (`qty`: how many - buying defaults to one, selling to the whole stack)
+  const doBuy = (index: number, to: string | null, qty = 1): string | null => {
     const loc = to === null ? null : parseLoc(to);
     if (to !== null && !loc) return "place";
-    return finish(buy(getInventory(), getMeta().credits, getShopStock(shopId), rates, index, loc, rules), true);
+    return finish(buy(getInventory(), getMeta().credits, getShopStock(shopId), rates, index, loc, rules, qty), true);
   };
-  const doSell = (from: string): string | null => {
+  const doSell = (from: string, qty?: number): string | null => {
     const loc = parseLoc(from);
     if (!loc) return "place";
-    return finish(sell(getInventory(), getMeta().credits, getShopStock(shopId), rates, loc, rules), false);
+    return finish(sell(getInventory(), getMeta().credits, getShopStock(shopId), rates, loc, rules, qty), false);
   };
 
   // every move of the window (dragging, click and click, the dock's hand boxes too)
-  const onMove = (from: string, to: string): string | null => {
+  const onMove = (from: string, to: string, qty?: number): string | null => {
     setMsg(null);
-    if (isShopKey(from)) return isShopKey(to) ? "same" : doBuy(Number(from.slice(SHOP_PREFIX.length)), to);
-    if (isShopKey(to)) return doSell(from);
-    const result = moveItem(from, to);
+    if (isShopKey(from)) return isShopKey(to) ? "same" : doBuy(Number(from.slice(SHOP_PREFIX.length)), to, qty);
+    if (isShopKey(to)) return doSell(from, qty);
+    const result = moveItem(from, to, qty);
     return result.ok ? null : result.reason;
   };
   const onMoveRef = useRef(onMove);
   onMoveRef.current = onMove;
-  const quick = (key: string) => {
+  const quick = (key: string, qty?: number): string | null => {
     clearSelection();
     setMsg(null);
-    const reason = isShopKey(key) ? doBuy(Number(key.slice(SHOP_PREFIX.length)), null) : doSell(key);
+    const reason = isShopKey(key) ? doBuy(Number(key.slice(SHOP_PREFIX.length)), null, qty) : doSell(key, qty);
     if (reason) setMsg({ text: t(`shop.fail.${reason}` as "shop.fail.full"), bad: true });
+    return null;
   };
-  const quickRef = useRef(quick);
-  quickRef.current = quick;
+  // the most that can be chosen: a shop item - what it has (unlimited: what the
+  // credits buy, at most 99); yours - the stack
+  const maxBuy = (entry: (typeof stock)[number]): number => {
+    const price = buyPrice(rates, entry, rules);
+    const afford = price > 0 ? Math.floor(credits / price) : 99;
+    return Math.max(1, Math.min(entry.qty === UNLIMITED ? 99 : entry.qty, afford, 99));
+  };
 
   // the dock's hand boxes are drop targets for the shop too
   useEffect(() => {
@@ -120,6 +126,7 @@ export function ShopPanel({ shopId, crew, partyDock, onClose, intro }: {
     const previous = document.activeElement;
     root.current?.querySelector<HTMLElement>("[data-slot]")?.focus();
     return () => {
+      cancelQty();
       clearSelection();
       clearInfo();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
@@ -131,6 +138,8 @@ export function ShopPanel({ shopId, crew, partyDock, onClose, intro }: {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // (the quantity chooser takes its own typing; only Esc is the window's)
+      if (e.key !== "Escape" && e.target instanceof Element && e.target.closest("[data-qty]")) return;
       const swallow = () => {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -269,7 +278,9 @@ export function ShopPanel({ shopId, crew, partyDock, onClose, intro }: {
                 labelOf={(i) => (stock[i] ? String(buyPrice(rates, stock[i], rules)) : undefined)}
                 tipOf={(i) => (stock[i] ? t("shop.buyTip", { n: buyPrice(rates, stock[i], rules) }) : undefined)}
                 badgeOf={(i) => (stock[i]?.qty === UNLIMITED ? "∞" : undefined)}
-                onQuick={quick}
+                onQuick={(key) => void quick(key)}
+                onSplit={quick}
+                maxQtyOf={(i) => (stock[i] ? maxBuy(stock[i]) : undefined)}
               />
             </div>
             <div>
@@ -281,25 +292,13 @@ export function ShopPanel({ shopId, crew, partyDock, onClose, intro }: {
                 onMove={onMove}
                 title={(i) => t("inventory.cell", { n: i + 1 })}
                 tipOf={(_, slot) => sellTip(slot)}
-                onQuick={quick}
+                onQuick={(key) => void quick(key)}
+                onSplit={quick}
               />
             </div>
           </div>
         )}
-        <div className="border-t border-neutral-700 pt-1">
-          <div className="mb-1 text-neutral-400">{t("inventory.crew")}</div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-            {crew.map((mate) => (
-              <div key={mate.id} className="flex items-center gap-1.5">
-                <Avatar mate={mate} className="h-9 w-9 shrink-0" />
-                <div className="min-w-0">
-                  <div className={`truncate ${mate.hp > 0 ? "text-neutral-200" : "text-red-400"}`}>{mate.name}</div>
-                  <HandBoxes crew={mate.id} name={mate.name} size="md" onMove={onMove} tipOf={sellTip} onQuick={quick} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <QtyPopover />
         <InfoArea slot={infoSlot} empty={t("shop.infoEmpty")} extra={infoPrice} />
         <p className="min-h-[2.2em] text-neutral-500" aria-live="polite">
           {notice ? (

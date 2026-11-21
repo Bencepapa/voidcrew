@@ -18,8 +18,9 @@ import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
 import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
 import { getMeta, setStoryFlag } from "./meta";
-import { addToInventory, changeInventory, crewWeapon, getInventory, haulOf, startRun, switchWeapon, useInventory } from "./inventoryStore";
-import { LEFT, handLoc, handView, takeSlot, type HandIndex } from "./inventory";
+import { addToInventory, changeInventory, getInventory, handWeapon, haulOf, startRun, useInventory } from "./inventoryStore";
+import { LEFT, effectiveHand, handLoc, handView, takeSlot, type HandIndex } from "./inventory";
+import { readyAtOf, withCooldown, type ReadyAt } from "./handCooldown";
 import { isWeaponItem, itemRules } from "./itemRules";
 import { itemInfo } from "./itemInfo";
 import { applyUse } from "./itemUse";
@@ -140,12 +141,12 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   const [crew, setCrew] = useState(() => crewOf(START_MAP.world));
   const crewRef = useRef(crew);
   crewRef.current = crew;
-  // when each crewmate's weapon is ready again (game time)
-  const [readyAt, setReadyAt] = useState<number[]>(() => crew.map(() => 0));
+  // when each hand's weapon is ready again (game time; per crewmate and hand, see handCooldown.ts)
+  const [readyAt, setReadyAt] = useState<ReadyAt>({});
   const readyAtRef = useRef(readyAt);
   readyAtRef.current = readyAt;
-  // the crewmate aiming (bullet time), if any
-  const [aim, setAim] = useState<{ crew: number } | null>(null);
+  // the crewmate aiming (bullet time), if any, and with which hand's weapon
+  const [aim, setAim] = useState<{ crew: number; hand: HandIndex } | null>(null);
   const aimRef = useRef(aim);
   // a shot of the current use is out (a burst's first, say)
   const aimFiredRef = useRef(false);
@@ -612,19 +613,21 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     );
   }, []);
   const fireWeapon = useCallback(
-    (index: number) => {
+    (index: number, handShown: HandIndex) => {
       const mate = crewRef.current[index];
-      const weapon = mate && crewWeapon(mate.id);
+      // (a two-handed weapon is the right hand's, whichever box it was clicked in)
+      const hand = mate ? effectiveHand(getInventory(), mate.id, handShown, itemRules) : handShown;
+      const weapon = mate && handWeapon(mate.id, hand);
       if (!weapon || aimRef.current || busy()) return;
       if (mate.hp === 0) {
         pushLog(`${mate.name} is down.`, "danger");
         return;
       }
-      if (gameClock.now() < readyAtRef.current[index]) {
+      if (gameClock.now() < readyAtOf(readyAtRef.current, mate.id, hand)) {
         pushLog(`${mate.name}'s ${weapon.name.toLowerCase()} isn't ready.`, "warn");
         return;
       }
-      const cool = () => setReadyAt((prev) => prev.map((t, i) => (i === index ? gameClock.now() + weapon.cooldownMs : t)));
+      const cool = () => setReadyAt((prev) => withCooldown(prev, mate.id, hand, gameClock.now(), weapon.cooldownMs));
       if (weapon.kind === "heal") {
         const hurt = crewRef.current
           .filter((c) => c.hp > 0 && c.hp < c.maxHp)
@@ -645,9 +648,9 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
         return;
       }
       gameClock.setRate(AIM_TIME_RATE);
-      aimRef.current = { crew: index };
+      aimRef.current = { crew: index, hand };
       aimFiredRef.current = false;
-      setAim({ crew: index });
+      setAim({ crew: index, hand });
     },
     [pushLog, targetsInReach],
   );
@@ -663,11 +666,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       const slot = hand === LEFT ? (view.left ?? (view.leftBlocked ? view.right : null)) : view.right;
       if (!slot) return true;
       if (isWeaponItem(slot.item)) {
-        if (hand === LEFT && !view.leftBlocked && view.right && isWeaponItem(view.right.item)) {
-          if (aimRef.current || busy() || mate.hp === 0) return true;
-          switchWeapon(mate.id);
-        }
-        fireWeapon(index);
+        // (each hand fires its own weapon, on its own cooldown: no swapping)
+        fireWeapon(index, hand);
         return true;
       }
       const type = ITEM_TYPES[slot.item];
@@ -697,8 +697,9 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     const current = aimRef.current;
     if (!current) return;
     if (aimFiredRef.current) {
-      const cooldown = crewWeapon(crewRef.current[current.crew].id)?.cooldownMs ?? 0;
-      setReadyAt((prev) => prev.map((t, i) => (i === current.crew ? gameClock.now() + cooldown : t)));
+      const mate = crewRef.current[current.crew];
+      const cooldown = handWeapon(mate.id, current.hand)?.cooldownMs ?? 0;
+      setReadyAt((prev) => withCooldown(prev, mate.id, current.hand, gameClock.now(), cooldown));
     }
     endAim();
   }, [endAim]);
@@ -709,7 +710,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       const current = aimRef.current;
       if (!current) return;
       const mate = crewRef.current[current.crew];
-      const weapon = crewWeapon(mate.id);
+      const weapon = handWeapon(mate.id, current.hand);
       if (!weapon) return;
       const now = gameClock.now();
       if (result.kind === "actor") {
@@ -734,7 +735,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       aimFiredRef.current = true;
       raiseAlert(ALERT_NOISE.shot + (result.kind === "actor" && actorsRef.current.find((a) => a.id === result.actor)?.diedAt != null ? ALERT_NOISE.kill : 0));
       if (!last) return;
-      setReadyAt((prev) => prev.map((t, i) => (i === current.crew ? now + weapon.cooldownMs : t)));
+      setReadyAt((prev) => withCooldown(prev, mate.id, current.hand, now, weapon.cooldownMs));
       endAim();
     },
     [endAim, pushLog, updateActors],

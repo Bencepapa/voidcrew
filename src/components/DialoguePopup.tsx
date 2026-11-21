@@ -3,7 +3,6 @@ import { ACTOR_TYPES } from "../game/actors";
 import { choose, startDialogue, type DialogueState } from "../game/dialogue";
 import { getDialogue, useDialogueLibraries } from "../game/dialogueCatalog";
 import type { Interaction } from "../game/interactions";
-import type { Crewmate } from "../game/types";
 import { t } from "../i18n";
 import { useSharedImages } from "../render/sharedImages";
 import { ShopPanel } from "./ShopPanel";
@@ -12,11 +11,10 @@ type DialogueEvent = Extract<Interaction, { kind: "dialogue" }>;
 
 // The talk with an NPC (see dialogue.ts): its portrait on the left, what it says, the choices as buttons
 // (mouse, 1-9, Up/Down + Enter). Modal - the world stands still behind it; Esc closes.
-export function DialoguePopup({ event, close, partyDock, crew }: {
+export function DialoguePopup({ event, close, partyDock }: {
   event: DialogueEvent;
   close: () => void;
   partyDock: HTMLElement | null;
-  crew: Crewmate[];
 }) {
   const images = useSharedImages();
   const libraries = useDialogueLibraries(); // (only to be shown again when a draft changes)
@@ -128,6 +126,6 @@ export function DialoguePopup({ event, close, partyDock, crew }: {
       </div>
     </section>
   </div>
-  {shopOpen && <ShopPanel shopId={shopId} crew={crew} partyDock={partyDock} onClose={() => setShopOpen(false)}/>}
+  {shopOpen && <ShopPanel shopId={shopId} partyDock={partyDock} onClose={() => setShopOpen(false)}/>}
   </>;
 }

@@ -1,13 +1,13 @@
-import { useState } from "react";
-import { LEFT, RIGHT, handLoc, handView, locKey, parseLoc, slotAt, type HandIndex, type Inventory, type Slot } from "../game/inventory";
+import { useEffect, useRef, useState } from "react";
+import { LEFT, RIGHT, halfOf, handLoc, handView, locKey, parseLoc, slotAt, type HandIndex, type Inventory, type Slot } from "../game/inventory";
 import { itemInfo, type Texts } from "../game/itemInfo";
 import { itemName, itemRules, itemValue, weaponTypeOfItem } from "../game/itemRules";
 import { ITEM_TYPES } from "../game/items";
-import { moveItem, useInventory } from "../game/inventoryStore";
+import { moveItem, splitItem, useInventory } from "../game/inventoryStore";
 import { getMeta } from "../game/meta";
 import { hasKey, t, type Key } from "../i18n";
 import { pickupTexture, useSharedImages } from "../render/sharedImages";
-import { activateSlot, beginDrag, hoverSlot, inspectSlot, justDragged, useDrag, useDragging, useSlotStatus, type MoveFn } from "./slotDrag";
+import { activateSlot, askQty, beginDrag, cancelQty, confirmQty, hoverSlot, inspectSlot, justDragged, useDrag, useDragging, useQtyAsk, useSlotStatus, type MoveFn } from "./slotDrag";
 
 // The building blocks of the inventory screens (a shop's later): a slot that
 // shows an item and takes drags and clicks, a grid of them, a crewmate's two
@@ -16,9 +16,15 @@ import { activateSlot, beginDrag, hoverSlot, inspectSlot, justDragged, useDrag, 
 // specific to the backpack.
 
 // the backpack's and the hands' own move: see moveItem
-export const moveInInventory: MoveFn = (from, to) => {
-  if (mover) return mover(from, to);
-  const result = moveItem(from, to);
+export const moveInInventory: MoveFn = (from, to, qty) => {
+  if (mover) return mover(from, to, qty);
+  const result = moveItem(from, to, qty);
+  return result.ok ? null : result.reason;
+};
+
+// ctrl+click, after choosing how many: that many into the first free cell
+export const splitInInventory = (from: string, qty: number): string | null => {
+  const result = splitItem(from, qty);
   return result.ok ? null : result.reason;
 };
 
@@ -96,10 +102,16 @@ export function SlotBox({
   badge,
   onQuick,
   onUse,
+  onSplit,
+  maxQtyOf,
 }: {
   slotKey: string;
   slot: Slot | null;
   ghost?: Slot | null;
+  // ctrl+click on a stack, after choosing how many: the split (or a deal's quantity)
+  onSplit?: (slotKey: string, qty: number) => string | null;
+  // the most that can be chosen (a shop's unlimited stock), else the stack's quantity
+  maxQtyOf?: number;
   // a click uses what the box holds (the dock's hand boxes): true when it did
   // something; false leaves the click to show the item's description
   onUse?: (slotKey: string) => boolean;
@@ -120,6 +132,7 @@ export function SlotBox({
   const status = useSlotStatus(slotKey);
   const dragging = useDragging();
   const shown = slot ?? ghost;
+  const maxQty = maxQtyOf ?? shown?.qty ?? 1;
   const text = shown
     ? [
         shown.qty > 1 ? t("inventory.itemTip", { name: itemName(shown.item), qty: shown.qty }) : itemName(shown.item),
@@ -137,9 +150,14 @@ export function SlotBox({
       title={text}
       aria-label={shown ? `${title}: ${text}` : text}
       tabIndex={tabIndex}
-      onPointerDown={shown ? (e) => beginDrag(e, slotKey, shown, onMove) : undefined}
+      onPointerDown={shown ? (e) => beginDrag(e, slotKey, shown, onMove, maxQty) : undefined}
       onClick={(e) => {
         if (justDragged()) return;
+        // ctrl+click on a stack: choose how many (a split, or a deal's quantity)
+        if (onSplit && slot && maxQty > 1 && (e.ctrlKey || e.metaKey)) {
+          askQty({ x: e.clientX, y: e.clientY, max: maxQty, apply: (n) => onSplit(slotKey, n) });
+          return;
+        }
         if (onQuick && shown && e.shiftKey) {
           onQuick(slotKey);
           return;
@@ -190,8 +208,12 @@ export function SlotGrid({
   tipOf,
   badgeOf,
   onQuick,
+  onSplit,
+  maxQtyOf,
 }: {
   slots: readonly (Slot | null)[];
+  onSplit?: (slotKey: string, qty: number) => string | null;
+  maxQtyOf?: (index: number, slot: Slot) => number | undefined;
   cols: number;
   keyOf: (index: number) => string;
   onMove: MoveFn;
@@ -217,8 +239,72 @@ export function SlotGrid({
           tip={slot ? tipOf?.(i, slot) : undefined}
           badge={slot ? badgeOf?.(i, slot) : undefined}
           onQuick={onQuick}
+          onSplit={onSplit}
+          maxQtyOf={slot ? maxQtyOf?.(i, slot) : undefined}
         />
       ))}
+    </div>
+  );
+}
+
+// The quantity chooser (see askQty in slotDrag.ts): a number with - and +,
+// starting at half the stack; Enter or OK does it, Esc or Cancel doesn't.
+export function QtyPopover() {
+  const ask = useQtyAsk();
+  if (!ask) return null;
+  return <QtyBox key={`${ask.x}:${ask.y}:${ask.max}`} ask={ask} />;
+}
+function QtyBox({ ask }: { ask: NonNullable<ReturnType<typeof useQtyAsk>> }) {
+  const [n, setN] = useState(halfOf(ask.max));
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => input.current?.select(), []);
+  const clamp = (v: number) => Math.max(1, Math.min(ask.max, Number.isFinite(v) ? Math.floor(v) : 1));
+  const left = Math.max(4, Math.min(ask.x - 70, window.innerWidth - 150));
+  const top = Math.max(4, Math.min(ask.y - 56, window.innerHeight - 80));
+  return (
+    <div
+      data-qty=""
+      role="dialog"
+      aria-label={t("inventory.qty.title")}
+      className="pointer-events-auto fixed z-[220] flex flex-col gap-1 rounded border border-amber-300 bg-neutral-950 p-1.5 font-mono text-[11px] text-neutral-200 shadow-xl"
+      style={{ left, top }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <div className="text-neutral-400">{t("inventory.qty.title")}</div>
+      <div className="flex items-center gap-1">
+        <button type="button" className="h-6 w-6 rounded-sm border border-neutral-600 hover:bg-neutral-800" aria-label="-" onClick={() => setN((v) => clamp(v - 1))}>
+          -
+        </button>
+        <input
+          ref={input}
+          type="number"
+          min={1}
+          max={ask.max}
+          value={n}
+          aria-label={t("inventory.qty.title")}
+          className="h-6 w-14 rounded-sm border border-neutral-600 bg-black/60 px-1 text-center"
+          onChange={(e) => setN(clamp(Number(e.target.value)))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              confirmQty(n);
+            }
+          }}
+        />
+        <button type="button" className="h-6 w-6 rounded-sm border border-neutral-600 hover:bg-neutral-800" aria-label="+" onClick={() => setN((v) => clamp(v + 1))}>
+          +
+        </button>
+        <span className="text-neutral-500">/ {ask.max}</span>
+      </div>
+      <div className="flex gap-1">
+        <button type="button" className="flex-1 rounded-sm border border-emerald-600 px-1 py-0.5 text-emerald-200 hover:bg-emerald-900/40" onClick={() => confirmQty(n)}>
+          {t("inventory.qty.ok")}
+        </button>
+        <button type="button" className="flex-1 rounded-sm border border-neutral-600 px-1 py-0.5 hover:bg-neutral-800" onClick={cancelQty}>
+          {t("inventory.qty.cancel")}
+        </button>
+      </div>
     </div>
   );
 }

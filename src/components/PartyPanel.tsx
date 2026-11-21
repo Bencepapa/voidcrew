@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import type { Crewmate } from "../game/types";
 import { gameClock } from "../game/clock";
-import type { HandIndex } from "../game/inventory";
-import { crewWeapon, useInventory } from "../game/inventoryStore";
+import { LEFT, RIGHT, effectiveHand, type HandIndex } from "../game/inventory";
+import { handWeapon, useInventory } from "../game/inventoryStore";
+import { itemRules } from "../game/itemRules";
+import { readyAtOf, type ReadyAt } from "../game/handCooldown";
 import { HandBoxes, infoLine } from "./InventorySlots";
 
 function Bar({ value, max, color }: { value: number; max: number; color: string }) {
@@ -15,9 +17,9 @@ function Bar({ value, max, color }: { value: number; max: number; color: string 
 }
 
 // re-renders a few times a second while a weapon cools down
-function useCooldownTick(readyAt: number[]) {
+function useCooldownTick(readyAt: ReadyAt) {
   const [, setTick] = useState(0);
-  const cooling = readyAt.some((t) => t > gameClock.now());
+  const cooling = Object.values(readyAt).some((t) => t > gameClock.now());
   useEffect(() => {
     if (!cooling) return;
     const timer = setInterval(() => setTick((n) => n + 1), 100);
@@ -78,23 +80,29 @@ function CrewHands({
 }: {
   mate: Crewmate;
   index: number;
-  readyAt: number;
+  readyAt: ReadyAt;
   aiming: boolean;
   onUseHand: (index: number, hand: HandIndex) => boolean;
 }) {
   // (the hands: re-drawn when something is moved or used up)
-  useInventory();
-  const weapon = crewWeapon(mate.id);
-  const left = weapon ? Math.max(0, readyAt - gameClock.now()) : 0;
-  const fill = weapon ? 1 - left / weapon.cooldownMs : 1;
+  const inventory = useInventory();
+  // one thin bar under each hand box (a two-handed weapon's is the right one's)
+  const bar = (hand: HandIndex) => {
+    const real = effectiveHand(inventory, mate.id, hand, itemRules);
+    const weapon = real === hand ? handWeapon(mate.id, hand) : undefined;
+    if (!weapon) return <div key={hand} className="h-1 w-7" />;
+    const left = Math.max(0, readyAtOf(readyAt, mate.id, hand) - gameClock.now());
+    const fill = Math.max(0, Math.min(1, 1 - left / weapon.cooldownMs));
+    return (
+      <div key={hand} className="h-1 w-7 overflow-hidden rounded-sm bg-neutral-800/70" title={weapon.name}>
+        <div className={`h-full ${left === 0 ? "bg-emerald-500/80" : "bg-emerald-700/60"}`} style={{ width: `${fill * 100}%` }} />
+      </div>
+    );
+  };
   return (
     <div className={`pointer-events-auto flex flex-col gap-0.5 rounded-sm ${aiming ? "outline outline-1 outline-amber-300" : ""}`}>
       <HandBoxes crew={mate.id} name={mate.name} tabbable={false} tipOf={infoLine} onUse={(hand) => onUseHand(index, hand)} />
-      {weapon && (
-        <div className="h-1 w-full overflow-hidden rounded-sm bg-neutral-800/70" title={weapon.name}>
-          <div className={`h-full ${left === 0 ? "bg-emerald-500/80" : "bg-emerald-700/60"}`} style={{ width: `${fill * 100}%` }} />
-        </div>
-      )}
+      <div className="flex gap-0.5">{[LEFT, RIGHT].map((hand) => bar(hand as HandIndex))}</div>
     </div>
   );
 }
@@ -111,7 +119,7 @@ export function PartyPanel({
 }: {
   crew: Crewmate[];
   compact?: boolean;
-  readyAt: number[];
+  readyAt: ReadyAt;
   // the crewmate aiming, if any
   aiming: number | null;
   // a click on a crewmate's hand box: true when it did something
@@ -132,7 +140,7 @@ export function PartyPanel({
               <Bar value={c.hp} max={c.maxHp} color="#dc2626" />
               <Bar value={c.en} max={c.maxEn} color="#2563eb" />
               <Avatar mate={c} className="hidden portrait:block w-full aspect-[4/3]" />
-              <CrewHands mate={c} index={i} readyAt={readyAt[i]} aiming={aiming === i} onUseHand={onUseHand} />
+              <CrewHands mate={c} index={i} readyAt={readyAt} aiming={aiming === i} onUseHand={onUseHand} />
             </div>
           </div>
         ))}
@@ -158,7 +166,7 @@ export function PartyPanel({
             <div className="text-[10px] text-neutral-300">EN {c.en}/{c.maxEn}</div>
             <Bar value={c.en} max={c.maxEn} color="#2563eb" />
             <Avatar mate={c} className="hidden portrait:block w-full aspect-[4/3]" />
-            <CrewHands mate={c} index={i} readyAt={readyAt[i]} aiming={aiming === i} onUseHand={onUseHand} />
+            <CrewHands mate={c} index={i} readyAt={readyAt} aiming={aiming === i} onUseHand={onUseHand} />
           </div>
         </div>
       ))}
