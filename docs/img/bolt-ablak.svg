@@ -1,82 +1,93 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 500" width="860" height="500" font-family="Segoe UI, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" width="900" height="560" font-family="Segoe UI, Arial, sans-serif">
   <title>A bolt-ablak felépítése</title>
   <defs>
     <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
     </marker>
   </defs>
-  <rect width="860" height="500" fill="#f6f8fa"/>
+  <rect width="900" height="560" fill="#f6f8fa"/>
   <text x="20" y="28" font-size="15" font-weight="bold" fill="#0f172a">A bolt-ablak (mock-up)</text>
 
-  <rect x="20" y="44" width="600" height="440" rx="8" fill="#262626" stroke="#0a0a0a" stroke-width="2"/>
-  <rect x="20" y="44" width="600" height="34" rx="8" fill="#171717"/>
-  <text x="34" y="66" font-size="14" fill="#e5e5e5" font-weight="bold">Bolt: Smith's forge</text>
-  <text x="400" y="66" font-size="13" fill="#fbbf24">Kredit: 120</text>
-  <text x="540" y="66" font-size="12" fill="#a3a3a3">Bezár (Esc)</text>
+  <!-- the window -->
+  <rect x="20" y="44" width="620" height="412" rx="6" fill="#0a0a0a" stroke="#737373" stroke-width="2"/>
+  <!-- header -->
+  <rect x="32" y="56" width="28" height="28" rx="2" fill="#525252"/>
+  <text x="68" y="76" font-size="13" fill="#fde68a" font-weight="bold">SMITH'S FORGE</text>
+  <text x="430" y="76" font-size="12" fill="#a3a3a3">Kredit: <tspan fill="#fde68a">120 cr</tspan> <tspan fill="#6ee7b7">-&gt; 94 cr</tspan></text>
+  <text x="614" y="76" font-size="16" fill="#a3a3a3">×</text>
 
-  <!-- shop grid -->
-  <text x="34" y="100" font-size="12" fill="#a3a3a3">Eladó</text>
-  <g stroke="#737373" fill="#404040">
-    <rect x="34" y="108" width="52" height="52"/><rect x="92" y="108" width="52" height="52"/><rect x="150" y="108" width="52" height="52"/>
-    <rect x="34" y="166" width="52" height="52"/><rect x="92" y="166" width="52" height="52"/><rect x="150" y="166" width="52" height="52"/>
+  <!-- intro (the simple shop only) -->
+  <rect x="32" y="96" width="76" height="76" rx="3" fill="#171717" stroke="#404040"/>
+  <circle cx="70" cy="122" r="13" fill="#404040"/><path d="M44,172 c0,-20 11,-30 26,-30 s26,10 26,30 z" fill="#404040"/>
+  <text x="120" y="108" font-size="9" fill="#a3a3a3">SMITH</text>
+  <rect x="120" y="114" width="508" height="58" rx="3" fill="#171717" stroke="#404040"/>
+  <text x="130" y="136" font-size="12" fill="#f5f5f5">Ha vasra van szükséged, jó helyen jársz.</text>
+  <text x="130" y="154" font-size="12" fill="#f5f5f5">Nézz körül, és ne alkudj túl sokat.</text>
+
+  <!-- stock -->
+  <text x="32" y="194" font-size="11" fill="#a3a3a3">Készlet</text>
+  <g stroke="#737373" fill="#262626">
+    <rect x="32" y="200" width="40" height="40"/><rect x="76" y="200" width="40" height="40"/><rect x="120" y="200" width="40" height="40"/><rect x="164" y="200" width="40" height="40"/><rect x="208" y="200" width="40" height="40"/><rect x="252" y="200" width="40" height="40"/>
+    <rect x="32" y="244" width="40" height="40"/><rect x="76" y="244" width="40" height="40"/><rect x="120" y="244" width="40" height="40"/><rect x="164" y="244" width="40" height="40"/><rect x="208" y="244" width="40" height="40"/><rect x="252" y="244" width="40" height="40"/>
   </g>
-  <g font-size="10" fill="#fbbf24">
-    <text x="38" y="124">10 cr</text><text x="76" y="154" fill="#e5e5e5">∞</text>
-    <text x="96" y="124">26 cr</text><text x="134" y="154" fill="#e5e5e5">4</text>
-    <text x="154" y="124">54 cr</text><text x="192" y="154" fill="#e5e5e5">2</text>
+  <g font-size="10" fill="#fde68a"><text x="35" y="213">10</text><text x="79" y="213">26</text><text x="123" y="213">54</text></g>
+  <g font-size="10" fill="#e5e5e5"><text x="60" y="236">∞</text><text x="104" y="236">4</text><text x="148" y="236">2</text></g>
+  <g font-size="10" fill="#d4d4d4" text-anchor="middle"><text x="52" y="228">nyíl</text><text x="96" y="228">tőr</text><text x="140" y="228">kard</text></g>
+
+  <!-- backpack -->
+  <text x="330" y="194" font-size="11" fill="#a3a3a3">Hátizsák</text>
+  <g stroke="#737373" fill="#262626">
+    <rect x="330" y="200" width="40" height="40"/><rect x="374" y="200" width="40" height="40"/><rect x="418" y="200" width="40" height="40"/><rect x="462" y="200" width="40" height="40"/><rect x="506" y="200" width="40" height="40"/><rect x="550" y="200" width="40" height="40"/>
+    <rect x="330" y="244" width="40" height="40"/><rect x="374" y="244" width="40" height="40"/><rect x="418" y="244" width="40" height="40"/><rect x="462" y="244" width="40" height="40"/><rect x="506" y="244" width="40" height="40"/><rect x="550" y="244" width="40" height="40"/>
+    <rect x="330" y="288" width="40" height="40"/><rect x="374" y="288" width="40" height="40"/><rect x="418" y="288" width="40" height="40"/><rect x="462" y="288" width="40" height="40"/><rect x="506" y="288" width="40" height="40"/><rect x="550" y="288" width="40" height="40"/>
+    <rect x="330" y="332" width="40" height="40"/><rect x="374" y="332" width="40" height="40"/><rect x="418" y="332" width="40" height="40"/><rect x="462" y="332" width="40" height="40"/><rect x="506" y="332" width="40" height="40"/><rect x="550" y="332" width="40" height="40"/>
   </g>
-  <g font-size="11" fill="#d4d4d4" text-anchor="middle">
-    <text x="60" y="144">nyíl</text><text x="118" y="144">tőr</text><text x="176" y="144">kard</text>
-  </g>
+  <text x="334" y="224" font-size="10" fill="#e5e5e5">gyógy</text>
+  <text x="378" y="224" font-size="10" fill="#e5e5e5">érme</text>
 
-  <!-- backpack grid -->
-  <text x="330" y="100" font-size="12" fill="#a3a3a3">Hátizsák</text>
-  <g stroke="#737373" fill="#404040">
-    <rect x="330" y="108" width="40" height="40"/><rect x="374" y="108" width="40" height="40"/><rect x="418" y="108" width="40" height="40"/><rect x="462" y="108" width="40" height="40"/><rect x="506" y="108" width="40" height="40"/><rect x="550" y="108" width="40" height="40"/>
-    <rect x="330" y="152" width="40" height="40"/><rect x="374" y="152" width="40" height="40"/><rect x="418" y="152" width="40" height="40"/><rect x="462" y="152" width="40" height="40"/><rect x="506" y="152" width="40" height="40"/><rect x="550" y="152" width="40" height="40"/>
-    <rect x="330" y="196" width="40" height="40"/><rect x="374" y="196" width="40" height="40"/><rect x="418" y="196" width="40" height="40"/><rect x="462" y="196" width="40" height="40"/><rect x="506" y="196" width="40" height="40"/><rect x="550" y="196" width="40" height="40"/>
-    <rect x="330" y="240" width="40" height="40"/><rect x="374" y="240" width="40" height="40"/><rect x="418" y="240" width="40" height="40"/><rect x="462" y="240" width="40" height="40"/><rect x="506" y="240" width="40" height="40"/><rect x="550" y="240" width="40" height="40"/>
-  </g>
-  <text x="335" y="136" font-size="10" fill="#e5e5e5">gyógy</text>
-  <text x="379" y="136" font-size="10" fill="#e5e5e5">érme</text>
+  <!-- info + hint -->
+  <rect x="32" y="384" width="596" height="34" rx="3" fill="#171717" stroke="#404040"/>
+  <text x="42" y="405" font-size="12" fill="#d4d4d4">Kard: rövid leírás · Vétel: 54 cr</text>
+  <text x="32" y="440" font-size="11" fill="#fde68a">Kard: 54 cr (húzd a hátizsákba vagy egy kézbe)</text>
 
-  <!-- info line -->
-  <rect x="34" y="296" width="572" height="36" rx="4" fill="#171717" stroke="#404040"/>
-  <text x="46" y="318" font-size="12" fill="#d4d4d4">Kattints egy tárgyra, hogy lásd, mi az, és mennyibe kerül.</text>
-
-  <!-- crew -->
-  <text x="34" y="356" font-size="12" fill="#a3a3a3">Csapat (avatarok és kéz-dobozok)</text>
-  <g>
-    <circle cx="64" cy="400" r="22" fill="#737373"/><text x="48" y="448" font-size="11" fill="#d4d4d4">1. tag</text>
-    <rect x="94" y="380" width="40" height="40" fill="#404040" stroke="#737373"/><text x="100" y="404" font-size="10" fill="#d4d4d4">bal</text>
-    <rect x="140" y="380" width="40" height="40" fill="#404040" stroke="#737373"/><text x="144" y="404" font-size="10" fill="#d4d4d4">jobb</text>
-
-    <circle cx="244" cy="400" r="22" fill="#737373"/><text x="228" y="448" font-size="11" fill="#d4d4d4">2. tag</text>
-    <rect x="274" y="380" width="40" height="40" fill="#404040" stroke="#737373"/><text x="280" y="404" font-size="10" fill="#d4d4d4">bal</text>
-    <rect x="320" y="380" width="40" height="40" fill="#404040" stroke="#737373"/><text x="324" y="404" font-size="10" fill="#d4d4d4">jobb</text>
-
-    <circle cx="424" cy="400" r="22" fill="#737373"/><text x="408" y="448" font-size="11" fill="#d4d4d4">3. tag</text>
-    <rect x="454" y="380" width="40" height="40" fill="#404040" stroke="#737373"/><text x="460" y="404" font-size="10" fill="#d4d4d4">bal</text>
-    <rect x="500" y="380" width="40" height="40" fill="#404040" stroke="#737373"/><text x="504" y="404" font-size="10" fill="#d4d4d4">jobb</text>
+  <!-- party dock: outside the window, stays usable -->
+  <rect x="20" y="468" width="620" height="76" rx="6" fill="#171717" stroke="#737373" stroke-width="2" stroke-dasharray="5 3"/>
+  <text x="32" y="486" font-size="11" fill="#a3a3a3">A csapat sávja (az ablak alatt marad): avatar + bal és jobb kéz</text>
+  <g font-size="10" fill="#d4d4d4">
+    <circle cx="52" cy="518" r="16" fill="#525252"/>
+    <rect x="76" y="500" width="36" height="36" fill="#262626" stroke="#737373"/><text x="84" y="522">bal</text>
+    <rect x="116" y="500" width="36" height="36" fill="#262626" stroke="#737373"/><text x="120" y="522">jobb</text>
+    <circle cx="232" cy="518" r="16" fill="#525252"/>
+    <rect x="256" y="500" width="36" height="36" fill="#262626" stroke="#737373"/><text x="264" y="522">bal</text>
+    <rect x="296" y="500" width="36" height="36" fill="#262626" stroke="#737373"/><text x="300" y="522">jobb</text>
+    <circle cx="412" cy="518" r="16" fill="#525252"/>
+    <rect x="436" y="500" width="36" height="36" fill="#262626" stroke="#737373"/><text x="444" y="522">bal</text>
+    <rect x="476" y="500" width="36" height="36" fill="#262626" stroke="#737373"/><text x="480" y="522">jobb</text>
   </g>
 
   <!-- notes -->
   <g font-size="12" fill="#78350f">
-    <text x="650" y="104" font-weight="bold">Bolt rács (bal oldalt)</text>
-    <text x="650" y="120">ár a sarokban, ∞ = nem fogy el,</text>
-    <text x="650" y="136">szám = ennyi van belőle</text>
-    <text x="650" y="192" font-weight="bold">Hátizsák</text>
-    <text x="650" y="208">a csapat közös zsákja</text>
-    <text x="650" y="320" font-weight="bold">Csapat</text>
-    <text x="650" y="336">minden tagnak bal és</text>
-    <text x="650" y="352">jobb keze van; vásárláskor</text>
-    <text x="650" y="368">kéz-dobozba is húzhatsz</text>
-    <text x="650" y="408" font-weight="bold">Vétel / eladás</text>
-    <text x="650" y="424">vétel: húzd a zsákba vagy kézbe</text>
-    <text x="650" y="440">(1 db); eladás: húzd a boltra</text>
+    <text x="662" y="76" font-weight="bold">Fejléc</text>
+    <text x="662" y="92">bolt neve, kredit; húzás</text>
+    <text x="662" y="108">közben az új egyenleg is</text>
+    <text x="662" y="148" font-weight="bold">Üdvözlés</text>
+    <text x="662" y="164">csak az egyszerű boltnál:</text>
+    <text x="662" y="180">portré + az NPC szövege</text>
+    <text x="662" y="224" font-weight="bold">Készlet</text>
+    <text x="662" y="240">ár a sarokban,</text>
+    <text x="662" y="256">∞ = nem fogy el</text>
+    <text x="662" y="300" font-weight="bold">Hátizsák</text>
+    <text x="662" y="316">a csapat közös zsákja</text>
+    <text x="662" y="372" font-weight="bold">Info és súgó</text>
+    <text x="662" y="388">kattintás: mi ez, mennyi</text>
+    <text x="662" y="404">Shift+kattintás: gyors</text>
+    <text x="662" y="420">vétel / eladás</text>
+    <text x="662" y="510" font-weight="bold">Kezek</text>
+    <text x="662" y="526">vétel kézbe is mehet</text>
   </g>
   <g stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3" fill="none" marker-end="url(#ar)">
-    <path d="M644,200 C620,200 610,200 596,200"/>
-    <path d="M644,346 C620,380 580,400 546,400"/>
+    <path d="M656,300 C640,300 620,290 596,290"/>
+    <path d="M656,506 C600,506 560,512 516,518"/>
+    <path d="M656,240 C640,240 310,246 298,246"/>
   </g>
 </svg>

@@ -260,9 +260,12 @@ A beépített listából csak **létező** azonosítót írj. Ha új, beépítet
 
 ![A bolt-ablak felépítése](img/bolt-ablak.svg)
 
-- Bal oldalon a **bolt készlete**, jobb oldalon a csapat **hátizsákja**, alul a csapattagok **kezei** (mindenkinek bal és jobb keze van).
+- Bal oldalon a **bolt készlete**, jobb oldalon a csapat **hátizsákja**. A csapattagok **kezei** az ablak alatti csapatsávban maradnak használhatók (mindenkinek bal és jobb keze van).
+- A fejlécben a bolt neve és a **kredit**; ha felveszel egy tárgyat, mellette az **új egyenleg** is látszik (zöld: nő, piros: nem fedezi).
 - **Vétel:** húzd a bolti tárgyat a hátizsákba vagy egy kézbe (egyszerre **1 darabot**). Eladás: húzd a sajátodat a boltra (az **egész** köteget).
-- Gyors mód: Shift+kattintás vagy dupla kattintás.
+- Kattintás egy tárgyra: alul megjelenik, **mi az**, és mennyibe kerül, illetve mennyit fizet a bolt érte.
+- Gyors mód: Shift+kattintás vagy dupla kattintás; Shift-tel vagy Ctrl+kattintással a mennyiséget is megadhatod.
+- Az **egyszerű boltnál** (8b rész) a fejléc alatt az NPC portréja és üdvözlő szövege is látszik.
 - A készlet változása **csak az adott munkamenetre szól**: nem mentődik, a bolt nem töltődik újra. A készlet **egy bolt azonosítóhoz tartozik**, így több NPC közös készletet lát, ha ugyanazt a boltot nyitja.
 - A kredit a már meglévő kredit-számláló, amit a bázis is használ.
 
