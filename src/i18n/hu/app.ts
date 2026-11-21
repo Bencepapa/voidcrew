@@ -29,7 +29,7 @@ export const appHu = {
   "app.paint": "Festés",
   "app.blockHint": "Húzással jelölj ki egy blokkot: kiáshatod, betömheted, emelheted, süllyesztheted vagy festheted. Kattintással egy cellát szerkeszthetsz.",
   "app.block": "Blokk: {w} x {h}:",
-  "app.mouseHint": "Kattints a nézetre az egérnézethez (Esc: feloldás) · WASD: mozgás · Q/E: fordulás",
+  "app.mouseHint": "Húzd az egeret a nézeten a körbenézéshez · W/S: mozgás · A/D: oldalazás · Q/E: fordulás",
   "app.deckDay": "{deck}. fedélzet · 17. nap",
   "app.deckName": "{deck}. fedélzet - ",
   "app.floorPlural": "padlók",

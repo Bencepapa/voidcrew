@@ -29,7 +29,7 @@ export const appEn = {
   "app.paint": "Paint",
   "app.blockHint": "Drag on the map to select a block of cells: dig it out, fill it in, raise or lower it, paint it. A plain click edits one cell, as before.",
   "app.block": "Block {w} x {h}:",
-  "app.mouseHint": "Click the view for mouselook (Esc releases) · WASD move · Q/E turn",
+  "app.mouseHint": "Drag the view to look · W/S move · A/D strafe · Q/E turn",
   "app.deckDay": "Deck {deck} · Day 17",
   "app.deckName": "Deck {deck} - ",
   "app.floorPlural": "floors",

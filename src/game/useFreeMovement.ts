@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { nearestDirection, poseCell, stepFreePose, yawOf } from "./freeMovement";
 import type { FreeInput, FreePose } from "./freeMovement";
+import { keysFor } from "./controls";
 import { doorCellKey } from "./useGameState";
 import { standingHeight } from "./heights";
 import type { Direction, GameMap, Vec2 } from "./types";
@@ -32,7 +33,7 @@ function gridPose(pos: Vec2, dir: Direction, elevation: number): FreePose {
 
 // Free movement driver. The viewport calls `tick(dt)` every frame; it reads
 // the keyboard (W/S or up/down: move, A/D: strafe, Q/E or left/right: turn),
-// the virtual joysticks (`axesRef`) and mouselook (`addYaw`), advances the
+// the virtual joysticks (`axesRef`) and drag-look (`addYaw`), advances the
 // pose with collision, opens doors bumped into, and keeps the grid game
 // state on the nearest cell and facing.
 export function useFreeMovement(opts: FreeMovementOptions) {
@@ -82,9 +83,9 @@ export function useFreeMovement(opts: FreeMovementOptions) {
     const input = o.frozen
       ? { moveY: 0, moveX: 0, turn: 0 }
       : {
-          moveY: clampAxis(axes.moveY + held("w", "arrowup") - held("s", "arrowdown")),
-          moveX: clampAxis(axes.moveX + held("d") - held("a")),
-          turn: clampAxis(axes.turn + held("e", "arrowright") - held("q", "arrowleft")),
+          moveY: clampAxis(axes.moveY + held(...keysFor("forward")) - held(...keysFor("back"))),
+          moveX: clampAxis(axes.moveX + held(...keysFor("strafeRight")) - held(...keysFor("strafeLeft"))),
+          turn: clampAxis(axes.turn + held(...keysFor("turnRight")) - held(...keysFor("turnLeft"))),
         };
     if (o.frozen) pendingYawRef.current = 0;
     if (pendingYawRef.current) {

@@ -28,8 +28,8 @@ const VIEW: Group = {
   rows: [
     ["Mouse drag", "editorShell.scDragView"],
     ["W S / ↑ ↓", "editorShell.scMove"],
-    ["A D / ← →", "editorShell.scAd"],
-    ["Q E", "editorShell.scQe"],
+    ["A D", "editorShell.scAd"],
+    ["Q E / ← →", "editorShell.scQe"],
     ["X", "editorShell.scDown"],
     ["O", "editorShell.scTopdown"],
     ["Wheel", "editorShell.scWheel"],

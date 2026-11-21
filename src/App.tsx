@@ -11,6 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { InteractionPopup } from "./components/InteractionPopup";
 import { DialoguePopup } from "./components/DialoguePopup";
 import { gameClock } from "./game/clock";
+import { moveActionForKey } from "./game/controls";
 import { interactionAt, type Interaction, type InteractionTarget } from "./game/interactions";
 import { setInteraction } from "./editor/mapEdits";
 import { useGameState } from "./game/useGameState";
@@ -441,7 +442,6 @@ export default function App() {
   });
   const view = useViewControls({
     grid,
-    suppressPointerLock: worldPaused.blocksView,
     blocked: worldPaused.blocksView,
     onForward: moveForward,
     onBack: moveBackward,
@@ -484,12 +484,14 @@ export default function App() {
     function onKey(e: KeyboardEvent) {
       // (Ctrl+S and the like are shortcuts, not steps)
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === "ArrowUp" || e.key === "w") moveForward();
-      if (e.key === "ArrowDown" || e.key === "s") moveBackward();
-      if (e.key === "ArrowLeft" || e.key === "a") turnL();
-      if (e.key === "ArrowRight" || e.key === "d") turnR();
-      if (e.key === "q") strafeLeft();
-      if (e.key === "e") strafeRight();
+      switch (moveActionForKey(e.key)) {
+        case "forward": moveForward(); break;
+        case "back": moveBackward(); break;
+        case "strafeLeft": strafeLeft(); break;
+        case "strafeRight": strafeRight(); break;
+        case "turnLeft": turnL(); break;
+        case "turnRight": turnR(); break;
+      }
       if (e.key === "x") jumpDown?.();
     }
     window.addEventListener("keydown", onKey);
@@ -2589,12 +2591,11 @@ export default function App() {
       {editMode && <ShortcutHelp open={shortcutHelp} onClose={() => setShortcutHelp(false)} />}
     </>
   );
-  // free movement: touch gets twin sticks; a mouse gets a hint until it's
-  // captured for mouselook
+  // free movement: touch gets twin sticks; a mouse gets a hint
   const joysticks = grid ? null : (
     <>
       <VirtualJoysticks axesRef={free.axesRef} />
-      {finePointer && !view.mouseLocked && (
+      {finePointer && (
         <div className="absolute bottom-16 inset-x-0 text-center text-[11px] text-neutral-300/80 pointer-events-none">
           {t("app.mouseHint")}
         </div>

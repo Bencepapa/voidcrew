@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { PointerEvent } from "react";
 
 // A temporary yaw offset on top of the grid facing: glancing around without
@@ -24,7 +24,6 @@ export interface PeekState {
 // how far up or down the editor can look (radians)
 const MAX_EDIT_PITCH = 1.45;
 export const MAX_PEEK = Math.PI / 3; // 60 degrees
-const MOUSE_PEEK_PER_PX = MAX_PEEK / 250;
 const TOUCH_PEEK_PER_PX = MAX_PEEK / 150;
 // a touch peek released past this commits to a 90 degree turn
 const PEEK_TURN_THRESHOLD = (35 * Math.PI) / 180;
@@ -52,7 +51,6 @@ interface ViewControlsOptions {
   // captured (free movement turns by dragging instead) and hovering doesn't
   // glance around (grid movement)
   editing?: boolean;
-  suppressPointerLock?: boolean;
   // a window is open over the view (dialogue, shop, inventory): the popups sit
   // inside the view's element, so their pointer events bubble up to these
   // handlers - none of them may glance, turn, step or capture the mouse then
@@ -64,7 +62,7 @@ const clampPeek = (v: number) => Math.max(-MAX_PEEK, Math.min(MAX_PEEK, v));
 // Pointer input on the game view.
 //
 // Grid movement:
-// - mouse, no button: glance around (peek) up to +-60 degrees
+// - mouse, no button: nothing (no free look, no pointer lock)
 // - touch on the left half: one action per swipe - up/down steps
 //   forward/back, sideways turns as if grabbing the view (drag left = turn
 //   right)
@@ -73,8 +71,8 @@ const clampPeek = (v: number) => Math.max(-MAX_PEEK, Math.min(MAX_PEEK, v));
 //   way, continuing from the released angle, released back near the middle
 //   it doesn't. Up/down still steps.
 //
-// Free movement: clicking the view with the mouse captures it (pointer lock)
-// for mouselook; touches are left to the VirtualJoysticks overlay.
+// Free movement: a mouse drag turns the view; touches are left to the
+// VirtualJoysticks overlay.
 //
 // Editing the map (either movement): the mouse stays free to point at
 // surfaces and the toolbar. A mouse drag turns the view (free movement) or
@@ -92,31 +90,8 @@ export function useViewControls(opts: ViewControlsOptions) {
     axis: "x" | "y" | null;
     peekX: number;
   } | null>(null);
-  const lockTarget = useRef<HTMLElement | null>(null);
-  const [mouseLocked, setMouseLocked] = useState(false);
   const latest = useRef(opts);
   latest.current = opts;
-
-  // free movement mouselook while the pointer is locked to the view
-  useEffect(() => {
-    const onLockChange = () => setMouseLocked(!!lockTarget.current && document.pointerLockElement === lockTarget.current);
-    const onMove = (e: MouseEvent) => {
-      if (document.pointerLockElement && document.pointerLockElement === lockTarget.current) {
-        latest.current.onYaw(e.movementX * MOUSELOOK_PER_PX);
-      }
-    };
-    document.addEventListener("pointerlockchange", onLockChange);
-    document.addEventListener("mousemove", onMove);
-    return () => {
-      document.removeEventListener("pointerlockchange", onLockChange);
-      document.removeEventListener("mousemove", onMove);
-    };
-  }, []);
-
-  // leaving free movement, or starting to edit, releases the mouse
-  useEffect(() => {
-    if ((opts.grid || opts.editing) && document.pointerLockElement) document.exitPointerLock();
-  }, [opts.grid, opts.editing]);
 
   // a window opening over the view: a drag in progress is dropped and the
   // glance round is let go (the viewport eases it back)
@@ -132,14 +107,9 @@ export function useViewControls(opts: ViewControlsOptions) {
       const o = latest.current;
       if (o.blocked) return;
       if (!o.grid) {
-        if (e.pointerType === "mouse" && o.editing) {
+        // a mouse drag turns the view (no pointer lock, no free look)
+        if (e.pointerType === "mouse") {
           drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, peek: false, startOffset: 0, axis: null, peekX: e.clientX };
-          return;
-        }
-        if (e.pointerType === "mouse" && !o.suppressPointerLock) {
-          lockTarget.current = e.currentTarget;
-          // refused in some embedded/hidden pages - mouselook just stays off
-          Promise.resolve(e.currentTarget.requestPointerLock?.()).catch(() => {});
         }
         return;
       }
@@ -178,7 +148,7 @@ export function useViewControls(opts: ViewControlsOptions) {
         // editing: a mouse drag turns the view (past a small dead zone, so a
         // click that wobbles a little stays a click)
         const d = drag.current;
-        if (o.editing && d && d.id === e.pointerId && e.buttons) {
+        if (d && d.id === e.pointerId && e.buttons) {
           if (!d.axis && Math.hypot(e.clientX - d.x, e.clientY - d.y) < EDIT_DRAG_PX) return;
           d.axis = "x";
           o.onYaw(e.movementX * MOUSELOOK_PER_PX);
@@ -204,10 +174,7 @@ export function useViewControls(opts: ViewControlsOptions) {
         }
         return;
       }
-      if (e.pointerType === "mouse" && e.buttons === 0 && !o.editing) {
-        peek.offset = clampPeek(peek.offset + e.movementX * MOUSE_PEEK_PER_PX);
-        peek.lastInputAt = performance.now();
-      }
+      // (no button held: moving the mouse does nothing - looking needs a drag)
     },
 
     onPointerUp(e: PointerEvent<HTMLElement>) {
@@ -263,5 +230,5 @@ export function useViewControls(opts: ViewControlsOptions) {
     },
   };
 
-  return { handlers, peekRef, mouseLocked };
+  return { handlers, peekRef };
 }
