@@ -24,6 +24,8 @@ export interface SharedImage {
   surface?: DecalSurfaceKind;
   purpose?: ImagePurpose;
   url: string;
+  // a decal's own normal map (absent: the game makes one from the picture's brightness)
+  normalUrl?: string;
   pickup?: PickupAppearance & { depthUrl: string; normalUrl: string };
 }
 
@@ -31,8 +33,10 @@ const worlds = new Map<WorldId, SharedImage[]>();
 const listeners = new Set<() => void>();
 const decalListeners = new Set<(ids: ReadonlySet<string>) => void>();
 const pickupListeners = new Set<(ids: ReadonlySet<string>) => void>();
-const builtins: SharedImage[] = Object.entries(bundledImages).map(([id, entry]) => ({
+const builtins: SharedImage[] = Object.entries(bundledImages).map(([id, { hasNormal, ...entry }]) => ({
   ...entry, id, url: `${import.meta.env.BASE_URL}shared-images/${id}.png`,
+  // (a decal bundled with its own normal map: public/shared-images/<id>.normal.png)
+  ...(hasNormal ? { normalUrl: `${import.meta.env.BASE_URL}shared-images/${id}.normal.png` } : {}),
 }));
 let snapshot: readonly SharedImage[] = builtins;
 

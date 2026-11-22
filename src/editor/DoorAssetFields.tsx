@@ -10,6 +10,7 @@ import { BUTTON, idle } from "./inspector/parts";
 import { sharedConfigured, useSharedAuth } from "./sharedAuth";
 import { discardDoorDraft, doorTextureOptions, getDoorDrafts, publishDoor, saveDoorDraft, type DoorDraft } from "./sharedDoorTypes";
 import { errorText, SignInPopover } from "./TexturePanel";
+import { isEditable } from "./textureLibrary";
 
 const field = "block w-full min-w-0 rounded border border-neutral-600 bg-neutral-900 px-2 py-1";
 const front = { x: 2, y: 3 };
@@ -110,6 +111,13 @@ export function DoorAssetFields({ asset, editable, onError }: {
           onChange={angle => edit({ angle })}/>
       </>}
     </fieldset>
+    {/* a door type owns no texture: its leaf and frame are textures of the Textures category, whose maps (depth, normal, AI)
+        are edited there with the shared channel UI; for an editable (shared) one this opens it */}
+    {(["leaf", "frame"] as const).filter(key => isEditable(definition[key])).map(key =>
+      <button key={key} type="button" className={`${BUTTON} ${idle} self-start`}
+        onClick={() => window.dispatchEvent(new CustomEvent("voidcrew:open-asset", { detail: { sample: "material", id: definition[key] } }))}>
+        {t(`assetManager.doorType.${key}`)} · {t("assetManager.openTexture")}
+      </button>)}
     {editable && <div className="flex flex-wrap gap-1">
       <button type="button" className={`${BUTTON} ${idle}`} disabled={busy || !definition.name.trim()} onClick={() => {
         if (!sharedConfigured) onError(t("assetManager.notConfigured"));

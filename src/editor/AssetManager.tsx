@@ -20,6 +20,8 @@ import { useDialogueDrafts } from "./dialogueDrafts";
 import { useShopDrafts } from "./shopDrafts";
 import { draftCounts, draftId, isPropTexture, newDraft, saveDraft, useDrafts, type SurfaceKind } from "./textureDrafts";
 import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
+import { ChannelCards, useBlobUrl } from "./ChannelControls";
+import { ownedPropTexture, SURFACE_CHANNELS } from "./channelEditor";
 import { loadSharedTextures } from "./sharedTextures";
 import { SharedHttpError, sharedConfigured, sharedToken } from "./sharedAuth";
 import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
@@ -40,7 +42,7 @@ import { neutralStyle } from "./inspector/parts";
 import { createImageDraft, loadSharedImages, getImageDrafts, useImageDrafts, type ImageDraft } from "./sharedImages";
 import { ImageAssetInspector, useImageDraftPreview, usePickupDraftMaps } from "./ImageAssetsPanel";
 import { propEdit } from "./propEditState";
-import { attachPropTexture, createPropDraft, getPropDrafts, loadSharedProps, propTextureId, propTextures, reviseSharedProp, usePropDrafts, useSharedPropVersion, type PropDraft } from "./sharedProps";
+import { attachPropTexture, createPropDraft, getPropDrafts, loadSharedProps, propTextures, reviseSharedProp, usePropDrafts, useSharedPropVersion, type PropDraft } from "./sharedProps";
 import { PropAssetFields } from "./PropAssetFields";
 import { DialoguesPanel } from "./DialoguesPanel";
 import { ShopsPanel } from "./ShopsPanel";
@@ -314,7 +316,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       })),
     ]
     : sample==="item" ? [
-      ...Object.entries(ITEM_TYPES).map(([key,v])=>{
+      // (a published pickup being revised is listed once: as its draft)
+      ...Object.entries(ITEM_TYPES).filter(([key])=>!pickupDrafts.some(d=>d.id===key)).map(([key,v])=>{
         const image = imageCatalog.find(image=>image.id === key);
         return {key,label:v.name,img:image?.url ?? textureFolder("item_"+key).diffuse,groups:[],world:assetWorld(key),image};
       }),
@@ -328,7 +331,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       ...propDrafts.map(d=>({key:d.id,label:d.definition.name || t("assetManager.untitled"),img:catalog[d.definition.texture]?.diffuse ?? propTextures(d.world).get(d.definition.texture)?.diffuse ?? "",
         groups:[d.definition.kind==="panel"?"3D":"billboard"],world:d.world,propDraft:d})),
       ...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"],world:assetWorld(d),builtinDecal:d})),
-      ...imageCatalog.filter(image=>image.type==="decal").map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"],world:image.world,image})),
+      ...imageCatalog.filter(image=>image.type==="decal" && !decalDrafts.some(d=>d.id===image.id)).map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"],world:image.world,image})),
       ...decalDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:["decal"],world:d.world,draft:d}))];
   const visible = entries.filter(e=>(world==="All" || (e.draft || e.image || e.propDraft || e.actorDraft ? e.world===world : assetInWorld(e.key.replace(/^decal:/,""),world))) &&
     (sub==="All" || e.groups.includes(sub) || (e.propDraft && e.key===selected && sub!=="decal")));
@@ -350,12 +353,17 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [inventoryPreview, setInventoryPreview] = useState(false);
   const preview2D = sample === "still" || (sample === "item" && inventoryPreview);
   const decalDraftPreview = useImageDraftPreview(selectedDecalDraft);
+  const decalDraftNormal = useBlobUrl(selectedDecalDraft?.decalNormal);
   const stillDraftPreview = useImageDraftPreview(selectedStillDraft);
   const previewUrl = selectedDecalDraft ? decalDraftPreview : selectedStillDraft ? stillDraftPreview : isPickupDraft ? pickupDraftPreview : (entry?.img ?? "");
   const isDecal = sample === "prop" && !!entry && entry.groups.includes("decal");
   const builtinDecalSize = useImageSize(entry?.builtinDecal ? entry.img : undefined);
   const propDraft = entry?.propDraft;
-  const ownedTexture = propDraft && propDraft.definition.texture === propTextureId(propDraft.id) ? propDraft.definition.texture : "";
+  // the prop's own texture: a draft's, or a published prop's when that texture is editable (it is then edited in place; the
+  // first change makes the prop's draft, so that Publish carries the texture along)
+  const sharedPropId = sample==="prop" && !propDraft && isSharedPropId(id) ? id : "";
+  const publishedOwn = sharedPropId ? ownedPropTexture(sharedPropId, (PROP_TYPES[sharedPropId] as { texture?: string } | undefined)?.texture) : "";
+  const ownedTexture = propDraft ? ownedPropTexture(propDraft.id, propDraft.definition.texture) : publishedOwn && isEditable(publishedOwn) ? publishedOwn : "";
   const [propAiTexture, setPropAiTexture] = useState("");
   const [publishingProp, setPublishingProp] = useState("");
   const prop = sample==="prop" ? propDraft?.definition ?? PROP_TYPES[id] : undefined;
@@ -399,7 +407,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       if(propDraft && (!propDraft.definition.texture || (ownedTexture && !selectedTexture))){
         result[primary]={};
       }else if(selectedDecalDraft){
-        result[id]=previewUrl ? {diffuse:previewUrl} : {};
+        result[id]=previewUrl ? {diffuse:previewUrl, normal:decalDraftNormal || undefined} : {};
       }else if(isPickupDraft){
         result[id]=pickupMaps ?? {};
       }else if(sample==="item" && entry?.image?.pickup){
@@ -409,7 +417,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         result[id] = { ...actorSheetFiles(actor), emissive: actor.glow ? import.meta.env.BASE_URL + "actors/" + actor.sheet + "/emissive.png" : undefined };
       }else if(id.startsWith("decal:")){
         const dir=import.meta.env.BASE_URL+"decals/"+id.slice(6)+"/";
-        result[id]={diffuse:sharedImage(id.slice(6))?.url ?? dir+"diffuse.png",normal:decals[id.slice(6)]?.normal ? dir+"normal.png" : undefined};
+        result[id]={diffuse:sharedImage(id.slice(6))?.url ?? dir+"diffuse.png",normal:sharedImage(id.slice(6))?.normalUrl ?? (decals[id.slice(6)]?.normal ? dir+"normal.png" : undefined)};
       }else{
         const names=prop?.kind==="views"?["front","side","top"].map(v=>prop.views+"_"+v)
           : prop?.kind==="box"?[prop.side,prop.top]
@@ -423,7 +431,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[open,id,sample,primary,prop?.kind,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,isPickupDraft,pickupMaps,actorVersion,npcEditor,ownedTexture]);
+  },[open,id,sample,primary,prop?.kind,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,decalDraftNormal,isPickupDraft,pickupMaps,actorVersion,npcEditor,ownedTexture]);
   async function edit(channel: Channel, file?: Blob | "") {
     const next: PreviewMaps = { ...previewBlobs.current, [channel]: file };
     if (file === undefined) delete next[channel];
@@ -436,7 +444,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [rimLight, setRimLight] = useState(true);
   const [turn, setTurn] = useState(0);
   // editing the selected texture (drafts of shared textures): its settings and the channel cards of the maps panel
-  const editor = useTextureEditor(ownedTexture || (sample==="material" && entry ? id : ""), setError, select);
+  const editor = useTextureEditor(ownedTexture || (sample==="material" && entry ? id : ""), setError, select, () => { if (sharedPropId) reviseSharedProp(sharedPropId); });
   const editable = sample==="material" && !!entry && isEditable(id);
   // the shared textures and images are listed when the window opens (and on Refresh); the old local previews are moved over once
   // (manual: the Refresh button says what happened - or why nothing did; the automatic one on opening stays quiet)
@@ -584,7 +592,12 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [saveNote, setSaveNote] = useState("");
   const [copyNote, setCopyNote] = useState("");
   // the texture whose look the sliders tune (an NPC's normal strength is set in the NPC editor, a decal has none)
-  const tuneId = !entry || sample==="actor" || sample==="still" || sample==="door" || isDecal || pickup || propDraft || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : propTexture(id);
+  const tuneId = !entry || sample==="actor" || sample==="still" || sample==="door" || isDecal || pickup || (propDraft && !ownedTexture) || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : ownedTexture || propTexture(id);
+  // a prop that uses a shared wall / floor / ceiling texture: that texture's maps are edited in Textures (a link says so)
+  const propSurfaceTexture = sample==="prop" && !ownedTexture && prop && "texture" in prop && prop.texture ? prop.texture : "";
+  const elsewhereTexture = propSurfaceTexture && isEditable(propSurfaceTexture) && !isPropTexture([catalog[propSurfaceTexture]?.kind ?? []].flat()) ? propSurfaceTexture : "";
+  // (a shared texture's own - a material's, or a prop's own texture's - tuning lives in its draft and is published with it)
+  const tuneEditable = editable || (!!ownedTexture && isEditable(ownedTexture));
   void tuneStamp;
   const tune: TextureTuning | undefined = tuneId ? { ...textureTuning(tuneId) } : undefined;
   const tuneRef = useRef(tune);
@@ -593,7 +606,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     const next = { ...tuneRef.current, [key]: value };
     setTextureTuning(tuneId, next);
     // a shared texture keeps its tuning with itself (a draft, published with the texture), not in the project file
-    if (editable) void editor.setTuning(Object.fromEntries(Object.entries(next).filter(([,v]) => typeof v==="number" && v!==1)) as TextureTuning);
+    if (tuneEditable) void editor.setTuning(Object.fromEntries(Object.entries(next).filter(([,v]) => typeof v==="number" && v!==1)) as TextureTuning);
     setTuneStamp(n => n + 1);
     setSaveNote("");
     setCopyNote("");
@@ -1119,7 +1132,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
             {sample==="door" ? doorAsset && <DoorAssetFields key={id} asset={doorAsset} editable={!!doorDraft} onError={setError}/>
               : sample==="still" || isDecal || (sample==="item" && (isPickupDraft || entry?.image?.pickup)) ? <>
               {selectedImageDraft && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName(selectedImageDraft.world)}</p>}
-              <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError}/>
+              <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError} onRevised={select}/>
             </> : <>
             {propDraft && <PropAssetFields key={id} draft={propDraft}
               ownedReady={!!editor.view?.slot("diffuse").has}
@@ -1129,13 +1142,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               <summary className="cursor-pointer font-semibold">{t("assetManager.propDraft.ownTexture")}</summary>
               <fieldset className="mt-1" disabled={publishingProp === id}>
                 <TextureFields editor={editor} embedded/>
-                <div className="grid gap-2">
-                  {(["diffuse", "normal", "depth"] as const).map(channel => <div key={channel} className="rounded border border-neutral-700 p-2">
-                    <strong>{display(channel)}</strong>
-                    {groups[primary]?.[channel] && <img src={groups[primary][channel]} alt={display(channel)} className="h-16 w-full object-contain"/>}
-                    <ChannelControls editor={editor} channel={channel} onAiRunning={running => setPropAiTexture(running ? ownedTexture : "")}/>
-                  </div>)}
-                </div>
+                <ChannelCards editor={editor} channels={SURFACE_CHANNELS} urls={groups[primary] ?? {}} onAiRunning={running => setPropAiTexture(running ? ownedTexture : "")}/>
               </fieldset>
             </details>}
             {sample==="material" && <details open className="rounded border border-neutral-800 p-2">
@@ -1159,11 +1166,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               {tune ? <>
                 <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>
                 {TUNING.map(({key,label,max,hint})=><label key={key} className="my-1 block text-sm" title={t(hint)}>{t(label)}: <strong>{(tune[key]??1).toFixed(2)}×</strong><input className="block w-full" type="range" min="0" max={max} step=".05" value={tune[key]??1} onChange={e=>changeTune(key,+e.target.value)}/></label>)}
-                <div className="mt-2 flex flex-wrap items-center gap-2">{!editable && <button className={button+" !py-1"} onClick={dev ? saveTune : downloadTune}>{t(dev ? "assetManager.save" : "assetManager.download")}</button>}{!editable && !dev && <button className={button+" !py-1"} onClick={copyTune}>{t("assetManager.copy")}</button>}<button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);if(editable)void editor.setTuning(undefined);setTuneStamp(n=>n+1);setSaveNote("");setCopyNote("");}}>{t("assetManager.reset")}</button></div>
-                {editable && <p className="mt-1 text-xs text-neutral-300">{t("assetManager.tuningShared")}</p>}
+                <div className="mt-2 flex flex-wrap items-center gap-2">{!tuneEditable && <button className={button+" !py-1"} onClick={dev ? saveTune : downloadTune}>{t(dev ? "assetManager.save" : "assetManager.download")}</button>}{!tuneEditable && !dev && <button className={button+" !py-1"} onClick={copyTune}>{t("assetManager.copy")}</button>}<button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);if(tuneEditable)void editor.setTuning(undefined);setTuneStamp(n=>n+1);setSaveNote("");setCopyNote("");}}>{t("assetManager.reset")}</button></div>
+                {tuneEditable && <p className="mt-1 text-xs text-neutral-300">{t("assetManager.tuningShared")}</p>}
                 {saveNote && <p className="mt-1 text-xs text-neutral-300">{saveNote}</p>}
                 {copyNote && <p className="mt-1 text-xs text-neutral-300">{copyNote}</p>}
-                {!dev && !editable && <p className="mt-1 text-xs text-neutral-400">{t("assetManager.downloadHint")}</p>}
+                {!dev && !tuneEditable && <p className="mt-1 text-xs text-neutral-400">{t("assetManager.downloadHint")}</p>}
               </> : <p className="my-1 text-xs text-neutral-400">{sample==="actor" ? t("assetManager.actorTuning") : t("assetManager.noTuningHint")}</p>}
             </details>
             <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.roomLights")}</summary>
@@ -1177,7 +1184,12 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                 <label>{t("assetManager.rotation")} <input className="block w-full" type="range" min="-180" max="180" value={turn} onChange={e=>setTurn(+e.target.value)}/></label>
               </div>
             </details>
-            {!ownedTexture && <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t(editable ? "assetManager.mapsEditable" : "assetManager.maps")}</summary>{sample==="material" && entry && <div className="mt-1"><TextureFields editor={editor}/></div>}{Object.entries(groups).map(([group,layers])=><section key={group}>{Object.keys(groups).length>1 && <strong>{sample==="material" ? (entry?.label ?? "") : group}</strong>}<div className="mt-1 grid grid-cols-2 gap-2">{channels.map(channel=>{
+            {!ownedTexture && <details open className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t(editable ? "assetManager.mapsEditable" : "assetManager.maps")}</summary>
+              {elsewhereTexture && <div className="mt-1 flex flex-col gap-1 text-xs text-neutral-300">
+                <p>{t("assetManager.propTextureElsewhere", { name: catalog[elsewhereTexture]?.label ?? elsewhereTexture })}</p>
+                <button className={button+" self-start !py-1"} onClick={()=>openAssetManager("material", elsewhereTexture)}>{t("assetManager.openTexture")}</button>
+              </div>}
+              {sample==="material" && entry &&<div className="mt-1"><TextureFields editor={editor}/></div>}{Object.entries(groups).map(([group,layers])=><section key={group}>{Object.keys(groups).length>1 && <strong>{sample==="material" ? (entry?.label ?? "") : group}</strong>}<div className="mt-1 grid grid-cols-2 gap-2">{channels.map(channel=>{
               const url=(sample==="material"?edits[channel]:undefined) ?? layers[channel];
               if(!url && sample!=="material")return null;
               if(editable && channel==="glow" && !url)return null;

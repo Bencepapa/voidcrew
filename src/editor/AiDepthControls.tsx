@@ -23,9 +23,11 @@ type AiDepthEditor = {
   onError: (message: string) => void;
 };
 
-export function AiDepthControls({ editor, onRunningChange }: {
+export function AiDepthControls({ editor, onRunningChange, normalOnly = false }: {
   editor: AiDepthEditor;
   onRunningChange?: (running: boolean) => void;
+  // the category stores no depth map (a decal, an NPC sheet): the run always makes the normal map, and the depth is only a step
+  normalOnly?: boolean;
 }) {
   const { view } = editor;
   const [running, setRunning] = useState(false);
@@ -65,7 +67,7 @@ export function AiDepthControls({ editor, onRunningChange }: {
           : p.stage === "load" ? t("assetManager.ai.loading") : t("assetManager.ai.preparing"));
       }, controller.signal);
       const depthBlob = await encode(depth);
-      const normalBlob = alsoNormal ? await encode(new ImageData(generateNormal(depth.data, depth.width, depth.height), depth.width, depth.height)) : undefined;
+      const normalBlob = alsoNormal || normalOnly ? await encode(new ImageData(generateNormal(depth.data, depth.width, depth.height), depth.width, depth.height)) : undefined;
       controller.signal.throwIfAborted();
       await editor.applyAiMaps(depthBlob, normalBlob);
     } catch (error) {
@@ -81,7 +83,7 @@ export function AiDepthControls({ editor, onRunningChange }: {
 
   return <details className="mt-1 border-t border-neutral-700 pt-1 text-[11px]">
     <summary className="flex cursor-pointer select-none items-center gap-1 text-neutral-200">
-      <AiBadge/>{t("assetManager.ai.section")}
+      <AiBadge/>{t(normalOnly ? "assetManager.ai.sectionNormal" : "assetManager.ai.section")}
     </summary>
     {running && <div role="status" className="mt-1">
       <div className="whitespace-normal break-words text-[10px] text-sky-200">{label}</div>
@@ -100,7 +102,7 @@ export function AiDepthControls({ editor, onRunningChange }: {
       </div>
       {running && device === "wasm" && <p className="text-[10px] text-yellow-300">{t("assetManager.ai.slow")}</p>}
       <p className="text-[10px] text-neutral-400">{cached ? t("assetManager.ai.cached") : t("assetManager.ai.hint", { size: t("assetManager.ai.size") })}</p>
-      <label><input type="checkbox" checked={alsoNormal} disabled={running} onChange={e => setAlsoNormal(e.target.checked)}/> {t("assetManager.ai.alsoNormal")}</label>
+      {!normalOnly && <label><input type="checkbox" checked={alsoNormal} disabled={running} onChange={e => setAlsoNormal(e.target.checked)}/> {t("assetManager.ai.alsoNormal")}</label>}
       <label><input type="checkbox" checked={options.invert} disabled={running} onChange={e => set("invert", e.target.checked)}/> {t("assetManager.ai.invert")}</label>
       <label>{t("assetManager.ai.detail")}: <strong>{options.detail.toFixed(2)}</strong>
         <input className="block w-full" type="range" min="0" max="1" step="0.05" value={options.detail} disabled={running} onChange={e => set("detail", +e.target.value)}/></label>

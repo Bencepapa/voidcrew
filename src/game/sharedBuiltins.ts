@@ -19,4 +19,4 @@ export const bundledMaps: Record<string, Record<string, number>> = catalog.maps;
 export interface BundledDefinition { rev: number; definition: unknown }
 export const bundledDefinitions = (catalog as { definitions?: unknown }).definitions as
   Record<"prop" | "door" | "actor", Record<string, BundledDefinition>> ?? { prop: {}, door: {}, actor: {} };
-export const bundledImages = (catalog.images ?? {}) as Record<string, Omit<SharedImage, "id" | "url"> & { rev: number }>;
+export const bundledImages = (catalog.images ?? {}) as Record<string, Omit<SharedImage, "id" | "url" | "normalUrl"> & { rev: number; hasNormal?: boolean }>;

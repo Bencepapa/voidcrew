@@ -7,13 +7,16 @@ import type { DecalSurfaceKind, ImagePurpose, SharedImage, SharedImageType } fro
 import { applyTransparency, decode, type Transparency } from "./imageTools";
 import { sharedConfigured, useSharedAuth } from "./sharedAuth";
 import {
-  checkImagePng, createImageDraft, discardImageDraft, getImageDrafts, publishImage, resolvePickupMaps, saveImageDraft, useImageDrafts,
+  checkImagePng, createImageDraft, discardImageDraft, getImageDrafts, publishImage, resolvePickupMaps, reviseSharedImage, saveImageDraft, useImageDrafts,
   type ImageDraft,
 } from "./sharedImages";
+import { canReviseImage } from "./imageDraftLogic";
 import { errorText, SignInPopover } from "./TexturePanel";
 import { active, BUTTON, idle, KindChoice, neutralStyle } from "./inspector/parts";
 import { NumberField } from "./NumberField";
-import { AiBadge, AiDepthControls } from "./AiDepthControls";
+import { ChannelCards, useBlobUrl } from "./ChannelControls";
+import type { ChannelEditor } from "./channelEditor";
+import type { MapKey } from "./textureDrafts";
 import type { MaterialMaps } from "./materialMaps";
 
 const field = "block w-full min-w-0 rounded-sm border border-neutral-600 bg-neutral-900 px-2 py-1 text-sm text-neutral-100";
@@ -84,9 +87,17 @@ export function useImageDraftPreview(draft: ImageDraft | undefined): string {
   return url;
 }
 
-function PublishedDetails({ image }: { image: SharedImage }) {
+function PublishedDetails({ image, onError, onRevised }: { image: SharedImage; onError: (message: string) => void; onRevised?: (id: string) => void }) {
+  const [reviving, setReviving] = useState(false);
+  async function revise() {
+    setReviving(true);
+    try { onRevised?.((await reviseSharedImage(image)).id); }
+    catch (error) { onError(errorText(error)); }
+    finally { setReviving(false); }
+  }
   return <div className="flex min-w-0 flex-col gap-2 text-sm" style={neutralStyle}>
     <p className="text-xs text-neutral-400">{t("assetManager.image.readOnly")}</p>
+    {canReviseImage(image) && <button type="button" className={`${BUTTON} ${idle} self-start`} disabled={reviving} title={t("assetManager.image.editHint")} onClick={() => void revise()}>{t("assetManager.image.edit")}</button>}
     <img className="max-h-52 max-w-full self-start object-contain" src={image.url} alt={image.name}/>
     <p><span className="text-neutral-400">{t("assetManager.image.name")}: </span>{image.name}</p>
     <p><span className="text-neutral-400">{t("assetManager.image.type")}: </span>{t(`assetManager.image.${image.type}`)}</p>
@@ -105,17 +116,23 @@ function PublishedDetails({ image }: { image: SharedImage }) {
         </div>)}
       </div>
     </>}
+    {image.normalUrl && <div>
+      <strong>{t("assetManager.row.normal")}</strong>
+      <img className="h-20 w-full object-contain" src={image.normalUrl} alt=""/>
+    </div>}
     <p><span className="text-neutral-400">{t("assetManager.world")}: </span>{t(image.world === "fantasy" ? "assetManager.fantasy" : "assetManager.scifi")}</p>
     <p><span className="text-neutral-400">{t("assetManager.image.size")}: </span>{image.width} × {image.height}</p>
     <p className="min-w-0"><span className="text-neutral-400">{t("assetManager.image.id")}: </span><code className="break-all text-xs text-neutral-400">{image.id}</code></p>
   </div>;
 }
 
-export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
+export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRevised }: {
   draft?: ImageDraft;
   image?: SharedImage;
   pickupPreview?: MaterialMaps;
   onError: (message: string) => void;
+  // a published pickup / decal was turned into a draft to edit (the list selects it)
+  onRevised?: (id: string) => void;
 }) {
   const auth = useSharedAuth();
   const drafts = useImageDrafts();
@@ -126,6 +143,7 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
   // Always read the stored copy: a prop from the list can be one edit behind.
   const current = draft ? drafts.find(saved => saved.id === draft.id) : undefined;
   const preview = useImageDraftPreview(current);
+  const decalNormalUrl = useBlobUrl(current?.decalNormal);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -160,13 +178,13 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
       await checkImagePng(file, file.name, current.type);
       const png = file.slice(0, file.size, "image/png");
       const name = current.name.trim() || file.name.replace(/\.png$/i, "").slice(0, 100);
-      await change({ png, name, pickupMaps: undefined });
+      await change({ png, name, pickupMaps: undefined, decalNormal: undefined });
       setStatus(t("assetManager.image.saved"));
     });
   }
 
   function choosePickupMap(channel: "normal" | "depth", file: File) {
-    void run(async () => {
+    return run(async () => {
       const base = latest();
       if (!base?.png || base.type !== "item") return;
       const [map, diffuse] = await Promise.all([
@@ -181,6 +199,20 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
         [channel]: file.slice(0, file.size, "image/png"),
         ...(channel === "depth" ? { aiDepth: false } : {}),
       } });
+    });
+  }
+
+  // a decal's normal map: it must be the size of the picture
+  function chooseDecalNormal(file: File) {
+    return run(async () => {
+      const base = latest();
+      if (!base?.png || base.type !== "decal") return;
+      const [map, diffuse] = await Promise.all([checkImagePng(file, file.name, "decal"), decode(base.png)]);
+      if (map.width !== diffuse.width || map.height !== diffuse.height) {
+        throw new Error(t("assetManager.pickup.mapSize", { width: diffuse.width, height: diffuse.height }));
+      }
+      if (latest()?.png !== base.png) return;
+      await change({ decalNormal: file.slice(0, file.size, "image/png") });
     });
   }
 
@@ -219,13 +251,67 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
   }
 
   if (!current) {
-    if (image) return <PublishedDetails image={image}/>;
+    if (image) return <PublishedDetails image={image} onError={onError} onRevised={onRevised}/>;
     return <p className="text-sm text-neutral-400" style={neutralStyle}>{t("assetManager.image.selectHint")}</p>;
   }
 
   const purpose = current.purpose ?? "portrait";
   const pickup = current.pickup ?? DEFAULT_PICKUP;
   const locked = busy || aiRunning;
+  // the pickup's normal and depth for the shared channel UI: an uploaded map overrides, no map = Auto (made from the diffuse)
+  const pickupMapOf = (key: MapKey) => key === "normal" || key === "depth" ? current.pickupMaps?.[key] : undefined;
+  const clearPickupMap = async (key: MapKey) => {
+    if (key !== "normal" && key !== "depth") return;
+    const base = latest();
+    if (base) await change({ pickupMaps: { ...base.pickupMaps, [key]: undefined, ...(key === "depth" ? { aiDepth: false } : {}) } });
+  };
+  // a decal has a normal map only (it is projected onto the wall / floor, which has the relief): no depth card;
+  // the AI run makes the normal and drops the depth. Auto = no file: the game makes one from the picture's brightness
+  const clearDecalNormal = async () => { if (latest()) await change({ decalNormal: undefined }); };
+  const decalEditor: ChannelEditor = {
+    view: { pixelArt: true, transparency: current.transparency,
+      slot: key => key === "diffuse" ? { mode: "uploaded", has: !!current.png } : { mode: current.decalNormal ? "uploaded" : "auto", has: !!current.decalNormal } },
+    busy, aiDepth: false, channels: ["normal"],
+    modes: key => key === "normal" ? ["uploaded", "auto"] : ["uploaded"],
+    chooseFile: (key, file) => key === "normal" ? chooseDecalNormal(file) : Promise.resolve(),
+    setMode: (key, mode, open) => {
+      if (key !== "normal") return;
+      if (mode === "uploaded") { if (!current.decalNormal) open?.(); }
+      else void run(clearDecalNormal);
+    },
+    remove: key => key === "normal" ? run(clearDecalNormal) : Promise.resolve(),
+    diffuseBlob: async () => current.png,
+    applyAiMaps: async (_depth, normal) => {
+      const base = latest();
+      if (!normal || !base || base.png !== current.png) return;
+      await change({ decalNormal: normal });
+    },
+    onError,
+  };
+  const pickupEditor: ChannelEditor = {
+    view: { pixelArt: true, transparency: current.transparency,
+      slot: key => key === "diffuse" ? { mode: "uploaded", has: !!current.png } : { mode: pickupMapOf(key) ? "uploaded" : "auto", has: !!pickupMapOf(key) } },
+    busy, aiDepth: !!current.pickupMaps?.aiDepth, channels: ["normal", "depth"],
+    modes: key => key === "normal" || key === "depth" ? ["uploaded", "auto"] : ["uploaded"],
+    chooseFile: (key, file) => key === "normal" || key === "depth" ? choosePickupMap(key, file) : Promise.resolve(),
+    setMode: (key, mode, open) => {
+      if (mode === "uploaded") { if (!pickupMapOf(key)) open?.(); }
+      else void run(() => clearPickupMap(key));
+    },
+    remove: key => run(() => clearPickupMap(key)),
+    diffuseBlob: async () => current.png,
+    applyAiMaps: async (depth, normal) => {
+      const base = latest();
+      if (!base || base.png !== current.png) return;
+      await change({ pickupMaps: { ...base.pickupMaps, depth, aiDepth: true, ...(normal ? { normal } : {}) } });
+    },
+    depthBlob: async () => latest()?.pickupMaps?.depth,
+    applyNormal: async normal => {
+      const base = latest();
+      if (base) await change({ pickupMaps: { ...base.pickupMaps, normal } });
+    },
+    onError,
+  };
   return <div className="relative flex min-w-0 flex-col gap-2 text-sm" style={neutralStyle}>
     <fieldset className="flex min-w-0 flex-col gap-2" disabled={locked}>
     <label className="flex min-w-0 flex-col gap-1">{t("assetManager.image.file")}
@@ -287,43 +373,16 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
 
     {current.type === "item" && <details open className="min-w-0 rounded border border-neutral-800 p-2">
       <summary className="cursor-pointer font-semibold">{t("assetManager.mapsEditable")}</summary>
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {(["normal", "depth"] as const).map(channel => {
-          const label = t(`assetManager.row.${channel}`);
-          const custom = current.pickupMaps?.[channel];
-          return <div className="flex min-w-0 flex-col gap-1 border border-neutral-700 p-1" key={channel}>
-            <strong>{label}</strong>
-            {pickupPreview?.[channel] && <img className="h-16 w-full object-contain" src={pickupPreview[channel]} alt={label}/>}
-            <span className="text-xs text-neutral-300">
-              {channel === "depth" && current.pickupMaps?.aiDepth ? <><AiBadge/> {t("assetManager.ai.status")}</>
-                : t(custom ? "assetManager.mode.uploaded" : "assetManager.mode.auto")}
-            </span>
-            <label className={`${BUTTON} ${idle}`}>
-              {t("assetManager.chooseFile")}
-              <input className="sr-only" type="file" accept="image/png,.png" disabled={locked || !current.png}
-                aria-label={t("assetManager.chooseFileFor", { map: label })} onChange={event => {
-                  const file = event.currentTarget.files?.[0];
-                  event.currentTarget.value = "";
-                  if (file) choosePickupMap(channel, file);
-                }}/>
-            </label>
-            {custom && <button type="button" className={`${BUTTON} ${idle}`} disabled={locked} onClick={() => {
-              autosave({ pickupMaps: { ...current.pickupMaps, [channel]: undefined, ...(channel === "depth" ? { aiDepth: false } : {}) } });
-            }}>{t("assetManager.mode.auto")}</button>}
-          </div>;
-        })}
-      </div>
-      <AiDepthControls onRunningChange={setAiRunning} editor={{
-        view: { pixelArt: true, transparency: current.transparency, slot: () => ({ has: !!current.png }) },
-        busy,
-        diffuseBlob: async () => current.png,
-        applyAiMaps: async (depth, normal) => {
-          const base = latest();
-          if (!base || base.png !== current.png) return;
-          await change({ pickupMaps: { ...base.pickupMaps, depth, aiDepth: true, ...(normal ? { normal } : {}) } });
-        },
-        onError,
-      }}/>
+      <fieldset className="mt-2 min-w-0" disabled={busy || !current.png}>
+        <ChannelCards editor={pickupEditor} channels={["normal", "depth"]} urls={pickupPreview ?? {}} onAiRunning={setAiRunning}/>
+      </fieldset>
+    </details>}
+
+    {current.type === "decal" && <details open className="min-w-0 rounded border border-neutral-800 p-2">
+      <summary className="cursor-pointer font-semibold">{t("assetManager.mapsEditable")}</summary>
+      <fieldset className="mt-2 min-w-0" disabled={busy || !current.png}>
+        <ChannelCards editor={decalEditor} channels={["normal"]} urls={{ normal: decalNormalUrl }} onAiRunning={setAiRunning}/>
+      </fieldset>
     </details>}
 
     <div className="flex flex-wrap gap-1">

@@ -1,7 +1,7 @@
 // The Assets window's texture editing: the settings of one shared texture (a local draft of a new one, or of a
 // published one), the controls of its channel cards, and the yellow "unsaved changes" bar with Publish and Discard.
 
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Lock } from "lucide-react";
 import { t, type Key } from "../i18n";
 import type { WorldId } from "../game/worlds";
@@ -16,13 +16,11 @@ import { useShopDrafts } from "./shopDrafts";
 import { discardDoorDraft, useDoorDrafts } from "./sharedDoorTypes";
 import { draftById, draftCounts, draftId, discardDraft, isPropTexture, MAP_KEYS, saveDraft, useDrafts, type MapKey, type MapMode, type SurfaceKind, type TextureDraft } from "./textureDrafts";
 import type { TextureTuning } from "../render/textureTuning";
-import { AiBadge, AiDepthControls } from "./AiDepthControls";
+import { TEXTURE_MODES, type ChannelEditor } from "./channelEditor";
 import { catalogLabel, convertLegacy, ensureDraft, mapUses, sharedInfo, textureStatus, useTextureVersion } from "./textureLibrary";
 
 const small = "rounded border border-neutral-500 bg-neutral-800 px-2 py-1 text-xs hover:border-amber-400 aria-pressed:border-amber-400 aria-pressed:bg-neutral-700 disabled:opacity-50";
 const rowKey = (k: MapKey) => ("assetManager.row." + k) as Key;
-const modeKey = (m: MapMode) => ("assetManager.mode." + m) as Key;
-const modesOf = (k: MapKey): MapMode[] => k === "diffuse" ? ["uploaded"] : k === "normal" || k === "depth" ? ["uploaded", "auto", "none"] : ["uploaded", "none"];
 
 export function AutoBadge({ className = "" }: { className?: string }) {
   return <span className={"rounded bg-amber-500 px-1 text-[10px] font-bold leading-4 text-black " + className} title={t("assetManager.autoHint")}>AUTO</span>;
@@ -39,7 +37,9 @@ function cloneDraft(d: TextureDraft): TextureDraft {
 
 export type TextureEditor = ReturnType<typeof useTextureEditor>;
 
-export function useTextureEditor(id: string, onError: (message: string) => void, onSelect: (id: string) => void) {
+// `beforeChange` runs once a change is about to make or alter a draft (a prop makes its own draft there, so that Publish
+// carries the texture's change).
+export function useTextureEditor(id: string, onError: (message: string) => void, onSelect: (id: string) => void, beforeChange?: () => void) {
   const drafts = useDrafts();
   useTextureVersion();
   const status = id ? textureStatus(id) : "builtin";
@@ -60,6 +60,7 @@ export function useTextureEditor(id: string, onError: (message: string) => void,
   async function change(fn: (d: TextureDraft) => TextureDraft | Promise<TextureDraft>) {
     setBusy(true);
     try {
+      beforeChange?.();
       const base = draftById(id) ?? await ensureDraft(id);
       await saveDraft(await fn(cloneDraft(base)));
     } catch (error) { onError(errorText(error)); }
@@ -99,8 +100,17 @@ export function useTextureEditor(id: string, onError: (message: string) => void,
   });
   // the texture's own look tuning (the sliders): kept in the draft, published with the texture
   const setTuning = (tuning: TextureTuning | undefined) => change(d => { d.tuning = tuning; return d; });
+  // "Normal from depth": the uploaded depth, and the normal made from it as an uploaded map
+  const depthBlob = async () => (draftById(id) ?? await ensureDraft(id)).maps.depth.blob;
+  const applyNormal = (normal: Blob) => change(d => { d.maps.normal = { mode: "uploaded", blob: normal }; return d; });
 
-  return { id, status, draft, info, view, busy, change, chooseFile, setMode, remove, setTuning, diffuseBlob, applyAiMaps, onError, onSelect };
+  const editor = {
+    id, status, draft, info, view, busy, change, chooseFile, setMode, remove, setTuning, diffuseBlob, applyAiMaps, onError, onSelect,
+    // (what the shared channel UI reads: see channelEditor.ts)
+    aiDepth: !!draft?.aiDepth, channels: MAP_KEYS as readonly MapKey[], modes: TEXTURE_MODES, depthBlob, applyNormal,
+  };
+  editor satisfies ChannelEditor;
+  return editor;
 }
 
 // ---- the texture's settings: above the channel cards ----
@@ -181,32 +191,9 @@ export function TextureFields({ editor, embedded = false }: { editor: TextureEdi
   </div>;
 }
 
-// ---- the controls of one channel card (Upload / Auto / None / Remove), under its thumbnail ----
+// the controls of one channel card live in ChannelControls.tsx (shared by every category)
+export { ChannelControls } from "./ChannelControls";
 
-export function ChannelControls({ editor, channel, onAiRunning }: {
-  editor: TextureEditor; channel: MapKey; onAiRunning?: (running: boolean) => void;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  const { view } = editor;
-  if (!view) return null;
-  const slot = view.slot(channel);
-  const required = channel === "diffuse";
-  return <div className="mt-1 flex flex-col gap-1" onDragOver={e => e.preventDefault()}
-    onDrop={(e: DragEvent) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && !e.currentTarget.closest("fieldset:disabled")) void editor.chooseFile(channel, f); }}>
-    {modesOf(channel).length > 1 && <div className="flex flex-wrap gap-1" role="group" aria-label={t(rowKey(channel))}>{modesOf(channel).map(m =>
-      <button key={m} className={small} aria-pressed={slot.mode === m} title={m === "auto" ? t("assetManager.autoHint") : undefined} onClick={() => editor.setMode(channel, m, () => input.current?.click())}>{t(modeKey(m))}</button>)}</div>}
-    <div className="flex flex-wrap gap-1">
-      <button className={small} onClick={() => input.current?.click()}>{t("assetManager.chooseFile")}</button>
-      {(slot.has || (!required && slot.mode !== "none")) && <button className={small} onClick={() => void editor.remove(channel)}>{t("assetManager.remove")}</button>}
-      <input ref={input} type="file" accept="image/png" className="sr-only" aria-label={t("assetManager.chooseFileFor", { map: t(rowKey(channel)) })} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void editor.chooseFile(channel, f); }}/>
-    </div>
-    {required && !slot.has && <p className="text-[10px] text-red-300">{t("assetManager.required")}</p>}
-    {channel === "depth" && <>
-      {editor.draft?.aiDepth && slot.mode === "uploaded" && slot.has && <p className="flex items-center gap-1 text-[10px] text-neutral-300"><AiBadge/>{t("assetManager.ai.status")}</p>}
-      <AiDepthControls editor={editor} onRunningChange={onAiRunning}/>
-    </>}
-  </div>;
-}
 // ---- the yellow bar ----
 
 export function UnsavedBar({ onError }: { onError: (message: string) => void }) {

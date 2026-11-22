@@ -220,11 +220,13 @@ export class DecalLibrary {
   private asset(name: string): Promise<DecalAsset> {
     const shared = sharedImage(name);
     const sharedUrl = shared?.type === "decal" ? shared.url : undefined;
+    // (a shared decal may carry its own normal map)
+    const sharedNormalUrl = shared?.type === "decal" ? shared.normalUrl : undefined;
     const cacheKey = sharedUrl ?? name;
     let asset = this.assets.get(cacheKey);
     if (!asset) {
       const entryPromise: Promise<DecalManifestEntry | undefined> = sharedUrl
-        ? Promise.resolve({ normal: false })
+        ? Promise.resolve({ normal: !!sharedNormalUrl })
         : this.manifest.then(manifest => manifest[name]);
       asset = entryPromise.then(async (entry) => {
         if (!entry) throw new Error("Unknown decal");
@@ -233,7 +235,7 @@ export class DecalLibrary {
         const map = await this.loadTexture(sharedUrl ?? `${dir}diffuse.png${bust}`);
         map.colorSpace = THREE.SRGBColorSpace;
         map.magFilter = THREE.NearestFilter;
-        let normalMap = entry.normal ? await this.loadTexture(`${dir}normal.png${bust}`) : null;
+        let normalMap = entry.normal ? await this.loadTexture(sharedNormalUrl ?? `${dir}normal.png${bust}`) : null;
         if (normalMap) normalMap.magFilter = THREE.NearestFilter;
         else if (!entry.water) {
           normalMap = normalFromDiffuse(map);

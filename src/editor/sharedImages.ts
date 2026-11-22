@@ -9,6 +9,7 @@ import { applyTransparency, decode, isPng, MAX_PNG_BYTES, type Transparency } fr
 import { sharedConfigured, sharedToken, sharedUpload } from "./sharedAuth";
 import { listSharedObjects, sharedAssetBase } from "./sharedTextures";
 import { derive } from "./textureLibrary";
+import { canReviseImage, draftFromPublished, sharedDecalNormalUrl } from "./imageDraftLogic";
 
 export interface ImageDraft {
   id: string;
@@ -22,6 +23,8 @@ export interface ImageDraft {
   purpose?: ImagePurpose;
   pickup?: PickupAppearance;
   pickupMaps?: { depth?: Blob; normal?: Blob; aiDepth?: boolean };
+  // a decal's own normal map (none: the game makes one from the picture's brightness); a decal has no depth
+  decalNormal?: Blob;
 }
 
 export const imageAssetId = (world: WorldId, type: SharedImageType, uuid: string) => `${world}_${type}_${uuid}`;
@@ -67,6 +70,7 @@ function normalizeDraft(value: Partial<ImageDraft>): ImageDraft {
       normal: value.pickupMaps.normal instanceof Blob ? value.pickupMaps.normal : undefined,
       aiDepth: value.pickupMaps.depth instanceof Blob && value.pickupMaps.aiDepth === true,
     } : undefined,
+    decalNormal: type === "decal" && value.decalNormal instanceof Blob ? value.decalNormal : undefined,
   };
 }
 
@@ -111,6 +115,25 @@ export async function createImageDraft(world: WorldId, type: SharedImageType, pu
     purpose: type === "portrait" ? (isImagePurpose(purpose) ? purpose : "portrait") : undefined,
     pickup: type === "item" ? { ...DEFAULT_PICKUP } : undefined,
   };
+  await saveImageDraft(draft);
+  return draft;
+}
+
+// A draft of a published pickup or decal (its files fetched into Blobs), so that its maps can be edited; Publish then makes
+// the next revision of the same asset. One draft per asset: an existing one is returned.
+export async function reviseSharedImage(image: SharedImage): Promise<ImageDraft> {
+  await loadReady;
+  const existing = drafts.find(draft => draft.id === image.id);
+  if (existing) return existing;
+  if (!canReviseImage(image)) throw new Error(t("assetManager.err.notEditable"));
+  const read = async (url?: string) => {
+    if (!url) return undefined;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(t("assetManager.err.fetch", { url }));
+    return response.blob();
+  };
+  const [png, normal, depth] = await Promise.all([read(image.url), read(image.pickup?.normalUrl ?? image.normalUrl), read(image.pickup?.depthUrl)]);
+  const draft = draftFromPublished(image, { png: png!, normal, depth });
   await saveImageDraft(draft);
   return draft;
 }
@@ -171,13 +194,15 @@ async function publishedImage(world: WorldId, type: SharedImageType, uuid: strin
     if (!response.ok) throw new Error(`Asset metadata: HTTP ${response.status}`);
     const metadata = await response.json().catch(() => null);
     if (!metadata || typeof metadata !== "object") continue;
-    const { name, width, height, surface, type: savedType, purpose, pickup } = metadata;
+    const { name, width, height, surface, type: savedType, purpose, pickup, hasNormal } = metadata;
     if (savedType !== type || typeof name !== "string" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
       || width < 1 || height < 1 || width > imageLimit(type) || height > imageLimit(type)) continue;
     return {
       id: imageAssetId(world, type, uuid), world, type, name, width, height, url: base + "diffuse.png",
       ...(type === "portrait" && isImagePurpose(purpose) ? { purpose } : {}),
       surface: type === "decal" && isSurface(surface) ? surface : undefined,
+      // (older revisions have no normal file: `hasNormal` says there is one)
+      ...(sharedDecalNormalUrl(type, hasNormal, base) ? { normalUrl: sharedDecalNormalUrl(type, hasNormal, base) } : {}),
       pickup: type === "item" ? { ...readPickup(pickup), depthUrl: base + "depth.png", normalUrl: base + "normal.png" } : undefined,
     };
   }
@@ -237,10 +262,17 @@ export async function publishImage(draft: ImageDraft) {
       sharedUpload(target + "depth.png", maps.depth, "image/png"),
     ]);
   }
+  // a decal's own normal map (it must fit the picture, the same size); the meta says it is there
+  const decalNormal = draft.type === "decal" ? draft.decalNormal : undefined;
+  if (decalNormal) {
+    const normal = await checkImagePng(decalNormal, name, "decal");
+    if (normal.width !== width || normal.height !== height) throw new Error(t("assetManager.pickup.mapSize", { width, height }));
+    await sharedUpload(target + "normal.png", decalNormal, "image/png");
+  }
   await sharedUpload(target + "meta.json", JSON.stringify({
     v: 1, type: draft.type, name, width, height, rev,
     ...(purpose ? { purpose } : {}),
-    ...(draft.type === "decal" ? { surface: draft.surface } : {}),
+    ...(draft.type === "decal" ? { surface: draft.surface, ...(decalNormal ? { hasNormal: true } : {}) } : {}),
     ...(draft.type === "item" ? { pickup: readPickup(draft.pickup) } : {}),
   }), "application/json");
   await discardImageDraft(draft.id);
