@@ -1,0 +1,21 @@
+:: StoryTitle
+Voidcrew példa: kampány
+
+:: FileData
+@kind campaign
+@var tyrant_fate = "none"
+@var heroism = 0
+@var labyrinth_route = "none"
+@start chapter-1-zsarnok
+
+:: Chain Zsarnok [chapter]
+@chapter chapter-1-zsarnok
+@next chapter-2-labirintus @if campaign.tyrant_fate != "none"
+
+:: Chain Labirintus [chapter]
+@chapter chapter-2-labirintus
+@next end
+
+:: Chain Hajo [chapter]
+@chapter chapter-3-hajo
+@next end
