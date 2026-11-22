@@ -85,6 +85,20 @@ One component set, adapter based, the Textures path being the reference implemen
   the old read-only maps panel; built-in code props (views / box / cabin) stay read-only.
 - Tests: `src/editor/channelEditor.test.ts` (modes, AI channel, normal-from-depth rule, prop texture ownership, depth to normal).
 
+## Stage 3b: Decals (done, backward compatible format extension)
+- A decal is projected onto the wall / floor geometry, which already has the relief, so it has NO depth: only a normal map.
+  New "Texture and maps" block in the decal draft's panel: one Normal card (Uploaded / Auto / Remove, Upload) plus the AI
+  section titled "AI normal map" (`AiDepthControls` got an optional `normalOnly`: it runs the same depth model, always makes the
+  normal from it and drops the depth; `ChannelControls` sets it when the adapter has no depth channel). Auto = no file = the game
+  keeps making the normal from the picture's brightness (`normalFromDiffuse` in `render/decals.ts`), as before.
+- Format (all optional, old data keeps working): `ImageDraft.decalNormal` (Blob); `<world>/decal/<uuid>/r<N>/normal.png` next
+  to `diffuse.png`, announced by `"hasNormal": true` in meta.json; `SharedImage.normalUrl`; `bundledImages[id].hasNormal` and
+  `public/shared-images/<id>.normal.png` written by `scripts/pull-shared.ts` (`pullImages`); `render/decals.ts` loads
+  `normalUrl` for a shared decal (it was hard-wired to "no normal"). A revision without `hasNormal` behaves as before.
+- The normal must be the size of the decal's picture (same rule and message as the pickup maps); a new diffuse clears it.
+- The published decal view shows the normal map when there is one, and has the "Edit" button from stage 3a.
+- Preview: the 3D preview of a decal draft / published decal now gets the normal map too.
+
 ## Stage 3a: Pickups (done)
 - The hand-made "Texture and maps" block of `ImageAssetInspector` (own upload buttons, own "Auto" button, own `AiDepthControls`
   adapter) is replaced by `ChannelCards` over a `ChannelEditor` adapter defined in `ImageAssetsPanel.tsx` (channels normal +

@@ -149,7 +149,7 @@ async function pullImages(world: string, type: "portrait" | "decal") {
       const response = await asset(folder + "meta.json");
       if (response.status === 400 || response.status === 404) continue;
       if (!response.ok) throw new Error(`Could not read ${folder} metadata (HTTP ${response.status}).`);
-      const { name, type: savedType, width, height, surface, purpose } = await response.json();
+      const { name, type: savedType, width, height, surface, purpose, hasNormal } = await response.json();
       if (savedType !== type || typeof name !== "string" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) continue;
       if (existsSync(target) || Object.hasOwn(catalog.images, id)) {
         if (catalog.images[id]?.rev !== rev) console.warn(`Kept existing ${id}; shared revision: ${rev}.`);
@@ -158,12 +158,20 @@ async function pullImages(world: string, type: "portrait" | "decal") {
       const png = await file(folder + "diffuse.png");
       const actual = await sharp(png).metadata();
       if (actual.format !== "png" || actual.width !== width || actual.height !== height) throw new Error(`Invalid PNG: ${folder}diffuse.png`);
+      // a decal's own normal map (revisions before it have none): public/shared-images/<id>.normal.png (checked before anything is written)
+      const normalFile = type === "decal" && hasNormal === true ? await file(folder + "normal.png") : undefined;
+      if (normalFile) {
+        const normalInfo = await sharp(normalFile).metadata();
+        if (normalInfo.format !== "png" || normalInfo.width !== width || normalInfo.height !== height) throw new Error(`Invalid PNG: ${folder}normal.png`);
+      }
       await mkdir(dirname(target), { recursive: true });
+      if (normalFile) await writeFile(join(root, "public/shared-images", id + ".normal.png"), normalFile, { flag: "wx" });
       await writeFile(target, png, { flag: "wx" });
       const validPurpose = type === "portrait" && (purpose === "loading" || purpose === "portrait" || purpose === "room") ? purpose : undefined;
       catalog.images[id] = { world, type, name, width, height, rev,
         ...(validPurpose ? { purpose: validPurpose } : {}),
-        ...(type === "decal" && ["wall", "floor", "ceiling"].includes(surface) ? { surface } : {}) };
+        ...(type === "decal" && ["wall", "floor", "ceiling"].includes(surface) ? { surface } : {}),
+        ...(normalFile ? { hasNormal: true } : {}) };
       await saveCatalog();
       console.log(`Bundled ${type} ${id} (r${rev}).`);
       break;

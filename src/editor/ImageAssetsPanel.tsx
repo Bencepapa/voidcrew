@@ -87,6 +87,18 @@ export function useImageDraftPreview(draft: ImageDraft | undefined): string {
   return url;
 }
 
+// an object URL of a Blob (made when it changes, revoked after); "" for none
+export function useBlobUrl(blob?: Blob | null): string {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    if (!blob) { setUrl(""); return; }
+    const created = URL.createObjectURL(blob);
+    setUrl(created);
+    return () => URL.revokeObjectURL(created);
+  }, [blob]);
+  return url;
+}
+
 function PublishedDetails({ image, onError, onRevised }: { image: SharedImage; onError: (message: string) => void; onRevised?: (id: string) => void }) {
   const [reviving, setReviving] = useState(false);
   async function revise() {
@@ -116,6 +128,10 @@ function PublishedDetails({ image, onError, onRevised }: { image: SharedImage; o
         </div>)}
       </div>
     </>}
+    {image.normalUrl && <div>
+      <strong>{t("assetManager.row.normal")}</strong>
+      <img className="h-20 w-full object-contain" src={image.normalUrl} alt=""/>
+    </div>}
     <p><span className="text-neutral-400">{t("assetManager.world")}: </span>{t(image.world === "fantasy" ? "assetManager.fantasy" : "assetManager.scifi")}</p>
     <p><span className="text-neutral-400">{t("assetManager.image.size")}: </span>{image.width} × {image.height}</p>
     <p className="min-w-0"><span className="text-neutral-400">{t("assetManager.image.id")}: </span><code className="break-all text-xs text-neutral-400">{image.id}</code></p>
@@ -139,6 +155,7 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRe
   // Always read the stored copy: a prop from the list can be one edit behind.
   const current = draft ? drafts.find(saved => saved.id === draft.id) : undefined;
   const preview = useImageDraftPreview(current);
+  const decalNormalUrl = useBlobUrl(current?.decalNormal);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -173,7 +190,7 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRe
       await checkImagePng(file, file.name, current.type);
       const png = file.slice(0, file.size, "image/png");
       const name = current.name.trim() || file.name.replace(/\.png$/i, "").slice(0, 100);
-      await change({ png, name, pickupMaps: undefined });
+      await change({ png, name, pickupMaps: undefined, decalNormal: undefined });
       setStatus(t("assetManager.image.saved"));
     });
   }
@@ -194,6 +211,20 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRe
         [channel]: file.slice(0, file.size, "image/png"),
         ...(channel === "depth" ? { aiDepth: false } : {}),
       } });
+    });
+  }
+
+  // a decal's normal map: it must be the size of the picture
+  function chooseDecalNormal(file: File) {
+    return run(async () => {
+      const base = latest();
+      if (!base?.png || base.type !== "decal") return;
+      const [map, diffuse] = await Promise.all([checkImagePng(file, file.name, "decal"), decode(base.png)]);
+      if (map.width !== diffuse.width || map.height !== diffuse.height) {
+        throw new Error(t("assetManager.pickup.mapSize", { width: diffuse.width, height: diffuse.height }));
+      }
+      if (latest()?.png !== base.png) return;
+      await change({ decalNormal: file.slice(0, file.size, "image/png") });
     });
   }
 
@@ -245,6 +276,29 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRe
     if (key !== "normal" && key !== "depth") return;
     const base = latest();
     if (base) await change({ pickupMaps: { ...base.pickupMaps, [key]: undefined, ...(key === "depth" ? { aiDepth: false } : {}) } });
+  };
+  // a decal has a normal map only (it is projected onto the wall / floor, which has the relief): no depth card;
+  // the AI run makes the normal and drops the depth. Auto = no file: the game makes one from the picture's brightness
+  const clearDecalNormal = async () => { if (latest()) await change({ decalNormal: undefined }); };
+  const decalEditor: ChannelEditor = {
+    view: { pixelArt: true, transparency: current.transparency,
+      slot: key => key === "diffuse" ? { mode: "uploaded", has: !!current.png } : { mode: current.decalNormal ? "uploaded" : "auto", has: !!current.decalNormal } },
+    busy, aiDepth: false, channels: ["normal"],
+    modes: key => key === "normal" ? ["uploaded", "auto"] : ["uploaded"],
+    chooseFile: (key, file) => key === "normal" ? chooseDecalNormal(file) : Promise.resolve(),
+    setMode: (key, mode, open) => {
+      if (key !== "normal") return;
+      if (mode === "uploaded") { if (!current.decalNormal) open?.(); }
+      else void run(clearDecalNormal);
+    },
+    remove: key => key === "normal" ? run(clearDecalNormal) : Promise.resolve(),
+    diffuseBlob: async () => current.png,
+    applyAiMaps: async (_depth, normal) => {
+      const base = latest();
+      if (!normal || !base || base.png !== current.png) return;
+      await change({ decalNormal: normal });
+    },
+    onError,
   };
   const pickupEditor: ChannelEditor = {
     view: { pixelArt: true, transparency: current.transparency,
@@ -333,6 +387,13 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRe
       <summary className="cursor-pointer font-semibold">{t("assetManager.mapsEditable")}</summary>
       <fieldset className="mt-2 min-w-0" disabled={busy || !current.png}>
         <ChannelCards editor={pickupEditor} channels={["normal", "depth"]} urls={pickupPreview ?? {}} onAiRunning={setAiRunning}/>
+      </fieldset>
+    </details>}
+
+    {current.type === "decal" && <details open className="min-w-0 rounded border border-neutral-800 p-2">
+      <summary className="cursor-pointer font-semibold">{t("assetManager.mapsEditable")}</summary>
+      <fieldset className="mt-2 min-w-0" disabled={busy || !current.png}>
+        <ChannelCards editor={decalEditor} channels={["normal"]} urls={{ normal: decalNormalUrl }} onAiRunning={setAiRunning}/>
       </fieldset>
     </details>}
 

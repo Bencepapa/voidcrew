@@ -14,6 +14,11 @@ export function publishedUuid(image: Pick<SharedImage, "id" | "world" | "type">)
   return uuidPattern.test(uuid) ? uuid : "";
 }
 
+// A decal's own normal map in the store: `normal.png` next to its diffuse, announced by `hasNormal: true` in meta.json
+// (revisions from before have neither, and the game keeps making the normal from the picture's brightness).
+export const sharedDecalNormalUrl = (type: SharedImage["type"], hasNormal: unknown, base: string) =>
+  type === "decal" && hasNormal === true ? base + "normal.png" : undefined;
+
 // pickups and decals have maps worth editing; a still is a flat picture and keeps its read-only view
 export const canReviseImage = (image: Pick<SharedImage, "id" | "world" | "type">) =>
   (image.type === "item" || image.type === "decal") && publishedUuid(image) !== "";
@@ -37,5 +42,6 @@ export function draftFromPublished(image: SharedImage, files: { png: Blob; norma
     purpose: image.purpose,
     pickup: image.type === "item" ? appearance : undefined,
     pickupMaps: image.type === "item" ? { depth: files.depth, normal: files.normal, aiDepth: false } : undefined,
+    decalNormal: image.type === "decal" ? files.normal : undefined,
   };
 }

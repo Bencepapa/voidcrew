@@ -243,6 +243,7 @@ export const assetManagerHu = {
   "assetManager.fit": "Illesztés",
   "assetManager.actualSize": "100%",
   "assetManager.ai.section": "AI mélység",
+  "assetManager.ai.sectionNormal": "AI normáltérkép",
   "assetManager.normalFromDepth": "Normál a mélységből",
   "assetManager.normalFromDepthHint": "A feltöltött mélységtérképből elkészíti a normáltérképet, és feltöltött normálként megtartja.",
   "assetManager.propTextureElsewhere": "Ez a tárgy a(z) \"{name}\" textúrát használja. A térképeit a Textúrák kategóriában lehet szerkeszteni (a módosítás mindenre hat, ami ezt a textúrát használja).",

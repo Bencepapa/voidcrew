@@ -54,7 +54,7 @@ export function ChannelControls({ editor, channel, onAiRunning }: {
     {required && !slot.has && <p className="text-[10px] text-red-300">{t("assetManager.required")}</p>}
     {channel === aiChannelOf(editor.channels) && <>
       {channel === "depth" && editor.aiDepth && slot.mode === "uploaded" && slot.has && <p className="flex items-center gap-1 text-[10px] text-neutral-300"><AiBadge/>{t("assetManager.ai.status")}</p>}
-      <AiDepthControls editor={editor} onRunningChange={onAiRunning}/>
+      <AiDepthControls editor={editor} onRunningChange={onAiRunning} normalOnly={!editor.channels.includes("depth")}/>
     </>}
   </div>;
 }

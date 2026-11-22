@@ -40,7 +40,7 @@ import { fetchDecalManifest } from "../render/decals";
 import { sharedImage, useSharedImages, type ImagePurpose, type SharedImage } from "../render/sharedImages";
 import { neutralStyle } from "./inspector/parts";
 import { createImageDraft, loadSharedImages, getImageDrafts, useImageDrafts, type ImageDraft } from "./sharedImages";
-import { ImageAssetInspector, useImageDraftPreview, usePickupDraftMaps } from "./ImageAssetsPanel";
+import { ImageAssetInspector, useBlobUrl, useImageDraftPreview, usePickupDraftMaps } from "./ImageAssetsPanel";
 import { propEdit } from "./propEditState";
 import { attachPropTexture, createPropDraft, getPropDrafts, loadSharedProps, propTextures, reviseSharedProp, usePropDrafts, useSharedPropVersion, type PropDraft } from "./sharedProps";
 import { PropAssetFields } from "./PropAssetFields";
@@ -353,6 +353,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [inventoryPreview, setInventoryPreview] = useState(false);
   const preview2D = sample === "still" || (sample === "item" && inventoryPreview);
   const decalDraftPreview = useImageDraftPreview(selectedDecalDraft);
+  const decalDraftNormal = useBlobUrl(selectedDecalDraft?.decalNormal);
   const stillDraftPreview = useImageDraftPreview(selectedStillDraft);
   const previewUrl = selectedDecalDraft ? decalDraftPreview : selectedStillDraft ? stillDraftPreview : isPickupDraft ? pickupDraftPreview : (entry?.img ?? "");
   const isDecal = sample === "prop" && !!entry && entry.groups.includes("decal");
@@ -406,7 +407,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       if(propDraft && (!propDraft.definition.texture || (ownedTexture && !selectedTexture))){
         result[primary]={};
       }else if(selectedDecalDraft){
-        result[id]=previewUrl ? {diffuse:previewUrl} : {};
+        result[id]=previewUrl ? {diffuse:previewUrl, normal:decalDraftNormal || undefined} : {};
       }else if(isPickupDraft){
         result[id]=pickupMaps ?? {};
       }else if(sample==="item" && entry?.image?.pickup){
@@ -416,7 +417,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         result[id] = { ...actorSheetFiles(actor), emissive: actor.glow ? import.meta.env.BASE_URL + "actors/" + actor.sheet + "/emissive.png" : undefined };
       }else if(id.startsWith("decal:")){
         const dir=import.meta.env.BASE_URL+"decals/"+id.slice(6)+"/";
-        result[id]={diffuse:sharedImage(id.slice(6))?.url ?? dir+"diffuse.png",normal:decals[id.slice(6)]?.normal ? dir+"normal.png" : undefined};
+        result[id]={diffuse:sharedImage(id.slice(6))?.url ?? dir+"diffuse.png",normal:sharedImage(id.slice(6))?.normalUrl ?? (decals[id.slice(6)]?.normal ? dir+"normal.png" : undefined)};
       }else{
         const names=prop?.kind==="views"?["front","side","top"].map(v=>prop.views+"_"+v)
           : prop?.kind==="box"?[prop.side,prop.top]
@@ -430,7 +431,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[open,id,sample,primary,prop?.kind,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,isPickupDraft,pickupMaps,actorVersion,npcEditor,ownedTexture]);
+  },[open,id,sample,primary,prop?.kind,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,decalDraftNormal,isPickupDraft,pickupMaps,actorVersion,npcEditor,ownedTexture]);
   async function edit(channel: Channel, file?: Blob | "") {
     const next: PreviewMaps = { ...previewBlobs.current, [channel]: file };
     if (file === undefined) delete next[channel];
