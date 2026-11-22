@@ -85,6 +85,14 @@ One component set, adapter based, the Textures path being the reference implemen
   the old read-only maps panel; built-in code props (views / box / cabin) stay read-only.
 - Tests: `src/editor/channelEditor.test.ts` (modes, AI channel, normal-from-depth rule, prop texture ownership, depth to normal).
 
+## Stage 3c: NPCs (done)
+- `NpcAssetEditor.tsx`: the plain "Normal" file input + Clear are replaced by a "Texture and maps" block: the shared Normal card
+  (Uploaded / None, Upload accepting PNG or WebP like before, the same size check) and the AI section "AI normal map". An NPC
+  sprite is a billboard lit by its normal sheet (no relief), so there is no depth card: the AI run makes the normal of the whole
+  sheet and drops the depth (a sheet with many frames is estimated in one go, so the normal is a rough shading aid; the
+  transparent gaps are kept by the AI's default "keep alpha holes"). Stored format unchanged (`ActorDraft.normal`, `hasNormal`).
+- Built-in NPCs (`ActorEditor.tsx`, `ACTOR_TYPES`) stay read-only.
+
 ## Stage 3b: Decals (done, backward compatible format extension)
 - A decal is projected onto the wall / floor geometry, which already has the relief, so it has NO depth: only a normal map.
   New "Texture and maps" block in the decal draft's panel: one Normal card (Uploaded / Auto / Remove, Upload) plus the AI

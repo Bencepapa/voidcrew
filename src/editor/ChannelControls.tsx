@@ -3,7 +3,7 @@
 // ChannelEditor (channelEditor.ts): the Textures panel and the props' own textures through useTextureEditor, the pickups,
 // decals and NPC sheets through small adapters over their own drafts.
 
-import { useRef, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { t, type Key } from "../i18n";
 import { AiBadge, AiDepthControls } from "./AiDepthControls";
 import { aiChannelOf, canDeriveNormal, normalPixelsFromDepth, type ChannelEditor } from "./channelEditor";
@@ -18,6 +18,18 @@ const modeKey = (m: MapMode) => ("assetManager.mode." + m) as Key;
 export async function normalBlobFromDepth(depth: Blob): Promise<Blob> {
   const image = await decode(depth);
   return encode(new ImageData(normalPixelsFromDepth(image) as Uint8ClampedArray<ArrayBuffer>, image.width, image.height));
+}
+
+// an object URL of a Blob (made when it changes, revoked after); "" for none: the thumbnail of a draft's map
+export function useBlobUrl(blob?: Blob | null): string {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    if (!blob) { setUrl(""); return; }
+    const created = URL.createObjectURL(blob);
+    setUrl(created);
+    return () => URL.revokeObjectURL(created);
+  }, [blob]);
+  return url;
 }
 
 // ---- the controls of one channel card (Upload / Auto / None / Remove), under its thumbnail ----
@@ -47,7 +59,7 @@ export function ChannelControls({ editor, channel, onAiRunning }: {
     <div className="flex flex-wrap gap-1">
       <button className={small} onClick={() => input.current?.click()}>{t("assetManager.chooseFile")}</button>
       {(slot.has || (modes.includes("none") && slot.mode !== "none")) &&<button className={small} onClick={() => void editor.remove(channel)}>{t("assetManager.remove")}</button>}
-      <input ref={input} type="file" accept="image/png" className="sr-only" aria-label={t("assetManager.chooseFileFor", { map: t(rowKey(channel)) })} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void editor.chooseFile(channel, f); }}/>
+      <input ref={input} type="file" accept={editor.accept ?? "image/png"} className="sr-only" aria-label={t("assetManager.chooseFileFor", { map: t(rowKey(channel)) })} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void editor.chooseFile(channel, f); }}/>
     </div>
     {channel === "normal" && canDeriveNormal(editor) &&
       <button className={small + " self-start"} disabled={editor.busy} title={t("assetManager.normalFromDepthHint")} onClick={() => void normalFromDepth()}>{t("assetManager.normalFromDepth")}</button>}

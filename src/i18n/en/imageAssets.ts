@@ -26,6 +26,7 @@ export const imageAssetsEn = {
   "assetManager.npcSheet.fileError": "Choose a PNG or WebP up to 2048 × 2048 px and 8 MB.",
   "assetManager.npcSheet.webpRefused": "WebP is not allowed by the store yet: published as PNG. Run supabase/shared-webp-mime.sql.",
   "assetManager.npcSheet.normalSize": "The normal map must match the sprite sheet dimensions.",
+  "assetManager.npcSheet.mapsHint": "NPCs are drawn as flat figures lit by their normal map: there is no depth map. The AI makes the normal map of the whole sheet in one go.",
   "assetManager.npcSheet.invalid": "Check the name, grid, animation rows and frame offsets.",
   "assetManager.npcSheet.role.unused": "Unused",
   "assetManager.npcSheet.role.idle": "Idle",

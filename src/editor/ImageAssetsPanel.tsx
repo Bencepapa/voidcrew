@@ -14,7 +14,7 @@ import { canReviseImage } from "./imageDraftLogic";
 import { errorText, SignInPopover } from "./TexturePanel";
 import { active, BUTTON, idle, KindChoice, neutralStyle } from "./inspector/parts";
 import { NumberField } from "./NumberField";
-import { ChannelCards } from "./ChannelControls";
+import { ChannelCards, useBlobUrl } from "./ChannelControls";
 import type { ChannelEditor } from "./channelEditor";
 import type { MapKey } from "./textureDrafts";
 import type { MaterialMaps } from "./materialMaps";
@@ -84,18 +84,6 @@ export function useImageDraftPreview(draft: ImageDraft | undefined): string {
       if (created) URL.revokeObjectURL(created);
     };
   }, [png, source, colorKey]);
-  return url;
-}
-
-// an object URL of a Blob (made when it changes, revoked after); "" for none
-export function useBlobUrl(blob?: Blob | null): string {
-  const [url, setUrl] = useState("");
-  useEffect(() => {
-    if (!blob) { setUrl(""); return; }
-    const created = URL.createObjectURL(blob);
-    setUrl(created);
-    return () => URL.revokeObjectURL(created);
-  }, [blob]);
   return url;
 }
 

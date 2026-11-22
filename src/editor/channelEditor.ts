@@ -28,6 +28,8 @@ export interface ChannelEditor {
   channels: readonly MapKey[];
   // the mode buttons a channel offers (a single one: no buttons)
   modes: (key: MapKey) => MapMode[];
+  // what the file dialog offers (default: PNG)
+  accept?: string;
   chooseFile: (key: MapKey, file: File) => Promise<void>;
   // `open` asks for the file dialog (Uploaded chosen while nothing is uploaded yet)
   setMode: (key: MapKey, mode: MapMode, open?: () => void) => void;

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { ACTOR_ROW_ROLES, sheetLayout, type ActorRowRole } from "../game/actorSheets";
 import { t, useLang } from "../i18n";
 import { ActorAlignment } from "./ActorAlignment";
-import { decode } from "./imageTools";
+import { ChannelCards, useBlobUrl } from "./ChannelControls";
+import type { ChannelEditor } from "./channelEditor";
+import { decode, MAX_PNG_BYTES } from "./imageTools";
 import { sharedConfigured, sharedToken } from "./sharedAuth";
 import {
   actorDiffuse, actorGridValid, alignActorFrames, defaultActorDirections, discardActorDraft, importActorSheet,
@@ -68,6 +70,28 @@ export function NpcAssetEditor({ initial, onBack, onPublished }: {
     });
   }
 
+  // the sheet's normal map for the shared channel UI: a sprite sheet is drawn as a billboard (shaded by its normal map, no
+  // relief), so it has a normal only: Uploaded / None, and the AI run makes the normal and drops the depth
+  const normalUrl = useBlobUrl(draft.normal);
+  const channelEditor: ChannelEditor = {
+    view: { pixelArt: false, transparency, slot: key => key === "diffuse" ? { mode: "uploaded", has: !!diffuse } : { mode: draft.normal ? "uploaded" : "none", has: !!draft.normal } },
+    busy, aiDepth: false, channels: ["normal"], accept: "image/png,image/webp",
+    modes: key => key === "normal" ? ["uploaded", "none"] : ["uploaded"],
+    chooseFile: (key, file) => key === "normal" ? importSheet(file, true) : Promise.resolve(),
+    setMode: (key, mode, open) => {
+      if (key !== "normal") return;
+      if (mode === "uploaded") { if (!draft.normal) open?.(); }
+      else change({ normal: null });
+    },
+    remove: async key => { if (key === "normal") change({ normal: null }); },
+    diffuseBlob: () => actorDiffuse(draft),
+    applyAiMaps: async (_depth, normal) => {
+      if (normal && normal.size > MAX_PNG_BYTES) throw new Error(t("assetManager.npcSheet.fileError"));
+      if (normal) change({ normal });
+    },
+    onError: setError,
+  };
+
   function resizeGrid(nextCols: number, nextRows: number) {
     const nextRoles = Array.from({ length: nextRows }, (_, i) => roles[i] ?? "unused");
     if (!nextRoles.includes("idle")) nextRoles[0] = "idle";
@@ -127,13 +151,6 @@ export function NpcAssetEditor({ initial, onBack, onPublished }: {
             if (file) void importSheet(file, false);
           }}/>
         </label>
-        <label className="flex items-center gap-2">{t("assetManager.npcSheet.normal")}
-          <input type="file" accept="image/png,image/webp" disabled={!diffuse} onChange={e => {
-            const file = e.target.files?.[0]; e.target.value = "";
-            if (file) void importSheet(file, true);
-          }}/>
-        </label>
-        {draft.normal && <button className={button} onClick={() => change({ normal: null })}>{t("assetManager.clear")}</button>}
         <label className="flex items-center gap-2">{t("assetManager.npcSheet.transparency")}
           <select className={field} value={transparency.source} onChange={e =>
             change({ transparency: { ...transparency, source: e.target.value === "colorKey" ? "colorKey" : "alpha" } })}>
@@ -165,6 +182,13 @@ export function NpcAssetEditor({ initial, onBack, onPublished }: {
           : t("assetManager.npcSheet.gridError")}
       </p>}
     </fieldset>
+    <details open className="max-w-md rounded-sm border border-neutral-800 p-2">
+      <summary className="cursor-pointer font-semibold">{t("assetManager.mapsEditable")}</summary>
+      <fieldset disabled={busy || signIn || !diffuse} className="mt-2 min-w-0">
+        <ChannelCards editor={channelEditor} channels={["normal"]} urls={{ normal: normalUrl }}/>
+      </fieldset>
+      <p className="mt-1 text-neutral-400">{t("assetManager.npcSheet.mapsHint")}</p>
+    </details>
     <div className="flex flex-wrap gap-2">
       <details className="max-w-full flex-1 rounded-sm border border-neutral-800 p-2">
         <summary className="cursor-pointer font-semibold">{t("assetManager.npcSheet.roles")}</summary>

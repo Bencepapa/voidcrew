@@ -26,6 +26,7 @@ export const imageAssetsHu = {
   "assetManager.npcSheet.fileError": "Legfeljebb 2048 × 2048 képpontos és 8 MB-os PNG-t vagy WebP-t válassz.",
   "assetManager.npcSheet.webpRefused": "A tároló még nem engedélyezi a WebP-t: PNG-ként publikálva. Futtasd a supabase/shared-webp-mime.sql fájlt.",
   "assetManager.npcSheet.normalSize": "A normáltérkép mérete egyezzen a sprite-sheet méretével.",
+  "assetManager.npcSheet.mapsHint": "Az NPC-k sík alakok, a normáltérkép világítja őket: mélységtérképük nincs. Az AI az egész lap normáltérképét készíti el egyben.",
   "assetManager.npcSheet.invalid": "Ellenőrizd a nevet, a rácsot, az animációs sorokat és a képkockák eltolásait.",
   "assetManager.npcSheet.role.unused": "Kihagyva",
   "assetManager.npcSheet.role.idle": "Nyugalom",
