@@ -49,8 +49,9 @@ One component set, adapter based, the Textures path being the reference implemen
 
 - `src/editor/channelEditor.ts` (pure, no browser/React imports, tested): the adapter interface `ChannelEditor`
   { `view` (pixelArt, transparency, `slot(key) -> { mode, has }`), `busy`, `aiDepth`, `channels`, `modes(key)`,
-  `chooseFile`, `setMode`, `remove`, `diffuseBlob`, `applyAiMaps`, `deriveNormal`, `onError` } and the small pure helpers
-  (which modes a channel offers, which channels have an AI section, the prop-texture ownership rule).
+  `chooseFile`, `setMode`, `remove`, `diffuseBlob`, `applyAiMaps`, optional `depthBlob` + `applyNormal` (the "Normal from
+  depth" button), optional `accept`, `onError` } and the small pure helpers (which modes a channel offers, which channel carries
+  the AI section, when "Normal from depth" is possible, the prop-texture ownership rule, depth to normal pixels).
 - `src/editor/ChannelControls.tsx`: `ChannelControls` (moved out of `TexturePanel.tsx`, now taking a `ChannelEditor`)
   and `ChannelCards` (a card per channel: title, thumbnail, controls, the AI section under the depth card, or under the
   normal card when the category has no depth). `TexturePanel.tsx` keeps re-exporting `ChannelControls`.
@@ -60,7 +61,22 @@ One component set, adapter based, the Textures path being the reference implemen
 - Settings that differ by nature (pixelArt/smooth/tuning of the textures, the transparency choice of the images, grid
   of an NPC sheet) are NOT merged: they are not channels.
 
-(The stage-by-stage log and the hand-test list are appended below as the work proceeds.)
+### Outcome per category
+| Category | Plugged in | How / why not |
+|---|---|---|
+| Textures | yes (reference) | `useTextureEditor` is a `ChannelEditor`; one new button "Normal from depth" |
+| Props (own texture, draft or published) | yes | the same editor on the prop's own shared texture; published props editable in place |
+| Props (uses a shared surface texture) | link | "Open in Textures" (the maps belong to that texture) |
+| Props, built-in code props | no | read-only by design (code-defined, public files) |
+| Decals (shared) | yes, normal only | new optional normal map in the format; no depth (projected onto relief surfaces) |
+| Decals, built-in | no | read-only release files |
+| Pickups (shared) | yes | replaced the hand-made block; published ones can now be edited as a draft |
+| Pickups, built-in | no | read-only release files |
+| NPCs (shared sheets) | yes, normal only | sprites are billboards lit by a normal sheet, no relief, no depth |
+| NPCs, built-in | no | read-only |
+| Door types | link | a door type owns no texture: leaf / frame are textures of the Textures category; "Leaf texture · Open in Textures" buttons for the editable ones |
+| Stills (portrait / loading / room) | no | flat pictures shown as they are (loading screens, dialogue portraits): depth or normal would never be used |
+| Dialogues, Shops | no | text panels, no texture |
 
 ## Stage 2: Props (done)
 - `channelEditor.ts` + `ChannelControls.tsx` created (see Design). `useTextureEditor` now returns a `ChannelEditor`
@@ -85,13 +101,17 @@ One component set, adapter based, the Textures path being the reference implemen
   the old read-only maps panel; built-in code props (views / box / cabin) stay read-only.
 - Tests: `src/editor/channelEditor.test.ts` (modes, AI channel, normal-from-depth rule, prop texture ownership, depth to normal).
 
-## Stage 3c: NPCs (done)
-- `NpcAssetEditor.tsx`: the plain "Normal" file input + Clear are replaced by a "Texture and maps" block: the shared Normal card
-  (Uploaded / None, Upload accepting PNG or WebP like before, the same size check) and the AI section "AI normal map". An NPC
-  sprite is a billboard lit by its normal sheet (no relief), so there is no depth card: the AI run makes the normal of the whole
-  sheet and drops the depth (a sheet with many frames is estimated in one go, so the normal is a rough shading aid; the
-  transparent gaps are kept by the AI's default "keep alpha holes"). Stored format unchanged (`ActorDraft.normal`, `hasNormal`).
-- Built-in NPCs (`ActorEditor.tsx`, `ACTOR_TYPES`) stay read-only.
+## Stage 3a: Pickups (done)
+- The hand-made "Texture and maps" block of `ImageAssetInspector` (own upload buttons, own "Auto" button, own `AiDepthControls`
+  adapter) is replaced by `ChannelCards` over a `ChannelEditor` adapter defined in `ImageAssetsPanel.tsx` (channels normal +
+  depth; modes Uploaded / Auto, where Auto = no override file = made from the diffuse as before; Remove only when a file is there).
+  Same stored format as before (`ImageDraft.pickupMaps`), so nothing changes in publish / load.
+  New for pickups: "Normal from depth" (a depth upload now gives a matching normal in one click).
+- A PUBLISHED pickup (or decal) was read-only with no way to edit it, unlike props. New `reviseSharedImage` (sharedImages.ts)
+  + "Edit" button in the published view: the files are fetched into a draft with the same id / uuid, Publish makes the next
+  revision. The published maps become uploaded maps of the draft (whether they were auto-made or not when it was published).
+  The list shows the draft instead of the published row (no duplicates). Pure part in `imageDraftLogic.ts`, tested in
+  `imageDraftLogic.test.ts`.
 
 ## Stage 3b: Decals (done, backward compatible format extension)
 - A decal is projected onto the wall / floor geometry, which already has the relief, so it has NO depth: only a normal map.
@@ -107,14 +127,61 @@ One component set, adapter based, the Textures path being the reference implemen
 - The published decal view shows the normal map when there is one, and has the "Edit" button from stage 3a.
 - Preview: the 3D preview of a decal draft / published decal now gets the normal map too.
 
-## Stage 3a: Pickups (done)
-- The hand-made "Texture and maps" block of `ImageAssetInspector` (own upload buttons, own "Auto" button, own `AiDepthControls`
-  adapter) is replaced by `ChannelCards` over a `ChannelEditor` adapter defined in `ImageAssetsPanel.tsx` (channels normal +
-  depth; modes Uploaded / Auto, where Auto = no override file = made from the diffuse as before; Remove only when a file is there).
-  Same stored format as before (`ImageDraft.pickupMaps`), so nothing changes in publish / load.
-  New for pickups: "Normal from depth" (a depth upload now gives a matching normal in one click).
-- A PUBLISHED pickup (or decal) was read-only with no way to edit it, unlike props. New `reviseSharedImage` (sharedImages.ts)
-  + "Edit" button in the published view: the files are fetched into a draft with the same id / uuid, Publish makes the next
-  revision. The published maps become uploaded maps of the draft (whether they were auto-made or not when it was published).
-  The list shows the draft instead of the published row (no duplicates). Pure part in `imageDraftLogic.ts`, tested in
-  `imageDraftLogic.test.ts`.
+## Stage 3c: NPCs (done)
+- `NpcAssetEditor.tsx`: the plain "Normal" file input + Clear are replaced by a "Texture and maps" block: the shared Normal card
+  (Uploaded / None, Upload accepting PNG or WebP like before, the same size check) and the AI section "AI normal map". An NPC
+  sprite is a billboard lit by its normal sheet (no relief), so there is no depth card: the AI run makes the normal of the whole
+  sheet and drops the depth (a sheet with many frames is estimated in one go, so the normal is a rough shading aid; the
+  transparent gaps are kept by the AI's default "keep alpha holes"). Stored format unchanged (`ActorDraft.normal`, `hasNormal`).
+- Built-in NPCs (`ActorEditor.tsx`, `ACTOR_TYPES`) stay read-only.
+
+
+## Stage 3d: Door types (done: link only)
+- A door type stores only names (`leaf`, `frame` = ids of texture sets) plus motion data, so it has no channels of its own.
+  Embedding a second texture editor for each of the two textures inside `DoorAssetFields` would edit shared textures from a
+  place that does not own them. Instead `DoorAssetFields` shows "Leaf texture · Open in Textures" / "Frame texture · Open in
+  Textures" for each of the two that is an editable shared texture (built-in ones are locked); it opens the texture in the
+  Textures category, where the shared channel UI is. Works for published (read-only) door types too.
+
+## Left out on purpose
+- Stills (loading screens, portraits, room pictures): flat pictures; no depth or normal is ever read for them.
+- Dialogues, Shops: no texture.
+- Built-in (code / release file) props, decals, pickups, NPCs: locked by design, as before.
+- The transparency / pixel-art / tuning settings stay per category: they are not channel operations.
+
+## Hand-test list (nothing below was run: no browser or dev server was allowed in this work)
+Textures
+1. Open a shared texture (editable): the cards look as before. Upload a depth PNG on the Depth card, then on the Normal card the
+   new "Normal from depth" button appears: click it, the Normal card turns to Uploaded and the room preview's normal view changes.
+2. Depth card "AI depth" still works (also normal ticked, Invert, Detail).
+Props
+3. Select a PUBLISHED prop with its own texture (e.g. "tree oak fall 01"; sign in / Refresh first so the shared textures are
+   loaded): the "Prop-only texture" block shows with Diffuse / Normal / Depth cards. Upload a depth, upload a normal, click
+   "Normal from depth", run the AI depth. The prop gets a yellow draft dot and the "Prop" fields appear; Publish publishes the
+   prop with the new texture revision. Reload / Refresh: the maps are there (open the game: the relief follows the depth).
+4. The Look sliders on that prop now keep their values in the texture (published with it).
+5. A prop that uses a shared wall texture: the hint + "Open in Textures" opens the Textures category on that texture.
+6. A built-in prop (e.g. tree1): unchanged read-only view.
+Pickups
+7. New pickup (or Edit on a published pickup): load a PNG, Normal / Depth cards: Upload, Auto, Remove, "Normal from depth",
+   AI depth; the 3D preview follows; Publish; the published view shows both maps.
+8. Published pickup: "Edit" makes a draft (the list shows one row for it, with the yellow dot); Publish again makes the next revision.
+Decals
+9. New decal: load a PNG; "Texture and maps" shows only the Normal card. Upload a normal of another size: error; same size: ok.
+   AI normal map: the section says "AI normal map", no "also normal" checkbox. Publish; the published view shows the normal;
+   place the decal in a map in the game: it uses the uploaded normal (a decal without one keeps the brightness-made normal).
+10. Published decal (with an id like fantasy_decal_<uuid>): Edit makes a draft that keeps its normal.
+NPCs
+11. Open an NPC sheet editor: the old Normal file button is gone; "Texture and maps" has the Normal card (Upload png/webp, None)
+    and "AI normal map". Wrong size: error. Publish: the NPC in the game is lit by the normal sheet.
+Doors
+12. Door type with a shared leaf texture: "Leaf texture · Open in Textures" opens that texture; with built-in textures no button.
+
+## Could not be verified here
+Everything above in a browser (no dev server, no browser, no network, no Supabase, per the instructions). Checked: `npx tsc --noEmit`
+(clean), `npx tsx src/editor/channelEditor.test.ts`, `npx tsx src/editor/imageDraftLogic.test.ts`, and a strict tsc pass of
+`scripts/pull-shared.ts`. Not exercised at all: the AI model run, the publish / pull round trips, `reviseSharedImage` fetches,
+the decal normal in the game renderer, a React render of any of the new blocks.
+Known risks to look at first: (a) the published-prop flow relies on `isEditable(<prop texture>)`, i.e. the shared textures must be
+loaded (Refresh) and not bundled by `pull:shared` (bundled = locked); (b) AI normal for an NPC sheet is estimated over the whole
+sheet; (c) revising a published pickup turns its auto-made maps into uploaded ones.
