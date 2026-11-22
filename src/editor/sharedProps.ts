@@ -5,6 +5,7 @@ import { definitionIdOk } from "../game/sharedContent";
 import { assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { t } from "../i18n";
 import { isTextureSetId, TEXTURE_SETS, textureFolder } from "../render/textureSets";
+import { propOwnTextureId } from "./channelEditor";
 import { sharedConfigured, sharedToken } from "./sharedAuth";
 import { loadDefinitions, publishDefinition } from "./sharedDefinitions";
 import { installSharedTexture, textureStatus } from "./textureLibrary";
@@ -88,7 +89,7 @@ export function createPropDraft(world: WorldId, kind: SingleTextureProp["kind"],
 }
 
 // Give the prop's private texture a stable ID across reloads and partial publishes.
-export const propTextureId = (id: string) => id.replace("_prop_", "_shared_");
+export const propTextureId = propOwnTextureId;
 
 export function reviseSharedProp(id: string) {
   const world = assetWorld(id);

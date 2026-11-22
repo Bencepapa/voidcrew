@@ -61,3 +61,26 @@ One component set, adapter based, the Textures path being the reference implemen
   of an NPC sheet) are NOT merged: they are not channels.
 
 (The stage-by-stage log and the hand-test list are appended below as the work proceeds.)
+
+## Stage 2: Props (done)
+- `channelEditor.ts` + `ChannelControls.tsx` created (see Design). `useTextureEditor` now returns a `ChannelEditor`
+  (`satisfies`-checked); `ChannelControls` moved out of `TexturePanel.tsx` (re-exported from there, so imports keep working).
+  The Textures panel looks the same, plus one new button: "Normal from depth" on the Normal card when an uploaded depth exists
+  (it makes the normal with `generateNormal` and stores it as an uploaded normal; delete one line in `useTextureEditor`, `depthBlob`
+  / `applyNormal`, to take it away from a category).
+- A PUBLISHED prop whose own texture (`<world>_shared_<uuid>` = `propOwnTextureId`) is an editable shared texture now shows the
+  same "Prop-only texture" block as a prop draft: texture settings + Diffuse / Normal / Depth cards with Upload / Auto / None /
+  Remove, "Normal from depth" and the AI depth section. No "Prop editor" click first. The first change calls `reviseSharedProp`
+  (via `useTextureEditor`'s new `beforeChange`), so the prop becomes a draft and the usual Publish button carries the texture
+  revision (prop-face texture drafts are NOT in the yellow bar's texture list, only their prop draft is).
+- The cards' maps are not new storage: the prop's own texture is an ordinary shared texture (`maps.depth` / `maps.normal`
+  uploaded in the texture draft, published by `publishTextureRevision`), and the game reads it through `TEXTURE_SETS` /
+  `sharedTexturesChanged` exactly like a wall texture. So no publish/pull format change was needed for props (pull-shared
+  already bundles `normal.png` / `depth.png` of a texture whose `maps.*` is `uploaded`).
+- The "Look" sliders (normal strength, relief depth, roughness, metalness) now also work for a prop's own texture: the values
+  go into the texture draft and are published with it (as for a material), instead of the project-file path.
+- A prop that uses someone else's wall / floor / ceiling texture shows a hint and an "Open in Textures" button instead (editing
+  it there changes every user of that texture).
+- Limits: a texture that `npm run pull:shared` bundled into the release counts as built-in (locked), so a prop using one keeps
+  the old read-only maps panel; built-in code props (views / box / cabin) stay read-only.
+- Tests: `src/editor/channelEditor.test.ts` (modes, AI channel, normal-from-depth rule, prop texture ownership, depth to normal).
