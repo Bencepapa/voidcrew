@@ -129,6 +129,8 @@ export const imageAssetsEn = {
   "assetManager.image.purposePortrait": "Portrait",
   "assetManager.image.purposeRoom": "Room picture",
   "assetManager.image.readOnly": "This image is published: its fields are read-only.",
+  "assetManager.image.edit": "Edit",
+  "assetManager.image.editHint": "Copies the published files into a local draft to edit (its maps too); Publish then makes the next revision of the same asset.",
   "assetManager.image.details": "Details",
   "assetManager.image.selectHint": "Select an image or draft to edit.",
   "assetManager.image.needPng": "Choose a PNG before publishing.",

@@ -316,7 +316,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       })),
     ]
     : sample==="item" ? [
-      ...Object.entries(ITEM_TYPES).map(([key,v])=>{
+      // (a published pickup being revised is listed once: as its draft)
+      ...Object.entries(ITEM_TYPES).filter(([key])=>!pickupDrafts.some(d=>d.id===key)).map(([key,v])=>{
         const image = imageCatalog.find(image=>image.id === key);
         return {key,label:v.name,img:image?.url ?? textureFolder("item_"+key).diffuse,groups:[],world:assetWorld(key),image};
       }),
@@ -330,7 +331,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       ...propDrafts.map(d=>({key:d.id,label:d.definition.name || t("assetManager.untitled"),img:catalog[d.definition.texture]?.diffuse ?? propTextures(d.world).get(d.definition.texture)?.diffuse ?? "",
         groups:[d.definition.kind==="panel"?"3D":"billboard"],world:d.world,propDraft:d})),
       ...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"],world:assetWorld(d),builtinDecal:d})),
-      ...imageCatalog.filter(image=>image.type==="decal").map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"],world:image.world,image})),
+      ...imageCatalog.filter(image=>image.type==="decal" && !decalDrafts.some(d=>d.id===image.id)).map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"],world:image.world,image})),
       ...decalDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:["decal"],world:d.world,draft:d}))];
   const visible = entries.filter(e=>(world==="All" || (e.draft || e.image || e.propDraft || e.actorDraft ? e.world===world : assetInWorld(e.key.replace(/^decal:/,""),world))) &&
     (sub==="All" || e.groups.includes(sub) || (e.propDraft && e.key===selected && sub!=="decal")));
@@ -1130,7 +1131,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
             {sample==="door" ? doorAsset && <DoorAssetFields key={id} asset={doorAsset} editable={!!doorDraft} onError={setError}/>
               : sample==="still" || isDecal || (sample==="item" && (isPickupDraft || entry?.image?.pickup)) ? <>
               {selectedImageDraft && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName(selectedImageDraft.world)}</p>}
-              <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError}/>
+              <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError} onRevised={select}/>
             </> : <>
             {propDraft && <PropAssetFields key={id} draft={propDraft}
               ownedReady={!!editor.view?.slot("diffuse").has}

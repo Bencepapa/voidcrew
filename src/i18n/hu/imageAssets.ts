@@ -129,6 +129,8 @@ export const imageAssetsHu = {
   "assetManager.image.purposePortrait": "Portré",
   "assetManager.image.purposeRoom": "Szobakép",
   "assetManager.image.readOnly": "Ez a kép közzé van téve: a mezői csak olvashatók.",
+  "assetManager.image.edit": "Szerkesztés",
+  "assetManager.image.editHint": "A közzétett fájlokat helyi vázlatba másolja szerkesztésre (a térképeket is); a Közzététel ugyanennek az eszköznek a következő változatát készíti el.",
   "assetManager.image.details": "Részletek",
   "assetManager.image.selectHint": "Válassz egy képet vagy piszkozatot a szerkesztéshez.",
   "assetManager.image.needPng": "Válassz PNG-t a közzététel előtt.",

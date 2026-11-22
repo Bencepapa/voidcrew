@@ -9,6 +9,7 @@ import { applyTransparency, decode, isPng, MAX_PNG_BYTES, type Transparency } fr
 import { sharedConfigured, sharedToken, sharedUpload } from "./sharedAuth";
 import { listSharedObjects, sharedAssetBase } from "./sharedTextures";
 import { derive } from "./textureLibrary";
+import { canReviseImage, draftFromPublished } from "./imageDraftLogic";
 
 export interface ImageDraft {
   id: string;
@@ -111,6 +112,25 @@ export async function createImageDraft(world: WorldId, type: SharedImageType, pu
     purpose: type === "portrait" ? (isImagePurpose(purpose) ? purpose : "portrait") : undefined,
     pickup: type === "item" ? { ...DEFAULT_PICKUP } : undefined,
   };
+  await saveImageDraft(draft);
+  return draft;
+}
+
+// A draft of a published pickup or decal (its files fetched into Blobs), so that its maps can be edited; Publish then makes
+// the next revision of the same asset. One draft per asset: an existing one is returned.
+export async function reviseSharedImage(image: SharedImage): Promise<ImageDraft> {
+  await loadReady;
+  const existing = drafts.find(draft => draft.id === image.id);
+  if (existing) return existing;
+  if (!canReviseImage(image)) throw new Error(t("assetManager.err.notEditable"));
+  const read = async (url?: string) => {
+    if (!url) return undefined;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(t("assetManager.err.fetch", { url }));
+    return response.blob();
+  };
+  const [png, normal, depth] = await Promise.all([read(image.url), read(image.pickup?.normalUrl), read(image.pickup?.depthUrl)]);
+  const draft = draftFromPublished(image, { png: png!, normal, depth });
   await saveImageDraft(draft);
   return draft;
 }

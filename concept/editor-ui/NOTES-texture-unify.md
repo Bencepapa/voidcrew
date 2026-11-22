@@ -84,3 +84,15 @@ One component set, adapter based, the Textures path being the reference implemen
 - Limits: a texture that `npm run pull:shared` bundled into the release counts as built-in (locked), so a prop using one keeps
   the old read-only maps panel; built-in code props (views / box / cabin) stay read-only.
 - Tests: `src/editor/channelEditor.test.ts` (modes, AI channel, normal-from-depth rule, prop texture ownership, depth to normal).
+
+## Stage 3a: Pickups (done)
+- The hand-made "Texture and maps" block of `ImageAssetInspector` (own upload buttons, own "Auto" button, own `AiDepthControls`
+  adapter) is replaced by `ChannelCards` over a `ChannelEditor` adapter defined in `ImageAssetsPanel.tsx` (channels normal +
+  depth; modes Uploaded / Auto, where Auto = no override file = made from the diffuse as before; Remove only when a file is there).
+  Same stored format as before (`ImageDraft.pickupMaps`), so nothing changes in publish / load.
+  New for pickups: "Normal from depth" (a depth upload now gives a matching normal in one click).
+- A PUBLISHED pickup (or decal) was read-only with no way to edit it, unlike props. New `reviseSharedImage` (sharedImages.ts)
+  + "Edit" button in the published view: the files are fetched into a draft with the same id / uuid, Publish makes the next
+  revision. The published maps become uploaded maps of the draft (whether they were auto-made or not when it was published).
+  The list shows the draft instead of the published row (no duplicates). Pure part in `imageDraftLogic.ts`, tested in
+  `imageDraftLogic.test.ts`.

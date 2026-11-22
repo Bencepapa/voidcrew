@@ -7,13 +7,16 @@ import type { DecalSurfaceKind, ImagePurpose, SharedImage, SharedImageType } fro
 import { applyTransparency, decode, type Transparency } from "./imageTools";
 import { sharedConfigured, useSharedAuth } from "./sharedAuth";
 import {
-  checkImagePng, createImageDraft, discardImageDraft, getImageDrafts, publishImage, resolvePickupMaps, saveImageDraft, useImageDrafts,
+  checkImagePng, createImageDraft, discardImageDraft, getImageDrafts, publishImage, resolvePickupMaps, reviseSharedImage, saveImageDraft, useImageDrafts,
   type ImageDraft,
 } from "./sharedImages";
+import { canReviseImage } from "./imageDraftLogic";
 import { errorText, SignInPopover } from "./TexturePanel";
 import { active, BUTTON, idle, KindChoice, neutralStyle } from "./inspector/parts";
 import { NumberField } from "./NumberField";
-import { AiBadge, AiDepthControls } from "./AiDepthControls";
+import { ChannelCards } from "./ChannelControls";
+import type { ChannelEditor } from "./channelEditor";
+import type { MapKey } from "./textureDrafts";
 import type { MaterialMaps } from "./materialMaps";
 
 const field = "block w-full min-w-0 rounded-sm border border-neutral-600 bg-neutral-900 px-2 py-1 text-sm text-neutral-100";
@@ -84,9 +87,17 @@ export function useImageDraftPreview(draft: ImageDraft | undefined): string {
   return url;
 }
 
-function PublishedDetails({ image }: { image: SharedImage }) {
+function PublishedDetails({ image, onError, onRevised }: { image: SharedImage; onError: (message: string) => void; onRevised?: (id: string) => void }) {
+  const [reviving, setReviving] = useState(false);
+  async function revise() {
+    setReviving(true);
+    try { onRevised?.((await reviseSharedImage(image)).id); }
+    catch (error) { onError(errorText(error)); }
+    finally { setReviving(false); }
+  }
   return <div className="flex min-w-0 flex-col gap-2 text-sm" style={neutralStyle}>
     <p className="text-xs text-neutral-400">{t("assetManager.image.readOnly")}</p>
+    {canReviseImage(image) && <button type="button" className={`${BUTTON} ${idle} self-start`} disabled={reviving} title={t("assetManager.image.editHint")} onClick={() => void revise()}>{t("assetManager.image.edit")}</button>}
     <img className="max-h-52 max-w-full self-start object-contain" src={image.url} alt={image.name}/>
     <p><span className="text-neutral-400">{t("assetManager.image.name")}: </span>{image.name}</p>
     <p><span className="text-neutral-400">{t("assetManager.image.type")}: </span>{t(`assetManager.image.${image.type}`)}</p>
@@ -111,11 +122,13 @@ function PublishedDetails({ image }: { image: SharedImage }) {
   </div>;
 }
 
-export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
+export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRevised }: {
   draft?: ImageDraft;
   image?: SharedImage;
   pickupPreview?: MaterialMaps;
   onError: (message: string) => void;
+  // a published pickup / decal was turned into a draft to edit (the list selects it)
+  onRevised?: (id: string) => void;
 }) {
   const auth = useSharedAuth();
   const drafts = useImageDrafts();
@@ -166,7 +179,7 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
   }
 
   function choosePickupMap(channel: "normal" | "depth", file: File) {
-    void run(async () => {
+    return run(async () => {
       const base = latest();
       if (!base?.png || base.type !== "item") return;
       const [map, diffuse] = await Promise.all([
@@ -219,13 +232,44 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
   }
 
   if (!current) {
-    if (image) return <PublishedDetails image={image}/>;
+    if (image) return <PublishedDetails image={image} onError={onError} onRevised={onRevised}/>;
     return <p className="text-sm text-neutral-400" style={neutralStyle}>{t("assetManager.image.selectHint")}</p>;
   }
 
   const purpose = current.purpose ?? "portrait";
   const pickup = current.pickup ?? DEFAULT_PICKUP;
   const locked = busy || aiRunning;
+  // the pickup's normal and depth for the shared channel UI: an uploaded map overrides, no map = Auto (made from the diffuse)
+  const pickupMapOf = (key: MapKey) => key === "normal" || key === "depth" ? current.pickupMaps?.[key] : undefined;
+  const clearPickupMap = async (key: MapKey) => {
+    if (key !== "normal" && key !== "depth") return;
+    const base = latest();
+    if (base) await change({ pickupMaps: { ...base.pickupMaps, [key]: undefined, ...(key === "depth" ? { aiDepth: false } : {}) } });
+  };
+  const pickupEditor: ChannelEditor = {
+    view: { pixelArt: true, transparency: current.transparency,
+      slot: key => key === "diffuse" ? { mode: "uploaded", has: !!current.png } : { mode: pickupMapOf(key) ? "uploaded" : "auto", has: !!pickupMapOf(key) } },
+    busy, aiDepth: !!current.pickupMaps?.aiDepth, channels: ["normal", "depth"],
+    modes: key => key === "normal" || key === "depth" ? ["uploaded", "auto"] : ["uploaded"],
+    chooseFile: (key, file) => key === "normal" || key === "depth" ? choosePickupMap(key, file) : Promise.resolve(),
+    setMode: (key, mode, open) => {
+      if (mode === "uploaded") { if (!pickupMapOf(key)) open?.(); }
+      else void run(() => clearPickupMap(key));
+    },
+    remove: key => run(() => clearPickupMap(key)),
+    diffuseBlob: async () => current.png,
+    applyAiMaps: async (depth, normal) => {
+      const base = latest();
+      if (!base || base.png !== current.png) return;
+      await change({ pickupMaps: { ...base.pickupMaps, depth, aiDepth: true, ...(normal ? { normal } : {}) } });
+    },
+    depthBlob: async () => latest()?.pickupMaps?.depth,
+    applyNormal: async normal => {
+      const base = latest();
+      if (base) await change({ pickupMaps: { ...base.pickupMaps, normal } });
+    },
+    onError,
+  };
   return <div className="relative flex min-w-0 flex-col gap-2 text-sm" style={neutralStyle}>
     <fieldset className="flex min-w-0 flex-col gap-2" disabled={locked}>
     <label className="flex min-w-0 flex-col gap-1">{t("assetManager.image.file")}
@@ -287,43 +331,9 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError }: {
 
     {current.type === "item" && <details open className="min-w-0 rounded border border-neutral-800 p-2">
       <summary className="cursor-pointer font-semibold">{t("assetManager.mapsEditable")}</summary>
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {(["normal", "depth"] as const).map(channel => {
-          const label = t(`assetManager.row.${channel}`);
-          const custom = current.pickupMaps?.[channel];
-          return <div className="flex min-w-0 flex-col gap-1 border border-neutral-700 p-1" key={channel}>
-            <strong>{label}</strong>
-            {pickupPreview?.[channel] && <img className="h-16 w-full object-contain" src={pickupPreview[channel]} alt={label}/>}
-            <span className="text-xs text-neutral-300">
-              {channel === "depth" && current.pickupMaps?.aiDepth ? <><AiBadge/> {t("assetManager.ai.status")}</>
-                : t(custom ? "assetManager.mode.uploaded" : "assetManager.mode.auto")}
-            </span>
-            <label className={`${BUTTON} ${idle}`}>
-              {t("assetManager.chooseFile")}
-              <input className="sr-only" type="file" accept="image/png,.png" disabled={locked || !current.png}
-                aria-label={t("assetManager.chooseFileFor", { map: label })} onChange={event => {
-                  const file = event.currentTarget.files?.[0];
-                  event.currentTarget.value = "";
-                  if (file) choosePickupMap(channel, file);
-                }}/>
-            </label>
-            {custom && <button type="button" className={`${BUTTON} ${idle}`} disabled={locked} onClick={() => {
-              autosave({ pickupMaps: { ...current.pickupMaps, [channel]: undefined, ...(channel === "depth" ? { aiDepth: false } : {}) } });
-            }}>{t("assetManager.mode.auto")}</button>}
-          </div>;
-        })}
-      </div>
-      <AiDepthControls onRunningChange={setAiRunning} editor={{
-        view: { pixelArt: true, transparency: current.transparency, slot: () => ({ has: !!current.png }) },
-        busy,
-        diffuseBlob: async () => current.png,
-        applyAiMaps: async (depth, normal) => {
-          const base = latest();
-          if (!base || base.png !== current.png) return;
-          await change({ pickupMaps: { ...base.pickupMaps, depth, aiDepth: true, ...(normal ? { normal } : {}) } });
-        },
-        onError,
-      }}/>
+      <fieldset className="mt-2 min-w-0" disabled={busy || !current.png}>
+        <ChannelCards editor={pickupEditor} channels={["normal", "depth"]} urls={pickupPreview ?? {}} onAiRunning={setAiRunning}/>
+      </fieldset>
     </details>}
 
     <div className="flex flex-wrap gap-1">

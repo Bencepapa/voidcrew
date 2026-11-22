@@ -46,7 +46,7 @@ export function ChannelControls({ editor, channel, onAiRunning }: {
       <button key={m} className={small} aria-pressed={slot.mode === m} title={m === "auto" ? t("assetManager.autoHint") : undefined} onClick={() => editor.setMode(channel, m, () => input.current?.click())}>{t(modeKey(m))}</button>)}</div>}
     <div className="flex flex-wrap gap-1">
       <button className={small} onClick={() => input.current?.click()}>{t("assetManager.chooseFile")}</button>
-      {(slot.has || (!required && slot.mode !== "none")) && <button className={small} onClick={() => void editor.remove(channel)}>{t("assetManager.remove")}</button>}
+      {(slot.has || (modes.includes("none") && slot.mode !== "none")) &&<button className={small} onClick={() => void editor.remove(channel)}>{t("assetManager.remove")}</button>}
       <input ref={input} type="file" accept="image/png" className="sr-only" aria-label={t("assetManager.chooseFileFor", { map: t(rowKey(channel)) })} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void editor.chooseFile(channel, f); }}/>
     </div>
     {channel === "normal" && canDeriveNormal(editor) &&
