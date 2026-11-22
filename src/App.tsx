@@ -961,7 +961,15 @@ export default function App() {
       else if (target.decal !== undefined) selectOnly("decal", target.decal);
       else if (target.light !== undefined) selectOnly("light", target.light);
       else if (target.smoke !== undefined) selectOnly("smoke", target.smoke);
-      else selectOnly(null);
+      else {
+        // (a gate or staircase marks a floor cell: a click on that cell picks it - its panel is the Exit or Stairs tool's)
+        const cell = target.kind === "wall" ? undefined : target.cell;
+        const exit = cell && (map.exits ?? []).some((e) => e.cell.x === cell.x && e.cell.y === cell.y);
+        const stairs = cell && (map.stairs ?? []).some((s) => s.cell.x === cell.x && s.cell.y === cell.y);
+        selectOnly(null);
+        if (exit) setSelectedExit(cell!);
+        else if (stairs) setSelectedStairs(cell!);
+      }
       return;
     }
     if (editTool === "texture" && target.face) {
