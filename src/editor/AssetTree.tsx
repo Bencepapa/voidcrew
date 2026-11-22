@@ -55,6 +55,8 @@ export function AssetTree(p: EditorBarProps) {
   const traverse: Entry[] = [toolEntry("ladder",t("editorBar.ladder"),<ArrowUpFromLine size={28}/>), toolEntry("bridge",t("editorBar.bridge"),<AlignJustify size={28}/>), {...toolEntry("door",t("editorBar.door"),null,(TEXTURE_SETS as Record<string,{diffuse:string}>)[doorSet].diffuse),managerId:doorSet}];
   // stairs to other maps: the fantasy world's way between levels
   if (worldOfMap(p.mapId) === "fantasy") traverse.push(toolEntry("stairs", t("link.stairsTool"), <Footprints size={28}/>));
+  // (the way off the map belongs here too: a gate or - on a ship - the airlock)
+  traverse.push(toolEntry("exit", t("editorBar.exit"), <LogOut size={28}/>));
   const defaultDoor = traverse[2];
   defaultDoor.active = !p.doorTypeChoice;
   defaultDoor.pick = () => choose("door", () => p.onDoorTypeChoice());
@@ -66,7 +68,7 @@ export function AssetTree(p: EditorBarProps) {
       pick: () => choose("door", () => p.onDoorTypeChoice(id)),
     });
   }
-  const events: Entry[] = [toolEntry("exit",t("editorBar.exit"),<LogOut size={28}/>), toolEntry("start",t("editorBar.start"),<Flag size={28}/>), toolEntry("restricted",t("editorBar.restricted"),<Ban size={28}/>), toolEntry("wall",t("editorBar.chanceWall"),<Dices size={28}/>)];
+  const events: Entry[] = [toolEntry("start",t("editorBar.start"),<Flag size={28}/>), toolEntry("restricted",t("editorBar.restricted"),<Ban size={28}/>), toolEntry("wall",t("editorBar.chanceWall"),<Dices size={28}/>)];
   for (const kind of ["message", "image", "shop"] as const) {
     events.push({
       ...toolEntry("event", t(`events.${kind}`), kind === "message" ? <MessageSquare size={28}/> : kind === "shop" ? <Store size={28}/> : <Image size={28}/>),

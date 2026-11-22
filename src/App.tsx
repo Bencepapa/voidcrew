@@ -2213,8 +2213,27 @@ export default function App() {
     }
   };
   // Delete takes the selected event out (the same edit as the Remove button, so one undo brings it back)
-  const eventKeys = useRef({ eventTarget, remove: () => {} });
+  const eventKeys = useRef({ eventTarget, remove: () => {}, removeLink: undefined as (() => void) | undefined });
+  // (a selected gate or staircase goes the same way: Delete is the panel's Remove button)
+  const removeLink = selectedExit
+    ? () => {
+      const cell = selectedExit;
+      const result = applyEdit(map.id, (file) => toggleExit(file, cell));
+      if (!("error" in result)) replaceMap(result.map);
+      setSelectedExit(null);
+      setEdits((n) => n + 1);
+    }
+    : selectedStairs
+      ? () => {
+        const cell = selectedStairs;
+        const result = applyEdit(map.id, (file) => toggleStairs(file, cell));
+        if (!("error" in result)) replaceMap(result.map);
+        setSelectedStairs(null);
+        setEdits((n) => n + 1);
+      }
+      : undefined;
   eventKeys.current = {
+    removeLink,
     eventTarget,
     remove: () => { if (eventTarget && editInteraction(eventTarget)) setEventTarget(null); },
   };
@@ -2222,11 +2241,12 @@ export default function App() {
     if (!editMode) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Delete" || isTextEntry(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
-      const { eventTarget: target, remove } = eventKeys.current;
-      if (!target) return;
+      const { eventTarget: target, remove, removeLink: link } = eventKeys.current;
+      if (!target && !link) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      remove();
+      if (target) remove();
+      else link?.();
     };
     // before the other keys' handlers
     window.addEventListener("keydown", onKey, true);
@@ -2467,6 +2487,7 @@ export default function App() {
       selectedSmoke={selectedSmokeInfo ? selectedSmoke : null}
       selectedDecal={selectedDecalInfo ? selectedDecal : null}
       selectedDoor={selectedDoorInfo ? selectedDoor : null}
+      selectedLink={selectedExitSpec ? selectedExit : selectedStairsSpec ? selectedStairs : null}
       selectedActor={selectedActorInfo ? selectedActor : null}
       onEditHover={onEditHover}
       onEditDrag={onEditDrag}

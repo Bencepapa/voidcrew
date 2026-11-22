@@ -1186,6 +1186,8 @@ interface GameViewportProps {
   selectedDecal?: number | null;
   // the Door tool's selected door (its cell)
   selectedDoor?: Vec2 | null;
+  // the selected gate or staircase (its cell): framed in the view
+  selectedLink?: Vec2 | null;
   // the Robot tool's selected actor (its index in the map's actors)
   selectedActor?: number | null;
   // the Item tool's selected item (its index in the map's items)
@@ -1585,6 +1587,7 @@ export function GameViewport({
   selectedSmoke,
   selectedDecal,
   selectedDoor,
+  selectedLink,
   selectedActor,
   onReady,
   freeTick,
@@ -1748,6 +1751,8 @@ export function GameViewport({
   selectedDecalRef.current = selectedDecal ?? null;
   const selectedDoorRef = useRef(selectedDoor ?? null);
   selectedDoorRef.current = selectedDoor ?? null;
+  const selectedLinkRef = useRef(selectedLink ?? null);
+  selectedLinkRef.current = selectedLink ?? null;
   const selectedActorRef = useRef(selectedActor ?? null);
   selectedActorRef.current = selectedActor ?? null;
   const editToolRef = useRef(editTool ?? "dig");
@@ -4662,8 +4667,11 @@ export function GameViewport({
     const gateMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(true), transparent: true, depthWrite: false, fog: true });
     const exitGeo = new THREE.PlaneGeometry(0.8, 0.8);
     geometries.push(exitGeo);
+    // (by cell: the editor frames the selected one)
+    const linkPlates = new Map<string, THREE.Object3D>();
     for (const exit of map.exits ?? []) {
       const plate = new THREE.Mesh(exitGeo, exit.to ? gateMat : exitMat);
+      linkPlates.set(`${exit.cell.x},${exit.cell.y}`, plate);
       plate.rotation.x = -Math.PI / 2;
       // (just above the floor's relief)
       plate.position.set(exit.cell.x, floorY(exit.cell.x, exit.cell.y) + reliefDepth + 0.006, exit.cell.y);
@@ -4679,6 +4687,7 @@ export function GameViewport({
         stairsMats.set(key, mat);
       }
       const plate = new THREE.Mesh(exitGeo, mat);
+      linkPlates.set(`${stairs.cell.x},${stairs.cell.y}`, plate);
       plate.rotation.x = -Math.PI / 2;
       plate.position.set(stairs.cell.x, floorY(stairs.cell.x, stairs.cell.y) + reliefDepth + 0.006, stairs.cell.y);
       group.add(plate);
@@ -7472,6 +7481,14 @@ export function GameViewport({
       const doorObj = doorCell && doorGroups.get(`${doorCell.x},${doorCell.y}`);
       if (doorObj) {
         frameObject(selectBox, doorObj, 0.04);
+        selectBox.visible = true;
+        return;
+      }
+      // a selected gate or staircase: framed around its floor plate
+      const linkCell = editModeRef.current ? selectedLinkRef.current : null;
+      const linkPlate = linkCell && linkPlates.get(`${linkCell.x},${linkCell.y}`);
+      if (linkPlate) {
+        frameObject(selectBox, linkPlate, 0.12);
         selectBox.visible = true;
         return;
       }
