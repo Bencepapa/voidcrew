@@ -346,4 +346,18 @@ const labels = (v: { choices: { label: string }[] } | null) => v?.choices.map(c 
   assert.equal(e.talk("bob").view?.passage, "Hi"); // the loaded state decides: "Hi" (priority 1) is not spent in it
 }
 
+// debugSetQuest: known quests only, any state, "none" removes it
+{
+  const { e } = fresh();
+  assert.ok(e.debugSetQuest("q", "done"));
+  assert.equal(e.state.quests.q, "done");
+  assert.ok(e.debugSetQuest("q", "none"));
+  assert.equal(e.state.quests.q, undefined);
+  assert.ok(!e.debugSetQuest("nope", "active"));
+  assert.equal(e.status().chapter, "c1");
+  assert.equal(e.status().dialogue, null);
+  e.talk("bob");
+  assert.equal(e.status().dialogue?.npc, "bob");
+}
+
 console.log("storyEngine ok");

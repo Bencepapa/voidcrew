@@ -7,11 +7,14 @@ export interface StoryEffectTarget {
   give(item: string, n: number): void;
   take(item: string, n: number): void;
   reward(what: string, n: number): void;
-  /** `shop` is the id (already resolved by the caller; undefined: nothing to open) */
+  /** `shop` is the id (undefined: the NPC's own, the caller knows it) */
   shop(shop: string | undefined): void;
   /** the running dialogue is over: the host may close its box (the view already says `ended`) */
   end(): void;
-  text(text: string, kind: "text" | "banter", speaker?: string): void;
+  /** a story beat (an `[on]` handler's text) */
+  text(text: string): void;
+  /** a party remark, with the second voice that answers after `reply.delayMs` */
+  banter(speaker: string | undefined, text: string, reply?: { speaker: string; delayMs: number; text: string }): void;
   chapterStarted(chapter: string): void;
   chapterEnded(chapter: string, next: string): void;
   storyEnded(): void;
@@ -30,8 +33,8 @@ export function applyStoryEffects(effects: readonly Effect[], target: StoryEffec
       case "reward": target.reward(e.what, e.n); break;
       case "shop": target.shop(e.shop); break;
       case "end": target.end(); break;
-      case "text": target.text(e.text, "text"); break;
-      case "banter": target.text(e.text, "banter", e.speaker); break;
+      case "text": target.text(e.text); break;
+      case "banter": target.banter(e.speaker, e.text, e.reply); break;
       case "questChanged": target.questChanged(e.id, e.state); break;
       case "chapterStarted": target.chapterStarted(e.chapter); break;
       case "chapterEnded": target.chapterEnded(e.chapter, e.next); break;
@@ -42,3 +45,7 @@ export function applyStoryEffects(effects: readonly Effect[], target: StoryEffec
     }
   }
 }
+
+/** Whether the effects changed the inventory or credits (quest readiness may follow). */
+export const touchesInventory = (effects: readonly Effect[]): boolean =>
+  effects.some((e) => e.kind === "give" || e.kind === "take" || e.kind === "reward");
