@@ -65,6 +65,11 @@ export const ITEM_TYPES: Record<string, ItemType> = {
   dagger: { name: "Dagger", category: "salvage", value: 22, stack: 1 },
   arrows: { name: "Arrows", category: "supplies", value: 8 },
   gem: { name: "Green gem", category: "valuables", value: 60 },
+  // tesztsztori: remove together (+ public/textures/item_tesztsztori_*, the copied sprites; see src/story/TESZTSZTORI-REMOVE.md)
+  tesztsztori_fagyerc: { name: "Frost ore", category: "salvage", value: 30 },
+  tesztsztori_gyuru: { name: "Lana's ring", category: "valuables", value: 60, stack: 1 },
+  tesztsztori_runakard: { name: "Runic sword", category: "salvage", value: 120, stack: 1 },
+  // (end of tesztsztori)
 };
 
 export interface ItemStack {
