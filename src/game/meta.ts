@@ -4,6 +4,7 @@ import { activeWorld } from "./worlds";
 import { WEAPON_TYPES, weaponInWorld, MAX_LEVEL, type OwnedWeapon } from "./weapons";
 import { resolveLoadout } from "./loadout";
 import type { Slot } from "./inventory";
+import { migrateState, type StoryState } from "./story/state";
 
 // What lasts between runs - the base: credits, the stash (how many of each
 // item), the weapons owned and who carries which (two slots each), and how
@@ -33,6 +34,11 @@ export interface Meta {
   // has none (the loadout is put in hand then), and anything unreadable is
   // ignored (see parseInventory in inventory.ts).
   inventory?: SavedInventory;
+  // The Twee story engine's state (campaign/chapter/global variables, quests; see story/state.ts).
+  // Optional and versioned like the inventory: an older save has none, an unreadable one is ignored
+  // (see loadStoryState). Saved only between dialogues (canSave in story/state.ts).
+  // (Named storyState because `story` above is the older flag list.)
+  storyState?: StoryState;
 }
 
 export interface SavedInventory {
@@ -130,6 +136,19 @@ export function saveInventory(saved: SavedInventory) {
     // (no storage: it lasts as long as the page)
   }
 }
+
+// The story engine's snapshot into the save (same shape as saveInventory: no re-render of the meta screens).
+export function saveStoryState(state: StoryState) {
+  meta = { ...meta, storyState: state };
+  try {
+    localStorage.setItem(KEY, JSON.stringify(meta));
+  } catch {
+    // (no storage: it lasts as long as the page)
+  }
+}
+
+// The saved story state, or null (none yet, a newer version, or unreadable).
+export const loadStoryState = (): StoryState | null => migrateState(meta.storyState);
 
 export const getMeta = () => meta;
 export function useMeta(): Meta {

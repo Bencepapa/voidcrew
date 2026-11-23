@@ -29,7 +29,7 @@ export interface DialogueProblem {
 }
 
 /** `:: Name [tag1 tag2] {"position":...}`: the part after `::`. Escapes `\[ \] \{ \}` in the name. */
-function parseHeader(rest: string): { name: string; tags: string[] } {
+export function parseHeader(rest: string): { name: string; tags: string[] } {
   let name = "";
   let tagText = "";
   let i = 0;
@@ -45,7 +45,7 @@ function parseHeader(rest: string): { name: string; tags: string[] } {
   return { name: name.trim(), tags: tagText.split(/\s+/).filter(Boolean) };
 }
 
-function parseLink(inner: string): { label: string; to: string } {
+export function parseLink(inner: string): { label: string; to: string } {
   const right = inner.lastIndexOf("->");
   if (right >= 0) return { label: inner.slice(0, right).trim(), to: inner.slice(right + 2).trim() };
   const left = inner.indexOf("<-");

@@ -1,7 +1,7 @@
 # Story engine example (campaign + 2 chapters + 2 global NPCs + 2 side quests)
 
 Spec by example for the Twee story engine. The files here are the reference the parser/engine is written and tested against
-(`scenarios.md` lists the expected results). The engine does not run them yet: today's parser only knows `@end` and `@shop`.
+(`scenarios.md` lists the expected results). The pure engine (`src/game/story/`) runs them; see `IMPLEMENTATION-NOTES.md` (UI, debug panel and editor are not built yet).
 
 ## Files
 

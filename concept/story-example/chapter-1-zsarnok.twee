@@ -25,6 +25,7 @@ Varga térdre rogyott. "Kegyelmezz, és megnyitom a kapukat."
 :: Tyrant spared
 @set campaign.tyrant_fate = "spared"
 @set campaign.heroism += 1
+@emit tyrant_spared
 @endchapter
 Varga összeroskad, és intésére kinyílnak a kapuk.
 @end
