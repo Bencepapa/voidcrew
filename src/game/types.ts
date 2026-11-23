@@ -412,6 +412,10 @@ export interface DoorSpec extends Linked {
   // front from the middle; at +-DOOR_EDGE_OFFSET it's flush with the cell's
   // edge, in line with the walls there (see doorCrossed)
   offset?: number;
+  // this door's own leaf / frame texture set (see doorTextures.ts); unset: the
+  // door type's (or the deck's default) one
+  leafTexture?: string;
+  frameTexture?: string;
   // the chance (0..1) it's there in a variation (see variation.ts) - if not,
   // its cell is an open doorway; unset: always
   chance?: number;

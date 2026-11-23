@@ -250,6 +250,7 @@ export function mapUsesTexture(m: GameMap, id: string): boolean {
     const type = PROP_TYPES[spec.prop];
     return spec.texture === id || (!spec.texture && type && "texture" in type && type.texture === id);
   })) return true;
+  if (m.doors?.some(spec => spec.leafTexture === id || spec.frameTexture === id)) return true;
   for (let y = 0; y < m.height; y++) for (let x = 0; x < m.width; x++) {
     if (m.floorAt?.(x, y) === id || m.wallTextureAt?.(x, y) === id || m.ceilingTextureAt?.(x, y) === id) return true;
     if (m.faceTextureAt && (["N", "E", "S", "W"] as const).some((d) => m.faceTextureAt!(x, y, d) === id)) return true;

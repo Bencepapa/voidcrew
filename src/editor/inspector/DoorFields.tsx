@@ -3,10 +3,29 @@ import type { EditorBarProps } from "../EditorBar";
 import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle, doorLock } from "./parts";
 
 import { DOOR_EDGE_OFFSET } from "../../game/map";
-import { useDoorCatalog } from "../sharedDoorTypes";
+import { doorTextureOptions, useDoorCatalog } from "../sharedDoorTypes";
+import { useTextureVersion } from "../textureLibrary";
+import { TEXTURE_SETS, isTextureSetId } from "../../render/textureSets";
+
+// a door's own leaf or frame texture: unset (the door type's) or one of the door / wall textures
+function DoorTexture({ field, value, textures, onChange }: {
+  field: "leafTexture" | "frameTexture"; value: string | undefined;
+  textures: [string, { label: string }][]; onChange: (id: string | undefined) => void;
+}) {
+  const label = t(field === "leafTexture" ? "editorBar.doorLeafTexture" : "editorBar.doorFrameTexture");
+  return <KindChoice label={label} title={t("editorBar.doorTextureTitle", { part: label.toLowerCase() })} value={value ?? ""} options={[
+    { value: "", label: t("editorBar.doorTextureOfType") },
+    // (one that no set answers to - not loaded, or gone - stays shown and can be cleared)
+    ...(value && !textures.some(([id]) => id === value) ? [{ value, label: isTextureSetId(value) ? TEXTURE_SETS[value].label : value }] : []),
+    ...textures.map(([id, texture]) => ({ value: id, label: texture.label })),
+  ]} onChange={id => onChange(id || undefined)}/>;
+}
+
 export function DoorFields(p: EditorBarProps) {
+useTextureVersion();
 const types = useDoorCatalog().filter(type => type.world === p.doorWorld);
 if (!p.door) return null;
+const textures = doorTextureOptions(p.doorWorld);
 return <>
 <Section kind="door" section="transform">
 {slider(t("editorBar.place"), p.door.offset, -DOOR_EDGE_OFFSET, DOOR_EDGE_OFFSET, 0.02, (v) =>
@@ -16,6 +35,10 @@ return <>
 <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: undefined })}>{t("editorBar.middle")}</button>
 <button type="button" className={`${BUTTON} ${idle}`} onClick={() => p.onDoorChange({ offset: DOOR_EDGE_OFFSET })}>{t("editorBar.frontEdge")}</button>
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onDoorFlip} title={t("editorBar.turnItRoundItStaysWhereIt")}>{t("editorBar.flipFront")}</button>
+</Section>
+<Section kind="door" section="look">
+<DoorTexture field="leafTexture" value={p.door.leafTexture} textures={textures} onChange={leafTexture => p.onDoorChange({ leafTexture })}/>
+<DoorTexture field="frameTexture" value={p.door.frameTexture} textures={textures} onChange={frameTexture => p.onDoorChange({ frameTexture })}/>
 </Section>
 <Section kind="door" section="logic">
 <KindChoice label={t("assetManager.doorType.title")} value={p.door.type ?? ""} options={[

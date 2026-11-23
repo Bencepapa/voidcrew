@@ -3047,9 +3047,12 @@ export function GameViewport({
         if (cellAt(map, x, y) === "door") {
           const spec = doorAt(map, x, y);
           const type = doorPreview ?? doorType(spec.type);
-          const frameSet = type?.frame ?? map.textures?.doorFrame;
+          // (the door's own textures first, then its type's, then the deck's / the default; an unknown
+          // own one - a shared texture not loaded yet - falls through, and the scene is rebuilt once it is)
+          const frameSet = isTextureSetId(spec.frameTexture) ? spec.frameTexture : type?.frame ?? map.textures?.doorFrame;
           const frameKit = doorKitFor(frameKits, isTextureSetId(frameSet) ? frameSet : DOOR_FRAME_SET);
-          const leafKit = doorKitFor(panelKits, isTextureSetId(type?.leaf) ? type.leaf : panelSetFor(spec.kind));
+          const leafOwn = isTextureSetId(spec.leafTexture) ? spec.leafTexture : type?.leaf;
+          const leafKit = doorKitFor(panelKits, isTextureSetId(leafOwn) ? leafOwn : panelSetFor(spec.kind));
           const motion = type ?? { motion: spec.kind === "lift" ? "slide" : "rise", hinge: "left", swingTo: "front", angle: 90 };
           doorCells.push({ x, z: y, spec, key: doorCellKey({ x, y }), frameKit, leafKit, motion });
         }
@@ -4879,7 +4882,8 @@ export function GameViewport({
     // a copy of the kit's panel material whose diffuse has the door's label
     // stenciled into the panel's label field
     async function labeledPanelMaterial(spec: DoorSpec, kit: WallKit): Promise<THREE.MeshStandardMaterial> {
-      const setPaths = TEXTURE_SETS[panelSetFor(spec.kind)];
+      // (the door's own leaf texture, if it has one, is what gets the stencil)
+      const setPaths = TEXTURE_SETS[isTextureSetId(spec.leafTexture) ? spec.leafTexture : panelSetFor(spec.kind)];
       const image = (await loader.loadAsync(busted(setPaths.diffuse))).image as HTMLImageElement;
       const canvas = document.createElement("canvas");
       canvas.width = image.width;

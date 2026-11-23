@@ -73,6 +73,8 @@ import { DIR_VECTOR, behindOf, rightOf } from "./game/movement";
 import { fireLightColor, generateLights, ownCeilingLight } from "./game/lights";
 import type { EditSurface, EditTool, Rect, TextureLayer } from "./editor/mapEdits";
 import { paintFace } from "./editor/mapEdits";
+import { doorTextureIds } from "./game/doorTextures";
+import { isTextureSetId } from "./render/textureSets";
 import { eraseRoof, eraseRoofGroup, paintRoof, roofFootprint, roofGroupFor, setRoofDetached } from "./editor/roofEdits";
 import type { RoofForm } from "./game/roofAutotile";
 import type { TextureSetId } from "./render/textureSets";
@@ -435,12 +437,12 @@ export default function App() {
     }
   }, [map.world, needsSharedProps]);
   const needsSharedDoors = !!map.doors?.some(spec => spec.type && !doorType(spec.type));
+  // a door's own leaf / frame textures that no loaded texture set answers to (shared ones not loaded yet)
+  const needsDoorTextures = doorTextureIds(map.doors).some(id => !isTextureSetId(id));
   useEffect(() => {
-    if (needsSharedDoors) {
-      void loadSharedDoors(map.world).catch(console.warn);
-      void loadSharedTextures(map.world).catch(console.warn);
-    }
-  }, [map.world, needsSharedDoors]);
+    if (needsSharedDoors) void loadSharedDoors(map.world).catch(console.warn);
+    if (needsSharedDoors || needsDoorTextures) void loadSharedTextures(map.world).catch(console.warn);
+  }, [map.world, needsSharedDoors, needsDoorTextures]);
   const needsSharedActors = !!map.actors?.some(spec => isSharedActorId(spec.actor) && !ACTOR_TYPES[spec.actor]);
   useEffect(() => {
     if (needsSharedActors) void loadSharedActors(map.world).catch(console.warn);
@@ -1643,13 +1645,15 @@ export default function App() {
       facing: spec.facing,
       kind: spec.kind,
       type: spec.type,
+      leafTexture: spec.leafTexture,
+      frameTexture: spec.frameTexture,
       label: spec.label ?? "",
       chance: spec.chance ?? 1,
       links: linksOf(spec),
       lock: spec.lock,
     };
   })();
-  const changeDoor = (patch: { kind?: "standard" | "lift"; type?: string; offset?: number; facing?: Direction; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => {
+  const changeDoor = (patch: { kind?: "standard" | "lift"; type?: string; leafTexture?: string; frameTexture?: string; offset?: number; facing?: Direction; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => {
     if (!selectedDoor) return;
     const cell = selectedDoor;
     const spec = doorAt(map, cell.x, cell.y);
