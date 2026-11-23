@@ -1,0 +1,112 @@
+:: StoryTitle
+Fejezet 1: A zsarnok
+
+:: FileData
+@kind chapter
+@var heard_rumor = false
+@returns tyrant_fate, heroism
+
+:: Intro [on]
+@on chapter_start
+Gróf Varga lezáratta a kapukat, és adót szed minden szekérből. A város morog, de senki sem mer szólni.
+
+:: Tyrant killed [on]
+@on enemy_dead tyrant
+@set campaign.tyrant_fate = "killed"
+@set campaign.heroism += 2
+@endchapter
+
+:: Tyrant judgement [start]
+@npc tyrant
+Varga térdre rogyott. "Kegyelmezz, és megnyitom a kapukat."
+[[Megkíméled->Tyrant spared]]
+[[Végzel vele->Tyrant fight]]
+
+:: Tyrant spared
+@set campaign.tyrant_fate = "spared"
+@set campaign.heroism += 1
+@emit tyrant_spared
+@endchapter
+Varga összeroskad, és intésére kinyílnak a kapuk.
+@end
+
+:: Tyrant fight
+Varga kardot ránt. (A harc a játékban folyik; a halálát az `enemy_dead tyrant` esemény jelzi.)
+@end
+
+:: Smith Chapter1 [start]
+@npc smith
+@overlay
+Borbás a kovácsműhely előtt áll, a kezében letört adóbehajtói lándzsa. "Ha Vargával akartok végezni, jó fegyver kell."
+@if quest("sword") == "none"
+[[Kérek egy jó kardot->Smith Sword Offer]]
+@endif
+@if quest("sword") == "active"
+[[Hol tartsak az érccel?->Smith Sword Remind]]
+@endif
+@if quest("sword") == "ready"
+[[Meghoztam az ércet->Smith Sword Turnin]]
+@endif
+@if quest("sword") == "done"
+[[Köszönöm a kardot->Smith Sword Thanks]]
+@endif
+[[Csak vásárolnék->Smith Shop]]
+[[Mást kérdeznék->npc-kovacs/Talk]]
+
+:: Smith Sword Offer
+@quest start sword
+"Fagyérc kell a pincebejáratnál lévő bányából, három darab. Hozd el, és olyan pengét verek, amitől Varga is megremeg."
+[[Rendben->Smith Chapter1]]
+
+:: Smith Sword Remind
+"Három darab fagyérc kell. A bánya a pince bejáratánál van."
+[[Megyek->Smith Chapter1]]
+
+:: Smith Sword Turnin
+@take frost_ore 3
+@give runic_sword
+@quest done sword
+@reward credits 20
+"Ez az! Vidd, és bánj vele jól."
+[[Köszönöm->Smith Chapter1]]
+
+:: Smith Sword Thanks
+"Vigyázz rá. Az érc többé nem terem."
+[[Viszlát->Smith Chapter1]]
+
+:: Smith Shop
+@shop
+
+:: Lana Chapter1 [start]
+@npc lana
+@overlay
+Lana a pult mögött törölgeti a poharakat. "Tegnap is behajtották az adót. Aki nem fizet, annak a háza leég."
+@if !heard_rumor
+[[Mit tudsz Vargáról?->Lana Rumor]]
+@endif
+@if quest("ring") == "none"
+[[Valami baj van?->Lana Ring Offer]]
+@endif
+[[Mást kérdeznék->npc-lana/Talk]]
+
+:: Lana Rumor
+@set heard_rumor = true
+"Pénzt rejteget a kriptában. Az őrei éjjel nem alszanak, de napközben a kapuk őrsége megfogyatkozik."
+[[Köszi->Lana Chapter1]]
+
+:: Lana Ring Offer
+@quest start ring
+"A gyűrűm leesett a pince csatornájába, anyámtól kaptam. Ha megtalálod, nem felejtem el."
+[[Megkeresem->Lana Chapter1]]
+
+:: Quest sword [quest]
+@title Kard a kovácstól
+@goal Hozz 3 fagyércet a pincebányából Borbásnak.
+@ready_when has("frost_ore") >= 3
+@fate expires
+
+:: Quest ring [quest]
+@title Lana gyűrűje
+@goal Keresd meg Lana gyűrűjét a pince csatornájában.
+@ready_when has("lana_ring") >= 1
+@fate carry
