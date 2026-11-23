@@ -198,4 +198,8 @@ export const editorBarHu = {
   "editorBar.wake.arrive.3": "érkezés lezárásig",
   "editorBar.doorKindLift": "lift",
   "editorBar.doorKindStandard": "normál",
+  "editorBar.doorLeafTexture": "Ajtólap",
+  "editorBar.doorFrameTexture": "Ajtókeret",
+  "editorBar.doorTextureOfType": "az ajtótípusé",
+  "editorBar.doorTextureTitle": "Ennek az ajtónak a saját {part} textúrája; az „ajtótípusé” a típus (vagy a pálya alap) textúráját használja",
 } as const satisfies Record<string, string>;

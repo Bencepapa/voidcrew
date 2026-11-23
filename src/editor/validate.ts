@@ -10,6 +10,8 @@ import type { PropSpec } from "../game/types";
 import { getDialogue } from "../game/dialogueCatalog";
 import { getShopIds } from "../game/shopCatalog";
 import { simpleShopRefs, unknownShops } from "../game/simpleShop";
+import { unknownDoorTextures } from "../game/doorTextures";
+import { isTextureSetId } from "../render/textureSets";
 
 export type Problem = { severity: "error" | "warning"; code: string; cell?: Vec2; key: string; params?: Record<string, string | number> };
 
@@ -120,6 +122,8 @@ export function validateMap(map: GameMap): Problem[] {
     if (d.lock?.key && !keys.has(d.lock.key)) add("missingKey", d.cell, { id: d.lock.key });
     if (d.lock?.code && !codes) add("missingCode", d.cell);
   }
+  // a door's own leaf / frame texture must be a texture set (a shared one counts once it's loaded)
+  for (const u of unknownDoorTextures(map.doors, isTextureSetId)) add("unknownDoorTexture", u.cell, { id: u.id, field: t(`editorBar.door${u.field === "leafTexture" ? "Leaf" : "Frame"}Texture`) });
   return [...out, ...placementProblems(placedMap(map), c => !open(c))];
 }
 import type { MapFile } from "../game/mapFormat";

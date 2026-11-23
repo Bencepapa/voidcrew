@@ -198,4 +198,8 @@ export const editorBarEn = {
   "editorBar.wake.arrive.3": "arrives until lockdown",
   "editorBar.doorKindLift": "lift",
   "editorBar.doorKindStandard": "standard",
+  "editorBar.doorLeafTexture": "Door leaf",
+  "editorBar.doorFrameTexture": "Door frame",
+  "editorBar.doorTextureOfType": "the door type's",
+  "editorBar.doorTextureTitle": "This door's own {part} texture; \"the door type's\" uses the type's (or the deck's default)",
 } as const satisfies Record<string, string>;

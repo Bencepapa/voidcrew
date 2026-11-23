@@ -29,6 +29,7 @@ export const minimapHu = {
   "minimap.problem.duplicateLight": "Több plafonfény van egy cellában.",
   "minimap.problem.missingSurface": "Az elemnek ({kind}) nincs tartófelülete ({surface}).",
   "minimap.problem.missingTerminal": "A terminál ({id}) nincs megadva.",
+  "minimap.problem.unknownDoorTexture": "{field}: a textúra nem található ({id}).",
   "minimap.problem.missingKey": "Az ajtó kulcsának nincs forrása ezen a pályán: {id}.",
   "minimap.problem.missingCode": "A kódzárhoz nincs elhelyezett kódterminál.",
   "minimap.value.prop": "Tárgy",

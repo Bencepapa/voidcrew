@@ -93,7 +93,7 @@ export interface EditorBarProps {
   doorWorld: WorldId;
   doorTypeChoice?: string;
   onDoorTypeChoice: (id?: string) => void;
-  onDoorChange: (patch: { kind?: "standard" | "lift"; type?: string; offset?: number; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => void;
+  onDoorChange: (patch: { kind?: "standard" | "lift"; type?: string; leafTexture?: string; frameTexture?: string; offset?: number; label?: string; chance?: number; lock?: Lock } & Linked, merge?: string) => void;
   onDoorFlip: () => void;
   onDoorDelete: () => void;
   onDoorDeselect: () => void;
@@ -238,6 +238,9 @@ export interface DoorInfo {
   facing: Direction;
   kind: "standard" | "lift";
   type?: string;
+  // its own leaf / frame texture (see DoorSpec.leafTexture)
+  leafTexture?: string;
+  frameTexture?: string;
   label: string;
   chance: number;
   links: Linked;

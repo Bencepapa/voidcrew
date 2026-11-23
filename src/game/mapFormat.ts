@@ -7,6 +7,7 @@ import { parseRoofGroup } from "./roofAutotile";
 import { isRoofPieceId } from "./roofPieces";
 import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, MapLinkTarget, PropAnchor, StairsDirection, StairsStyle } from "./types";
 import { readLinkTarget } from "./mapLinks";
+import { readDoorTexture } from "./doorTextures";
 import type { Lock, Terminal, Trigger } from "./story";
 import { cleanRenderLook } from "./renderLook";
 import { worldOfMap } from "./worlds";
@@ -100,6 +101,9 @@ export interface MapFile {
     labelVertical?: boolean;
     // where in the cell it stands (see DoorSpec.offset)
     offset?: number;
+    // its own leaf / frame texture set ids (see DoorSpec.leafTexture)
+    leafTexture?: string;
+    frameTexture?: string;
     chance?: number;
     lock?: Lock;
     id?: string;
@@ -371,6 +375,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
       label: d.label,
       labelVertical: d.labelVertical,
       offset: d.offset,
+      leafTexture: readDoorTexture(d.leafTexture),
+      frameTexture: readDoorTexture(d.frameTexture),
       chance: d.chance,
       lock: d.lock,
       id: d.id,
