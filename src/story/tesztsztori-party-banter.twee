@@ -1,0 +1,23 @@
+:: StoryTitle
+tesztsztori, csapat-reakciók (a fantasy csapat: aldra, borin, merlen, elara)
+
+:: FileData
+@kind global
+
+:: Banter Tyrant Dead [banter]
+@on enemy_dead tesztsztori_zsarnok
+@speaker aldra
+@once
+@reply borin 2s
+"Végre. Azt hittem, sosem lesz vége."
+
+:: Banter Rook Reply [banter]
+@speaker borin
+@when party("borin")
+"Még nem ünnepelnék. A hívei sehová sem tűntek."
+
+:: Banter Ring Found [banter]
+@on item_picked tesztsztori_gyuru
+@speaker aldra
+@once
+"Ez biztosan az a gyűrű. Add vissza Lanának."
