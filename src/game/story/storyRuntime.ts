@@ -38,7 +38,9 @@ let revision = 0;
 let ui: StoryUiHandlers = {};
 
 const listeners = new Set<() => void>();
+let booting = false;
 const notify = () => {
+  if (booting) return;
   revision++;
   for (const l of listeners) l();
 };
@@ -128,7 +130,12 @@ function ensure(): StoryEngine | null {
   engine = new StoryEngine(loaded.bundle, host);
   const saved = loadStoryState();
   if (saved) engine.load(saved);
-  else apply(engine.startCampaign());
+  else {
+    // (may run inside a render: nobody is told yet, the first read sees the result)
+    booting = true;
+    apply(engine.startCampaign());
+    booting = false;
+  }
   return engine;
 }
 
@@ -259,6 +266,15 @@ export function storyDebugSetQuest(id: string, state: QuestState): boolean {
   if (ok) gate.request();
   notify();
   return ok;
+}
+
+/** "Reset save": the meta is fresh again, so the story starts over too. */
+export function storyReset() {
+  const e = ensure();
+  if (!e) return;
+  effects = [];
+  view = null;
+  apply(e.startCampaign());
 }
 
 export function storyJumpToChapter(chapter: string) {

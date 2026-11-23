@@ -12,6 +12,8 @@ import { setAutoLoadShared, useAutoLoadShared } from "../editor/autoSharedPrefs"
 import { GRAPHICS_PRESETS, VIEW_DISTANCE_HIGH, VIEW_DISTANCE_MAX, effectiveViewDistance, presetOf } from "../render/graphics";
 import type { WorldId } from "../game/worlds";
 import { LangSwitch } from "../i18n/LangSwitch";
+import { storyEnabled } from "../game/story/storyRuntime";
+import { StoryDebugSection } from "./StoryDebugSection";
 import { t, formatNumber, type Key } from "../i18n";
 import type { TextureSetKind } from "../render/textureSets";
 
@@ -574,6 +576,8 @@ export function DebugPanel({
           {check("enemyScanner", t("debug.scannerEnemyOutlinesCrewGear"))}
         </>,
       )}
+
+      {storyEnabled() && section(t("debug.story"), <StoryDebugSection />)}
 
       {seed !== undefined &&
         section(
