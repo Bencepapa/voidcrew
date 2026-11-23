@@ -16,6 +16,19 @@ const button = "rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1 ho
 const field = "rounded-sm border border-neutral-700 bg-neutral-900 px-2 py-1";
 const sectors = ["front", "frontLeft", "left", "backLeft", "back", "backRight", "right", "frontRight"] as const;
 
+// the height slider's range (the sheet accepts 0.1..4; this is what's sensible to drag)
+const NPC_HEIGHT_MIN = 0.2;
+const NPC_HEIGHT_MAX = 2.5;
+
+// a live gauge for the height: the figure's bar against the outline of one full wall height
+function HeightGauge({ height }: { height: number }) {
+  const px = 24; // per wall height
+  return <div aria-hidden="true" className="flex items-end gap-1" style={{ height: NPC_HEIGHT_MAX * px }}>
+    <div className="w-4 rounded-sm bg-amber-400/70" style={{ height: Math.min(NPC_HEIGHT_MAX, height) * px }}/>
+    <div className="w-4 rounded-sm border border-dashed border-neutral-500" style={{ height: px }}/>
+  </div>;
+}
+
 export function NpcAssetEditor({ initial, onBack, onPublished }: {
   initial: ActorDraft;
   onBack: () => void;
@@ -170,10 +183,14 @@ export function NpcAssetEditor({ initial, onBack, onPublished }: {
             {Array.from({ length: MAX_ACTOR_ROWS }, (_, i) => <option key={i}>{i + 1}</option>)}
           </select>
         </label>
-        <label className="flex items-center gap-2">{t("assetManager.npcSheet.height")}
+        <label className="flex items-center gap-2" title={t("assetManager.npcSheet.heightHint")}>{t("assetManager.npcSheet.height")}
+          <input type="range" className="w-40" min={NPC_HEIGHT_MIN} max={NPC_HEIGHT_MAX} step={0.05}
+            value={Math.min(NPC_HEIGHT_MAX, Math.max(NPC_HEIGHT_MIN, draft.worldHeight))}
+            onChange={e => change({ worldHeight: e.target.valueAsNumber })}/>
           <input type="number" className={field + " w-20"} min={0.1} max={4} step={0.05} value={draft.worldHeight}
             onChange={e => { if (e.target.valueAsNumber >= 0.1 && e.target.valueAsNumber <= 4) change({ worldHeight: e.target.valueAsNumber }); }}/>
         </label>
+        <HeightGauge height={draft.worldHeight}/>
       </div>
       <p className="mt-2 text-neutral-400">{t("assetManager.npcSheet.gridHint")}</p>
       {diffuse && <p className={"mt-1 " + (validGrid ? "text-neutral-400" : "text-amber-300")}>

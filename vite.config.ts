@@ -249,16 +249,29 @@ function propFiles(): Plugin {
 // src/render/textureTuning.json. The game already shows it: that write
 // doesn't hot-reload it.
 function textureTuningFile(): Plugin {
+  return jsonTableFile("voidcrew-texture-tuning", "texture-tuning", "src/render/textureTuning.json", "the tuning JSON");
+}
+
+// The Asset Manager's per-NPC-type size factors (see src/game/actorSize.ts):
+// POST __voidcrew/actor-sizes with the whole table writes
+// src/game/actorSizes.json. Like the tuning, the game already shows it.
+function actorSizesFile(): Plugin {
+  return jsonTableFile("voidcrew-actor-sizes", "actor-sizes", "src/game/actorSizes.json", "the actor sizes JSON");
+}
+
+// a dev endpoint that saves one whole JSON file the Asset Manager edits live
+// (the page already shows what it saved, so that write doesn't hot-reload it)
+function jsonTableFile(pluginName: string, endpoint: string, relFile: string, what: string): Plugin {
   const justSaved = new Map<string, number>();
   return {
-    name: "voidcrew-texture-tuning",
+    name: pluginName,
     apply: "serve",
     configureServer(server) {
-      const file = path.resolve(server.config.root, "src/render/textureTuning.json");
-      server.middlewares.use(`${server.config.base}__voidcrew/texture-tuning`, (req, res) => {
+      const file = path.resolve(server.config.root, relFile);
+      server.middlewares.use(`${server.config.base}__voidcrew/${endpoint}`, (req, res) => {
         if (req.method !== "POST") {
           res.statusCode = 400;
-          res.end("POST with the tuning JSON");
+          res.end(`POST with ${what}`);
           return;
         }
         const chunks: Buffer[] = [];
@@ -291,7 +304,7 @@ function textureTuningFile(): Plugin {
 export default defineConfig({
   // (a packaged world is served from the root of its own server)
   base: process.env.VOID_BASE ?? "/voidcrew/",
-  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles(), propFiles(), textureTuningFile()],
+  plugins: [react(), tailwindcss(), textureHotReload(), viewCaptures(), actorOffsets(), mapFiles(), propFiles(), textureTuningFile(), actorSizesFile()],
   // ES workers: the AI depth worker imports Transformers.js dynamically (a separate chunk), which IIFE workers can't do
   worker: { format: "es" },
   // pre-bundled at startup: otherwise the first AI depth click finds a "new dependency" and the dev server reloads the page
