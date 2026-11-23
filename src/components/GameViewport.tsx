@@ -2677,7 +2677,8 @@ export function GameViewport({
     // recess: a height map that doesn't tile exactly leaves slivers between
     // panels that would show what's behind the wall (the next room, the floor)
     const backingPositions: number[] = [];
-    const backingPanels: { x: number; z: number; y: number; rotY: number; width: number; height: number; floorTop: boolean; deep?: boolean }[] = [];
+    // (the wall kit each belongs to: a texture with holes in it gets none, so what's behind shows)
+    const backingPanels: { x: number; z: number; y: number; rotY: number; width: number; height: number; floorTop: boolean; deep?: boolean; kit: WallKit }[] = [];
     const backingMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, vertexColors: true });
     backingMat.visible = settings.wallBacking;
     let backingColorSerial = 0;
@@ -3022,18 +3023,23 @@ export function GameViewport({
             }
             return;
           }
+          const kit = wallKitFor(faceSet as TextureSetId);
           if (settings.wallProfile === "relief") {
             for (const span of spans) {
+              // No backing behind the side face of a raised floor (a riser): behind it is
+              // the raised block, and a black plane there only shows through the seams.
+              if (span.part === "riser") continue;
               backingPanels.push({
                 ...face, width: 1,
                 y: ((span.bottom + span.top) / 2) * wallHeight,
                 height: (span.top - span.bottom) * wallHeight,
                 floorTop: cellAt(map, nx, ny) !== "wall" && span.top === floorHeight(map, nx, ny),
                 deep: windowFaces.has(face.key),
+                // (a texture with holes - a grate, a fence, an arch - never gets one: see buildBacking)
+                kit,
               });
             }
           }
-          const kit = wallKitFor(faceSet as TextureSetId);
           for (const span of spans) {
             for (const panel of wallPanels(span.bottom, span.top, span.part === "header" ? "top" : "bottom")) {
               const y = (panel.bottom + variantHeight(panel.variant) / 2) * wallHeight;
@@ -3061,11 +3067,29 @@ export function GameViewport({
     const kits = [...wallKits.values()];
     // standing water mirrors the open sky, when there is one
     decals.setWaterSky((skyMat as THREE.ShaderMaterial | null)?.uniforms.map.value ?? null);
+    // (the black backing itself is built once the height maps are loaded: see buildBacking below)
+    const buildBacking = async () => {
+    if (!backingPanels.length) return;
+    // A wall texture with holes in it (an arch, a grate, a fence: transparent in its height map) gets no
+    // backing - a black plane behind it would fill the holes in; what's behind shows through them instead.
+    // (opaque ones keep theirs, against the slivers between their panels)
+    const holes = new Map<WallKit, boolean>();
+    for (const kit of new Set(backingPanels.map((p) => p.kit))) {
+      let gridPromise = cache.grids.get(kit.depthUrl);
+      if (!gridPromise) {
+        gridPromise = loadWithRetry(kit.depthUrl, 4);
+        cache.grids.set(kit.depthUrl, gridPromise);
+      }
+      // (a map that won't load: kept as opaque, the relief build reports it)
+      holes.set(kit, await gridPromise.then((grid) => !!grid.solid, () => false));
+    }
+    if (disposed) return;
+    const panels = backingPanels.filter((p) => !holes.get(p.kit));
     // Split at every change in wall height before finding corners. A tall
     // wall can have a straight neighbor below a step and a corner above it.
     // Insetting whole panels leaves holes at every straight seam.
-    const backingCuts = [...new Set(backingPanels.flatMap((p) => [p.y - p.height / 2, p.y + p.height / 2]))].sort((a, b) => a - b);
-    const backingBands = backingPanels.flatMap((panel) => {
+    const backingCuts = [...new Set(panels.flatMap((p) => [p.y - p.height / 2, p.y + p.height / 2]))].sort((a, b) => a - b);
+    const backingBands = panels.flatMap((panel) => {
       const bottom = panel.y - panel.height / 2;
       const top = panel.y + panel.height / 2;
       const cuts = backingCuts.filter((y) => y >= bottom - 1e-6 && y <= top + 1e-6);
@@ -3103,6 +3127,7 @@ export function GameViewport({
       backingObject = new THREE.Mesh(backingGeo, backingMat);
       group.add(backingObject);
     }
+    };
 
     // floor glow fixtures, lifted above the floor relief once it's built
     const floorStrips: THREE.Mesh[] = [];
@@ -3121,6 +3146,7 @@ export function GameViewport({
 
     // height maps by URL, each loaded once per scene
     const coarseGrids = new Map<string, Awaited<ReturnType<typeof loadWithRetry>>>();
+    track(buildBacking()).catch((err) => console.error("Wall backing build failed:", err));
 
     // what each detailed relief panel was built from - for the props' distant
     // versions (see addPropLods)
