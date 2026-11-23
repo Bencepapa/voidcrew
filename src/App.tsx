@@ -54,6 +54,7 @@ import {
 import { MapTitle } from "./components/MapTitle";
 import { GatePrompt } from "./components/GatePrompt";
 import { LoadingImagePreloader } from "./components/LoadingImagePreloader";
+import { ReleaseNotes } from "./components/ReleaseNotes";
 import { loadingImagesAhead } from "./game/mapLinks";
 import { MapDialog } from "./editor/MapDialog";
 import type { MapDialogMode, MapDialogValues } from "./editor/MapDialog";
@@ -2906,6 +2907,7 @@ export default function App() {
 
   return (
     <div className="relative h-[100dvh] w-screen flex flex-col p-2 gap-2 overflow-hidden bg-neutral-950 font-sans">
+      <ReleaseNotes />
       <div className="flex-1 flex gap-2 min-h-0">
         <div className={`${zoomed ? "w-[40vw]" : editMode ? "w-40 xl:w-56" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0 ${editMode ? "max-md:hidden" : ""}`}>
           {editMode && !zoomed ? (
