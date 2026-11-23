@@ -5,7 +5,8 @@ import { createPortal } from "react-dom";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propEditable, propReliefAmount, propReliefCells } from "../game/props";
-import { ACTOR_TYPES } from "../game/actors";
+import { ACTOR_TYPES, actorHeight } from "../game/actors";
+import { ActorSizeFields, useActorSizes } from "./ActorSizeFields";
 import { actorView, isSharedActorId } from "../game/actorSheets";
 import { actorSheetFiles, actorThumbnail } from "../render/actorSheetFiles";
 import { actorOffsets } from "../render/actorOffsets";
@@ -230,6 +231,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [error, setError] = useState("");
   const imageCatalog = useSharedImages();
   const actorDrafts = useActorDrafts();
+  // (the built-in NPC size factors: the preview is built again when the selected one's changes)
+  const npcSizes = useActorSizes();
   const actorVersion = useSharedActorVersion();
   const [npcEditor, setNpcEditor] = useState<string | ActorDraft | null>(null);
   const [openingNpc, setOpeningNpc] = useState(false);
@@ -810,8 +813,10 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     } else if(sample==="actor") {
       const actor=ACTOR_TYPES[id];
       const mat=assetMaterial(primary,{alphaTest:.5,side:THREE.DoubleSide});
-      const sprite=new THREE.Mesh(keep(new THREE.PlaneGeometry(actor.height*actor.cellAspect,actor.height)),mat);
-      sprite.position.y=actor.height/2; object.add(sprite);
+      // (the size as the game has it now, with the size factor)
+      const height=actorHeight(id);
+      const sprite=new THREE.Mesh(keep(new THREE.PlaneGeometry(height*actor.cellAspect,height)),mat);
+      sprite.position.y=height/2; object.add(sprite);
       animate=time=>{
         const yaw=Math.atan2(camera.position.x,camera.position.z);
         sprite.rotation.y=yaw-object.rotation.y;
@@ -819,9 +824,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         const row=pose>=0 ? pose : actor.walkRows[Math.floor(time/180)%actor.walkRows.length] ?? actor.idleRow;
         const fix = actorOffsets(actor.sheet);
         const [dx, dy] = fix?.offsets[row * actor.cols + col] ?? [0, 0];
-        const px = fix ? actor.height / fix.cell[1] : 0;
+        const px = fix ? height / fix.cell[1] : 0;
         const shift = (mirror ? -dx : dx) * px;
-        sprite.position.set(Math.cos(sprite.rotation.y) * shift, actor.height / 2 - dy * px, -Math.sin(sprite.rotation.y) * shift);
+        sprite.position.set(Math.cos(sprite.rotation.y) * shift, height / 2 - dy * px, -Math.sin(sprite.rotation.y) * shift);
         for(const t of [mat.map,mat.normalMap,mat.emissiveMap]) {
           if(!t)continue;
           t.repeat.set((mirror?-1:1)/actor.cols,1/actor.rows);
@@ -1021,7 +1026,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       controls.dispose();
       resources.forEach(r=>r.dispose());
     };
-  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface,preview2D,pickup?.height,pickup?.glow,propRenderKey,primary,npcEditor]);
+  },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface,preview2D,pickup?.height,pickup?.glow,propRenderKey,primary,npcEditor,npcSizes[id]]);
   const newInfo: { disabled: boolean; title: string; run?: () => Promise<void> } =
     sample === "material" ? { disabled: false, title: t("assetManager.newTexture"), run: createTexture }
       : sample === "still" ? { disabled: false, title: t("assetManager.newStill"), run: createStill }
@@ -1162,6 +1167,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                 </label>
               </div>
             </details>}
+            {sample==="actor" && entry && (selectedActor && !isSharedActorId(id) ? <ActorSizeFields key={id} typeName={id}/>
+              : isSharedActorId(id) && <p className="rounded border border-neutral-800 p-2 text-xs text-neutral-400">{t("assetManager.npcSize.shared")}</p>)}
             <details className="rounded border border-neutral-800 p-2"><summary className="cursor-pointer font-semibold">{t("assetManager.look", { texture: sample==="material" ? (entry?.label ?? "") : (tuneId || t("assetManager.noTuning")) })}</summary>
               {tune ? <>
                 <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>

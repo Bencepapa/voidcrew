@@ -6,6 +6,7 @@ import { passage } from "./heights";
 import { lineOfSight } from "./visibility";
 import type { Body } from "./heights";
 import { isSharedActorId, type ActorSheetLayout } from "./actorSheets";
+import { actorSize, sizedBody } from "./actorSize";
 import type { ActorSpec, Direction, GameMap, Vec2, ActorWake } from "./types";
 
 // Moving actors (robots, NPCs, enemies): each stands in a cell, walks cell
@@ -111,6 +112,15 @@ export interface ActorType extends ActorSheetLayout {
   // talked to (see ActorSpec.friendly: a placed one may say otherwise)
   friendly?: boolean;
 }
+
+// A type's size as it's now, with the Asset Manager's size factor on it (see
+// actorSize.ts; 1 = as written above): the drawn height - and so what a shot
+// hits - the eye height and the body that fits through openings. Everything
+// that reads these (the renderer, the AI, the line of sight) goes through here,
+// so what's drawn, shot and seen stays one size.
+export const actorHeight = (typeName: string): number => ACTOR_TYPES[typeName].height * actorSize(typeName);
+export const actorEyeHeight = (typeName: string): number => ACTOR_TYPES[typeName].eyeHeight * actorSize(typeName);
+export const actorBody = (typeName: string): Body => sizedBody(ACTOR_TYPES[typeName].body, actorSize(typeName));
 
 export type Faction = "robot" | "alien" | "infected" | "survivor";
 // Who fights whom besides the crew: each faction's foes, and whether only
@@ -1412,7 +1422,7 @@ export function stepActors(
       if (!type.crawler && burning.has(`${to.x},${to.y}`)) return null;
       const door = doorCrossed(map, a.cell, to);
       if (door && !isDoorOpen(door)) return null;
-      const way = passage(map, a.cell, a.y, to, dir, type.body);
+      const way = passage(map, a.cell, a.y, to, dir, actorBody(a.type));
       if (way.kind !== "walk") return null;
       // (a small harmless one slips past anyone, and anyone past it - and
       // a crawler on the ceiling over everyone's heads: only two that both
@@ -1429,7 +1439,7 @@ export function stepActors(
         ({ to, dir }) => canStep(to, dir),
       );
     // its eyes, standing at height `y`
-    const eyes = (y: number) => y + type.eyeHeight;
+    const eyes = (y: number) => y + actorEyeHeight(a.type);
     // takes a step; in a fight it keeps facing the party (backing off, say)
     const stepTo = (to: Vec2, dir: Direction, face?: Vec2, speed = 1) => {
       update({
@@ -1686,7 +1696,7 @@ export function stepActors(
     const faction = type.faction ?? "robot";
     if (a.diedAt !== null || a.dormant || a.playingDead || a.panicked || a.inVentUntil || a.ally || a.friendly || type.passive || type.watcher) continue;
     if (!type.damage[1] || a.lastAttack === now || now - a.lastAttack < type.attackCooldownMs || now < a.disarmedUntil) continue;
-    const eyes = a.y + type.eyeHeight;
+    const eyes = a.y + actorEyeHeight(a.type);
     let best: { o: ActorState; d: number } | null = null;
     for (const o of fighters) {
       // (one lying still as if dead fools them all)
@@ -1696,7 +1706,7 @@ export function stepActors(
       const d = Math.hypot(o.cell.x - a.cell.x, o.cell.y - a.cell.y);
       const reach = how === "adjacent" ? 1.01 : Math.max(1.01, type.attackRange);
       if (d > reach || (best && d >= best.d)) continue;
-      if (d > 1.01 && !lineOfSight(map, a.cell, o.cell, doorOpen, { from: eyes, to: o.y + ACTOR_TYPES[o.type].eyeHeight })) continue;
+      if (d > 1.01 && !lineOfSight(map, a.cell, o.cell, doorOpen, { from: eyes, to: o.y + actorEyeHeight(o.type) })) continue;
       best = { o, d };
     }
     if (!best) continue;
@@ -1720,7 +1730,7 @@ export function stepActors(
       !!a.lookAt ||
       dist < 1e-6 ||
       ((party.x - a.cell.x) * ahead.x + (party.y - a.cell.y) * ahead.y) / dist >= Math.cos(((type.fieldOfView / 2) * Math.PI) / 180);
-    const eyes = a.y + type.eyeHeight;
+    const eyes = a.y + actorEyeHeight(a.type);
     const seen = dist <= (a.hostile || a.lookAt ? type.huntSight : type.sight) && (inView || a.hostile) && clearLine(a.cell, party, eyes);
     if (a.ally) {
       // on the crew's side: the nearest robot in its sight and reach
@@ -1728,7 +1738,7 @@ export function stepActors(
       const target = actors
         .filter((o) => o.diedAt === null && !o.ally && !o.friendly && o.id !== a.id && !ACTOR_TYPES[o.type].passive && !ACTOR_TYPES[o.type].watcher)
         .map((o) => ({ o, d: Math.hypot(o.cell.x - a.cell.x, o.cell.y - a.cell.y) }))
-        .filter(({ o, d }) => d <= type.attackRange && lineOfSight(map, a.cell, o.cell, doorOpen, { from: eyes, to: o.y + ACTOR_TYPES[o.type].eyeHeight }))
+        .filter(({ o, d }) => d <= type.attackRange && lineOfSight(map, a.cell, o.cell, doorOpen, { from: eyes, to: o.y + actorEyeHeight(o.type) }))
         .sort((p, q) => p.d - q.d)[0];
       if (target) {
         const [lo, hi] = type.damage;

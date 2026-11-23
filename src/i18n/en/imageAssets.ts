@@ -11,6 +11,7 @@ export const imageAssetsEn = {
   "assetManager.npcSheet.columns": "Columns",
   "assetManager.npcSheet.rows": "Rows",
   "assetManager.npcSheet.height": "Height on map",
+  "assetManager.npcSheet.heightHint": "How tall it stands, in wall heights (1 = a full wall: the outline). Eyes and the lowest opening it fits follow it.",
   "assetManager.npcSheet.gridHint": "Use equally sized cells with no gaps between them. Changing the grid resets frame offsets.",
   "assetManager.npcSheet.gridError": "The grid must divide the image into whole pixels.",
   "assetManager.npcSheet.cell": "Cell {w} × {h} px",

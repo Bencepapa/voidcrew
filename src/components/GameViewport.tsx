@@ -50,7 +50,7 @@ import { fireLightColor, generateLights, isSkyCeiling, lampColor, ownCeilingLigh
 import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
 import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
-import { ACTOR_TYPES, BODY_PARTS, critAt } from "../game/actors";
+import { ACTOR_TYPES, BODY_PARTS, actorHeight, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
 import { actorSheetFiles } from "../render/actorSheetFiles";
 import { actorView } from "../game/actorSheets";
@@ -5805,6 +5805,8 @@ export function GameViewport({
       mirror: boolean;
       // when it last fired (to flash each new shot)
       lastAttack: number;
+      // the height its quad is made at (it's made anew when the type's size changes)
+      h: number;
     }
     const actorMeshes = new Map<number, ActorEntry>();
     const flashAt = new THREE.Vector3();
@@ -6023,7 +6025,7 @@ export function GameViewport({
       }
       for (const actor of current) {
         const type = ACTOR_TYPES[actor.type];
-        const h = type.height * wallHeight;
+        const h = actorHeight(actor.type) * wallHeight;
         let entry = actorMeshes.get(actor.id);
         if (entry && entry.type !== actor.type) {
           removeActorMesh(actor.id);
@@ -6052,9 +6054,15 @@ export function GameViewport({
           );
           // (nothing to aim at or hide behind)
           shadow.raycast = () => {};
-          entry = { type: actor.type, mesh, material, shadow, highlight, uvKey: "", col: 0, row: 0, mirror: false, lastAttack: actor.lastAttack };
+          entry = { type: actor.type, mesh, material, shadow, highlight, uvKey: "", col: 0, row: 0, mirror: false, lastAttack: actor.lastAttack, h };
           actorMeshes.set(actor.id, entry);
           group.add(mesh, shadow);
+        } else if (Math.abs(entry.h - h) > 1e-6) {
+          // (its type's size was changed in the Asset Manager: the quad follows, and the hit tests with it)
+          entry.mesh.geometry.dispose();
+          entry.mesh.geometry = new THREE.PlaneGeometry(h * type.cellAspect, h);
+          entry.h = h;
+          entry.uvKey = "";
         }
         const t = Math.min(1, Math.max(0, (now - actor.moveStart) / actor.moveMs));
         const x = lerp(actor.from.x, actor.cell.x, t);
@@ -6518,7 +6526,7 @@ export function GameViewport({
     // a point of an actor's quad, from a spot of its sheet cell
     function actorPoint(entry: ActorEntry, typeName: string, u: number, v: number, out: THREE.Vector3) {
       const type = ACTOR_TYPES[typeName];
-      const h = type.height * wallHeight;
+      const h = actorHeight(typeName) * wallHeight;
       const w = h * type.cellAspect;
       return out.set((entry.mirror ? 0.5 - u : u - 0.5) * w, (0.5 - v) * h, 0).applyMatrix4(entry.mesh.matrixWorld);
     }
@@ -8003,7 +8011,7 @@ export function GameViewport({
         const actor = actorsRef.current.find((a) => a.id === focus!.target);
         aimLookAt.copy(focused.mesh.position);
         const dist = Math.max(0.3, aimLookAt.distanceTo(camera.position));
-        const h = actor ? ACTOR_TYPES[actor.type].height * wallHeight : 0.8;
+        const h = actor ? actorHeight(actor.type) * wallHeight : 0.8;
         const framing = THREE.MathUtils.radToDeg(2 * Math.atan((h * AIM_FRAMING) / 2 / dist));
         aimFovGoal =
           focus!.phase === "pick"

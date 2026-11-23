@@ -11,6 +11,7 @@ export const imageAssetsHu = {
   "assetManager.npcSheet.columns": "Oszlopok",
   "assetManager.npcSheet.rows": "Sorok",
   "assetManager.npcSheet.height": "Magasság a pályán",
+  "assetManager.npcSheet.heightHint": "Milyen magas, falmagasságban (1 = egy teljes fal: a körvonal). A szemmagassága és a legalacsonyabb nyílás, amin átfér, ehhez igazodik.",
   "assetManager.npcSheet.gridHint": "Azonos méretű cellákat használj, hézagok nélkül. A rács módosítása lenullázza a képkockák eltolásait.",
   "assetManager.npcSheet.gridError": "A rácsnak egész képpontokra kell osztania a képet.",
   "assetManager.npcSheet.cell": "Cella {w} × {h} px",
