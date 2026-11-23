@@ -16,6 +16,7 @@ import {
   weaponStats,
 } from "../game/meta";
 import type { OwnedWeapon } from "../game/meta";
+import { storyReset } from "../game/story/storyRuntime";
 
 // The base, between runs (see meta.ts): the stash and what it sells for,
 // the crew's weapons (two slots each, upgrades), the shop - and on to the
@@ -158,7 +159,7 @@ export function BaseScreen({ onLaunch }: { onLaunch: () => void }) {
           <button
             type="button"
             className="text-[10px] text-neutral-600 hover:text-neutral-300"
-            onClick={() => confirm("Start over? Credits, stash and weapons are lost.") && resetMeta()}
+            onClick={() => confirm("Start over? Credits, stash and weapons are lost.") && (resetMeta(), storyReset())}
           >
             reset save
           </button>

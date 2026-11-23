@@ -1,0 +1,23 @@
+:: StoryTitle
+Csapat-reakciók
+
+:: FileData
+@kind global
+
+:: Banter Tyrant Dead [banter]
+@on enemy_dead tyrant
+@speaker mira
+@once
+@reply rook 2s
+"Végre. Azt hittem, sosem lesz vége."
+
+:: Banter Rook Reply [banter]
+@speaker rook
+@when party("rook")
+"Még nem ünnepelnék. A hívei sehová sem tűntek."
+
+:: Banter Ring Found [banter]
+@on item_picked lana_ring
+@speaker mira
+@once
+"Ez biztosan az a gyűrű. Add vissza Lanának."

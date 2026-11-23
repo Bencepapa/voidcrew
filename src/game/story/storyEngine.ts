@@ -228,6 +228,16 @@ export class StoryEngine {
     return r.ok;
   }
 
+  /** Debug panel: set a known quest's state directly (no transition rules); "none" removes it. */
+  debugSetQuest(id: string, state: QuestState): boolean {
+    if (!this.questDef(id)) return false;
+    const quests = { ...this.state.quests };
+    if (state === "none") delete quests[id];
+    else quests[id] = state;
+    this.state = { ...this.state, quests };
+    return true;
+  }
+
   // ---- the loop that settles queued events and a pending chapter close ----
 
   private settle(effects: Effect[]) {

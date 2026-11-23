@@ -18,6 +18,7 @@ import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
 import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
 import { getMeta, setStoryFlag } from "./meta";
+import { storyEvent, storySetCutscene } from "./story/storyRuntime";
 import { addToInventory, changeInventory, getInventory, handWeapon, haulOf, startRun, useInventory } from "./inventoryStore";
 import { LEFT, effectiveHand, handLoc, handView, takeSlot, type HandIndex } from "./inventory";
 import { readyAtOf, withCooldown, type ReadyAt } from "./handCooldown";
@@ -220,6 +221,10 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   // new map has loaded and faded in)
   const [transit, setTransit] = useState<MapTransit | null>(null);
   const transitBusyRef = useRef(false);
+  // (the story saves between scenes: not while a lift ride or a map transit is on)
+  useEffect(() => {
+    storySetCutscene(inLift || transit !== null);
+  }, [inLift, transit]);
   // the link cell ("<map>:<x>,<y>") that asks nothing of the party - the one it
   // just arrived at, or stayed on - until it steps off it
   const [quietLink, setQuietLink] = useState<string | null>(null);
@@ -451,6 +456,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
         if (!killedRef.current.has(key)) {
           killedRef.current.add(key);
           setKills(killedRef.current.size);
+          if (variationRef.current !== null) storyEvent("enemy_dead", a.type);
         }
       }
       actorsRef.current = next;
@@ -1098,6 +1104,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     if (storyMapRef.current !== map.id) {
       storyMapRef.current = map.id;
       fireEvent({ on: "start" });
+      storyEvent("map_entered", map.id);
     }
     fireEvent({ on: "enter", cell: pos });
   }, [pos, map.id, variation, fireEvent]);
@@ -1202,6 +1209,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     };
     transitBusyRef.current = true;
     setTransit(started);
+    storyEvent("level_exit", from.id);
     pushLog(t(stairs ? (up ? "link.goUp" : "link.goDown") : "link.go", { name: to.name }));
 
     const arrive = () => {
@@ -1320,6 +1328,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   const addToHaul = useCallback((stacks: ItemStack[]) => {
     if (!stacks.length) return;
     const overflowed = addToInventory(stacks);
+    for (const s of stacks) storyEvent("item_picked", s.item);
     if (overflowed.length) pushLog(t("inventory.packFull", { items: stacksText(overflowed) }), "warn");
   }, [pushLog]);
   // a container's contents: put in by hand, or rolled from its table
