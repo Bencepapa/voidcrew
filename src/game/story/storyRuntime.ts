@@ -30,6 +30,7 @@ let engine: StoryEngine | null = null;
 let initialized = false;
 let view: DialogueView | null = null;
 let ownShop: string | undefined;
+let pendingShop: string | undefined;
 // an old dialogue library (not the engine's) is open: saving waits for it too
 let externalDialogue = false;
 let effects: Effect[] = [];
@@ -52,7 +53,13 @@ export const useStoryRevision = (): number => useSyncExternalStore(subscribeStor
 
 /** The app's side of the effects (the shop window, the log). Call it from an effect. */
 export function configureStoryUi(handlers: StoryUiHandlers) {
-  ui = handlers;
+  ui = { ...ui, ...handlers };
+  // (a @shop in the very first passage came before the popup mounted)
+  if (handlers.openShop && pendingShop) {
+    const id = pendingShop;
+    pendingShop = undefined;
+    handlers.openShop(id);
+  }
 }
 
 /** The host's canSave: the engine's own dialogue/shop/cutscene, plus an old dialogue library's window. */
@@ -74,7 +81,7 @@ function effectTarget(): StoryEffectTarget {
     },
     shop: (shop) => {
       const id = shop ?? ownShop;
-      if (id) ui.openShop?.(id);
+      if (id) { if (ui.openShop) ui.openShop(id); else pendingShop = id; }
       else console.warn("[story] @shop has no id and the NPC has no shop");
     },
     end: () => { /* the view already carries ended: true; the box shows its close button */ },
@@ -157,6 +164,7 @@ export function storyTalk(actorType: string, shop?: string): DialogueView | null
   const e = ensure();
   if (!e || !e.resolveEntry(storyNpcId(actorType))) return null;
   ownShop = shop;
+  pendingShop = undefined;
   const r = e.talk(storyNpcId(actorType));
   view = r.view;
   apply(r.effects);
@@ -178,6 +186,7 @@ export function storyEndDialogue() {
   if (!e) return;
   view = null;
   ownShop = undefined;
+  pendingShop = undefined;
   apply(e.endDialogue());
 }
 

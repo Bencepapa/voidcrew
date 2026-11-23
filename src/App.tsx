@@ -10,6 +10,8 @@ import { ShortcutHelp } from "./editor/ShortcutHelp";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { InteractionPopup } from "./components/InteractionPopup";
 import { DialoguePopup } from "./components/DialoguePopup";
+import { StoryDialoguePopup } from "./components/StoryDialoguePopup";
+import { configureStoryUi, storyEnabled, storyEndDialogue, storySave, storySetDialogue, storyTalk } from "./game/story/storyRuntime";
 import { ShopPanel } from "./components/ShopPanel";
 import { getShopIds } from "./game/shopCatalog";
 import { gameClock } from "./game/clock";
@@ -334,11 +336,29 @@ export default function App() {
     gameClock.setPaused(interactionPausesWorld);
     return () => gameClock.setPaused(false);
   }, [editMode, runEnd, phase, interactionPausesWorld, setWorldFrozen]);
+  // the talk on screen runs through the story engine (see storyRuntime.ts), not an old dialogue library
+  const [storyTalking, setStoryTalking] = useState(false);
+  const storyTalkingRef = useRef(false);
   const closeInteraction = useCallback(() => {
     activeInteractionRef.current = null;
     interactionBlocksMovement.current = false;
+    if (storyTalkingRef.current) {
+      storyTalkingRef.current = false;
+      setStoryTalking(false);
+      storyEndDialogue();
+    }
     setActiveInteraction(null);
   }, []);
+  // (the story is told when an old dialogue or simple shop window is open: no saving behind it)
+  useEffect(() => {
+    storySetDialogue((activeInteraction?.kind === "dialogue" || activeInteraction?.kind === "shop") && !storyTalking);
+  }, [activeInteraction, storyTalking]);
+  // the story's side of the effects: its @shop opens the shop window, its lines go to the log (and it loads now,
+  // not in the middle of a render)
+  useEffect(() => {
+    configureStoryUi({ log: (text) => pushLog(text) });
+    storyEnabled();
+  }, [pushLog]);
   useLayoutEffect(() => {
     closeInteraction();
     setEventTarget(null);
@@ -371,6 +391,10 @@ export default function App() {
   const openInteraction = (event: Interaction) => {
     if (editMode || phase !== "run" || inLift || terminal || keypad || aim || runEnd || wipedAt !== null || activeInteractionRef.current || inventoryShown) return false;
     activeInteractionRef.current = event;
+    // an NPC the story has an entry for talks through the engine (npc = the actor's type); else the old path
+    const story = (event.kind === "dialogue" || event.kind === "shop") && !!event.npc && storyTalk(event.npc, event.shop || undefined) !== null;
+    storyTalkingRef.current = story;
+    setStoryTalking(story);
     interactionBlocksMovement.current = event.kind === "dialogue" || event.kind === "shop" || (event.kind === "message" && event.modal);
     if (document.pointerLockElement) document.exitPointerLock();
     setActiveInteraction(event);
@@ -2553,6 +2577,7 @@ export default function App() {
             // the haul lost, the whole crew cloned, back to the base
             failRun();
             payRevival(down);
+            storySave();
             nextRun(true);
             setPhase("base");
           }}
@@ -2573,6 +2598,7 @@ export default function App() {
             // (and what the crew holds in hand is their loadout from now on)
             bankRun();
             payRevival(down);
+            storySave();
             nextRun();
             setPhase("base");
           }}
@@ -2601,7 +2627,9 @@ export default function App() {
         />
       )}
       {hurtAt > 0 && <div key={hurtAt} className="hurt-flash absolute inset-0 pointer-events-none" />}
-      {activeInteraction && !editMode && (activeInteraction.kind === "dialogue"
+      {activeInteraction && !editMode && ((activeInteraction.kind === "dialogue" || activeInteraction.kind === "shop") && storyTalking
+        ? <StoryDialoguePopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>
+        : activeInteraction.kind === "dialogue"
         ? <DialoguePopup event={activeInteraction} close={closeInteraction} partyDock={partyDock}/>
         : activeInteraction.kind === "shop"
         ? <ShopPanel shopId={activeInteraction.shop} partyDock={partyDock} onClose={closeInteraction}
