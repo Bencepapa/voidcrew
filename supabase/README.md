@@ -23,6 +23,10 @@ Run `npm run pull:shared` before building the release. The script uses the publi
 
 To preview the import in a separate directory, run `npm run pull:shared -- <output-directory>`. The importer preserves existing files and reports when a newer shared revision is available. Review the imported files before including them in a release.
 
+`npm run pull:shared -- --list` only says what would be bundled (and what is kept as it is); it writes nothing and downloads no images. The script bundles textures, stills, decals, pickups (the picture plus its normal and depth maps and its look), props, door types, NPCs, dialogues, shops and maps.
+
+Without bundled content a guest on the public build loads only what the map on screen references, by id (no store listing); the editor, a signed-in editor and `?shared=on` load the whole store (see `src/editor/autoSharedPolicy.ts`). Bundling the finished content makes the guest path need no request at all.
+
 ### Textures
 
 Shared textures are made and published in the editor's **Assets** window (**+ New texture**, then **Publish** in the yellow bar), not in the Shared maps dialog. Publishing only ever adds files (editors can insert and select; nothing is updated). Deleting a whole texture from the Assets window needs the delete policy in [shared-texture-folders.sql](./shared-texture-folders.sql):

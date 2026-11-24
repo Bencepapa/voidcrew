@@ -27,6 +27,9 @@ import { editorToolLabel } from "./editor/EditorBar";
 import { SharedEditor } from "./editor/SharedEditor";
 import { sharedConfigured } from "./editor/sharedAuth";
 import { autoSharedSceneReady, setAutoSharedWorld } from "./editor/autoShared";
+import { useAutoLoadShared } from "./editor/autoSharedPrefs";
+import { loadOnce } from "./editor/loadGate";
+import { loadSharedForMap } from "./editor/guestShared";
 import { loadSharedMap } from "./editor/sharedMaps";
 import type { SharedMapHead } from "./editor/sharedMapHeads";
 import { AssetManager } from "./editor/AssetManager";
@@ -451,27 +454,35 @@ export default function App() {
     !!map.decals?.some(({ decal }) => /^(fantasy|scifi)_decal_/.test(decal) && !sharedImage(decal)) ||
     !!map.items?.some(({ item }) => isSharedPickupId(item) && !sharedImage(item)) ||
     !!map.props?.some(({ loot }) => loot?.some(({ item }) => isSharedPickupId(item) && !sharedImage(item)));
+  // Each list of the store is fetched in full once per page load (loadGate), and only when the whole store is
+  // loaded at all (editors, ?shared=on). A guest gets exactly what this map references, by id, below.
+  const sharedFull = useAutoLoadShared();
   useEffect(() => {
-    if (needsSharedImages) void loadSharedImages(map.world).catch(console.warn);
-  }, [map.world, needsSharedImages]);
+    if (needsSharedImages && sharedFull) void loadOnce("images", map.world, () => loadSharedImages(map.world)).catch(console.warn);
+  }, [map.world, needsSharedImages, sharedFull]);
   const needsSharedProps = !!map.props?.some(({ prop }) => isSharedPropId(prop) && !PROP_TYPES[prop]);
   useEffect(() => {
-    if (needsSharedProps) {
-      void loadSharedProps(map.world).catch(console.warn);
-      void loadSharedTextures(map.world).catch(console.warn);
+    if (needsSharedProps && sharedFull) {
+      void loadOnce("props", map.world, () => loadSharedProps(map.world)).catch(console.warn);
+      void loadOnce("textures", map.world, () => loadSharedTextures(map.world)).catch(console.warn);
     }
-  }, [map.world, needsSharedProps]);
+  }, [map.world, needsSharedProps, sharedFull]);
   const needsSharedDoors = !!map.doors?.some(spec => spec.type && !doorType(spec.type));
   // a door's own leaf / frame textures that no loaded texture set answers to (shared ones not loaded yet)
   const needsDoorTextures = doorTextureIds(map.doors).some(id => !isTextureSetId(id));
   useEffect(() => {
-    if (needsSharedDoors) void loadSharedDoors(map.world).catch(console.warn);
-    if (needsSharedDoors || needsDoorTextures) void loadSharedTextures(map.world).catch(console.warn);
-  }, [map.world, needsSharedDoors, needsDoorTextures]);
+    if (!sharedFull) return;
+    if (needsSharedDoors) void loadOnce("doors", map.world, () => loadSharedDoors(map.world)).catch(console.warn);
+    if (needsSharedDoors || needsDoorTextures) void loadOnce("textures", map.world, () => loadSharedTextures(map.world)).catch(console.warn);
+  }, [map.world, needsSharedDoors, needsDoorTextures, sharedFull]);
   const needsSharedActors = !!map.actors?.some(spec => isSharedActorId(spec.actor) && !ACTOR_TYPES[spec.actor]);
   useEffect(() => {
-    if (needsSharedActors) void loadSharedActors(map.world).catch(console.warn);
-  }, [map.world, needsSharedActors]);
+    if (needsSharedActors && sharedFull) void loadOnce("actors", map.world, () => loadSharedActors(map.world)).catch(console.warn);
+  }, [map.world, needsSharedActors, sharedFull]);
+  const interactionImage = activeInteraction?.kind === "image" ? activeInteraction.image : undefined;
+  useEffect(() => {
+    if (!sharedFull && sharedConfigured) void loadSharedForMap(map, interactionImage ? [interactionImage] : []).catch(console.warn);
+  }, [map, sharedFull, interactionImage]);
   const compact = useMediaQuery(COMPACT_QUERY);
   const grid = settings.gridMovement;
   const finePointer = useMediaQuery("(pointer: fine)");

@@ -5,8 +5,8 @@ import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld, worldOfMap } from "../game/worlds";
 import { PROP_TYPES } from "../game/props";
 import { ITEM_TYPES } from "../game/items";
-import { ACTOR_TYPES } from "../game/actors";
-import { actorThumbnail } from "../render/actorSheetFiles";
+import { ACTOR_TYPES, type ActorType } from "../game/actors";
+import { ActorThumb, Thumb } from "./Thumb";
 import { useSharedActorVersion } from "./sharedActors";
 import { TEXTURE_SETS, textureFolder, textureSetsOfKind } from "../render/textureSets";
 import { fetchDecalManifest } from "../render/decals";
@@ -24,7 +24,7 @@ const assetName = (name: string) => t(("assetTree.name."+name) as Key) ?? name;
 // a prop's translated name, when it has one (else its id)
 const propName = (id: string) => hasKey("assetTree.name."+id) ? assetName(id) : id;
 
-type Entry = {search?: string; id: string; label: string; kind: string; image?: string; icon?: ReactNode; tool?: EditTool; style?: CSSProperties; active?: boolean; pick: (button: HTMLButtonElement) => void; manager?: Sample; managerId?: string};
+type Entry = {search?: string; id: string; label: string; kind: string; image?: string; icon?: ReactNode; tool?: EditTool; style?: CSSProperties; actor?: ActorType; active?: boolean; pick: (button: HTMLButtonElement) => void; manager?: Sample; managerId?: string};
 export function AssetTree(p: EditorBarProps) {
   useTextureVersion();
   useSharedActorVersion();
@@ -97,7 +97,7 @@ export function AssetTree(p: EditorBarProps) {
       })),
     ]},
     {id:"item",label:t("assetManager.items"),entries:Object.entries(ITEM_TYPES).filter(([id])=>assetInWorld(id)).map(([id,v])=>({id,label:hasKey("assetTree.name."+v.name)?assetName(v.name):v.name,search:v.name,kind:v.category,image:pickupTexture(id).diffuse,active:p.itemChoice===id,pick:()=>choose("item",()=>p.onItemChoice(id)),manager:"item"}))},
-    {id:"robot",label:t("assetManager.npcs"),entries:Object.entries(ACTOR_TYPES).filter(([id])=>assetInWorld(id)).map(([id,v])=>({id,label:assetName(v.name),search:v.name,kind:id,style:actorThumbnail(v),active:p.robotChoice===id,pick:()=>choose("robot",()=>p.onRobotChoice(id)),manager:"actor"}))},
+    {id:"robot",label:t("assetManager.npcs"),entries:Object.entries(ACTOR_TYPES).filter(([id])=>assetInWorld(id)).map(([id,v])=>({id,label:assetName(v.name),search:v.name,kind:id,actor:v,active:p.robotChoice===id,pick:()=>choose("robot",()=>p.onRobotChoice(id)),manager:"actor"}))},
     {id:"light",label:t("assetTree.lights"),entries:(["ceiling","point"] as const).flatMap(place=>[undefined,"flicker","spark","pulse"].map(effect=>({id:`${place}:${effect??""}`,label:`${t(place==="ceiling"?"editorBar.ceilingLamp":"editorBar.pointLight")}${effect?` · ${t(`editorBar.${effect}` as "editorBar.flicker")}`:""}`,kind:t("assetTree.lights"),active:p.lightPlace===place && p.light?.effect===effect,pick:()=>choose("light",()=>{p.onLightPlace(place);p.onAssetEffect("light",effect);})})))},
     {id:"smoke",label:t("editorBar.particles"),entries:(["smoke","fire","mist","groundfog","motes","petals","fireflies"] as const).map(effect=>({id:effect,label:t(`effects.${effect}`),kind:t("editorBar.particles"),active:(p.smoke?.effect??"smoke")===effect,pick:()=>choose("smoke",()=>p.onAssetEffect("smoke",effect))}))},
     {id:"events",label:t("events.group"),entries:events,bare:true}
@@ -122,7 +122,7 @@ export function AssetTree(p: EditorBarProps) {
           {group.id==="texture"&&<div className="flex flex-wrap gap-1 p-1">{(["wall","floor","ceiling"] as const).map(s=><button type="button" key={s} aria-pressed={surface===s} className="border border-neutral-600 px-1 aria-pressed:bg-neutral-700" onClick={()=>setSurface(s)}>{t(`editorBar.${s}`)}</button>)}</div>}
           {group.id==="prop"&&<div className="flex flex-wrap gap-1 p-1">{["3D","billboard","pillar"].map(k=><button type="button" key={k} aria-pressed={propTab===k} className="border border-neutral-600 px-1 aria-pressed:bg-neutral-700" onClick={()=>setPropTab(k)}>{t(k==="3D"?"assetManager.threeD":k==="billboard"?"assetManager.billboard":"assetTree.pillar")}</button>)}</div>}
           {entries.map(e=><button key={e.id} type="button" title={e.id.includes("_shared_") ? e.label : `${e.label} (${e.id})`} aria-pressed={p.tool===(e.tool??group.id)&&!!e.active} className="flex w-full items-center gap-1 border border-transparent p-1 text-left hover:bg-neutral-800 aria-pressed:border-amber-400" onClick={event=>e.pick(event.currentTarget)} onDoubleClick={()=>{if(e.manager)openAssetManager(e.manager,e.managerId??e.id);}}>
-            {(e.image||e.style||e.icon)&&<span className="flex h-12 w-12 shrink-0 items-center justify-center bg-contain bg-center bg-no-repeat" style={{...e.style,imageRendering:"auto"}}>{e.icon}{e.image&&<img src={e.image} alt="" loading="lazy" className="h-full w-full object-contain"/>}</span>}<span className="min-w-0 break-words">{e.label}</span>
+            {e.actor?<ActorThumb type={e.actor} className="block h-12 w-12 shrink-0"/>:(e.image||e.style||e.icon)&&<span className="flex h-12 w-12 shrink-0 items-center justify-center bg-contain bg-center bg-no-repeat" style={{...e.style,imageRendering:"auto"}}>{e.icon}{e.image&&<Thumb src={e.image} className="h-full w-full object-contain"/>}</span>}<span className="min-w-0 break-words">{e.label}</span>
           </button>)}
           {!entries.length&&<p className="p-1 text-neutral-500">{t("assetTree.empty")}</p>}
           {group.id==="decal"&&error&&<p className="p-1 text-red-300">{t("assetManager.loadDecals")}</p>}

@@ -8,7 +8,8 @@ import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propEditable, propRelief
 import { ACTOR_TYPES, actorHeight } from "../game/actors";
 import { ActorSizeFields, useActorSizes } from "./ActorSizeFields";
 import { actorView, isSharedActorId } from "../game/actorSheets";
-import { actorSheetFiles, actorThumbnail } from "../render/actorSheetFiles";
+import { actorSheetFiles } from "../render/actorSheetFiles";
+import { ActorThumb, Thumb } from "./Thumb";
 import { actorOffsets } from "../render/actorOffsets";
 import { ActorEditor } from "./ActorEditor";
 import { NpcAssetEditor } from "./NpcAssetEditor";
@@ -20,10 +21,11 @@ import { AutoBadge, ChannelControls, errorText, SignInPopover, TextureFields, Un
 import { useDialogueDrafts } from "./dialogueDrafts";
 import { useShopDrafts } from "./shopDrafts";
 import { draftCounts, draftId, isPropTexture, newDraft, saveDraft, useDrafts, type SurfaceKind } from "./textureDrafts";
-import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
+import { autoChannels, isEditable, textureStatus, useTextureVersion, wantSharedTexture } from "./textureLibrary";
 import { ChannelCards, useBlobUrl } from "./ChannelControls";
 import { ownedPropTexture, SURFACE_CHANNELS } from "./channelEditor";
 import { loadSharedTextures } from "./sharedTextures";
+import { loadOnce, type LoadKind } from "./loadGate";
 import { SharedHttpError, sharedConfigured, sharedToken } from "./sharedAuth";
 import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
 import { Lock, RefreshCw } from "lucide-react";
@@ -382,6 +384,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [hidden,setHidden] = useState<Record<string,boolean>>({});
   const [edits, setEdits] = useState<MaterialMaps>({});
   const primary = propDraft ? propDraft.definition.texture || id : prop ? propTexture(id) : id;
+  // the selected texture (or the prop's / door's own) is shown: its Auto maps are made now (the rest of the store's are not)
+  const doorLeaf = doorAsset?.definition.leaf, doorFrame = doorAsset?.definition.frame;
+  useEffect(() => { if (open) for (const tex of [id, primary, doorLeaf, doorFrame]) if (tex) wantSharedTexture(tex); }, [open, id, primary, doorLeaf, doorFrame]);
   const maskKey = (group:string, channel:Channel) => [sample,id,group,channel].join(":");
   // the files of the selected texture (they change when a draft changes a map)
   const selectedTexture = (sample === "material" || sample === "prop") ? catalog[primary] : undefined;
@@ -458,12 +463,15 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     if (!sharedConfigured) { if (manual) { setNotice(""); setError(t("assetManager.sharedNotConfigured")); } return; }
     if (manual) { setError(""); setNotice(t("assetManager.sharedRefreshing")); }
     try {
+      // (opening the window reuses what this page load already fetched in full; the Refresh button fetches it all again)
+      const both = (kind: LoadKind, load: (world: WorldId) => Promise<unknown>) =>
+        (["scifi","fantasy"] as const).map((world) => loadOnce(kind, world, () => load(world), manual));
       await Promise.all([
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedTextures(world)),
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedImages(world)),
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedProps(world)),
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedDoors(world)),
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedActors(world)),
+        ...both("textures", (world) => loadSharedTextures(world)),
+        ...both("images", (world) => loadSharedImages(world)),
+        ...both("props", (world) => loadSharedProps(world)),
+        ...both("doors", (world) => loadSharedDoors(world)),
+        ...both("actors", (world) => loadSharedActors(world)),
       ]);
       if (manual) setNotice(t("assetManager.sharedRefreshed"));
     } catch (e) {
@@ -1092,9 +1100,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                   ref={node=>{if(node && pendingScroll.current===e.key){node.scrollIntoView({block:"nearest"});pendingScroll.current=null;}}}
                   className={"flex w-full items-center gap-2 rounded-sm border px-1 py-0.5 text-left text-xs "+(id===e.key?"border-amber-400 bg-amber-400/10 text-amber-100":"border-transparent text-neutral-200 hover:bg-neutral-900")}
                   aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>
-                  {a?<span className="block h-9 w-9 shrink-0" style={actorThumbnail(a)}/>
+                  {a?<ActorThumb type={a} className="block h-9 w-9 shrink-0"/>
                     :e.draft?<DraftThumb draft={e.draft}/>
-                    :e.img?<img src={e.img} loading="lazy" alt="" className="h-9 w-9 shrink-0 object-contain"/>
+                    :e.img?<Thumb src={e.img} className="h-9 w-9 shrink-0 object-contain"/>
                     :<span className="grid h-9 w-9 shrink-0 place-items-center text-neutral-500">…</span>}
                   <span className="min-w-0 flex-1 truncate">{e.label}</span>
                   {auto.length>0 && <AutoBadge/>}

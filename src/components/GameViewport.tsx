@@ -74,7 +74,7 @@ import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
 import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
 import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
-import { mapUsesTexture } from "../editor/textureLibrary";
+import { mapUsesTexture, wantSharedUrl } from "../editor/textureLibrary";
 import { onSharedPropsChanged } from "../editor/sharedProps";
 import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import { doorLeafMotion, type DoorType } from "../game/doorTypes";
@@ -1952,7 +1952,11 @@ export function GameViewport({
     // (a draft texture's or an Auto map's blob: URL can't take a query string; those change their URL instead.
     // A remote (shared store) URL is a revision folder `.../rN/...` that never changes, so it never gets one either:
     // a `?v=` would only force a re-download of every shared file on each bump, see concept/supabase-egress-audit.md)
-    const busted = (url: string) => (/^(blob|data):/.test(url) || (/^https?:\/\//i.test(url) && !url.startsWith(window.location.origin)) ? url : url + bust);
+    const busted = (url: string) => {
+      // (a shared texture the scene resolves is in use: its Auto maps are made now, not for the whole store)
+      wantSharedUrl(url);
+      return /^(blob|data):/.test(url) || (/^https?:\/\//i.test(url) && !url.startsWith(window.location.origin)) ? url : url + bust;
+    };
     if (cache.version !== bust) {
       clearSceneCache(cache);
       cache.version = bust;

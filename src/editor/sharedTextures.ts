@@ -14,7 +14,8 @@ import { MAX_PNG_BYTES, isPng } from "./imageTools";
 import { SharedHttpError, sharedConfigured, sharedProject, sharedRequest, sharedToken, sharedUpload } from "./sharedAuth";
 import { readSharedCache, writeSharedCache } from "./sharedCache";
 import { draftId, discardDraft, MAP_KEYS, type MapKey, type MapMode, type DraftTextureKind, type TextureDraft } from "./textureDrafts";
-import { setSharedTextures, sharedInfo, surfaceOf, uploaded, type SharedInfo, type SharedMeta } from "./textureLibrary";
+import { installSharedTexture, setSharedTextures, sharedInfo, sharedInfos, surfaceOf, uploaded, type SharedInfo, type SharedMeta } from "./textureLibrary";
+import { worldOfAssetId } from "../game/mapSharedRefs";
 
 const LIST = "/storage/v1/object/list/void-textures";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -124,6 +125,35 @@ export async function loadSharedTextures(world: WorldId, init?: RequestInit): Pr
   writeSharedCache(TEXTURE_CACHE, world, found);
 }
 
+// A texture just published: into the local list (and the cached one) without listing the store again.
+export function patchSharedTexture(info: SharedInfo) {
+  installSharedTexture(info);
+  writeSharedCache(TEXTURE_CACHE, info.world, sharedInfos(info.world));
+}
+
+// Just these texture ids (`<world>_shared_<uuid>[-name]`), each by its own folder: the store is not listed. What a map
+// references, for a guest. Adds to what is registered (the list of the world is not replaced); returns the ids found.
+export async function loadSharedTexturesById(ids: readonly string[], init?: RequestInit): Promise<string[]> {
+  if (!sharedConfigured || !ids.length) return [];
+  const found = (await Promise.all(ids.map(async (id): Promise<SharedInfo | null> => {
+    const world = worldOfAssetId(id);
+    const rest = id.slice(`${world}_shared_`.length);
+    try {
+      if (UUID.test(rest)) return await readLatest(world, rest, revNumbers(await list(`${world}/${rest}`, init)), init);
+      if (!/^[a-z0-9-]+$/.test(rest) || rest.length < 37) return null;
+      // an old flat file: the id names it (HEAD: does it exist)
+      const file = `${publicBase()}${world}/${rest}.png`;
+      return (await fetch(file, { ...init, method: "HEAD" })).ok ? { id, world, uuid: rest.slice(0, 36), rev: 0, legacy: true, base: "", file } : null;
+    } catch { return null; }
+  }))).filter((info): info is SharedInfo => info !== null);
+  if (init?.signal?.aborted) return [];
+  for (const world of new Set(found.map(info => info.world))) {
+    const added = found.filter(info => info.world === world);
+    setSharedTextures(world, [...sharedInfos(world).filter(info => !added.some(row => row.id === info.id)), ...added]);
+  }
+  return found.map(info => info.id);
+}
+
 // ---- publishing ----
 
 // the highest published revision, and the next folder number to use (an
@@ -191,9 +221,11 @@ export async function publishDrafts(list: TextureDraft[], ask: (d: TextureDraft,
   for (const d of list) {
     const name = d.name.trim() || t("assetManager.untitled");
     progress?.(t("assetManager.publishing", { name }));
-    if (await publishTextureRevision(d, ask)) {
+    const info = await publishTextureRevision(d, ask);
+    if (info) {
       report.published.push(draftId(d));
-      await loadSharedTextures(d.world);
+      // (the store is not listed again: the new revision goes into the local list)
+      patchSharedTexture(info);
       await discardDraft(d.uuid);
     } else report.skipped.push(draftId(d));
   }
@@ -221,5 +253,7 @@ export async function deleteSharedTexture(id: string): Promise<void> {
   // (without a delete policy the store answers 200 and removes nothing)
   if (!Array.isArray(removed) || removed.length < paths.length) throw new Error(t("assetManager.err.needDeleteSql"));
   await discardDraft(info.uuid);
-  await loadSharedTextures(info.world);
+  // (the store is not listed again: the texture just leaves the local list)
+  setSharedTextures(info.world, sharedInfos(info.world).filter(row => row.id !== id));
+  writeSharedCache(TEXTURE_CACHE, info.world, sharedInfos(info.world));
 }

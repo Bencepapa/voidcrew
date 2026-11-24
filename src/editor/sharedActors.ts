@@ -241,6 +241,16 @@ export async function loadSharedActors(world: WorldId, init?: RequestInit) {
   if (!init?.signal?.aborted && loads.get(world) === request) install(rows);
 }
 
+// Just these NPCs (asset ids of one world), by their own folders: what a map references, for a guest.
+export async function loadSharedActorsById(world: WorldId, ids: ReadonlySet<string>, init?: RequestInit) {
+  if (!sharedConfigured || !ids.size) return;
+  const rows = await loadDefinitions(world, "actor", (raw, base) => {
+    const definition = readDefinition(raw);
+    return definition ? { definition, base } : undefined;
+  }, init, ids);
+  if (!init?.signal?.aborted) install(rows);
+}
+
 export async function publishActor(draft: ActorDraft) {
   if (!sharedToken()) throw new Error(t("assetManager.err.signInFirst"));
   const { name, cols, roles, width, height, worldHeight, directions, normal } = draft;

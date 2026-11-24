@@ -5,7 +5,7 @@
 import { setSharedDialogues } from "../game/dialogueCatalog";
 import type { DialogueSource } from "../game/dialogueCatalogCore";
 import type { ShopDef } from "../game/shop";
-import { setSharedShops } from "../game/shopCatalog";
+import { getSharedShops, setSharedShops } from "../game/shopCatalog";
 import { commonFolder, commonIdOk, commonMeta, COMMON_FOLDER, nextRevision, readCommonDefinition, revisionNumbers, type CommonKind, type SharedDialogueDefinition } from "../game/sharedContent";
 import { t } from "../i18n";
 import { sharedConfigured, sharedToken, sharedUpload } from "./sharedAuth";
@@ -67,6 +67,7 @@ export async function publishDialogue(id: string, name: string, twee: string) {
 /** Publishes a shop as the next revision of its id. (No editor UI yet: shop editing is H4b.) */
 export async function publishShop(shop: ShopDef) {
   const rev = await publish("shop", shop.id, shop);
-  await loadSharedShops();
+  // (the store is not listed again: the shop goes into the shared layer)
+  setSharedShops(new Map(getSharedShops()).set(shop.id, shop));
   return rev;
 }

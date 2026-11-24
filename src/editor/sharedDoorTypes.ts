@@ -133,6 +133,13 @@ export async function loadSharedDoors(world: WorldId, init?: RequestInit) {
   if (!init?.signal?.aborted && loads.get(world) === version) install(world, new Map([...bundledDoors(world), ...next]));
 }
 
+// Just these door types (asset ids of one world), by their own folders: what a map references, for a guest.
+export async function loadSharedDoorsById(world: WorldId, ids: ReadonlySet<string>, init?: RequestInit) {
+  if (!sharedConfigured || !ids.size) return;
+  const next = await loadDefinitions(world, "door", usableDoor, init, ids);
+  if (!init?.signal?.aborted) install(world, new Map([...(installed.get(world) ?? bundledDoors(world)), ...next]));
+}
+
 export async function publishDoor(draft: DoorDraft) {
   const definition = readDoorType(draft.definition);
   if (!definition?.name.trim()) throw new Error(t("assetManager.doorType.needName"));

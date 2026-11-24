@@ -3,7 +3,7 @@ import { t } from "../i18n";
 import type { WorldId } from "../game/worlds";
 import { DEFAULT_PICKUP, isItemCategory, type PickupAppearance } from "../game/items";
 import { cleanPickupValue } from "../game/pickupValue";
-import { isImagePurpose, setSharedImages, type DecalSurfaceKind, type ImagePurpose, type SharedImage, type SharedImageType } from "../render/sharedImages";
+import { getSharedImages, isImagePurpose, setSharedImages, type DecalSurfaceKind, type ImagePurpose, type SharedImage, type SharedImageType } from "../render/sharedImages";
 import { idb } from "./idb";
 import { applyTransparency, decode, isPng, MAX_PNG_BYTES, type Transparency } from "./imageTools";
 import { sharedConfigured, sharedToken, sharedUpload } from "./sharedAuth";
@@ -185,6 +185,23 @@ const revisions = (entries: { name: string }[]) => entries
   .flatMap(({ name }) => /^r[1-9]\d*$/.test(name) ? [Number(name.slice(1))] : [])
   .filter(Number.isSafeInteger).sort((a, b) => b - a);
 
+// The picture a revision's meta.json describes (undefined: not a usable one).
+function imageFromMeta(world: WorldId, type: SharedImageType, uuid: string, base: string, metadata: Record<string, unknown>): SharedImage | undefined {
+  const { name, width, height, surface, type: savedType, purpose, pickup, hasNormal } = metadata as {
+    name?: unknown; width?: unknown; height?: unknown; surface?: unknown; type?: unknown; purpose?: unknown; pickup?: Partial<PickupAppearance>; hasNormal?: unknown;
+  };
+  if (savedType !== type || typeof name !== "string" || typeof width !== "number" || typeof height !== "number" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+    || width < 1 || height < 1 || width > imageLimit(type) || height > imageLimit(type)) return undefined;
+  return {
+    id: imageAssetId(world, type, uuid), world, type, name, width, height, url: base + "diffuse.png",
+    ...(type === "portrait" && isImagePurpose(purpose) ? { purpose } : {}),
+    surface: type === "decal" && isSurface(surface) ? surface : undefined,
+    // (older revisions have no normal file: `hasNormal` says there is one)
+    ...(sharedDecalNormalUrl(type, hasNormal, base) ? { normalUrl: sharedDecalNormalUrl(type, hasNormal, base) } : {}),
+    pickup: type === "item" ? { ...readPickup(pickup), depthUrl: base + "depth.png", normalUrl: base + "normal.png" } : undefined,
+  };
+}
+
 async function publishedImage(world: WorldId, type: SharedImageType, uuid: string, init?: RequestInit): Promise<SharedImage | undefined> {
   const path = `${world}/${type}/${uuid}`;
   for (const rev of revisions(await listSharedObjects(path, init))) {
@@ -194,17 +211,16 @@ async function publishedImage(world: WorldId, type: SharedImageType, uuid: strin
     if (!response.ok) throw new Error(`Asset metadata: HTTP ${response.status}`);
     const metadata = await response.json().catch(() => null);
     if (!metadata || typeof metadata !== "object") continue;
-    const { name, width, height, surface, type: savedType, purpose, pickup, hasNormal } = metadata;
-    if (savedType !== type || typeof name !== "string" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
-      || width < 1 || height < 1 || width > imageLimit(type) || height > imageLimit(type)) continue;
-    return {
-      id: imageAssetId(world, type, uuid), world, type, name, width, height, url: base + "diffuse.png",
-      ...(type === "portrait" && isImagePurpose(purpose) ? { purpose } : {}),
-      surface: type === "decal" && isSurface(surface) ? surface : undefined,
-      // (older revisions have no normal file: `hasNormal` says there is one)
-      ...(sharedDecalNormalUrl(type, hasNormal, base) ? { normalUrl: sharedDecalNormalUrl(type, hasNormal, base) } : {}),
-      pickup: type === "item" ? { ...readPickup(pickup), depthUrl: base + "depth.png", normalUrl: base + "normal.png" } : undefined,
-    };
+    const image = imageFromMeta(world, type, uuid, base, metadata);
+    if (image) return image;
+  }
+}
+
+// Registers pictures next to the ones already known (a publish, or an on-demand load): the world's list is not replaced.
+function addSharedImages(added: readonly SharedImage[]) {
+  for (const world of new Set(added.map(image => image.world))) {
+    const mine = added.filter(image => image.world === world);
+    setSharedImages(world, [...getSharedImages().filter(image => image.world === world && !mine.some(row => row.id === image.id)), ...mine]);
   }
 }
 
@@ -220,6 +236,20 @@ export async function loadSharedImages(world: WorldId, init?: RequestInit) {
   if (!init?.signal?.aborted && loads.get(world) === version) {
     setSharedImages(world, collections.flat().filter((value): value is SharedImage => value !== undefined));
   }
+}
+
+// Just these pictures (asset ids): each by its own folder, the store is not listed. What a map references, for a guest;
+// adds to what is registered. Returns the ids that exist.
+const imageIdPattern = /^(fantasy|scifi)_(decal|item|portrait)_([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/;
+export async function loadSharedImagesById(ids: readonly string[], init?: RequestInit): Promise<string[]> {
+  if (!sharedConfigured || !ids.length) return [];
+  const found = (await Promise.all(ids.map(async (id) => {
+    const match = imageIdPattern.exec(id);
+    return match ? publishedImage(match[1] as WorldId, match[2] as SharedImageType, match[3], init).catch(() => undefined) : undefined;
+  }))).filter((value): value is SharedImage => value !== undefined);
+  if (init?.signal?.aborted) return [];
+  addSharedImages(found);
+  return found.map(image => image.id);
 }
 
 export async function checkImagePng(file: Blob, name: string, type: SharedImageType) {
@@ -269,13 +299,15 @@ export async function publishImage(draft: ImageDraft) {
     if (normal.width !== width || normal.height !== height) throw new Error(t("assetManager.pickup.mapSize", { width, height }));
     await sharedUpload(target + "normal.png", decalNormal, "image/png");
   }
-  await sharedUpload(target + "meta.json", JSON.stringify({
+  const meta = {
     v: 1, type: draft.type, name, width, height, rev,
     ...(purpose ? { purpose } : {}),
     ...(draft.type === "decal" ? { surface: draft.surface, ...(decalNormal ? { hasNormal: true } : {}) } : {}),
     ...(draft.type === "item" ? { pickup: readPickup(draft.pickup) } : {}),
-  }), "application/json");
+  };
+  await sharedUpload(target + "meta.json", JSON.stringify(meta), "application/json");
   await discardImageDraft(draft.id);
-  // A failed refresh does not turn a completed publication into a retry.
-  void loadSharedImages(draft.world).catch(console.warn);
+  // The store is not listed again: the new revision goes into the local list (the same meta the loader would read).
+  const published = imageFromMeta(draft.world, draft.type, draft.uuid, sharedAssetBase() + `${path}/r${rev}/`, meta);
+  if (published) addSharedImages([published]);
 }
