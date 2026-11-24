@@ -84,7 +84,7 @@ const quest = (g: Game, id: string) => g.s.quests[id] ?? "none";
   assert.equal(quest(g, "sword"), "active");
   assert.deepEqual(labels(g.e.currentView()), ["Rendben"]);
   g.pick("Rendben");
-  assert.deepEqual(labels(g.e.currentView()), ["Hol tartsak az érccel?", "Csak vásárolnék", "Mást kérdeznék"]);
+  assert.deepEqual(labels(g.e.currentView()), ["Hogy állok az érccel?", "Csak vásárolnék", "Mást kérdeznék"]);
 }
 
 // 4: ore found -> ready -> turn-in

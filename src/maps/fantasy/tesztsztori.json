@@ -2,8 +2,8 @@
   "name": "tesztsztori",
   "showTitle": false,
   "deck": 2,
-  "textures": { "wall": "fantasywall1", "floor": "fantasyearth1", "door": "fantasygate1", "doorFrame": "fantasydoorframe1" },
-  "render": { "roughness": 1, "metalness": 0, "normalStrength": 0.2, "reliefMode": "smooth", "headlamp": true, "bobEnabled": false },
+  "textures": { "wall": "fantasywall1", "floor": "fantasyearth1", "ceiling": "sky", "sky": "nappal", "door": "fantasygate1", "doorFrame": "fantasydoorframe1" },
+  "render": { "roughness": 1, "metalness": 0, "normalStrength": 0.2, "skyLightIntensity": 1.3, "skyLightAzimuth": 235, "skyLightColor": "#ffe6b0", "reliefMode": "smooth", "headlamp": true, "bobEnabled": false },
   "start": { "x": 2, "y": 3, "facing": "E" },
   "layout": [
     "WWWWWWWWWWWW",

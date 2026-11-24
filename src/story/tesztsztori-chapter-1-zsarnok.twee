@@ -42,7 +42,7 @@ Borbás a kovácsműhely előtt áll, a kezében letört adóbehajtói lándzsa.
 [[Kérek egy jó kardot->Smith Sword Offer]]
 @endif
 @if quest("tesztsztori_kard") == "active"
-[[Hol tartsak az érccel?->Smith Sword Remind]]
+[[Hogy állok az érccel?->Smith Sword Remind]]
 @endif
 @if quest("tesztsztori_kard") == "ready"
 [[Meghoztam az ércet->Smith Sword Turnin]]
