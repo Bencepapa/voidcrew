@@ -33,6 +33,7 @@ import { gateLink, loadingImageFor, resolveArrival, stairsLink, type LinkKind, t
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 import { pickVictim } from "./operables";
+import { lockedMessage } from "./keys";
 import { useOperables } from "./useOperables";
 
 // What a log line is, which colours it (see LogPanel): ordinary news (the
@@ -828,10 +829,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   }, []);
   // the crew's hacker, if they're standing
   const hacker = () => crewRef.current.find((c) => c.role === HACKER_ROLE && c.hp > 0);
-  const lockedText = (lock: Lock) => {
-    const h = lock.hack ? hacker() : undefined;
-    return `${lock.message ?? "It's locked."}${h ? ` ${h.name} could hack it (Use).` : ""}`;
-  };
+  const lockedText = (lock: Lock) => lockedMessage(lock, hacker()?.name);
   // A lock opened, if it can be: its key known (at once), else hacked (when
   // `hack` - the hacker's energy and some time); `done` once it's open.
   // False: it stays shut (and the party has been told why).

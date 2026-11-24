@@ -20,6 +20,7 @@ import { interactionAt, type ClickEvent, type Interaction, type InteractionTarge
 import { setInteraction } from "./editor/mapEdits";
 import { addTarget, decalOperableInfo, linkTargetFor, operableInfo } from "./editor/operableEdits";
 import { operableLink } from "./editor/operableLink";
+import { keyFlags } from "./game/keys";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
@@ -1954,6 +1955,8 @@ export default function App() {
       roomHeight: ceilingHeight(map, spec.cell.x, spec.cell.y) - floorHeight(map, spec.cell.x, spec.cell.y),
       chance: spec.chance ?? 1,
       links: linksOf(spec),
+      name: spec.name,
+      sets: spec.sets,
     };
   })();
   const changeItem = (patch: Parameters<typeof updateItem>[2], merge?: string) => {
@@ -2850,6 +2853,7 @@ export default function App() {
           onPropDelete={deleteProp}
           onPropDeselect={() => setSelectedProp(null)}
           linkIds={linkIds}
+          keyFlags={keyFlags(map)}
           smoke={placingKind === "smoke" ? smokeTemplateInfo : selectedSmokeInfo}
           onSmokeChange={
             placingKind === "smoke"

@@ -77,6 +77,7 @@ export const operableEn = {
   "operable.key.list": "Keys on this map",
   "operable.item.keyName": "Key name",
   "operable.item.keyNameTitle": "A story item: what it is called when picked up (a keycard, a rusty key).",
+  "operable.item.makeKey": "Make it a key",
   "operable.item.keyFlag": "Raises flag",
   "operable.item.keyFlagTitle": "The flag picking it up raises: a door whose lock key is this flag opens for the party.",
 } as const;

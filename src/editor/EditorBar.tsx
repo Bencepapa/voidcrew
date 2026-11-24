@@ -17,6 +17,7 @@ import type { FenceForm, FenceStyle } from "../game/fences";
 import type { FenceToolState } from "./inspector/FenceFields";
 import type { OperableSpec } from "../game/operables";
 import type { OperableInfo } from "./operableEdits";
+import type { KeyFlag } from "../game/keys";
 
 export interface MapLook {
   weather?: Weather;
@@ -142,6 +143,8 @@ export interface EditorBarProps {
   onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string; at?: Direction; fence?: FenceStyle; operable?: OperableSpec } & Linked, merge?: string) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
+  // the flags something on the map raises (a door's lock key can be one of them)
+  keyFlags?: KeyFlag[];
   // the Smoke tool: the picked emitter
   smoke: SmokeInfo | null;
   onSmokeChange: (
@@ -184,7 +187,7 @@ export interface EditorBarProps {
   itemChoice: string;
   onItemChoice: (item: string) => void;
   item: ItemInfo | null;
-  onItemChange: (patch: { count?: number; elevation?: number; chance?: number; item?: string } & Linked, merge?: string) => void;
+  onItemChange: (patch: { count?: number; elevation?: number; chance?: number; item?: string; name?: string; sets?: string } & Linked, merge?: string) => void;
   onItemDelete: () => void;
   onItemDeselect: () => void;
   // the Chance wall tool: the picked one
@@ -314,6 +317,9 @@ export interface ItemInfo {
   roomHeight: number;
   chance: number;
   links: Linked;
+  // a story item - a key: what it is called when picked up, and the flag it raises (see story.ts, keys.ts)
+  name?: string;
+  sets?: string;
 }
 
 // the selected prop as the panel shows it

@@ -73,6 +73,7 @@ export const operableHu: Partial<Record<keyof typeof operableEn, string>> = {
   "operable.key.list": "A pálya kulcsai",
   "operable.item.keyName": "Kulcs neve",
   "operable.item.keyNameTitle": "Történet-tárgy: így hívják, ha felveszik (kulcskártya, rozsdás kulcs).",
+  "operable.item.makeKey": "Legyen belőle kulcs",
   "operable.item.keyFlag": "Jelzőt kapcsol fel",
   "operable.item.keyFlagTitle": "A felvétele ezt a jelzőt kapcsolja fel: az az ajtó, amelynek zárkulcsa ez a jelző, kinyílik a csapatnak.",
 };
