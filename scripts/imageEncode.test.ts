@@ -102,7 +102,7 @@ assert.ok((await sharp(profiled).metadata()).icc, "the fixture really has a prof
 const profiledResult = await encodeSource(profiled);
 assert.ok(profiledResult.bytes.equals(profiled) && profiledResult.ext === "png", "ICC png kept as is");
 // ... likewise 16-bit
-const sixteen = await sharp(Buffer.alloc(8 * 8 * 3 * 2, 7), { raw: { width: 8, height: 8, channels: 3, depth: "ushort" } }).png().toBuffer();
+const sixteen = await sharp(Buffer.alloc(8 * 8 * 3 * 2, 7), { raw: { width: 8, height: 8, channels: 3, depth: "ushort" } as never }).png().toBuffer();
 if ((await sharp(sixteen).metadata()).depth === "ushort") {
   assert.ok((await encodeSource(sixteen)).bytes.equals(sixteen), "16-bit png kept as is");
 }
@@ -119,6 +119,12 @@ const huge = await encodeLossless(art, { png: async raw => sharp(Buffer.from(raw
 assert.equal(huge.ext, "webp", "WebP wins against a weak PNG");
 const wrongPng = await encodeLossless(art, { png: async raw => sharp(Buffer.from(raw.data.map((v, i) => i === 9 ? v ^ 1 : v)), { raw: { width: raw.width, height: raw.height, channels: 4 } }).png().toBuffer() });
 await check("inexact png falls back", art, wrongPng);
+
+// a place that only reads PNG: never a WebP, still pixel-exact
+const pngOnly = await encodeLossless(art, { pngOnly: true });
+assert.equal(pngOnly.ext, "png");
+assert.equal(pngOnly.webpBytes, undefined);
+await check("png only", art, pngOnly);
 
 // colour counting
 assert.equal(countColours(flat), 1);

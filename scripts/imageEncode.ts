@@ -39,6 +39,8 @@ export interface Encoded {
 }
 
 export interface EncodeOptions {
+  /** a place that only reads PNG (an NPC's normal map): no WebP candidate, the best verified PNG */
+  pngOnly?: boolean;
   /** test hook: replaces the WebP encoder (a wrong one must be caught by the pixel guard) */
   webp?: (raw: RawImage) => Promise<Buffer>;
   /** test hook: replaces the optimised-PNG encoder */
@@ -134,7 +136,10 @@ const smallest = (list: (Buffer | undefined)[]) =>
  * WEBP_MIN_GAIN smaller). `source` (a PNG whose decoded pixels are exactly `raw`) is also a PNG candidate, so a file that
  * is already well compressed is not made bigger. Throws only when nothing at all reproduces the pixels.
  */
-export async function encodeLossless(raw: RawImage, options: EncodeOptions & { source?: Buffer } = {}): Promise<Encoded> {
+export async function encodeLossless(raw: RawImage, options: EncodeOptions & { source?: Buffer; maxSize?: number } = {}): Promise<Encoded> {
+  // (D4 hook: a no-op while MAX_TEXTURE_SIZE is Infinity; a resized image is no longer the source's pixels)
+  const limited = await limitSize(raw, options.maxSize ?? MAX_TEXTURE_SIZE);
+  if (limited !== raw) { raw = limited; options = { ...options, source: undefined }; }
   const variants = await (options.png ? options.png(raw).then(bytes => [bytes]) : pngVariants(raw)).catch(() => [] as Buffer[]);
   // (the source, when given, is a PNG of exactly these pixels by construction)
   let png = smallest([...await Promise.all(variants.map(bytes => verified(bytes, raw))), options.source]);
@@ -143,11 +148,11 @@ export async function encodeLossless(raw: RawImage, options: EncodeOptions & { s
     png = await verified(await sharp(Buffer.from(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength), rgbaOptions(raw)).png().toBuffer(), raw);
   }
   if (!png) throw new Error("No PNG reproduces the pixels exactly.");
-  const webp = await verified(await (options.webp ?? losslessWebp)(raw).catch(() => Buffer.alloc(0)), raw);
+  const webp = options.pngOnly ? undefined : await verified(await (options.webp ?? losslessWebp)(raw).catch(() => Buffer.alloc(0)), raw);
   const useWebp = !!webp && webp.length <= png.length * (1 - WEBP_MIN_GAIN);
   const common = { pngBytes: png.length, ...(webp ? { webpBytes: webp.length } : {}), ...(options.source ? { sourceBytes: options.source.length } : {}) };
   if (useWebp) return { ext: "webp", bytes: webp, note: `lossless WebP, ${Math.round((1 - webp.length / png.length) * 100)}% smaller than PNG`, ...common };
-  return { ext: "png", bytes: png, note: webp ? "PNG (WebP not 10% smaller)" : "PNG (no exact WebP)", ...common };
+  return { ext: "png", bytes: png, note: options.pngOnly ? "PNG (only png allowed here)" : webp ? "PNG (WebP not 10% smaller)" : "PNG (no exact WebP)", ...common };
 }
 
 /**
@@ -161,9 +166,7 @@ export async function encodeSource(source: Buffer, options: EncodeOptions & { ma
   if (!plain && info.format === "png") {
     return { ext: "png", bytes: source, pngBytes: source.length, sourceBytes: source.length, note: "kept as is (16-bit, colour profile or animated)" };
   }
-  const decoded = await decodeRgba(source);
-  const raw = await limitSize(decoded, options.maxSize ?? MAX_TEXTURE_SIZE);
-  return encodeLossless(raw, { ...options, ...(raw === decoded && info.format === "png" ? { source } : {}) });
+  return encodeLossless(await decodeRgba(source), { ...options, ...(info.format === "png" ? { source } : {}) });
 }
 
 /** `<stem>.<ext>` for an encoded image: the extension always says what the bytes are. */

@@ -304,6 +304,9 @@ function sharedBaseline(info: SharedInfo): TextureSetPaths {
 
 // Replaces the shared textures of one world with what the store lists now.
 export function setSharedTextures(world: WorldId, list: SharedInfo[]) {
+  // (a bundled texture is complete: `pull:shared` baked its transparency and Auto maps into the files, in whatever
+  // real format (png / webp) the catalog names. It never gets an info here, so it is never tracked for upgradeShared
+  // and nothing is derived or downloaded for it. fileUrls below is only for the store's revisions, which stay png.)
   list = list.filter(({ id }) => !Object.hasOwn(bundledTextures, id));
   const prefix = world + "_shared_";
   const keep = new Set(list.map(i => i.id));
