@@ -167,8 +167,7 @@ pieces by leaving them out, so a roof diffs small.
   wide roof's ridge is 5 high. Use *slope + flat* for those.
 - The ridge cell of an odd-width roof is a flat (see above), and a saddle gets a
   flat: no ridge/hip piece with a flat top exists. No new meshes were made.
-- No gable (a roof with two slopes and straight ends), no half-hips: only what
-  the seven pieces can make.
+- (Gable, pyramid and the true ridge/hipped ends were added later: see NOTES-roof-forms.md.)
 - A roof is true 45 degrees only while the wall height setting is 1 (as for
   the hand-placed roofs); with another wall height the pieces' rise (world
   units) and `elevation` (wall heights) no longer agree.
