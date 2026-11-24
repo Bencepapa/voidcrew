@@ -1,6 +1,1534 @@
 {
-  "textures": {},
-  "maps": {},
-  "images": {},
-  "definitions": { "prop": {}, "door": {}, "actor": {} }
+  "textures": {
+    "fantasy_shared_04ae8f21-f998-4e18-8c64-a1eeed119839": {
+      "rev": 5,
+      "label": "Village Wall Type 03 Full 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_0859a867-5230-43ff-8beb-0a1d8ac96486": {
+      "rev": 3,
+      "label": "Stone ceil",
+      "kinds": [
+        "wall",
+        "floor",
+        "ceiling"
+      ],
+      "pixelArt": true,
+      "smooth": false,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.05,
+        "relief": 1.4,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_0ef6ecd5-4f5d-4b69-817f-8588f168d258": {
+      "rev": 3,
+      "label": "Village Wall Type 03 Window 02",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.05,
+        "relief": 1.3,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_0f6b714b-c605-4f75-872c-9e356d2e6a73": {
+      "rev": 1,
+      "label": "Tombstone-Weathered-Moss-Covered-06",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.25,
+        "relief": 2.35,
+        "rough": 1.75,
+        "metal": 0.25
+      }
+    },
+    "fantasy_shared_19142896-2134-46cc-9971-e83a0debd8ae": {
+      "rev": 7,
+      "label": "Autumn Forest 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "depth": "depth.webp",
+        "diffuse": "diffuse.png"
+      },
+      "tuning": {
+        "normal": 0.05,
+        "relief": 0.7,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_22ae75c6-6d0e-4f3d-af26-77399d1380ae": {
+      "rev": 1,
+      "label": "Forest Tree Green 03",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "depth": "depth.webp",
+        "diffuse": "diffuse.webp"
+      },
+      "tuning": {
+        "normal": 0.05,
+        "relief": 0.1,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_2365cbdb-1d13-4597-b044-8c2631de4169": {
+      "rev": 4,
+      "label": "Village Wall Type 02 Full 06",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_237e14e1-3cf0-4e0c-8452-2efdb5a22d96": {
+      "rev": 1,
+      "label": "Forest Tree Green 02",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "depth": "depth.webp",
+        "diffuse": "diffuse.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 0.15,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_2638ab56-96dc-47f4-85a9-c972f8cfc493": {
+      "rev": 1,
+      "label": "grass-patch-fall-05",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "diffuse": "diffuse.webp"
+      }
+    },
+    "fantasy_shared_2aa439e9-28e6-4ecc-a3fa-d04c0d333573": {
+      "rev": 1,
+      "label": "grass_patch_fall_01",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.png",
+        "depth": "depth.webp"
+      }
+    },
+    "fantasy_shared_329f38c3-7873-4dab-96fe-fadeeb145b8c": {
+      "rev": 3,
+      "label": "Village Wall Type 02 Window 03",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.2,
+        "relief": 3,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_330781e5-4e28-4827-87b5-cdf080d0c78f": {
+      "rev": 3,
+      "label": "Village Wall Type 04 Window 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_37e6eef5-9880-4186-b6b0-1ae3c29cfcee": {
+      "rev": 1,
+      "label": "grass-patch-fall-04",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "diffuse": "diffuse.webp"
+      }
+    },
+    "fantasy_shared_392a5d90-b4c2-4d6c-b7c3-51761032fb29": {
+      "rev": 1,
+      "label": "grass-patch-fall-03",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "diffuse": "diffuse.webp"
+      }
+    },
+    "fantasy_shared_39d44bfe-2ca9-4220-bafe-44bdc34bca45": {
+      "rev": 5,
+      "label": "Village Wall Type 02 Door 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.2,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_39fb63d3-42b9-4fb6-a383-7a0754e0f756": {
+      "rev": 1,
+      "label": "tree oak fall 05",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      }
+    },
+    "fantasy_shared_3a536330-3620-4d2d-8d90-5289fa6af596": {
+      "rev": 3,
+      "label": "Village Wall Type 04 Full 03",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.05,
+        "relief": 1.1,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_4161b971-b6fe-4aa6-bdca-1f732ce03f79": {
+      "rev": 4,
+      "label": "Village Wall Type 02 Window 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.2,
+        "relief": 2.5,
+        "rough": 2,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_44ac1dfd-d4a6-474b-bd7e-811c5d3fe344": {
+      "rev": 4,
+      "label": "Village Wall Type 03 Window 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 2.5,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_599064d7-917d-43c3-8a2d-9646f40f2d3f": {
+      "rev": 1,
+      "label": "Forest Tree Green 01",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "depth": "depth.webp",
+        "diffuse": "diffuse.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 0.1,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_67c7513f-1fa7-4d3a-b0cb-7778c1bcb126": {
+      "rev": 4,
+      "label": "Village Wall Type 04 Door 02",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_786642d9-64ef-47de-8bff-3d1f50f78d41": {
+      "rev": 4,
+      "label": "Village Wall Type 03 Full 03",
+      "kinds": [
+        "wall",
+        "ceiling"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_79527317-3145-4716-a863-3f86ed123bee": {
+      "rev": 2,
+      "label": "Roof Mossy Wooden Tile",
+      "kinds": [
+        "wall",
+        "floor",
+        "ceiling"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.25,
+        "relief": 0.7,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_7ac777c3-b812-4178-91ce-654fcb9701dd": {
+      "rev": 1,
+      "label": "mossy tree 01",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      }
+    },
+    "fantasy_shared_826487ab-4e86-4c99-9690-2f91953ba129": {
+      "rev": 1,
+      "label": "forest ground 02",
+      "kinds": [
+        "floor"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 0.1,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_85ea2d78-acfa-463d-a04e-64030d6883ca": {
+      "rev": 1,
+      "label": "tree oak fall 02",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "depth": "depth.webp",
+        "diffuse": "diffuse.webp"
+      }
+    },
+    "fantasy_shared_8f0b568b-7b0e-4dc0-872d-6956d2c8005a": {
+      "rev": 1,
+      "label": "mossy tree 01",
+      "kinds": [
+        "ceiling"
+      ],
+      "pixelArt": false,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "depth": "depth.webp",
+        "diffuse": "diffuse.webp"
+      },
+      "tuning": {
+        "normal": 0.05,
+        "relief": 0,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_903dc505-015f-45bd-83bb-a229dd715f8d": {
+      "rev": 2,
+      "label": "Village Wall Type 03 Window 03",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 2,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_92dd9d71-deaa-449d-8e90-7be7f41af7c9": {
+      "rev": 4,
+      "label": "Village Wall Type 02 Full 02",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0.15
+      }
+    },
+    "fantasy_shared_976141c2-0dd7-496b-bd50-7a566a98661c": {
+      "rev": 3,
+      "label": "Village Wall Type 04 Door 03",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_976a35ef-0e4a-4f3d-a5d7-eb81a3ddcdb0": {
+      "rev": 3,
+      "label": "Village Wall Type 04 Door 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.15,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_a3dc9042-a690-4ac3-85f9-16b5d285d6e3": {
+      "rev": 1,
+      "label": "tree oak dryed 01",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      }
+    },
+    "fantasy_shared_ad09b77e-46e3-4037-b6cf-033795cc9dae": {
+      "rev": 2,
+      "label": "tree oak fall 05",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      }
+    },
+    "fantasy_shared_aedce4df-b47c-407e-ae58-e4290e7e0cc4": {
+      "rev": 4,
+      "label": "Village Wall Type 02 Full 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_af2f2c2d-9920-4190-bebb-5af0265e6c53": {
+      "rev": 1,
+      "label": "Tombstone Weathered Moss Covered 03",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.4,
+        "relief": 2.05,
+        "rough": 1.65,
+        "metal": 0.5
+      }
+    },
+    "fantasy_shared_b4eff72a-e37a-4db3-a195-86f273a81321": {
+      "rev": 1,
+      "label": "tree oak fall 01",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "depth": "depth.webp",
+        "diffuse": "diffuse.webp"
+      }
+    },
+    "fantasy_shared_b5d24434-b0a4-4ed8-a399-e0928d49cd66": {
+      "rev": 3,
+      "label": "Village Wall Type 02 Window 04",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 1.7,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_b77087fc-8a4f-4ed5-b4f8-769fafc08320": {
+      "rev": 1,
+      "label": "bush fall 03",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      }
+    },
+    "fantasy_shared_b7b474ab-f80c-4f2c-b5af-40d149af56d7": {
+      "rev": 3,
+      "label": "grass-patch-fall-02",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "diffuse": "diffuse.webp"
+      },
+      "tuning": {
+        "normal": 0.2,
+        "relief": 0.4,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_bb1e5395-eabc-458f-94a9-3c7fd9bd709d": {
+      "rev": 3,
+      "label": "Village Wall Type 04 Full 02",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_c3e7e59c-480e-40b0-b909-5ebfa384fcb0": {
+      "rev": 3,
+      "label": "Village Wall Type 04 Window 03",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_c60e9ab3-0fa0-4ed1-99bb-189ce125692f": {
+      "rev": 4,
+      "label": "Village Wall Type 02 Window 02",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 2,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_ccd5083d-3e7e-4fe6-b7d0-f174b8ff277b": {
+      "rev": 1,
+      "label": "bush fall 02",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      }
+    },
+    "fantasy_shared_d950f716-afba-4b87-994d-b274aaa95ad0": {
+      "rev": 1,
+      "label": "Tombstone-Weathered-Moss-Covered-09",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.35,
+        "relief": 1.7,
+        "rough": 1.55,
+        "metal": 0.15
+      }
+    },
+    "fantasy_shared_d961b0de-d355-4fc3-9695-c98041bc7329": {
+      "rev": 1,
+      "label": "tree oak fall 04",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      }
+    },
+    "fantasy_shared_dadc7fa8-37f4-41ab-bcfe-190ee99035ab": {
+      "rev": 3,
+      "label": "stone ground 01",
+      "kinds": [
+        "floor"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 2.05,
+        "rough": 1.5,
+        "metal": 0.25
+      }
+    },
+    "fantasy_shared_db3b68db-8c27-431c-912b-17b145dc7de2": {
+      "rev": 1,
+      "label": "tree oak fall 05",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "normal": "normal.webp",
+        "depth": "depth.webp",
+        "diffuse": "diffuse.webp"
+      }
+    },
+    "fantasy_shared_e060f320-247b-4eec-8493-657b70391515": {
+      "rev": 4,
+      "label": "Village Wall Type 04 Full 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_eba1ab9a-cda9-4ddf-9f2d-a8e253cc7d67": {
+      "rev": 1,
+      "label": "Tombstone Weathered Moss Covered 02",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.25,
+        "relief": 2.65,
+        "rough": 1.25,
+        "metal": 1.1
+      }
+    },
+    "fantasy_shared_ed294aba-7ea1-4284-87a9-878ba49b233c": {
+      "rev": 5,
+      "label": "Village Wall Type 02 Door 02",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 2,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_f2a47f5c-2756-4a6f-bd79-1999dd63263f": {
+      "rev": 1,
+      "label": "Tombstone Weathered Moss Covered 01",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.55,
+        "relief": 0.75,
+        "rough": 1.9,
+        "metal": 0.3
+      }
+    },
+    "fantasy_shared_f30bbffe-6079-4f7b-a029-65f9596045a9": {
+      "rev": 3,
+      "label": "Avar",
+      "kinds": [
+        "floor"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.png",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "relief": 0.2,
+        "rough": 1.35
+      }
+    },
+    "fantasy_shared_f3c8c9af-f59e-46b7-ae4e-b303924e0d68": {
+      "rev": 3,
+      "label": "forest ground 03",
+      "kinds": [
+        "floor"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.15,
+        "relief": 0.15,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_f6afaae0-51c1-48a7-bc22-fdee78565d57": {
+      "rev": 2,
+      "label": "Wood Wall Autumn 01",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.png",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 0.35,
+        "rough": 2,
+        "metal": 0
+      }
+    },
+    "fantasy_shared_f8814d12-cf88-4c25-a554-9a0e3c62522f": {
+      "rev": 3,
+      "label": "Village Wall Type 04 Windows",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_fd8c5875-699d-4ca0-92da-36ae7e9ed092": {
+      "rev": 5,
+      "label": "Village Wall Type 02 Full 04",
+      "kinds": [
+        "wall"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "tuning": {
+        "normal": 0.1,
+        "relief": 1.5,
+        "rough": 1.5,
+        "metal": 0.1
+      }
+    },
+    "fantasy_shared_ff7b7182-98f5-4422-a940-3fe9b7b21268": {
+      "rev": 1,
+      "label": "Pixel Art Ember Stone Fire Pit",
+      "kinds": [
+        "propFace"
+      ],
+      "pixelArt": true,
+      "smooth": true,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      }
+    }
+  },
+  "maps": {
+    "fantasy": {
+      "copy-dbb48c52-d893-44d4-b292-6e0918871efd": 36,
+      "Forest": 81,
+      "megosztott-dungeon-of-robi": 21
+    }
+  },
+  "images": {
+    "fantasy_portrait_04fa5264-ade2-4d3a-bcba-c89d1d9f2671": {
+      "world": "fantasy",
+      "type": "portrait",
+      "name": "Wizard's shop",
+      "width": 1048,
+      "height": 543,
+      "rev": 1,
+      "files": {
+        "diffuse": "diffuse.webp"
+      },
+      "purpose": "room"
+    },
+    "fantasy_portrait_519abcc6-4bdd-46c1-b0fd-afb9a8348a0b": {
+      "world": "fantasy",
+      "type": "portrait",
+      "name": "Hero at town",
+      "width": 1672,
+      "height": 941,
+      "rev": 1,
+      "files": {
+        "diffuse": "diffuse.webp"
+      },
+      "purpose": "loading"
+    },
+    "fantasy_item_05622992-2b86-4797-843b-2333713afde9": {
+      "world": "fantasy",
+      "type": "item",
+      "name": "dungeon_door_key_02",
+      "width": 128,
+      "height": 128,
+      "rev": 3,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "pickup": {
+        "category": "tech",
+        "height": 0.17,
+        "glow": 0
+      }
+    },
+    "fantasy_item_3b51310e-74bb-45c9-906e-f0855b801c18": {
+      "world": "fantasy",
+      "type": "item",
+      "name": "dungeon_door_key_128x128",
+      "width": 128,
+      "height": 128,
+      "rev": 3,
+      "files": {
+        "diffuse": "diffuse.webp",
+        "normal": "normal.webp",
+        "depth": "depth.webp"
+      },
+      "pickup": {
+        "category": "tech",
+        "height": 0.15,
+        "glow": 0
+      }
+    }
+  },
+  "definitions": {
+    "prop": {
+      "fantasy_prop_0f6b714b-c605-4f75-872c-9e356d2e6a73": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "Tombstone-Weathered-Moss-Covered-06",
+          "texture": "fantasy_shared_0f6b714b-c605-4f75-872c-9e356d2e6a73",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_22ae75c6-6d0e-4f3d-af26-77399d1380ae": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "Forest Tree Green 03",
+          "texture": "fantasy_shared_22ae75c6-6d0e-4f3d-af26-77399d1380ae",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_237e14e1-3cf0-4e0c-8452-2efdb5a22d96": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "Forest Tree Green 02",
+          "texture": "fantasy_shared_237e14e1-3cf0-4e0c-8452-2efdb5a22d96",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_2638ab56-96dc-47f4-85a9-c972f8cfc493": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "grass-patch-fall-05",
+          "texture": "fantasy_shared_2638ab56-96dc-47f4-85a9-c972f8cfc493",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_2aa439e9-28e6-4ecc-a3fa-d04c0d333573": {
+        "rev": 2,
+        "definition": {
+          "kind": "billboard",
+          "name": "grass_patch_fall_01",
+          "texture": "fantasy_shared_2aa439e9-28e6-4ecc-a3fa-d04c0d333573",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 0,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_37e6eef5-9880-4186-b6b0-1ae3c29cfcee": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "grass-patch-fall-04",
+          "texture": "fantasy_shared_37e6eef5-9880-4186-b6b0-1ae3c29cfcee",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_392a5d90-b4c2-4d6c-b7c3-51761032fb29": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "grass-patch-fall-03",
+          "texture": "fantasy_shared_392a5d90-b4c2-4d6c-b7c3-51761032fb29",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_39fb63d3-42b9-4fb6-a383-7a0754e0f756": {
+        "rev": 3,
+        "definition": {
+          "kind": "billboard",
+          "name": "tree oak fall 06",
+          "texture": "fantasy_shared_39fb63d3-42b9-4fb6-a383-7a0754e0f756",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_599064d7-917d-43c3-8a2d-9646f40f2d3f": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "Forest Tree Green 01",
+          "texture": "fantasy_shared_599064d7-917d-43c3-8a2d-9646f40f2d3f",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_7ac777c3-b812-4178-91ce-654fcb9701dd": {
+        "rev": 3,
+        "definition": {
+          "kind": "panel",
+          "name": "mossy tree 01",
+          "texture": "fantasy_shared_7ac777c3-b812-4178-91ce-654fcb9701dd",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 0,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_85ea2d78-acfa-463d-a04e-64030d6883ca": {
+        "rev": 2,
+        "definition": {
+          "kind": "billboard",
+          "name": "tree oak fall 02",
+          "texture": "fantasy_shared_85ea2d78-acfa-463d-a04e-64030d6883ca",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_a3dc9042-a690-4ac3-85f9-16b5d285d6e3": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "tree oak dryed 01",
+          "texture": "fantasy_shared_a3dc9042-a690-4ac3-85f9-16b5d285d6e3",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_ad09b77e-46e3-4037-b6cf-033795cc9dae": {
+        "rev": 3,
+        "definition": {
+          "kind": "billboard",
+          "name": "tree oak fall 05",
+          "texture": "fantasy_shared_ad09b77e-46e3-4037-b6cf-033795cc9dae",
+          "size": [
+            1,
+            1,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_af2f2c2d-9920-4190-bebb-5af0265e6c53": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "Tombstone Weathered Moss Covered 03",
+          "texture": "fantasy_shared_af2f2c2d-9920-4190-bebb-5af0265e6c53",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_b4eff72a-e37a-4db3-a195-86f273a81321": {
+        "rev": 2,
+        "definition": {
+          "kind": "billboard",
+          "name": "tree oak fall 01",
+          "texture": "fantasy_shared_b4eff72a-e37a-4db3-a195-86f273a81321",
+          "size": [
+            0.6,
+            0.87,
+            0.01
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_b77087fc-8a4f-4ed5-b4f8-769fafc08320": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "bush fall 03",
+          "texture": "fantasy_shared_b77087fc-8a4f-4ed5-b4f8-769fafc08320",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_b7b474ab-f80c-4f2c-b5af-40d149af56d7": {
+        "rev": 3,
+        "definition": {
+          "kind": "billboard",
+          "name": "grass-patch-fall-02",
+          "texture": "fantasy_shared_b7b474ab-f80c-4f2c-b5af-40d149af56d7",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 0.1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_ccd5083d-3e7e-4fe6-b7d0-f174b8ff277b": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "bush fall 02",
+          "texture": "fantasy_shared_ccd5083d-3e7e-4fe6-b7d0-f174b8ff277b",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_d950f716-afba-4b87-994d-b274aaa95ad0": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "Tombstone-Weathered-Moss-Covered-09",
+          "texture": "fantasy_shared_d950f716-afba-4b87-994d-b274aaa95ad0",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_d961b0de-d355-4fc3-9695-c98041bc7329": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "tree oak fall 04",
+          "texture": "fantasy_shared_d961b0de-d355-4fc3-9695-c98041bc7329",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_db3b68db-8c27-431c-912b-17b145dc7de2": {
+        "rev": 1,
+        "definition": {
+          "kind": "panel",
+          "name": "tree oak fall 05",
+          "texture": "fantasy_shared_db3b68db-8c27-431c-912b-17b145dc7de2",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_eba1ab9a-cda9-4ddf-9f2d-a8e253cc7d67": {
+        "rev": 2,
+        "definition": {
+          "kind": "billboard",
+          "name": "Tombstone Weathered Moss Covered 02",
+          "texture": "fantasy_shared_eba1ab9a-cda9-4ddf-9f2d-a8e253cc7d67",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_f2a47f5c-2756-4a6f-bd79-1999dd63263f": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "Tombstone Weathered Moss Covered 01",
+          "texture": "fantasy_shared_f2a47f5c-2756-4a6f-bd79-1999dd63263f",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      },
+      "fantasy_prop_ff7b7182-98f5-4422-a940-3fe9b7b21268": {
+        "rev": 1,
+        "definition": {
+          "kind": "billboard",
+          "name": "Pixel Art Ember Stone Fire Pit",
+          "texture": "fantasy_shared_ff7b7182-98f5-4422-a940-3fe9b7b21268",
+          "size": [
+            0.6,
+            0.6,
+            0.15
+          ],
+          "elevation": 0,
+          "relief": 1,
+          "blocks": false,
+          "wall": false
+        }
+      }
+    },
+    "door": {},
+    "actor": {}
+  },
+  "dialogues": {
+    "voidfantasy": 1
+  },
+  "shops": {}
 }

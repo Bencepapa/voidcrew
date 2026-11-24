@@ -1,0 +1,784 @@
+{
+  "deck": 2,
+  "name": "South part",
+  "place": "Megosztott",
+  "props": [
+    {
+      "x": 6,
+      "y": 1,
+      "at": "center",
+      "prop": "bush1",
+      "scale": 0.55,
+      "offset": [
+        -0.41,
+        -0.25
+      ]
+    },
+    {
+      "x": 5,
+      "y": 2,
+      "at": "center",
+      "prop": "bush1",
+      "scale": 0.55,
+      "offset": [
+        -0.36,
+        -0.31
+      ]
+    },
+    {
+      "x": 4,
+      "y": 2,
+      "at": "center",
+      "prop": "bush1",
+      "scale": 0.45,
+      "offset": [
+        0.15,
+        -0.38
+      ]
+    },
+    {
+      "x": 4,
+      "y": 1,
+      "at": "center",
+      "prop": "bush1",
+      "scale": 0.45,
+      "offset": [
+        -0.28,
+        0.18
+      ]
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "at": "center",
+      "prop": "bush1",
+      "scale": 0.45,
+      "offset": [
+        0.45,
+        -0.11
+      ]
+    },
+    {
+      "x": 5,
+      "y": 2,
+      "at": "center",
+      "prop": "pine1",
+      "scale": 0.5,
+      "offset": [
+        -0.09,
+        -0.38
+      ]
+    },
+    {
+      "x": 5,
+      "y": 1,
+      "at": "center",
+      "prop": "deadtree1",
+      "scale": 0.85,
+      "offset": [
+        0.26,
+        0.25
+      ]
+    },
+    {
+      "x": 9,
+      "y": 7,
+      "at": "center",
+      "prop": "deadtree1",
+      "offset": [
+        -0.17,
+        0.04
+      ],
+      "elevation": -0.15
+    },
+    {
+      "x": 8,
+      "y": 7,
+      "at": "center",
+      "prop": "fern1",
+      "offset": [
+        0.1,
+        0.16
+      ],
+      "elevation": -0.05
+    },
+    {
+      "x": 11,
+      "y": 7,
+      "at": "W",
+      "prop": "torch1",
+      "scale": 0.5
+    },
+    {
+      "x": 12,
+      "y": 7,
+      "at": "NW",
+      "prop": "pine1",
+      "scale": 0.5
+    },
+    {
+      "x": 13,
+      "y": 8,
+      "at": "NW",
+      "prop": "pine1",
+      "scale": 0.7
+    },
+    {
+      "x": 11,
+      "y": 8,
+      "at": "center",
+      "prop": "pine1",
+      "scale": 0.65,
+      "offset": [
+        -0.19,
+        0.16
+      ]
+    },
+    {
+      "x": 11,
+      "y": 7,
+      "at": "center",
+      "prop": "bush1",
+      "scale": 0.65,
+      "offset": [
+        -0.08,
+        0.26
+      ]
+    },
+    {
+      "x": 11,
+      "y": 6,
+      "at": "S",
+      "prop": "bush1",
+      "scale": 0.65
+    },
+    {
+      "x": 9,
+      "y": 6,
+      "at": "NE",
+      "prop": "bush1",
+      "scale": 0.65
+    },
+    {
+      "x": 11,
+      "y": 7,
+      "at": "center",
+      "prop": "fern1",
+      "scale": 0.65,
+      "offset": [
+        -0.04,
+        -0.17
+      ]
+    },
+    {
+      "x": 9,
+      "y": 26,
+      "at": "SE",
+      "prop": "barrel1"
+    },
+    {
+      "x": 4,
+      "y": 25,
+      "at": "SW",
+      "prop": "barrel1"
+    },
+    {
+      "x": 1,
+      "y": 24,
+      "at": "NW",
+      "prop": "barrel1"
+    },
+    {
+      "x": 3,
+      "y": 23,
+      "at": "E",
+      "prop": "deadtree1"
+    },
+    {
+      "x": 2,
+      "y": 19,
+      "at": "W",
+      "prop": "pine1"
+    },
+    {
+      "x": 7,
+      "y": 14,
+      "at": "N",
+      "prop": "pine1"
+    },
+    {
+      "x": 4,
+      "y": 13,
+      "at": "E",
+      "prop": "pine1"
+    },
+    {
+      "x": 4,
+      "y": 14,
+      "at": "center",
+      "prop": "pine1"
+    },
+    {
+      "x": 4,
+      "y": 13,
+      "at": "center",
+      "prop": "fern1",
+      "offset": [
+        0.26,
+        0.31
+      ]
+    },
+    {
+      "x": 11,
+      "y": 12,
+      "at": "center",
+      "prop": "barrel1",
+      "offset": [
+        -0.13,
+        0.13
+      ]
+    },
+    {
+      "x": 17,
+      "y": 5,
+      "at": "S",
+      "prop": "deadtree1"
+    },
+    {
+      "x": 17,
+      "y": 7,
+      "at": "center",
+      "prop": "fern1",
+      "scale": 0.45,
+      "offset": [
+        -0.42,
+        0.45
+      ],
+      "rotation": 75
+    },
+    {
+      "x": 15,
+      "y": 7,
+      "at": "center",
+      "prop": "pedestal1",
+      "scale": 0.45,
+      "offset": [
+        -0.21,
+        0.07
+      ]
+    }
+  ],
+  "start": {
+    "x": 20,
+    "y": 6,
+    "facing": "W"
+  },
+  "decals": [
+    {
+      "x": 10,
+      "y": 1,
+      "px": 95,
+      "py": 177,
+      "decal": "grass_tall",
+      "scale": 0.6,
+      "surface": "N"
+    },
+    {
+      "x": 8,
+      "y": 1,
+      "px": 191,
+      "py": 179,
+      "decal": "grass_tall",
+      "surface": "N"
+    },
+    {
+      "x": 11,
+      "y": 1,
+      "px": 17,
+      "py": 239,
+      "decal": "grass_small",
+      "scale": 1.15,
+      "surface": "N"
+    },
+    {
+      "x": 10,
+      "y": 1,
+      "px": 230,
+      "py": 235,
+      "decal": "grass_small",
+      "scale": 2.35,
+      "surface": "N"
+    },
+    {
+      "x": 10,
+      "y": 1,
+      "px": 19,
+      "py": 148,
+      "decal": "fern_big",
+      "surface": "N"
+    },
+    {
+      "x": 9,
+      "y": 1,
+      "px": 4,
+      "py": 166,
+      "decal": "grass_tall",
+      "scale": 0.75,
+      "surface": "N"
+    },
+    {
+      "x": 12,
+      "y": 1,
+      "px": -48,
+      "py": 162,
+      "decal": "bush_leafy",
+      "surface": "N"
+    },
+    {
+      "x": 11,
+      "y": 1,
+      "px": 47,
+      "py": 156,
+      "decal": "cartwheel",
+      "surface": "N"
+    },
+    {
+      "x": 8,
+      "y": 1,
+      "px": 46,
+      "py": 236,
+      "decal": "grass_small",
+      "surface": "N"
+    },
+    {
+      "x": 8,
+      "y": 1,
+      "px": -21,
+      "py": 227,
+      "decal": "grass_medium",
+      "surface": "N"
+    },
+    {
+      "x": 7,
+      "y": 1,
+      "px": -13,
+      "py": 230,
+      "decal": "grass_white",
+      "surface": "N"
+    },
+    {
+      "x": 7,
+      "y": 1,
+      "px": 122,
+      "py": 223,
+      "decal": "grass_yellow",
+      "surface": "N"
+    },
+    {
+      "x": 6,
+      "y": 1,
+      "px": 55,
+      "py": 158,
+      "decal": "wildflowers",
+      "surface": "N"
+    },
+    {
+      "x": 9,
+      "y": 1,
+      "px": 118,
+      "py": 183,
+      "decal": "wildflowers",
+      "surface": "N"
+    },
+    {
+      "x": 13,
+      "y": 1,
+      "px": 134,
+      "py": 157,
+      "decal": "wildflowers",
+      "surface": "N"
+    },
+    {
+      "x": 19,
+      "y": 1,
+      "px": 11,
+      "py": -100,
+      "decal": "footpath_bend",
+      "surface": "floor",
+      "rotation": 165
+    },
+    {
+      "x": 19,
+      "y": 1,
+      "px": 109,
+      "py": -125,
+      "decal": "footpath_bend",
+      "surface": "floor",
+      "rotation": 75
+    },
+    {
+      "x": 9,
+      "y": 7,
+      "px": 125,
+      "py": 153,
+      "decal": "bush_leafy",
+      "surface": "E"
+    },
+    {
+      "x": 10,
+      "y": 8,
+      "px": 5,
+      "py": 145,
+      "decal": "bush_leafy",
+      "surface": "N"
+    },
+    {
+      "x": 15,
+      "y": 7,
+      "px": 62,
+      "py": 154,
+      "decal": "cartwheel",
+      "surface": "S"
+    },
+    {
+      "x": 15,
+      "y": 7,
+      "px": 50,
+      "py": 24,
+      "decal": "cart_ruts",
+      "scale": 1.6,
+      "surface": "floor"
+    },
+    {
+      "x": 15,
+      "y": 7,
+      "px": 38,
+      "py": 232,
+      "decal": "grass_small",
+      "surface": "S"
+    }
+  ],
+  "layers": {
+    "floor": {
+      "rows": [
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "..f.............................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................"
+      ],
+      "legend": {
+        "a": 0.25,
+        "b": 0.5,
+        "c": 0.75,
+        "d": -0.25,
+        "e": 1,
+        "f": 1.25
+      }
+    },
+    "ceiling": {
+      "rows": [
+        ".................b...b..........",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbcbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbabbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbcbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.",
+        "................................",
+        "................................"
+      ],
+      "legend": {
+        "a": 1.25,
+        "b": 1.5,
+        "c": 1.75
+      }
+    },
+    "wallTexture": {
+      "rows": [
+        ".................f...a..........",
+        ".dddddcdfeaciaeehfagea.aaaa.....",
+        ".d........f.ea..aa...g.a........",
+        ".dk.......a...hfeag..a.a........",
+        ".b.b.......ka......a.a.a........",
+        ".abh.ga.....f..efa.e.e.a........",
+        ".a.ha..a..fa..f...a..a.a........",
+        ".a.i.ag.db.ca.aafk.aha.a........",
+        ".i..g..a.de..ad...e..e.a........",
+        ".diabefb.i.idfa...g..k.a........",
+        ".ib....b.fi...k...d..d.a........",
+        ".f........d...bfid.fib.a........",
+        ".dbifbkffi.bkd.baeab...a........",
+        ".e............d....e.aa.........",
+        ".d........bd..i....d.a..........",
+        ".f.dea.g.a..gb.aefde.a..........",
+        ".eea..d.ak....g......a..........",
+        ".db.e.e.ib....b.aaaaa...........",
+        ".f.bhd.i..eafba.a...............",
+        ".e.bigic.a......a...............",
+        ".dh.....eiaaaaaa................",
+        ".fd.....fe......................",
+        ".d.dff..ea......................",
+        ".h...d..bf......................",
+        ".b....da.e......................",
+        ".h.daga..f......................",
+        ".fd....a.k......................",
+        ".b.ahb.f.a......................",
+        ".f.a.f.i.k......................",
+        ".af.bh.kfaa.....................",
+        "................................",
+        "................................"
+      ],
+      "legend": {
+        "a": "fantasy_shared_aedce4df-b47c-407e-ae58-e4290e7e0cc4",
+        "b": "fantasy_shared_92dd9d71-deaa-449d-8e90-7be7f41af7c9",
+        "c": "fantasy_shared_fd8c5875-699d-4ca0-92da-36ae7e9ed092",
+        "d": "fantasy_shared_2365cbdb-1d13-4597-b044-8c2631de4169",
+        "e": "fantasy_shared_4161b971-b6fe-4aa6-bdca-1f732ce03f79",
+        "f": "fantasy_shared_ed294aba-7ea1-4284-87a9-878ba49b233c",
+        "g": "fantasy_shared_39d44bfe-2ca9-4220-bafe-44bdc34bca45",
+        "h": "fantasy_shared_b5d24434-b0a4-4ed8-a399-e0928d49cd66",
+        "i": "fantasy_shared_329f38c3-7873-4dab-96fe-fadeeb145b8c",
+        "j": "fantasy_shared_bbb158b0-ce8e-4cf0-adee-06f1a80464eb",
+        "k": "fantasy_shared_c60e9ab3-0fa0-4ed1-99bb-189ce125692f"
+      }
+    },
+    "floorTexture": {
+      "rows": [
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "...............a................",
+        "..............aaaaaaaa..........",
+        "..............a.a.a.............",
+        "..............a...a..a..........",
+        "..............a...a..a..........",
+        "..............a...a..a..........",
+        "..............aa..aaaa..........",
+        "...aaaaaaa.....aaaaa............",
+        "........a.......................",
+        "........aaaaaa..................",
+        ".aaaaaaaa...aa..................",
+        "..a...a.........................",
+        "..a...a.........................",
+        ".aaaaaaaaaa.....................",
+        ".a.......a......................",
+        ".a.......a......................",
+        ".a.......a......................",
+        ".........a......................",
+        ".........a......................",
+        ".aaaaaaaaa......................",
+        ".a.......a......................",
+        ".a.......a......................",
+        ".a..............................",
+        "................................",
+        "................................",
+        "................................",
+        "................................"
+      ],
+      "legend": {
+        "a": "fantasy_shared_dadc7fa8-37f4-41ab-bcfe-190ee99035ab"
+      }
+    }
+  },
+  "layout": [
+    "WWWWWWWWWWWWWWWWW.WWW.WWWWWWWWWW",
+    "W...............WW....W........W",
+    "W..........W..........W........W",
+    "W..........WWW...W....W........W",
+    "W.W..........WWWWWW...W........W",
+    "W.W..........WW...W...W........W",
+    "W.WW.WW.....WW........W........W",
+    "W.W.......W..W........W........W",
+    "W.WW.WW.W......WWW.WW.W........W",
+    "W.......W......WWW.WW.W........W",
+    "W..WWWW.W..WWW.WWW.WW.W........W",
+    "W.WWWWWWWW.WWW........W........W",
+    "W...................WWW........W",
+    "W..............WWWW.W..........W",
+    "W..............WWWW.W..........W",
+    "W.........WW........W..........W",
+    "W..WWW.W..WWWW.WWWWWW..........W",
+    "W..WWW.W..WWWW.W...............W",
+    "W..............W...............W",
+    "W.........WWWWWW...............W",
+    "W..WWWWW..W....................W",
+    "W..WWWWW..W....................W",
+    "W.....WW..W....................W",
+    "W.....WW..W....................W",
+    "W.........W....................W",
+    "W.........W....................W",
+    "W..WWWW...W....................W",
+    "W.....W...W....................W",
+    "W.....W...W....................W",
+    "W..W..W...W....................W",
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
+  ],
+  "lights": [
+    {
+      "x": 17,
+      "y": 7,
+      "pos": [
+        -0.03,
+        0.54,
+        0.18
+      ],
+      "color": "#faa200"
+    },
+    {
+      "x": 15,
+      "y": 5,
+      "pos": [
+        0,
+        0.55,
+        -0.23
+      ],
+      "color": "#faa200"
+    }
+  ],
+  "render": {
+    "fogColor": "#131c3b",
+    "headlamp": true,
+    "metalness": 0,
+    "roughness": 1,
+    "bobEnabled": false,
+    "reliefMode": "smooth",
+    "skyLightColor": "#141e3c",
+    "normalStrength": 0.2,
+    "skyLightAzimuth": 180,
+    "ambientIntensity": 0.15,
+    "mapLightIntensity": 0.4,
+    "skyLightElevation": 75,
+    "skyLightIntensity": 1.1
+  },
+  "smokes": [
+    {
+      "x": 15,
+      "y": 7,
+      "pos": [
+        -0.2,
+        0.45,
+        0.06
+      ],
+      "color": "#0880f7",
+      "effect": "fire"
+    }
+  ],
+  "textures": {
+    "door": "fantasydoorframe1",
+    "wall": "sky",
+    "floor": "fantasyforest1",
+    "ceiling": "sky",
+    "liftDoor": "fantasydoorframe1",
+    "doorFrame": "fantasydoorframe1"
+  },
+  "showTitle": false,
+  "wallInteractions": [
+    {
+      "x": 16,
+      "y": 7,
+      "side": "S",
+      "interaction": {
+        "kind": "image",
+        "text": "Goblinok lepték el az erdőt, hozd el 10-nek a fülét a főzetemhez! Nem fogod megbánni!",
+        "image": "fantasy_portrait_04fa5264-ade2-4d3a-bcba-c89d1d9f2671"
+      }
+    },
+    {
+      "x": 16,
+      "y": 5,
+      "side": "N",
+      "interaction": {
+        "kind": "message",
+        "text": "Fény szűrődik ki, de zárva az ajtó",
+        "modal": false,
+        "timeout": 5,
+        "position": "bottom"
+      }
+    },
+    {
+      "x": 17,
+      "y": 5,
+      "side": "N",
+      "interaction": {
+        "kind": "message",
+        "text": "",
+        "modal": false,
+        "position": "center"
+      }
+    },
+    {
+      "x": 14,
+      "y": 6,
+      "side": "N",
+      "interaction": {
+        "kind": "shop",
+        "shop": "smith-shop"
+      }
+    },
+    {
+      "x": 18,
+      "y": 3,
+      "side": "W",
+      "interaction": {
+        "kind": "message",
+        "text": "Nincs itthon Grombi a kis haver gyógyfüves ...",
+        "modal": false,
+        "position": "center"
+      }
+    }
+  ]
+}

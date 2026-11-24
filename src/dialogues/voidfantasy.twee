@@ -1,0 +1,60 @@
+:: StoryTitle
+Void Fantasy
+
+
+:: StoryData
+{
+  "ifid": "FEDB84A7-5B71-4E3D-BFDC-0297BF45E6C9",
+  "format": "Harlowe",
+  "format-version": "3.3.9",
+  "start": "Start Wizard",
+  "zoom": 1
+}
+
+
+:: Start Wizard [start] {"position":"1025,350","size":"100,100"}
+Welcome to my humble shop traveller!
+Do not fret, look around and buy anything you wish.
+
+[[Tell me more!]]
+[[Buy/Sell]]
+[[Goodbye Wizard]]
+
+
+:: Tell me more! {"position":"900,475","size":"100,100"}
+These are some pretty dangerous areas here, but you are safe in our town. Myself is always looking for good ingredients for my magic potions. Look out for herbs and berries on your way, bring me any ingredients and I will pay you good.
+
+[[Let's discuss about something else->Start Wizard]]
+[[Thank you, and farewell->Goodbye Wizard]]
+
+
+:: Buy/Sell {"position":"1175,475","size":"100,100"}
+Please make your selection traveller!
+
+@shop wizard-shop
+
+[[Let me ask something else->Start Wizard]]
+[[Goodbye->Goodbye Wizard]]
+
+
+:: Goodbye Wizard {"position":"1025,600","size":"100,100"}
+Goodbye, traveller!
+@end
+
+
+:: Start Smith [start] {"position":"1450,350","size":"100,100"}
+Kovács vagyok. Fegyvert vagy páncélt keresel?
+
+[[Vásárlás->Smith buy]]
+[[Viszlát->Goodbye Smith]]
+
+
+:: Smith buy {"position":"1575,475","size":"100,100"}
+@shop smith-shop
+
+[[Viszlát->Goodbye Smith]]
+
+
+:: Goodbye Smith {"position":"1450,600","size":"100,100"}
+Erős kard, erős kéz!
+@end
