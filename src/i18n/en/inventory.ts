@@ -3,6 +3,7 @@ export const inventoryEn = {
   "inventory.title": "Backpack",
   "inventory.cells": "{used}/{total} cells",
   "inventory.close": "Close (I)",
+  "inventory.helpTitle": "How to use",
   "inventory.worth": "Worth at the base",
   "inventory.worthFantasy": "Worth",
   "inventory.worthValue": "{n} cr",

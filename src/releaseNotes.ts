@@ -24,6 +24,7 @@ export const RELEASES: Release[] = [
       { title: "Közös textúra-kezelés", text: "Tárgyak, felvehető tárgyak, matricák és NPC-k saját mélység- és normáltérképet kaphatnak, akár AI-val is." },
       { title: "Átjárók a pályák között", text: "Városkapu és lépcső (akár csigalépcső) tölt be másik pályát töltőképpel; a Közlekedés csoportban érhető el, kijelölve Delete törli, a 3D nézetben keret jelzi." },
       { title: "Tető automata", text: "A tető textúrája a jobb oldali panelen választható, nem a pöttyös az alapértelmezett." },
+      { title: "Stabil hátizsák- és boltablak", text: "Az ablak mérete már nem ugrál hover közben, a tárgy leírását kattintásra rögzítheted, a használati súgó a ? gomb mögött van." },
       { title: "Egész blokknyi magasítás", text: "A Magasság eszközzel a Ctrl+kattintás egy egész blokkot emel (Ctrl+jobb kattintás: süllyeszt) a padlón és a plafonon." },
       { title: "Kerítések és blokkok", text: "A Tető mellett új eszközök: blokk, kerítés a cella szélén és kerítés a közepén (átlátszó textúrával is, a mögötte lévő jelenet látszik), a textúrát pedig miniatűrös listából választhatod az Inspectorban." },
     ],

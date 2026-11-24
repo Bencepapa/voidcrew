@@ -3,6 +3,7 @@ export const inventoryHu = {
   "inventory.title": "Hátizsák",
   "inventory.cells": "{used}/{total} hely",
   "inventory.close": "Bezár (I)",
+  "inventory.helpTitle": "Használat",
   "inventory.worth": "Értéke a bázison",
   "inventory.worthFantasy": "Értéke",
   "inventory.worthValue": "{n} cr",

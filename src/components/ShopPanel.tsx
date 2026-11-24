@@ -8,7 +8,7 @@ import { getShopDef } from "../game/shopCatalog";
 import { getShopStock, setShopStock, useShopStock } from "../game/shopStore";
 import { t } from "../i18n";
 import { useSharedImages } from "../render/sharedImages";
-import { InfoArea, QtyPopover, SlotGrid, setMover, slotOfKey } from "./InventorySlots";
+import { HelpTip, InfoArea, QtyPopover, SlotGrid, setMover, slotOfKey } from "./InventorySlots";
 import { focusNeighbor } from "./InventoryPanel";
 import { cancelDrag, cancelQty, clearInfo, clearSelection, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
 
@@ -240,6 +240,7 @@ export function ShopPanel({ shopId, partyDock, onClose, intro }: {
               {t("shop.credits")} <span className="text-amber-200">{credits} cr</span>
               {after !== null && after !== credits && <span className={after < 0 ? "text-red-300" : "text-emerald-300"}> {"->"} {after} cr</span>}
             </span>
+            <HelpTip text={t("shop.help")} />
             <button type="button" onClick={onClose} className="px-1 text-neutral-400 hover:text-neutral-100" title={t("shop.close")} aria-label={t("shop.close")}>
               ×
             </button>
@@ -300,16 +301,14 @@ export function ShopPanel({ shopId, partyDock, onClose, intro }: {
         )}
         <QtyPopover />
         <InfoArea slot={infoSlot} empty={t("shop.infoEmpty")} extra={infoPrice} />
-        <p className="min-h-[2.2em] text-neutral-500" aria-live="polite">
+        <p className="h-[1.4em] truncate text-neutral-500" aria-live="polite">
           {notice ? (
             <span className="text-red-300">{t(`shop.fail.${notice}` as "shop.fail.full")}</span>
           ) : msg ? (
             <span className={msg.bad ? "text-red-300" : "text-emerald-300"}>{msg.text}</span>
           ) : hint ? (
             <span className="text-amber-200">{hint}</span>
-          ) : (
-            t("shop.help")
-          )}
+          ) : null}
         </p>
       </section>
     </div>

@@ -5,7 +5,7 @@ import { stacksText } from "../game/items";
 import { haulOf, useInventory } from "../game/inventoryStore";
 import { activeWorld } from "../game/worlds";
 import { t } from "../i18n";
-import { InfoArea, QtyPopover, SlotGrid, moveInInventory, slotOfKey, splitInInventory } from "./InventorySlots";
+import { HelpTip, InfoArea, QtyPopover, SlotGrid, moveInInventory, slotOfKey, splitInInventory } from "./InventorySlots";
 import { cancelDrag, cancelQty, clearInfo, clearSelection, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
 
 // the arrow keys move between slots: the nearest one that way
@@ -146,9 +146,12 @@ export function InventoryPanel({ partyDock, onClose }: {
           <span className="text-amber-200">
             {t("inventory.title").toUpperCase()} <span className="text-neutral-500">{t("inventory.cells", { used: usedCells(inventory), total: inventory.pack.length })}</span>
           </span>
-          <button type="button" onClick={onClose} className="px-1 text-neutral-400 hover:text-neutral-100" title={t("inventory.close")} aria-label={t("inventory.close")}>
-            ×
-          </button>
+          <span className="flex items-center gap-1">
+            <HelpTip text={`${t("inventory.hint")} ${t("inventory.help")}`} />
+            <button type="button" onClick={onClose} className="px-1 text-neutral-400 hover:text-neutral-100" title={t("inventory.close")} aria-label={t("inventory.close")}>
+              ×
+            </button>
+          </span>
         </header>
         <SlotGrid
           slots={inventory.pack}
@@ -167,8 +170,8 @@ export function InventoryPanel({ partyDock, onClose }: {
           </div>
         )}
         <InfoArea slot={shown} empty={t("inventory.infoEmpty")} />
-        <p className="min-h-[2.2em] text-neutral-500" aria-live="polite">
-          {notice ? <span className="text-red-300">{t(`inventory.fail.${notice}` as "inventory.fail.full")}</span> : picked ? <span className="text-amber-200">{t("inventory.selected", { item: itemName(picked.item) })}</span> : `${t("inventory.hint")} ${t("inventory.help")}`}
+        <p className="h-[1.4em] truncate text-neutral-500" aria-live="polite">
+          {notice ? <span className="text-red-300">{t(`inventory.fail.${notice}` as "inventory.fail.full")}</span> : picked ? <span className="text-amber-200">{t("inventory.selected", { item: itemName(picked.item) })}</span> : null}
         </p>
       </section>
     </div>

@@ -7,7 +7,7 @@ import { moveItem, splitItem, useInventory } from "../game/inventoryStore";
 import { getMeta } from "../game/meta";
 import { hasKey, t, type Key } from "../i18n";
 import { pickupTexture, useSharedImages } from "../render/sharedImages";
-import { activateSlot, askQty, beginDrag, cancelQty, confirmQty, hoverSlot, inspectSlot, justDragged, useDrag, useDragging, useQtyAsk, useSlotStatus, type MoveFn } from "./slotDrag";
+import { activateSlot, askQty, beginDrag, cancelQty, confirmQty, hoverSlot, inspectSlot, justDragged, pinSlot, useDrag, useDragging, useQtyAsk, useSlotStatus, type MoveFn } from "./slotDrag";
 
 // The building blocks of the inventory screens (a shop's later): a slot that
 // shows an item and takes drags and clicks, a grid of them, a crewmate's two
@@ -172,7 +172,7 @@ export function SlotBox({
         }
         if (!shown) return;
         if (onUse?.(slotKey)) return;
-        inspectSlot(slotKey);
+        pinSlot(slotKey);
       }}
       onDoubleClick={onQuick && shown ? () => onQuick(slotKey) : undefined}
       onPointerEnter={(e) => e.pointerType === "mouse" && shown && hoverSlot(slotKey)}
@@ -376,13 +376,17 @@ export const infoLine = (slot: Slot): string => {
   return [info.name, ...info.lines].join(" ");
 };
 
-// The fixed area that says what an item is: its name and a few lines (or
-// `empty` when there is none to show); `extra` goes last (a shop's price).
+// The area that says what an item is: its name and its lines (or `empty` when
+// there is none to show); `extra` goes last (a shop's price). Its height is
+// fixed, so the panel around it never changes size with the text (a panel that
+// grew under the pointer made the item lose the hover and the panel shrink
+// again, every frame): a long text scrolls inside it.
+const INFO_BOX = "h-[6.5em] overflow-y-auto border-t border-neutral-700 pt-1";
 export function InfoArea({ slot, empty, extra }: { slot: Slot | null; empty: string; extra?: string }) {
-  if (!slot) return <div className="min-h-[7em] border-t border-neutral-700 pt-1 text-neutral-500">{empty}</div>;
+  if (!slot) return <div className={INFO_BOX + " text-neutral-500"}>{empty}</div>;
   const info = itemInfo(slot.item, infoTexts, slot.uid, getMeta().weapons);
   return (
-    <div className="min-h-[7em] border-t border-neutral-700 pt-1" aria-live="polite">
+    <div className={INFO_BOX} aria-live="polite" tabIndex={-1}>
       <div className="text-amber-200">
         {info.name}
         {slot.qty > 1 && <span className="text-neutral-400"> x{slot.qty}</span>}
@@ -394,6 +398,31 @@ export function InfoArea({ slot, empty, extra }: { slot: Slot | null; empty: str
         {extra && <li className="text-emerald-300">{extra}</li>}
       </ul>
     </div>
+  );
+}
+
+// A "?" button that opens a short text over the panel (not in its layout: the
+// panel keeps its size) - the long how-to lines live behind it.
+export function HelpTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={t("inventory.helpTitle")}
+        title={t("inventory.helpTitle")}
+        onClick={() => setOpen((v) => !v)}
+        className={"h-4 w-4 rounded-full border text-[10px] leading-none " + (open ? "border-amber-300 text-amber-200" : "border-neutral-500 text-neutral-400 hover:text-neutral-100")}
+      >
+        ?
+      </button>
+      {open && (
+        <span role="note" className="absolute right-0 top-5 z-10 block w-64 rounded border border-neutral-500 bg-neutral-900 p-2 text-[11px] leading-snug text-neutral-200 shadow-xl">
+          {text}
+        </span>
+      )}
+    </span>
   );
 }
 

@@ -56,15 +56,20 @@ function say(reason: string | null) {
   }
 }
 
-// What the info area describes: the slot last clicked, or - while the pointer
-// or the keyboard focus is on one - that slot.
+// What the info area describes: the slot last clicked (it stays pinned: the
+// pointer passing over other slots doesn't change it), or - while nothing is
+// pinned and the pointer or the keyboard focus is on a slot - that slot.
 let inspected: string | null = null;
 let hovered: string | null = null;
-export const useInfoSlot = () => useSyncExternalStore(subscribe, () => hovered ?? inspected);
+export const useInfoSlot = () => useSyncExternalStore(subscribe, () => inspected ?? hovered);
 export function inspectSlot(key: string | null) {
   if (inspected === key) return;
   inspected = key;
   emit();
+}
+// a click on a slot: pins it, and a second click on the pinned one lets go
+export function pinSlot(key: string) {
+  inspectSlot(inspected === key ? null : key);
 }
 export function hoverSlot(key: string | null) {
   if (hovered === key) return;
