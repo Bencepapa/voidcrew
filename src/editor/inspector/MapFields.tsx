@@ -13,6 +13,7 @@ import { splitSharedTitle } from "../sharedMaps";
 
 import { textureSetsOfKind } from "../../render/textureSets";
 import { TexturePicker, textureOptions } from "../TexturePicker";
+import { SkyFields } from "./SkyFields";
 
 import { WeatherFields } from "../WeatherFields";
 import { MapRenderSettings } from "../../components/MapRenderSettings";
@@ -89,12 +90,13 @@ return <>
                 p.onMapLook({ accent: { ...p.mapLook.accent!, range: v === 30 ? undefined : v } }),
               )}
 {TEXTURE_SLOTS.map(({ slot, label, kind }) => (
-              <TexturePicker key={slot} label={t(label)} title={t("editorBar.defaultTexture", {surface:t(label).toLowerCase()})} value={p.mapLook.textures?.[slot] ?? ""} options={textureOptions(textureSetsOfKind(kind), [{value:"",label:t("editorBar.defaultLower")}])} onChange={v => {
+              <TexturePicker key={slot} label={t(label)} title={t("editorBar.defaultTexture", {surface:t(label).toLowerCase()})} value={typeof p.mapLook.textures?.[slot] === "string" ? p.mapLook.textures[slot] as string : ""} options={textureOptions(textureSetsOfKind(kind), [{value:"",label:t("editorBar.defaultLower")}])} onChange={v => {
  const textures = {...p.mapLook.textures,[slot]:v || undefined};
  for (const k of Object.keys(textures)) if (!textures[k]) delete textures[k];
  p.onMapLook({textures:Object.keys(textures).length ? textures : undefined});
 }}/>
             ))}
+<SkyFields value={p.mapLook.textures} onChange={(textures) => p.onMapLook({textures}, "sky")} />
 <OptionalNumber label={t("editorBar.relief")} title={t("editorBar.howDeepTheWallsReliefIsRebuilds")} value={p.mapLook.reliefDepth} min={0.01} max={0.12} step={0.01} defaultValue={0.04} onChange={v=>p.onMapLook({reliefDepth:v})}/>
 </Section>
 <MapRenderSettings settings={p.renderSettings} onChange={p.onRenderSettings} mapId={p.mapId} mapHasRender={p.mapHasRender} onSaveRender={p.onSaveRender} onClearRender={p.onClearRender}/>
