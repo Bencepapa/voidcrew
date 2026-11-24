@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import sharp from "sharp";
@@ -41,6 +41,23 @@ const key = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 if (!project || !key) throw new Error("Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.");
 const bucket = "/storage/v1/object/";
 const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
+// Moves a freshly written folder into place. On Windows a rename of a new folder can fail with EPERM/EBUSY while
+// a file watcher (the dev server) or a scanner still holds it: retry a few times, then copy it over and remove the
+// staging folder (a half-written target is never left behind: the copy goes into a new folder that did not exist).
+async function moveFolder(from: string, to: string) {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") throw error;
+      await new Promise(done => setTimeout(done, 150 * (attempt + 1)));
+    }
+  }
+  await cp(from, to, { recursive: true, errorOnExist: true, force: false });
+  await rm(from, { recursive: true, force: true }).catch(() => undefined); // (a locked staging folder is cleaned up by hand)
+}
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 
 interface TextureMeta {
@@ -123,7 +140,20 @@ async function saveCatalog() {
   await mkdir(dirname(catalogPath), { recursive: true });
   const pending = catalogPath + ".tmp";
   await writeFile(pending, json(catalog));
-  await rename(pending, catalogPath);
+  // (the dev server may hold the catalog open - the game imports it: on Windows a rename over it then fails with
+  // EPERM/EBUSY; retry, and as the last resort write the file in place)
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      await rename(pending, catalogPath);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") throw error;
+      await new Promise(done => setTimeout(done, 150 * (attempt + 1)));
+    }
+  }
+  await writeFile(catalogPath, json(catalog));
+  await rm(pending, { force: true }).catch(() => undefined);
 }
 
 async function pullTexture(world: string, name: string) {
@@ -179,7 +209,7 @@ async function pullTexture(world: string, name: string) {
   await mkdir(dirname(target), { recursive: true });
   const staging = await mkdtemp(join(dirname(target), ".pull-shared-"));
   for (const [key, one] of Object.entries(encoded) as [BundleMapKey, Encoded][]) await writeFile(join(staging, files[key]!), one.bytes);
-  await rename(staging, target);
+  await moveFolder(staging, target);
   catalog.textures[id] = { rev, label: meta.name, kinds: kinds.length ? kinds : ["wall", "floor"], pixelArt: meta.pixelArt !== false,
     smooth: meta.smooth === true, files, tuning: meta.tuning };
   await saveCatalog();
@@ -309,7 +339,7 @@ async function pullDefinitions(world: string, kind: DefinitionKind) {
       await mkdir(dirname(target), { recursive: true });
       const staging = await mkdtemp(join(dirname(target), ".pull-shared-"));
       for (const [name, bytes] of Object.entries(files)) await writeFile(join(staging, name), bytes);
-      await rename(staging, target);
+      await moveFolder(staging, target);
     } else {
       if (dryRun) { console.log(`Would bundle ${kind} ${id} (r${found.rev}).`); continue; }
       // textures a prop or door uses that are not bundled (they come with their own pull) are worth a warning
