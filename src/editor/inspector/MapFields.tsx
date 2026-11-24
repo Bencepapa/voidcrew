@@ -4,6 +4,7 @@ import type { EditorBarProps } from "../EditorBar";
 import { OptionalNumber, CommitContext, Section, slider, BUTTON, idle, active } from "./parts";
 import { MAPS } from "../../game/map";
 import { worldOfMap } from "../../game/worlds";
+import { parsePickupMode } from "../../game/pickupMode";
 import { MapList } from "../MapList";
 import { LoadingImageField } from "./LoadingImageField";
 import type { Direction } from "../../game/types";
@@ -71,6 +72,13 @@ return <>
 <label className="flex items-center gap-1" title={t("mapDialog.showTitleHint")}>
   <input type="checkbox" checked={p.mapLook.showTitle ?? false} onChange={(e) => p.onMapLook({ showTitle: e.target.checked })} />
   {t("mapDialog.showTitle")}</label>
+<label className="flex items-center gap-1" title={t("pickup.mapHint")}>
+  {t("pickup.mode")}
+  <select className="bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm" value={p.mapLook.pickup ?? ""} onChange={(e) => p.onMapLook({ pickup: parsePickupMode(e.target.value) })}>
+    <option value="">{t("pickup.mapDefault")}</option>
+    <option value="auto">{t("pickup.auto")}</option>
+    <option value="click">{t("pickup.click")}</option>
+  </select></label>
 <LoadingImageField value={p.mapLook.loadingImage} world={world} label="link.mapLoadingImage" hint="link.mapLoadingImageHint" onChange={(loadingImage) => p.onMapLook({ loadingImage })} />
 <WeatherFields onCommit={commit} value={p.mapLook.weather} onChange={weather=>p.onMapLook({weather})}/>
 <OptionalNumber label={t("editorBar.bakedLight")} title={t("editorBar.fewSofterLightSpillsToTheCells")} value={p.mapLook.lightGridDensity} min={2} max={12} step={1} defaultValue={3} onChange={v=>p.onMapLook({lightGridDensity:v})}/>

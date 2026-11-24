@@ -115,6 +115,8 @@ export interface GameMap {
   stairs?: StairsSpec[];
   // a picture for the loading screen of this map (a shared still image's id)
   loadingImage?: string;
+  // how loose items are picked up on this map, if it says (see pickupMode.ts)
+  pickup?: "auto" | "click";
   // where the crew mustn't be (a vault, the bridge, the engine core): a
   // camera or a robot taking it for crew still calls it in here
   restricted?: Vec2[];
