@@ -209,6 +209,8 @@ export interface FenceBox {
 
 export interface FenceIndex {
   pieces: FencePiece[];
+  // by its index in the props list
+  byIndex: Map<number, FencePiece>;
   // by "x,y"
   blocks: Map<string, FencePiece>;
   mids: Map<string, FencePiece>;
@@ -222,7 +224,7 @@ export interface FenceIndex {
   closed: Set<string>;
 }
 
-const NO_FENCES: FenceIndex = { pieces: [], blocks: new Map(), mids: new Map(), edges: new Map(), boxes: new Map(), opaque: [], closed: new Set() };
+const NO_FENCES: FenceIndex = { pieces: [], byIndex: new Map(), blocks: new Map(), mids: new Map(), edges: new Map(), boxes: new Map(), opaque: [], closed: new Set() };
 const indexes = new WeakMap<readonly object[], FenceIndex>();
 
 // The fences of a props list (cached for as long as the list lives: a map's props never change in place).
@@ -237,10 +239,13 @@ export function fenceIndex(props: readonly FenceProp[] | undefined): FenceIndex 
 }
 
 function buildIndex(props: readonly FenceProp[]): FenceIndex {
-  const idx: FenceIndex = { pieces: [], blocks: new Map(), mids: new Map(), edges: new Map(), boxes: new Map(), opaque: [], closed: new Set() };
+  const idx: FenceIndex = { pieces: [], byIndex: new Map(), blocks: new Map(), mids: new Map(), edges: new Map(), boxes: new Map(), opaque: [], closed: new Set() };
   props.forEach((p, i) => {
     const piece = fencePieceOf(p, i);
-    if (piece) idx.pieces.push(piece);
+    if (piece) {
+      idx.pieces.push(piece);
+      idx.byIndex.set(i, piece);
+    }
   });
   if (!idx.pieces.length) return NO_FENCES;
   // (the first piece to claim a cell or an edge keeps it; a second one is a mistake the editor drops - see fenceEdits)
@@ -593,6 +598,15 @@ export function edgeSegment(side: Direction): FenceSegment {
 }
 
 // ---- the minimap and the floor marks of the editor
+
+// The marks a piece has on the floor while editing, relative to the middle of its cell: rectangles (x, z their
+// middle, sx, sz their size) - a hatched square for a block, a strip along the edge or along the bars.
+export function fenceFloorMark(spec: FenceModelSpec): { x: number; z: number; sx: number; sz: number }[] {
+  if (spec.form === "block") return [{ x: 0, z: 0, sx: 0.9, sz: 0.9 }];
+  const segments = spec.form === "edge" ? [edgeSegment(spec.side ?? "N")] : midSegments(spec.arms ?? [], spec.axis ?? "x", 0);
+  const strip = 0.16;
+  return segments.map((s) => ({ x: s.cx, z: s.cz, sx: s.axis === "x" ? s.length : strip, sz: s.axis === "x" ? strip : s.length }));
+}
 
 export type FenceMark =
   | { kind: "block"; x: number; y: number; opaque: boolean }

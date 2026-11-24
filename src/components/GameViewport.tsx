@@ -45,6 +45,7 @@ import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type EdgeSegment } from "../render/reliefMesh";
 import { buildRoofGeometry } from "../render/roofMesh";
+import { fenceFaces, fenceFloorMark, fenceFormOf, fenceIndex, fenceModelSpec, type FenceModelSpec } from "../game/fences";
 import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
 import { fireLightColor, generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
@@ -292,6 +293,9 @@ export interface EditTarget {
   // side, and the point on it in surface pixels (0..255 across a panel;
   // from its top left, a wall's first panel)
   surfacePoint?: { cell: Vec2; surface: Direction | "floor" | "ceiling"; u: number; v: number };
+  // where the pointer's ray met a floor or ceiling exactly (grid units: x, z): the fence tools say from it which
+  // side of the cell was meant
+  at?: [number, number];
   // The step face pointed at (kind is "floor" then: it isn't a wall to dig):
   // a riser (the side of a higher floor) or a header (a lower ceiling's
   // strip), addressed like a wall face - by the open cell it's seen from
@@ -1043,7 +1047,9 @@ const EDIT_PAINT_COLOR = 0x60ff80;
 const EDIT_LIGHT_ADD_COLOR = 0xffe040;
 const EDIT_SELECT_COLOR = 0x80f0ff;
 // the editor tools whose layer can be locked (and the layer each edits)
-const TOOL_LAYER: Partial<Record<EditTool, string>> = { texture: "texture", light: "light", prop: "prop", roofauto: "prop", decal: "decal", robot: "robot", item: "item", smoke: "smoke" };
+const TOOL_LAYER: Partial<Record<EditTool, string>> = { texture: "texture", light: "light", prop: "prop", roofauto: "prop", fenceblock: "prop", fenceedge: "prop", fencemid: "prop", decal: "decal", robot: "robot", item: "item", smoke: "smoke" };
+// the tools that work by strokes (a button held while the pointer crosses cells): the roof and the fences
+const STROKE_TOOLS: ReadonlySet<EditTool> = new Set<EditTool>(["roofauto", "fenceblock", "fenceedge", "fencemid"]);
 // how far off a surface a free-standing light is placed (world units)
 const LIGHT_SPOT_GAP = 0.12;
 // muzzle flashes (see addFlash): the party's, and an actor's (its color,
@@ -3947,6 +3953,108 @@ export function GameViewport({
       }
     }
 
+    // ---- fences and blocks (see game/fences.ts) ----
+    // Their floor marks while editing: a hatched square for a block, strips for the fences (amber, cyan, green)
+    const fenceMarkTexture = (() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 64;
+      const g = canvas.getContext("2d")!;
+      g.strokeStyle = "#ffffff";
+      g.lineWidth = 6;
+      g.strokeRect(3, 3, 58, 58);
+      g.lineWidth = 5;
+      for (let i = -64; i < 64; i += 16) {
+        g.beginPath();
+        g.moveTo(i, 64);
+        g.lineTo(i + 64, 0);
+        g.stroke();
+      }
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    })();
+    const fenceMarkMats = Object.fromEntries(
+      (["block", "edge", "mid"] as const).map((form) => [
+        form,
+        new THREE.MeshBasicMaterial({
+          color: form === "block" ? 0xffb347 : form === "edge" ? 0x4fd1ff : 0x7dff9a,
+          map: fenceMarkTexture,
+          transparent: true,
+          opacity: 0.7,
+          side: THREE.DoubleSide,
+          fog: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2,
+        }),
+      ]),
+    ) as Record<"block" | "edge" | "mid", THREE.MeshBasicMaterial>;
+    // The floor marks of the pieces built (by prop index), and the piece each belongs to: in the scene only
+    // while editing (a hidden mesh would still be hit by the shots' rays)
+    const fenceMarkers = new Map<number, { marker: THREE.Object3D; owner: THREE.Object3D }>();
+    function syncFenceMarkers() {
+      const want = editModeRef.current;
+      for (const { marker, owner } of fenceMarkers.values()) {
+        if (want && marker.parent !== owner) owner.add(marker);
+        else if (!want && marker.parent) marker.parent.remove(marker);
+      }
+    }
+    // A fence or block piece's model: its faces - upright relief cutouts, as the panels' (front and mirrored
+    // back, so it looks the same from both sides; a block's outer sides only), and flat caps - laid out round
+    // the middle of its cell, in its texture sets (unset or not known: the deck's walls), and the floor mark
+    async function buildFence(spec: FenceModelSpec): Promise<THREE.Group | null> {
+      const template = new THREE.Group();
+      const setOf = (id: string | undefined) => (isTextureSetId(id) ? id : primarySet);
+      const sets = { main: setOf(spec.texture), top: setOf(spec.top ?? spec.texture), deco: setOf(spec.post?.texture ?? spec.texture) };
+      const kitOf = (id: string) => {
+        const kit = sharedPropKitFor(id);
+        kit.normal = undefined;
+        const normal = settingsRef.current.normalStrength;
+        kit.wallMat.normalScale.set(normal, normal);
+        return kit;
+      };
+      const relief = propReliefAmount(propReliefDepth, PROP_TYPES.fence_edge, hybrid);
+      for (const f of fenceFaces(spec)) {
+        const kit = kitOf(sets[f.tex]);
+        if (f.kind === "cap") {
+          const geo = new THREE.PlaneGeometry(f.sx, f.sz);
+          geometries.push(geo);
+          const cap = new THREE.Mesh(geo, roundMaterial(kit));
+          cap.rotation.x = -Math.PI / 2;
+          cap.position.set(f.x, f.y * wallHeight + 0.002, f.z);
+          template.add(cap);
+          continue;
+        }
+        const whole = f.u0 <= 1e-6 && f.u1 >= 1 - 1e-6;
+        const panel = await buildPropRelief(kit, {
+          width: f.length,
+          height: (f.y1 - f.y0) * wallHeight,
+          flushEdges: false,
+          depth: relief,
+          coarse: PROP_COARSE,
+          ...(whole ? {} : { cols: [f.u0, f.u1] as [number, number] }),
+        });
+        if (!panel) return null;
+        const mesh = new THREE.Mesh(panel.geometry, [kit.wallMat, kit.sideMat]);
+        mesh.position.set(f.x, ((f.y0 + f.y1) / 2) * wallHeight, f.z);
+        mesh.rotation.y = f.yaw;
+        if (f.mirror) mesh.scale.x = -1;
+        template.add(mesh);
+      }
+      const marker = new THREE.Group();
+      marker.name = "fenceMarker";
+      for (const r of fenceFloorMark(spec)) {
+        const geo = new THREE.PlaneGeometry(r.sx, r.sz);
+        geometries.push(geo);
+        const mark = new THREE.Mesh(geo, fenceMarkMats[spec.form]);
+        mark.rotation.x = -Math.PI / 2;
+        mark.position.set(r.x, reliefDepth + 0.01, r.z);
+        marker.add(mark);
+      }
+      template.add(marker);
+      return template;
+    }
+
     // the billboard props (trees): turned to face the camera every frame
     const billboardProps: THREE.Object3D[] = [];
     const billboardMaterials: THREE.MeshStandardMaterial[] = [];
@@ -4303,7 +4411,14 @@ export function GameViewport({
     const propModels = new Map<string, Promise<THREE.Group | null>>();
     // what a prop's model depends on: its type and texture, and for a pillar or
     // a chamfer its height and the wall texture around it
-    function propBuildKey(m: GameMap, spec: PropSpec): string {
+    function propBuildKey(m: GameMap, spec: PropSpec, index: number): string {
+      // a fence or block piece: its settings and what its neighbours make of it (see fenceModelSpec) - a
+      // neighbour changing changes this piece's key
+      if (fenceFormOf(spec.prop)) {
+        const fences = fenceIndex(m.props);
+        const piece = fences.byIndex.get(index);
+        return piece ? `fence|${JSON.stringify(fenceModelSpec(fences, piece))}` : `${spec.prop}|`;
+      }
       const texture = spec.texture ?? "";
       const type = retextured(PROP_TYPES[spec.prop], texture || undefined);
       if (type.kind !== "pillar" && type.kind !== "chamfer") return `${spec.prop}|${texture}`;
@@ -4319,6 +4434,14 @@ export function GameViewport({
     function propModel(key: string): Promise<THREE.Group | null> {
       let made = propModels.get(key);
       if (made) return made;
+      if (key.startsWith("fence|")) {
+        const fenceMade = buildFence(JSON.parse(key.slice(6)) as FenceModelSpec).then(async (g) => {
+          if (g) await addPropLods(g);
+          return g;
+        });
+        propModels.set(key, fenceMade);
+        return fenceMade;
+      }
       const [name, texture, h, setId] = key.split("|");
       const type = retextured(PROP_TYPES[name], texture || undefined);
       const build =
@@ -4357,14 +4480,16 @@ export function GameViewport({
       if (!spec || !definition) return;
       const texture = spec.texture ?? ("texture" in definition ? definition.texture : undefined);
       if (texture && /^(scifi|fantasy)_shared_/.test(texture) && !isTextureSetId(texture)) return;
+      // (a fence's top and decoration textures too)
+      if (definition.kind === "fence" && [spec.fence?.top, spec.fence?.deco?.texture].some((id) => id && /^(scifi|fantasy)_shared_/.test(id) && !isTextureSetId(id))) return;
       const version = propsVersion;
-      const key = propBuildKey(m, spec);
+      const key = propBuildKey(m, spec, index);
       track(async () => {
         const made = await propModel(key);
         if (!made || version !== propsVersion) return;
         const now = propSpecs[index];
         // (changed again meanwhile into something else: that build places it)
-        if (!now || !PROP_TYPES[now.prop] || propBuildKey(propsMap, now) !== key) return;
+        if (!now || !PROP_TYPES[now.prop] || propBuildKey(propsMap, now, index) !== key) return;
         const prop = made.clone();
         placeProp(prop, now);
         prop.userData.prop = true;
@@ -4384,6 +4509,11 @@ export function GameViewport({
         if (PROP_TYPES[now.prop].kind === "billboard") billboardProps.push(prop);
         propObjects.set(index, prop);
         group.add(prop);
+        // (a fence's floor mark: shown while editing)
+        const marker = prop.getObjectByName("fenceMarker");
+        if (marker) fenceMarkers.set(index, { marker, owner: prop });
+        else fenceMarkers.delete(index);
+        syncFenceMarkers();
         refreshPropWires();
       }).catch((err) => console.error("Prop build failed:", err));
     }
@@ -4398,6 +4528,7 @@ export function GameViewport({
       propsVersion++;
       for (const obj of propObjects.values()) group.remove(obj);
       propObjects.clear();
+      fenceMarkers.clear();
       billboardProps.length = 0;
       markedProps.clear();
     }
@@ -4419,9 +4550,10 @@ export function GameViewport({
       propsMap = next;
       a.forEach((spec, i) => {
         if (!PROP_TYPES[spec.prop]) return;
-        if (i < b.length && JSON.stringify(spec) === JSON.stringify(b[i])) return;
+        // (a fence or block piece is looked at in any case: a neighbour changing changes its model)
+        if (i < b.length && JSON.stringify(spec) === JSON.stringify(b[i]) && !fenceFormOf(spec.prop)) return;
         const obj = propObjects.get(i);
-        const key = propBuildKey(next, spec);
+        const key = propBuildKey(next, spec, i);
         // (meanwhile the old one - or, still building, the new one once it's
         // there - stands where the prop is now)
         if (obj) placeProp(obj, spec);
@@ -4637,7 +4769,7 @@ export function GameViewport({
           return cx < 0 || cz < 0 || cx >= W || cz >= H ? wallHeight : ceilingCell[cz * W + cx];
         },
         boxes: (m.props ?? [])
-          .filter((p) => PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "chamfer" && PROP_TYPES[p.prop].kind !== "roof")
+          .filter((p) => PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "chamfer" && PROP_TYPES[p.prop].kind !== "roof" && PROP_TYPES[p.prop].kind !== "fence")
           .map((p) => {
             const { x, z, reachX, reachZ } = propPlacement(p);
             const bottom = floorY(p.cell.x, p.cell.y) + (p.elevation ?? 0) * wallHeight;
@@ -6870,7 +7002,7 @@ export function GameViewport({
       dragItem = null;
       roofStroke = null;
       // the Roof tool: a press starts a stroke (either button); the cell under it is the first
-      if (editModeRef.current && editToolRef.current === "roofauto" && (e.button === 0 || e.button === 2) && !toolLocked()) {
+      if (editModeRef.current && STROKE_TOOLS.has(editToolRef.current) && (e.button === 0 || e.button === 2) && !toolLocked()) {
         const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
         if (hit && onEditPaintRef.current) {
           const stroke = { pointer: e.pointerId, id: ++dragSerial, erase: e.button === 2, last: `${hit.cell.x},${hit.cell.y}`, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
@@ -7071,7 +7203,7 @@ export function GameViewport({
         roofStroke = null;
         return;
       }
-      if (editModeRef.current && editToolRef.current === "roofauto") return;
+      if (editModeRef.current && STROKE_TOOLS.has(editToolRef.current)) return;
       // a drag just ended: not a click
       const d = dragItem;
       if (d?.moved) {
@@ -7418,7 +7550,7 @@ export function GameViewport({
       // an upward face (a floor, a table's top): the point itself
       const point: EditTarget["point"] =
         editNormal.y > 0.7 ? { cell, pos: [round2(p.x - cell.x), round2((p.y - floorY(cell.x, cell.y)) / wallHeight), round2(p.z - cell.y)] } : undefined;
-      return { kind: surface, cell, spot, point, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(cell, surface, p) };
+      return { kind: surface, cell, spot, point, at: [round2(p.x), round2(p.z)], decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(cell, surface, p) };
     }
     const editBox = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
@@ -8202,6 +8334,7 @@ export function GameViewport({
         const picked = marker.userData.smokeIndex === selectedSmokeRef.current;
         for (const child of marker.children) if (child.userData.fogShape) child.visible = picked;
       }
+      syncFenceMarkers();
       // the exits' plates throb
       exitMat.opacity = gateMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
       for (const mat of stairsMats.values()) mat.opacity = exitMat.opacity;
@@ -8436,6 +8569,8 @@ export function GameViewport({
       stopSharedDecals();
       decals.dispose();
       disposeLightGrid(lightGrid);
+      fenceMarkTexture.dispose();
+      for (const mat of Object.values(fenceMarkMats)) mat.dispose();
       exitMat.map?.dispose();
       exitMat.dispose();
       gateMat.map?.dispose();

@@ -12,6 +12,7 @@ import { getShopIds } from "../game/shopCatalog";
 import { simpleShopRefs, unknownShops } from "../game/simpleShop";
 import { unknownDoorTextures } from "../game/doorTextures";
 import { isTextureSetId } from "../render/textureSets";
+import { fenceProblems } from "../game/fences";
 
 export type Problem = { severity: "error" | "warning"; code: string; cell?: Vec2; key: string; params?: Record<string, string | number> };
 
@@ -84,6 +85,8 @@ export function validateMap(map: GameMap): Problem[] {
 
     for (const relation of ["with", "without"] as const) if (e[relation] && !ids.has(e[relation]!)) add("missingLink", e.cell, { id: e[relation]!, relation });
   }
+  // fence pieces: one to an edge, one to a cell, an edge piece with a side
+  for (const p of fenceProblems(map.props)) add(p.kind === "doubleEdge" ? "fenceDoubleEdge" : p.kind === "doubleCell" ? "fenceDoubleCell" : "fenceNoSide", { x: p.x, y: p.y });
   // an NPC's dialogue must exist (library and entry passage)
   for (const a of map.actors ?? []) {
     if (!a.dialogue) continue;

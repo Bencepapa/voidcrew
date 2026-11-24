@@ -13,6 +13,8 @@ import type { SharedMapHead } from "./sharedMapHeads";
 import type { EditSurface, EditTool } from "./mapEdits";
 import type { Direction, LightEffect, Linked, MapLight, MapLinkTarget, StairsDirection, StairsStyle } from "../game/types";
 import type { RoofForm } from "../game/roofAutotile";
+import type { FenceForm, FenceStyle } from "../game/fences";
+import type { FenceToolState } from "./inspector/FenceFields";
 
 export interface MapLook {
   weather?: Weather;
@@ -80,6 +82,9 @@ export interface EditorBarProps {
   // the texture set the Roof tool's new pieces wear ("": the roof piece's own)
   roofTexture: string;
   onRoofTexture: (texture: string) => void;
+  // the fence and block tools: what their next pieces are made with (see fences.ts)
+  fence: FenceToolState;
+  onFence: (patch: Partial<FenceToolState>) => void;
   // the Robot tool: the actor type a click puts in, and the selected actor
   robotChoice: string | null;
   onRobotChoice: (type: string) => void;
@@ -132,7 +137,7 @@ export interface EditorBarProps {
   onDecalDeselect: () => void;
   // the selected prop, and what the panel does with it
   prop: PropInfo | null;
-  onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string } & Linked, merge?: string) => void;
+  onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string; at?: Direction; fence?: FenceStyle } & Linked, merge?: string) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
   // the Smoke tool: the picked emitter
@@ -189,6 +194,8 @@ export interface EditorBarProps {
   // a roof piece of the Roof tool: detach it from (or give it back to) the autotile, take the whole roof away
   onPropRoofDetach: (detached: boolean) => void;
   onPropRoofRemove: () => void;
+  // a fence piece: take the whole connected run away
+  onPropFenceRemoveRun: () => void;
   onPropDelete: () => void;
   onPropDeselect: () => void;
   // the Light tool: what a click places (see App), and the selected light
@@ -321,6 +328,8 @@ export interface PropInfo {
   chance: number;
   // a piece of an autotiled roof (see PropSpec.auto): its roof, and whether it's detached
   auto?: { group: string; detached: boolean };
+  // a fence or block piece (see fences.ts): which, its settings, and the side of its cell an edge fence is on
+  fence?: { form: FenceForm; style: FenceStyle; side: Direction };
 }
 
 // the selected light as the panel shows it
@@ -359,6 +368,9 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   decal: "editorBar.clickAWallFloorOrCeilingThe",
   prop: "editorBar.clickAFloorNearASideOr",
   roofauto: "roofauto.help",
+  fenceblock: "fence.help.block",
+  fenceedge: "fence.help.edge",
+  fencemid: "fence.help.mid",
   smoke: "editorBar.clickAWallFloorOrAnythingSmoke",
   exit: "link.exitHelp",
   stairs: "link.stairsHelp",
@@ -370,7 +382,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
 
 const TOOL_LABELS: Partial<Record<EditTool, Key>> = {
   event: "events.group",
-  ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", roofauto: "roofauto.group", decal: "editorBar.decal",
+  ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", roofauto: "roofauto.group", fenceblock: "fence.block", fenceedge: "fence.edge", fencemid: "fence.mid", decal: "editorBar.decal",
   robot: "editorBar.npc", item: "editorBar.item", smoke: "editorBar.particles", exit: "editorBar.exit", stairs: "link.stairsTool", start: "editorBar.start",
   restricted: "editorBar.restricted", wall: "editorBar.chanceWall", map: "editorBar.map",
 };

@@ -7,7 +7,9 @@ import { PROP_TYPES, propEditable } from "../../game/props";
 import { propEdit } from "../propEditState";
 import { useTextureVersion } from "../textureLibrary";
 import { useSharedPropVersion } from "../sharedProps";
-import { TEXTURE_SETS, textureSetsOfKind } from "../../render/textureSets";
+import { textureSetsOfKind } from "../../render/textureSets";
+import { TexturePicker, textureOptions } from "../TexturePicker";
+import { FencePieceFields } from "./FenceFields";
 
 export function PropFields(p: EditorBarProps) {
 useTextureVersion();
@@ -17,8 +19,8 @@ if (!p.prop) return null;
 const PROP_TEXTURES = [...textureSetsOfKind("wall"), ...textureSetsOfKind("propFace")].filter(id => !id.endsWith("_top"));
 return <>
 <Section kind="prop" section="transform">
-{slider(t("editorBar.turn"), p.prop.rotation, 0, 345, 15, (v) => p.onPropChange({ rotation: v || undefined }))}
-{slider(t("editorBar.scale"), p.prop.scale, 0.25, 4, 0.05, (v) => p.onPropChange({ scale: v === 1 ? undefined : v }))}
+{!p.prop.fence && slider(t("editorBar.turn"), p.prop.rotation, 0, 345, 15, (v) => p.onPropChange({ rotation: v || undefined }))}
+{!p.prop.fence && slider(t("editorBar.scale"), p.prop.scale, 0.25, 4, 0.05, (v) => p.onPropChange({ scale: v === 1 ? undefined : v }))}
 {slider(t("editorBar.height"), p.prop.elevation, -0.5, Math.max(0, p.prop.roomHeight - 0.05), 0.05, (v) =>
                   p.onPropChange({ elevation: v || undefined }),
                 )}
@@ -32,22 +34,21 @@ return <>
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropRoofRemove}>{t("roofauto.removeRoof")}</button>
 </div>
 </div>}
-<KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id)).map(value => ({value,label:PROP_TYPES[value].name ?? value}))} onChange={prop => p.onPropChange({prop})}/>
+{p.prop.fence ? <FencePieceFields {...p}/> : <>
+<KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id) && PROP_TYPES[id].kind !== "fence").map(value => ({value,label:PROP_TYPES[value].name ?? value}))} onChange={prop => p.onPropChange({prop})}/>
 
 {p.prop.retexturable && (
                   // (a roof wears any wall-kind set - the user's shared ones too; the other props
                   // also the sets made for props)
-                  <KindChoice
+                  <TexturePicker
                     label={t("editorBar.texture")}
                     value={p.prop.texture ?? ""}
-                    options={[
-                      { value: "", label: t("editorBar.itsOwn") },
-                      ...(PROP_TYPES[p.prop.name]?.kind === "roof" ? textureSetsOfKind("wall").filter(id => id !== "sky") : PROP_TEXTURES).map((id) => ({ value: id, label: TEXTURE_SETS[id].label })),
-                    ]}
+                    options={textureOptions(PROP_TYPES[p.prop.name]?.kind === "roof" ? textureSetsOfKind("wall").filter(id => id !== "sky") : PROP_TEXTURES, [{ value: "", label: t("editorBar.itsOwn") }])}
                     onChange={(texture) => p.onPropChange({ texture: texture || undefined })}
                   />
                 )}
 <button type="button" className={`${BUTTON} ${idle}`} onClick={p.onPropStack} title={t("editorBar.thePaletteSPropOnTopOf")}>{t("editorBar.stackOnTop", { v1: p.propChoice })}</button>
+</>}
 </Section>
 <Section kind="prop" section="logic">
 {chanceSlider(p.prop.chance, (chance) => p.onPropChange({ chance }))}
