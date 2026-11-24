@@ -22,6 +22,7 @@ import { interactionAt, type ClickEvent, type Interaction, type InteractionTarge
 import { setInteraction } from "./editor/mapEdits";
 import { addTarget, decalOperableInfo, linkTargetFor, operableInfo } from "./editor/operableEdits";
 import { operableLink } from "./editor/operableLink";
+import { propLockInfo } from "./editor/lockEdits";
 import { keyFlags } from "./game/keys";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
@@ -2161,6 +2162,7 @@ export default function App() {
       auto: spec.auto ? { group: spec.auto, detached: !!spec.detached } : undefined,
       fence: fenceFormOf(spec.prop) ? { form: fenceFormOf(spec.prop)!, style: cleanFenceStyle(spec.fence) ?? {}, side: isSide(spec.at) ? spec.at : "N" } : undefined,
       operable: operableInfo(spec, selectedProp!),
+      lock: propLockInfo(map, spec),
     };
   })();
   const changeProp = (patch: Parameters<typeof updateProp>[2], merge?: string) => {

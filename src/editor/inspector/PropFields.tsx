@@ -11,6 +11,7 @@ import { textureSetsOfKind } from "../../render/textureSets";
 import { TexturePicker, textureOptions } from "../TexturePicker";
 import { FencePieceFields } from "./FenceFields";
 import { OperableFields } from "./OperableFields";
+import { LockFields } from "./LockFields";
 
 export function PropFields(p: EditorBarProps) {
 useTextureVersion();
@@ -21,6 +22,8 @@ const PROP_TEXTURES = [...textureSetsOfKind("wall"), ...textureSetsOfKind("propF
 return <>
 {/* a lever, button, plate or trap: what it does comes first, not folded away */}
 {p.prop.operable && <div className="px-2 pt-2"><OperableFields info={p.prop.operable} onChange={(operable) => p.onPropChange({ operable })}/></div>}
+{/* a container, lever or button can be locked (see game/propLocks.ts) */}
+{p.prop.lock && <div className="px-2 pt-2"><LockFields info={p.prop.lock} onChange={(lock) => p.onPropChange({ lock })}/></div>}
 <Section kind="prop" section="transform">
 {!p.prop.fence && slider(t("editorBar.turn"), p.prop.rotation, 0, 345, 15, (v) => p.onPropChange({ rotation: v || undefined }))}
 {!p.prop.fence && slider(t("editorBar.scale"), p.prop.scale, 0.25, 4, 0.05, (v) => p.onPropChange({ scale: v === 1 ? undefined : v }))}

@@ -14,6 +14,7 @@ import { unknownDoorTextures } from "../game/doorTextures";
 import { isTextureSetId } from "../render/textureSets";
 import { fenceProblems } from "../game/fences";
 import { operableProblems, type OperableKind } from "../game/operables";
+import { propLockProblems } from "../game/propLocks";
 import { cleanSkyGradient } from "../game/skyGradient";
 import { isSharedSkyId } from "../game/skyImage";
 import { sharedImage } from "../render/sharedImages";
@@ -135,6 +136,8 @@ export function validateMap(map: GameMap): Problem[] {
   }
   // levers, buttons, plates and traps: every target has to be a door or a wall trap; a wall trap should not face a wall
   for (const p of operableProblems(map)) add(p.code, p.cell, p.code === "operableNoTarget" ? { kind: t(`operable.kind.${p.params!.kind as OperableKind}`) } : p.params);
+  // the locks of chests, levers and buttons: a key, one that something on the map gives (see propLocks.ts)
+  for (const p of propLockProblems(map)) add(p.code, p.cell, p.params);
   // a door's own leaf / frame texture must be a texture set (a shared one counts once it's loaded)
   for (const u of unknownDoorTextures(map.doors, isTextureSetId)) add("unknownDoorTexture", u.cell, { id: u.id, field: t(`editorBar.door${u.field === "leafTexture" ? "Leaf" : "Frame"}Texture`) });
   return [...out, ...placementProblems(placedMap(map), c => !open(c))];
