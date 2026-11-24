@@ -29,6 +29,8 @@ export interface MapLook {
   showTitle?: boolean;
   // the loading screen's picture (a shared still image's id; see GameMap.loadingImage)
   loadingImage?: string;
+  // how loose items are picked up here (undefined: the viewer's choice, else the world's; see pickupMode.ts)
+  pickup?: "auto" | "click";
 }
 // what a prop can wear (see PropSpec.texture): the wall and prop face sets
 // (a box's top comes with its side)

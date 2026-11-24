@@ -15,6 +15,8 @@ import { LangSwitch } from "../i18n/LangSwitch";
 import { storyEnabled } from "../game/story/storyRuntime";
 import { StoryDebugSection } from "./StoryDebugSection";
 import { SharedCacheDebugSection } from "./SharedCacheDebugSection";
+import { parsePickupMode, worldDefaultPickup } from "../game/pickupMode";
+import { setEnemiesOff, setStoredPickupMode, useEnemiesOff, useStoredPickupMode } from "../game/playPrefs";
 import { sharedConfigured } from "../editor/sharedAuth";
 import { t, formatNumber, type Key } from "../i18n";
 import type { TextureSetKind } from "../render/textureSets";
@@ -229,6 +231,8 @@ export function DebugPanel({
 
   const relief = settings.wallProfile === "relief";
   const autoShared = useAutoLoadShared();
+  const enemiesInactive = useEnemiesOff();
+  const storedPickup = useStoredPickupMode();
 
   // a collapsible category, closed until opened
   const section = (title: string, children: ReactNode, hint?: string) => (
@@ -576,6 +580,23 @@ export function DebugPanel({
           {check("wallBacking", t("debug.blackWallPillarBacking"))}
           {check("backingInspect", t("debug.inspectBackingTranslucentWallsColouredPanels"))}
           {check("enemyScanner", t("debug.scannerEnemyOutlinesCrewGear"))}
+          <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+            <input type="checkbox" checked={enemiesInactive} onChange={(e) => setEnemiesOff(e.target.checked)} />
+            {t("debug.enemiesInactive")}
+          </label>
+          {select(
+            t("pickup.mode"),
+            <select
+              value={storedPickup ?? ""}
+              title={t("pickup.modeHint")}
+              onChange={(e) => setStoredPickupMode(parsePickupMode(e.target.value) ?? null)}
+              className={SELECT}
+            >
+              <option value="">{t("pickup.default", { mode: t(`pickup.${worldDefaultPickup(world ?? "scifi")}`) })}</option>
+              <option value="auto">{t("pickup.auto")}</option>
+              <option value="click">{t("pickup.click")}</option>
+            </select>,
+          )}
         </>,
       )}
 
