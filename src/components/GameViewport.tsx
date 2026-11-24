@@ -45,7 +45,7 @@ import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type EdgeSegment } from "../render/reliefMesh";
 import { buildRoofGeometry } from "../render/roofMesh";
-import { fenceFaces, fenceFloorMark, fenceFormOf, fenceIndex, fenceModelSpec, type FenceModelSpec } from "../game/fences";
+import { fenceFaces, fenceFloorMark, fenceFormOf, fenceIndex, fenceModelSpec, sideFromPoint, type FenceModelSpec } from "../game/fences";
 import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
 import { fireLightColor, generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
@@ -7858,8 +7858,16 @@ export function GameViewport({
         // one (the ceiling plate of a light's cell), else its floor
         const onCeiling = tool === "light" || ((tool === "texture" || tool === "height") && target.kind === "ceiling");
         const y = onCeiling ? ceilingY(target.cell.x, target.cell.y) - 0.02 : floorY(target.cell.x, target.cell.y) + 0.02;
-        editBox.position.set(target.cell.x, y, target.cell.y);
-        editBox.scale.set(0.98, 0.04, 0.98);
+        // the edge fence tool: the edge of the cell nearest the pointer, as a click would take it (none in the cell's middle)
+        const side = tool === "fenceedge" && target.at ? sideFromPoint(target.at[0] - target.cell.x, target.at[1] - target.cell.y) : null;
+        if (side) {
+          const v = DIR_VECTOR[side];
+          editBox.position.set(target.cell.x + v.x * 0.5, y + 0.08, target.cell.y + v.y * 0.5);
+          editBox.scale.set(v.x ? 0.08 : 1, 0.2, v.y ? 0.08 : 1);
+        } else {
+          editBox.position.set(target.cell.x, y, target.cell.y);
+          editBox.scale.set(0.98, 0.04, 0.98);
+        }
       }
       mat.color.setHex(color);
     }

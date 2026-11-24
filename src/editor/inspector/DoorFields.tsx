@@ -5,7 +5,7 @@ import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle, do
 import { DOOR_EDGE_OFFSET } from "../../game/map";
 import { doorTextureOptions, useDoorCatalog } from "../sharedDoorTypes";
 import { useTextureVersion } from "../textureLibrary";
-import { TEXTURE_SETS, isTextureSetId } from "../../render/textureSets";
+import { TexturePicker, textureOptions } from "../TexturePicker";
 
 // a door's own leaf or frame texture: unset (the door type's) or one of the door / wall textures
 function DoorTexture({ field, value, textures, onChange }: {
@@ -13,12 +13,9 @@ function DoorTexture({ field, value, textures, onChange }: {
   textures: [string, { label: string }][]; onChange: (id: string | undefined) => void;
 }) {
   const label = t(field === "leafTexture" ? "editorBar.doorLeafTexture" : "editorBar.doorFrameTexture");
-  return <KindChoice label={label} title={t("editorBar.doorTextureTitle", { part: label.toLowerCase() })} value={value ?? ""} options={[
-    { value: "", label: t("editorBar.doorTextureOfType") },
-    // (one that no set answers to - not loaded, or gone - stays shown and can be cleared)
-    ...(value && !textures.some(([id]) => id === value) ? [{ value, label: isTextureSetId(value) ? TEXTURE_SETS[value].label : value }] : []),
-    ...textures.map(([id, texture]) => ({ value: id, label: texture.label })),
-  ]} onChange={id => onChange(id || undefined)}/>;
+  // (one that no set answers to - not loaded, or gone - stays shown and can be cleared: the picker keeps the selected one)
+  return <TexturePicker label={label} title={t("editorBar.doorTextureTitle", { part: label.toLowerCase() })} value={value ?? ""}
+    options={textureOptions(textures.map(([id]) => id), [{ value: "", label: t("editorBar.doorTextureOfType") }])} onChange={id => onChange(id || undefined)}/>;
 }
 
 export function DoorFields(p: EditorBarProps) {
