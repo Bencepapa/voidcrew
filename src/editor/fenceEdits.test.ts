@@ -13,7 +13,7 @@ export async function load(url, context, nextLoad) {
   return result;
 }`), import.meta.url);
 const { edgeId } = await import("../game/fences");
-const { eraseFence, fenceEditing, fenceIndexAt, fencePieceEdited, fenceRun, paintFence, reevaluateFences } = await import("./fenceEdits");
+const { eraseFence, fenceEditing, fenceIndexAt, fencePieceEdited, fenceRun, paintFence, reevaluateFences, restyleFence } = await import("./fenceEdits");
 const { updateProp } = await import("./mapEdits");
 
 // a 12x9 map, walls round the edge
@@ -26,6 +26,26 @@ function mapOf(): MapFile {
 const row = (x0: number, x1: number, y: number) => Array.from({ length: x1 - x0 + 1 }, (_, i) => ({ x: x0 + i, y }));
 const col = (x: number, y0: number, y1: number) => Array.from({ length: y1 - y0 + 1 }, (_, i) => ({ x, y: y0 + i }));
 const forms = (file: MapFile) => (file.props ?? []).map((p) => `${p.prop.replace("fence_", "")}@${p.x},${p.y}${p.prop === "fence_edge" ? p.at : ""}`);
+
+// ---- restyling the stroke just made (the panel follows the tool while it is in hand)
+{
+  const file = mapOf();
+  paintFence(file, "mid", row(2, 4, 3), { texture: "fantasywall1" });
+  paintFence(file, "mid", [{ x: 7, y: 3 }], { texture: "fantasywall1" });
+  restyleFence(file, "mid", row(2, 4, 3), { texture: "wall4", style: { thickness: 0.2 } });
+  assert.deepEqual(file.props!.slice(0, 3).map((p) => [p.texture, p.fence]), [["wall4", { thickness: 0.2 }], ["wall4", { thickness: 0.2 }], ["wall4", { thickness: 0.2 }]]);
+  assert.equal(file.props![3].texture, "fantasywall1", "a piece outside the stroke is left alone");
+  assert.equal(file.props![3].fence, undefined);
+  restyleFence(file, "mid", row(2, 4, 3), {});
+  assert.equal(file.props![0].texture, undefined, "no texture: the deck's walls again");
+  assert.equal(file.props![0].fence, undefined, "default settings are not written");
+  // a cell with no piece, and an edge piece found by its side
+  restyleFence(file, "mid", [{ x: 9, y: 5 }], { texture: "wall4" });
+  assert.equal(file.props!.length, 4);
+  paintFence(file, "edge", [{ x: 5, y: 5 }], { texture: "fantasywall1" }, "N");
+  restyleFence(file, "edge", [{ x: 5, y: 5 }], { style: { top: "wall4" } }, "N");
+  assert.deepEqual(file.props![4].fence, { top: "wall4" });
+}
 
 // ---- placing: blocks and mid fences, a cell each
 {

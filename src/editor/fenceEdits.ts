@@ -77,6 +77,26 @@ export function paintFence(file: MapFile, form: FenceForm, cells: readonly Vec2[
   return file;
 }
 
+// Makes the pieces of `form` in the cells (on their `side`, for an edge) wear `paint` - the panel's settings -
+// again: how the pieces of the stroke just made follow the tool's panel while it is still in hand. A cell with no
+// piece of the form is left alone.
+export function restyleFence(file: MapFile, form: FenceForm, cells: readonly Vec2[], paint: FencePaint, side?: Direction): MapFile {
+  const style = cleanFenceStyle(paint.style);
+  for (const cell of cells) {
+    const piece = file.props?.[fenceIndexAt(file, form, cell, side)];
+    if (!piece) continue;
+    if (paint.texture) piece.texture = paint.texture;
+    else delete piece.texture;
+    if (style) piece.fence = style;
+    else delete piece.fence;
+    if (form === "mid") {
+      if (paint.rotation) piece.rotation = paint.rotation;
+      else delete piece.rotation;
+    }
+  }
+  return file;
+}
+
 // Takes the pieces of `form` out of the cells (for an edge: the one on each cell's `side`, however it is
 // stored - from this cell or from the one across).
 export function eraseFence(file: MapFile, form: FenceForm, cells: readonly Vec2[], side?: Direction, removed?: { count: number }): MapFile {

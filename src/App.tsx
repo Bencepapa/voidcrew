@@ -83,7 +83,7 @@ import { doorTextureIds } from "./game/doorTextures";
 import { isTextureSetId } from "./render/textureSets";
 import { eraseRoof, eraseRoofGroup, paintRoof, roofFootprint, roofGroupFor, setRoofDetached } from "./editor/roofEdits";
 import type { RoofForm } from "./game/roofAutotile";
-import { eraseFence, fenceRun, paintFence } from "./editor/fenceEdits";
+import { eraseFence, fenceRun, paintFence, restyleFence } from "./editor/fenceEdits";
 import { FENCE_TOOL_DEFAULT, type FenceToolState } from "./editor/inspector/FenceFields";
 import { cleanFenceStyle, fenceFormOf, isSide, sideFromPoint, type FenceForm } from "./game/fences";
 import type { TextureSetId } from "./render/textureSets";
@@ -266,6 +266,8 @@ export default function App() {
   const [fence, setFence] = useState<FenceToolState>(FENCE_TOOL_DEFAULT);
   const fenceStroke = useRef<{ side: Direction | null } | null>(null);
   const fenceStrokeSerial = useRef(0);
+  // the pieces the last stroke put in: while the tool is in hand the panel's changes reach them too
+  const lastFenceStroke = useRef<{ form: FenceForm; side?: Direction; cells: Vec2[]; serial: number } | null>(null);
   // the Decal tool: the decal a click puts on (and its size in surface
   // pixels), how it's turned, and the selected one (its index in the map's
   // decals)
@@ -1022,10 +1024,27 @@ export default function App() {
       side = fenceStroke.current.side ?? undefined;
     }
     const paint = { texture: fence.texture || undefined, style: fence.style, rotation: fence.rotation };
+    if (stroke.erase) lastFenceStroke.current = null;
+    else if (stroke.first || lastFenceStroke.current?.serial !== fenceStrokeSerial.current) lastFenceStroke.current = { form, side, cells: [cell], serial: fenceStrokeSerial.current };
+    else if (!lastFenceStroke.current.cells.some((c) => c.x === cell.x && c.y === cell.y)) lastFenceStroke.current.cells.push(cell);
     const result = applyEdit(map.id, (f) => (stroke.erase ? eraseFence(f, form, [cell], side) : paintFence(f, form, [cell], paint, side)), merge);
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else replaceMap(result.map);
     setSelectedProp(null);
+    setEdits((n) => n + 1);
+  };
+  // The fence tools' panel: its settings are what the next pieces are made with, and - until another tool is
+  // picked or a new stroke begins - what the pieces of the last stroke are made of too (so the thickness,
+  // texture, top and decoration of what was just built can be tuned straight away).
+  const onFencePanel = (patch: Partial<FenceToolState>) => {
+    const next = { ...fence, ...patch };
+    setFence(next);
+    const last = lastFenceStroke.current;
+    if (!last || FENCE_TOOLS[editTool] !== last.form || !("texture" in patch || "style" in patch || "rotation" in patch)) return;
+    const paint = { texture: next.texture || undefined, style: next.style, rotation: next.rotation };
+    const result = applyEdit(map.id, (f) => restyleFence(f, last.form, last.cells, paint, last.side), `fence stroke ${last.serial} restyle`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+    else replaceMap(result.map);
     setEdits((n) => n + 1);
   };
   // The map editor's edits: a click digs out the wall pointed at or fills in
@@ -2748,7 +2767,7 @@ export default function App() {
           roofTexture={roofTexture}
           onRoofTexture={setRoofTexture}
           fence={fence}
-          onFence={(patch) => setFence((f) => ({ ...f, ...patch }))}
+          onFence={onFencePanel}
           propRotation={propRotation}
           onPropRotate={() => setPropRotation((r) => (r + 90) % 360)}
           robotChoice={robotChoice}
