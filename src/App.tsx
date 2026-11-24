@@ -190,6 +190,7 @@ export default function App() {
     resolveShot,
     setImmortalCrew,
     setNoclip,
+    setEditing,
     setWorldFrozen,
     replaceMap,
     enterMap,
@@ -342,6 +343,7 @@ export default function App() {
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
   useEffect(() => setNoclip(viewSettings.noclip), [viewSettings.noclip, setNoclip]);
+  useLayoutEffect(() => setEditing(editMode), [editMode, setEditing]);
   const worldPaused = worldPause(activeInteraction, inventoryShown);
   const interactionPausesWorld = worldPaused.pausesWorld;
   useLayoutEffect(() => {
@@ -2797,7 +2799,7 @@ export default function App() {
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
           onRenameMap={renameCurrentMap}
-          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle, loadingImage: map.loadingImage }}
+          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle, loadingImage: map.loadingImage, pickup: map.pickup }}
           onMapLook={changeMapLook}
           renderSettings={settings}
           onRenderSettings={setSettings}

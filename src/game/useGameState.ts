@@ -32,6 +32,10 @@ import { lockedAway, planShip } from "./shipPlan";
 import { gateLink, loadingImageFor, resolveArrival, stairsLink, type LinkKind, type MapLink } from "./mapLinks";
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
+import { enemiesOff, storedPickupMode } from "./playPrefs";
+import { holdEnemies, isEnemy } from "./enemiesOff";
+import { clickPickup, inPickupReach, resolvePickupMode, stepCollects } from "./pickupMode";
+import { reviveCrew, wipeOutcome } from "./editorWipe";
 
 // What a log line is, which colours it (see LogPanel): ordinary news (the
 // default), the map editor's own lines, errors (an edit refused, a save that
@@ -206,6 +210,11 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   const setNoclip = useCallback((on: boolean) => {
     noclipRef.current = on;
   }, []);
+  // the map editor is on (see editorWipe.ts: a wipe then is a revival in place)
+  const editingRef = useRef(false);
+  const setEditing = useCallback((on: boolean) => {
+    editingRef.current = on;
+  }, []);
   const [log, setLog] = useState<LogEntry[]>(() => variation === null ? [] : [
     { id: logId++, text: WORLDS[START_MAP.world].loop === "open" ? `You enter ${START_MAP.name}.` : `You board the USV Horizon, ${START_MAP.name}.` },
   ]);
@@ -299,7 +308,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   const busyUntilRef = useRef(0);
   const busy = () =>
     interactionBlocksMovement.current ||
-    wipedRef.current !== null ||
+    // (a wipe from play doesn't pin the party while the editor is on: it walks about to look at the map)
+    (wipedRef.current !== null && !editingRef.current) ||
     transitBusyRef.current ||
     performance.now() < busyUntilRef.current ||
     readyMapRef.current !== mapRef.current.id ||
@@ -401,7 +411,16 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   // calmed down; true if so)
   const wipeIfDownRef = useRef<() => boolean>(() => false);
   wipeIfDownRef.current = () => {
-    if (wipedRef.current !== null || !crewRef.current.every((c) => c.hp === 0)) return false;
+    const outcome = wipeOutcome(crewRef.current, wipedRef.current !== null, editingRef.current);
+    if (outcome === "none") return false;
+    if (outcome === "revive") {
+      // the map editor is on: nothing is lost for it - the crew gets up again where it is (no wipe
+      // state, no respawn, no other map, no failed run; the map and its unsaved edits are not touched)
+      crewRef.current = reviveCrew(crewRef.current);
+      setCrew(crewRef.current);
+      pushLog(t("editor.crewRevived"), "editor");
+      return true;
+    }
     pushLog("The whole crew is down.", "danger");
     wipedRef.current = performance.now();
     setWipedAt(wipedRef.current);
@@ -529,7 +548,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       if (variationRef.current && wipedRef.current === null) alertTick(m);
       // (a downed crew is nowhere to them: they lose it and go back)
       const spotted = spottedRef.current && gameClock.now() < spottedRef.current.until ? spottedRef.current : null;
-      const { actors: stepped, attacks, alarms, allyShots, spotted: seenBy } = stepActors(
+      const stepResult = stepActors(
         m,
         actorsRef.current,
         gameClock.now(),
@@ -538,6 +557,19 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
         elevationRef.current,
         spotted,
       );
+      // testing: "Enemies inactive" - the hostile ones stay as they were and do no harm (the friendly
+      // ones, the crew's own turrets and the story go on)
+      const inactive = enemiesOff();
+      const stepped = inactive ? holdEnemies(actorsRef.current, stepResult.actors) : stepResult.actors;
+      const attacks = inactive ? [] : stepResult.attacks;
+      const alarms = inactive ? [] : stepResult.alarms;
+      const allyShots = inactive
+        ? stepResult.allyShots.filter((shot) => {
+            const shooter = stepped.find((a) => a.id === shot.actor);
+            return !shooter || !isEnemy(shooter);
+          })
+        : stepResult.allyShots;
+      const seenBy = inactive ? null : stepResult.spotted;
       // a camera sees the crew: every robot on guard knows where, a while
       if (seenBy) {
         if (!spotted) pushLog("A camera marks your position - the robots are coming.", "danger");
@@ -1395,15 +1427,39 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     },
     [map, fullMap, inReach, looted, lootKey, pushLog, addToHaul, raiseFlag, fireEvent],
   );
-  // stepping into a cell picks up what lies there
+  // stepping into a cell picks up what lies there - in "auto" pickup mode (see pickupMode.ts); in
+  // "click" mode what lies there stays until it is clicked or Used
   const pickUpRef = useRef(pickUpItems);
   pickUpRef.current = pickUpItems;
   useEffect(() => {
     // (not while the map is being edited - no variation is played then:
     // the editor walks over what lies about)
     if (variationRef.current === null) return;
+    if (!stepCollects(resolvePickupMode(mapRef.current, storedPickupMode()))) return;
     pickUpRef.current(false);
   }, [pos, elevation, map.id]);
+  // A click on a loose item in the view (the "pickup:<index>" touch, the index in the played map's
+  // items): taken if it is within a short reach; else it says so.
+  const pickUpClicked = useCallback(
+    (index: number) => {
+      const it = map.items?.[index];
+      if (!it || variationRef.current === null || (isSharedPickupId(it.item) && !Object.hasOwn(ITEM_TYPES, it.item))) return;
+      const outcome = clickPickup({
+        taken: looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))),
+        busy: busy(),
+        reach: inPickupReach(pos, elevation, it.cell, floorHeight(map, it.cell.x, it.cell.y)),
+      });
+      if (outcome === "far") pushLog(t("pickup.tooFar"), "warn");
+      if (outcome !== "take") return;
+      const stacks = [{ item: it.item, count: it.count ?? 1 }];
+      pushLog(it.name ? `You pick up the ${it.name}.` : `You pick up ${stacksText(stacks)}.`, "success");
+      addToHaul(stacks);
+      setLooted((prev) => new Set([...prev, lootKey("item", (fullMap.items ?? []).indexOf(it))]));
+      if (it.sets) raiseFlag(it.sets, true);
+      fireEvent({ on: "pickup", item: it.item });
+    },
+    [map, fullMap, pos, elevation, looted, lootKey, pushLog, addToHaul, raiseFlag, fireEvent],
+  );
 
   // Use: whatever is in front of the party - a lift's button, or the
   // containers within reach: everything in them spills out and goes into
@@ -1700,10 +1756,12 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       if (action === "lift" && liftAt(map, pos)) startLift();
       // (a container or a wreck tapped)
       if (action === "use") use();
+      // (a loose item clicked)
+      if (action.startsWith("pickup:")) pickUpClicked(Number(action.slice("pickup:".length)));
       if (action.startsWith("terminal:")) showTerminal(action.slice("terminal:".length), false);
       if (action === "power") throwBreakerRef.current();
     },
-    [map, pos, startLift, use, showTerminal],
+    [map, pos, startLift, use, showTerminal, pickUpClicked],
   );
 
   // off a bridge, down onto the floor below it (null: not on one)
@@ -1816,6 +1874,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     resolveShot,
     setImmortalCrew,
     setNoclip,
+    setEditing,
     setWorldFrozen,
     replaceMap,
     enterMap,

@@ -7261,6 +7261,11 @@ export function GameViewport({
       }
       // a container or a wreck, nearest: the same as Use (handy on a phone)
       for (let o: THREE.Object3D | null = hits[0].object; o; o = o.parent) {
+        // a loose item: picked up if it is within reach (see pickupMode.ts)
+        if (typeof o.userData.itemIndex === "number") {
+          onTouchRef.current?.(`pickup:${o.userData.itemIndex}`);
+          return;
+        }
         if (o.userData.propIndex !== undefined) {
           const spec = map.props?.[o.userData.propIndex as number];
           if (spec && PROP_TYPES[spec.prop]?.container) onTouchRef.current?.("use");
