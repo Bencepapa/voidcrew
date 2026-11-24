@@ -25,6 +25,10 @@ export interface OperableEnv {
   pos: Vec2;
   elevation: number;
   openDoorsRef: MutableRefObject<ReadonlySet<string>>;
+  // how many piles of items the party dropped lie on a cell (see dropItem.ts), and a key that changes whenever one lands on
+  // a cell or is taken from it: a plate is looked at again then
+  itemsOn?: (cell: Vec2) => number;
+  itemsKey?: string;
   // a door opens (`animated`: the panel slides, with the log line and the story's "open" event) / shuts
   openDoor: (cell: Vec2, animated: boolean) => void;
   closeDoor: (cell: Vec2) => void;
@@ -52,6 +56,7 @@ export function useOperables(env: OperableEnv) {
       now: gameClock.now(),
       party: e.active && grounded ? e.pos : null,
       doorOpen: (cell) => e.openDoorsRef.current.has(`${cell.x},${cell.y}`),
+      itemsOn: e.active ? e.itemsOn : undefined,
     };
   }, []);
 
@@ -143,7 +148,7 @@ export function useOperables(env: OperableEnv) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [env.mapId, env.active]);
 
-  // the party stepped onto or off a plate or a trap cell
+  // the party stepped onto or off a plate or a trap cell - or an item was put down on a plate or taken off it
   useEffect(() => {
     if (!envRef.current.active) return;
     const step = evaluatePlates(envRef.current.mapRef.current, stateRef.current, context());
@@ -151,7 +156,7 @@ export function useOperables(env: OperableEnv) {
     publish(step.state);
     apply(step.effects);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env.pos.x, env.pos.y, env.elevation, env.mapId, env.active]);
+  }, [env.pos.x, env.pos.y, env.elevation, env.mapId, env.active, env.itemsKey]);
 
   // momentary buttons spring back
   useEffect(() => {
