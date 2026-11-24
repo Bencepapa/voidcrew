@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { AlignJustify, ArrowUpFromLine, Ban, BrickWall, Dices, Fence, Eye, EyeOff, Flag, Footprints, House, Image, Library, Lock, LockOpen, LogOut, MessageSquare, Minus, Store, Tent, Triangle } from "lucide-react";
+import { AlignJustify, ArrowUpFromLine, Ban, BrickWall, Cone, Dices, Fence, Eye, EyeOff, Flag, Footprints, House, Image, Library, Lock, LockOpen, LogOut, MessageSquare, Minus, Pyramid, Store, Tent, Triangle, Warehouse } from "lucide-react";
 import { ROOF_FORMS, type RoofForm } from "../game/roofAutotile";
 import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld, worldOfMap } from "../game/worlds";
@@ -78,7 +78,7 @@ export function AssetTree(p: EditorBarProps) {
     });
   }
   // the Roof tool: one entry per form (the tool paints roofs in the form picked)
-  const roofIcons: Record<RoofForm, ReactNode> = {slope: <Triangle size={28}/>, flat: <House size={28}/>, bent: <Tent size={28}/>};
+  const roofIcons: Record<RoofForm, ReactNode> = {slope: <Triangle size={28}/>, flat: <House size={28}/>, bent: <Tent size={28}/>, pyramid: <Pyramid size={28}/>, pyramidcell: <Cone size={28}/>, gable: <Warehouse size={28}/>};
   const roofs: Entry[] = ROOF_FORMS.map(form => ({
     ...toolEntry("roofauto", t(`roofauto.${form}`), roofIcons[form]),
     id: `roof:${form}`, search: t("roofauto.formHint"), active: p.roofForm === form, pick: () => choose("roofauto", () => p.onRoofForm(form)),

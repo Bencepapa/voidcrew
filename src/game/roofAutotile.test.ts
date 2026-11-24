@@ -223,7 +223,8 @@ for (let trial = 0; trial < 300; trial++) {
   const cells: RoofCell[] = [];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (random() < density) cells.push({ x, y, level: random() < 0.15 ? 1 : 0 });
   if (!cells.length) continue;
-  for (const form of ROOF_FORMS) {
+  // (the three forms of the slope family: the others have their own checks in roofForms.test.ts)
+  for (const form of ROOF_FORMS.filter((f) => f === "slope" || f === "flat" || f === "bent")) {
     const plan = planRoof(cells, form);
     assert.equal(plan.length, cells.length);
     plan.forEach((p, i) => assert.deepEqual([p.x, p.y], [cells[i].x, cells[i].y]));

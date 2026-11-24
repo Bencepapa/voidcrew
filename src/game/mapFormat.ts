@@ -430,7 +430,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       }
       if (cells[p.y]?.[p.x] !== "floor") throw new Error(`prop at ${p.x},${p.y} isn't in a floor cell`);
       if (p.auto !== undefined) {
-        if (!parseRoofGroup(p.auto)) throw new Error(`prop at ${p.x},${p.y}: "${String(p.auto)}" isn't a roof group (<slope|flat|bent>-<number>)`);
+        if (!parseRoofGroup(p.auto)) throw new Error(`prop at ${p.x},${p.y}: "${String(p.auto)}" isn't a roof group (<slope|flat|bent|pyramid|pyramidcell|gable>-<number>)`);
         if (!isRoofPieceId(p.prop)) throw new Error(`prop at ${p.x},${p.y}: a roof group's piece must be a roof prop, not "${p.prop}"`);
       }
       const form = fenceFormOf(p.prop);
