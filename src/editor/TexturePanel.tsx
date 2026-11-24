@@ -241,7 +241,7 @@ export function UnsavedBar({ onError }: { onError: (message: string) => void }) 
     {imageDrafts > 0 && <span className="flex basis-full flex-wrap items-center gap-1">
       {imageDraftList.map(d => <span key={d.id} className="inline-flex items-center overflow-hidden rounded border border-yellow-500/70 text-xs">
         <button type="button" className="px-2 py-0.5 hover:bg-yellow-800/50" title={t("assetManager.image.goToDraft")}
-          onClick={() => window.dispatchEvent(new CustomEvent("voidcrew:open-asset", { detail: { sample: d.type === "decal" ? "prop" : "still", id: d.id } }))}>
+          onClick={() => window.dispatchEvent(new CustomEvent("voidcrew:open-asset", { detail: { sample: d.type === "decal" ? "prop" : d.type === "sky" ? "sky" : "still", id: d.id } }))}>
           {d.name || t("assetManager.untitled")}{d.png ? "" : " · " + t("assetManager.image.emptyDraft")}
         </button>
         <button type="button" className="border-l border-yellow-500/70 px-1.5 py-0.5 hover:bg-red-900/60" aria-label={t("assetManager.discard")} title={t("assetManager.discard")}

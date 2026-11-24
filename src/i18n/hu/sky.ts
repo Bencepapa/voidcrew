@@ -23,6 +23,7 @@ export const skyHu: Partial<Record<keyof typeof skyEn, string>> = {
   "sky.issue.aspectOff": "A kép {ratio}:1 arányú, nem 2:1: az égbolt megnyúlva fog látszani.",
   "sky.err.format": "{name} nem PNG, JPG vagy WebP fájl.",
   "sky.err.pngTooBig": "{name} PNG-ként {mb} MB lenne: a határ 8 MB. Használj kisebb képet, pl. 2048 × 1024.",
+  "editorBar.skyImageHint": "Beépített égbolt, vagy az Assets managerben (Égboltok) feltöltött. A nyitott (\"sky\") falakon és mennyezeteken át látszik.",
   "editorBar.skyNotLoaded": "(az égbolt nincs betöltve: {id})",
   "minimap.problem.unknownSky": "A pálya égboltja ({id}) nem ismert megosztott égbolt (nincs közzétéve, vagy még nem töltődött be).",
 };

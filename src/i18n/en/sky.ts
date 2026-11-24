@@ -21,6 +21,7 @@ export const skyEn = {
   "sky.issue.aspectOff": "The picture is {ratio}:1, not 2:1: the sky will look stretched.",
   "sky.err.format": "{name} is not a PNG, JPG or WebP file.",
   "sky.err.pngTooBig": "{name} would be {mb} MB as a PNG: the limit is 8 MB. Use a smaller picture, e.g. 2048 × 1024.",
+  "editorBar.skyImageHint": "A built-in sky or one uploaded in the Assets manager (Skies). It shows through the open (\"sky\") walls and ceilings.",
   "editorBar.skyNotLoaded": "(sky not loaded: {id})",
   "minimap.problem.unknownSky": "The map's sky ({id}) is not a known shared sky (not published, or not loaded yet).",
 } as const satisfies Record<string, string>;

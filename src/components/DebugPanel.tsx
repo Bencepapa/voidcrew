@@ -19,6 +19,7 @@ import { SharedCacheDebugSection } from "./SharedCacheDebugSection";
 import { parsePickupMode, worldDefaultPickup } from "../game/pickupMode";
 import { setEnemiesOff, setStoredPickupMode, useEnemiesOff, useStoredPickupMode } from "../game/playPrefs";
 import { sharedConfigured } from "../editor/sharedAuth";
+import { useSharedImages } from "../render/sharedImages";
 import { t, formatNumber, type Key } from "../i18n";
 import type { TextureSetKind } from "../render/textureSets";
 import type { MapFile } from "../game/mapFormat";
@@ -213,6 +214,8 @@ export function DebugPanel({
       .then((list) => setSkies(Array.isArray(list) ? list : []))
       .catch(() => {});
   }, []);
+  // (and the shared skies uploaded in the Assets manager)
+  const sharedSkies = useSharedImages().filter((image) => image.type === "sky");
   // a map default texture: a drop-down of the sets of one kind
   const textureSelect = (slot: string, label: string, kind: TextureSetKind, accent = false) =>
     select(
@@ -351,6 +354,14 @@ export function DebugPanel({
                       {name}
                     </option>
                   ))}
+                  {sharedSkies.map((image) => (
+                    <option key={image.id} value={image.id}>
+                      {image.name}
+                    </option>
+                  ))}
+                  {mapTextures?.sky && !skies.includes(mapTextures.sky) && !sharedSkies.some((image) => image.id === mapTextures.sky) && (
+                    <option value={mapTextures.sky}>{t("editorBar.skyNotLoaded", { id: mapTextures.sky })}</option>
+                  )}
                 </select>,
               )}
             </>
