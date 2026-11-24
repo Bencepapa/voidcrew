@@ -8,7 +8,8 @@ import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propEditable, propRelief
 import { ACTOR_TYPES, actorHeight } from "../game/actors";
 import { ActorSizeFields, useActorSizes } from "./ActorSizeFields";
 import { actorView, isSharedActorId } from "../game/actorSheets";
-import { actorSheetFiles, actorThumbnail } from "../render/actorSheetFiles";
+import { actorSheetFiles } from "../render/actorSheetFiles";
+import { ActorThumb, Thumb } from "./Thumb";
 import { actorOffsets } from "../render/actorOffsets";
 import { ActorEditor } from "./ActorEditor";
 import { NpcAssetEditor } from "./NpcAssetEditor";
@@ -1099,9 +1100,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                   ref={node=>{if(node && pendingScroll.current===e.key){node.scrollIntoView({block:"nearest"});pendingScroll.current=null;}}}
                   className={"flex w-full items-center gap-2 rounded-sm border px-1 py-0.5 text-left text-xs "+(id===e.key?"border-amber-400 bg-amber-400/10 text-amber-100":"border-transparent text-neutral-200 hover:bg-neutral-900")}
                   aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>
-                  {a?<span className="block h-9 w-9 shrink-0" style={actorThumbnail(a)}/>
+                  {a?<ActorThumb type={a} className="block h-9 w-9 shrink-0"/>
                     :e.draft?<DraftThumb draft={e.draft}/>
-                    :e.img?<img src={e.img} loading="lazy" alt="" className="h-9 w-9 shrink-0 object-contain"/>
+                    :e.img?<Thumb src={e.img} className="h-9 w-9 shrink-0 object-contain"/>
                     :<span className="grid h-9 w-9 shrink-0 place-items-center text-neutral-500">…</span>}
                   <span className="min-w-0 flex-1 truncate">{e.label}</span>
                   {auto.length>0 && <AutoBadge/>}
