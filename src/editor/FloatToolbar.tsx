@@ -33,6 +33,8 @@ export interface FloatToolbarProps {
   shared?: ReactNode;
   // phone layout: a row along the bottom instead of a column on the left
   compact?: boolean;
+  // a line shown instead of the tool's help (an area being pasted: what its keys do)
+  hint?: string;
 }
 
 const BTN = "relative flex h-8 w-8 items-center justify-center rounded-sm border text-[11px] disabled:opacity-30";
@@ -58,10 +60,11 @@ export function FloatToolbar(p: FloatToolbarProps) {
   const sep = <span className={p.compact ? "mx-0.5 h-5 w-px bg-neutral-600" : "my-0.5 h-px w-5 bg-neutral-600"} />;
   const item = "flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] text-neutral-200 hover:bg-neutral-800";
   const run = (fn: () => void) => () => { setOpen(false); fn(); };
-  const help = TOOL_HELP[p.tool];
+  const toolHelp = TOOL_HELP[p.tool];
+  const help = p.hint ?? (toolHelp ? t(toolHelp) : undefined);
   return (
     <>
-    {help && <div className={`pointer-events-none absolute left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-sm bg-black/60 px-2 py-0.5 text-center font-mono text-[10px] text-neutral-300 ${p.compact ? "bottom-12" : "bottom-2"}`}>{t(help)}</div>}
+    {help && <div className={`pointer-events-none absolute left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-sm bg-black/60 px-2 py-0.5 text-center font-mono text-[10px] ${p.hint ? "text-amber-200" : "text-neutral-300"} ${p.compact ? "bottom-12" : "bottom-2"}`}>{help}</div>}
     <div
       style={neutralStyle}
       className="voidcrew-editor-controls absolute right-2 top-2 z-20 flex items-center gap-1 font-mono"

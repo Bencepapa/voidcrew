@@ -4,6 +4,8 @@ import { Inspector, type InspectedKind } from "./editor/Inspector";
 import { ProblemsPanel } from "./editor/ProblemsPanel";
 import { validateMap, removeInWall, removeDuplicates } from "./editor/validate";
 import { EditorStatusBar } from "./editor/EditorStatusBar";
+import { AreaClipButtons } from "./editor/AreaClipButtons";
+import { useAreaClipboard } from "./editor/useAreaClipboard";
 import { useMapDrafts } from "./editor/DraftNotice";
 import { FloatToolbar } from "./editor/FloatToolbar";
 import { ShortcutHelp } from "./editor/ShortcutHelp";
@@ -572,6 +574,7 @@ export default function App() {
   const onEditHover = (target: EditTarget | null) => {
     if (target) setEditSurface(target.face ? "wall" : target.kind);
     hoverTargetRef.current = target;
+    areaClip.onHover(target ? target.cell : null);
   };
   // Where a prop lands for a target: a wall prop on the nearest wall side of the
   // cell, else the point pointed at on its floor
@@ -664,7 +667,7 @@ export default function App() {
     // (what was last worked on: where the top-down view puts the party when it is left)
     if (target.cell) lastTouched.current = { x: target.cell.x, y: target.cell.y };
     const file = mapFile(map.id);
-    if (!file) return drag.index;
+    if (!file || areaClip.pasting) return drag.index;
     let index = drag.index;
     const step = `${drag.kind} drag ${drag.id}`;
     if (drag.first) dragGrab.current = null;
@@ -890,6 +893,7 @@ export default function App() {
         const file = mapFile(map.id);
         const copy = (kind: ClipKind, spec: unknown, message: Key) => {
           clipboardRef.current = { kind, spec: structuredClone(spec) as Record<string, unknown> };
+          areaClip.noteSingleCopy();
           pushLog(t(message), "editor");
         };
         if (editTool === "prop" && selectedProp !== null && file?.props?.[selectedProp]) copy("prop", file.props[selectedProp], "app.copiedProp")
@@ -1052,6 +1056,12 @@ export default function App() {
   // the set picked in the palette (the right button paints the map's own
   // texture back), or toggles the cell's ceiling light.
   const onEdit = (target: EditTarget, alt: boolean, shift = false, ctrl = false) => {
+    // an area being pasted takes the clicks: the left button puts it down, the right one stops
+    if (areaClip.pasting) {
+      if (alt) areaClip.cancel();
+      else areaClip.place(target.cell);
+      return;
+    }
     let result: ReturnType<typeof applyEdit> | null = null;
     if (!(["dig", "fill", "height", "texture"] as EditTool[]).includes(editTool) && target.cell) lastTouched.current = { x: target.cell.x, y: target.cell.y };
     if (selecting) {
@@ -1474,7 +1484,20 @@ export default function App() {
     setEdits(n=>n+1);
   };
   const zoomed = editMode && miniZoom && !compact;
-  const editArea = (message: Key, change: (file: NonNullable<ReturnType<typeof mapFile>>, cells: Vec2[]) => NonNullable<ReturnType<typeof mapFile>>) => {
+  // Ctrl+C on the block of cells copies everything in it, Ctrl+V pastes it where the pointer is (see editor/useAreaClipboard)
+  const areaClip = useAreaClipboard({
+    editMode,
+    mapId: map.id,
+    selection: zoomed ? miniSel : null,
+    getFile: () => mapFile(map.id),
+    edit: (change) => applyEdit(map.id, change),
+    applied: (next) => {
+      replaceMap(next);
+      setEdits((n) => n + 1);
+    },
+    log: (text, kind) => pushLog(text, kind),
+  });
+  const editArea =(message: Key, change: (file: NonNullable<ReturnType<typeof mapFile>>, cells: Vec2[]) => NonNullable<ReturnType<typeof mapFile>>) => {
     if (!miniSel) return;
     const cells = rectCells(miniSel).filter((c) => c.x < map.width && c.y < map.height);
     const result = applyEdit(map.id, (file) => change(file, cells));
@@ -2603,7 +2626,7 @@ export default function App() {
       lockedLayers={lockedLayers}
       editTool={altHeld && editMode ? "select" : editTool}
       onEdit={onEdit}
-      onEditPaint={(target, stroke) => (editTool === "roofauto" ? roofPaint(target, stroke) : fencePaint(target, stroke))}
+      onEditPaint={(target, stroke) => (areaClip.pasting ? undefined : editTool === "roofauto" ? roofPaint(target, stroke) : fencePaint(target, stroke))}
       selectedEvent={editMode && eventTarget && interactionAt(map, eventTarget) ? eventTarget : null}
       selectedLight={selectedLightInfo ? selectedLight : null}
       selectedProp={selectedPropInfo ? selectedProp : null}
@@ -2614,6 +2637,7 @@ export default function App() {
       selectedLink={selectedExitSpec ? selectedExit : selectedStairsSpec ? selectedStairs : null}
       selectedActor={selectedActorInfo ? selectedActor : null}
       onEditHover={onEditHover}
+      areaGhost={areaClip.size}
       onEditDrag={onEditDrag}
       onEditAdjust={onEditAdjust}
       onReady={(id) => { sceneReady(id); autoSharedSceneReady(); }}
@@ -2966,7 +2990,9 @@ export default function App() {
                 setMiniSel(null);
               },
               selection: zoomed ? miniSel : null,
-              onSelect: zoomed ? setMiniSel : undefined,
+              onSelect: zoomed && !areaClip.pasting ? setMiniSel : undefined,
+              paste: areaClip.ghost,
+              onHover: areaClip.onHover,
             }
           : undefined
       }
@@ -3089,12 +3115,16 @@ export default function App() {
                           <span className="text-neutral-500"> {paint[s] ?? t("app.own")}</span>
                         </button>
                       ))}
+                      <AreaClipButtons area={areaClip} canCopy className={btn} />
                       <button className={`${btn} ml-auto`} onClick={() => setMiniSel(null)} title={t("app.release")}>✕</button>
                     </>
                   );
                 })()
               ) : (
-                <span className="text-neutral-400">{t("app.blockHint")}</span>
+                <>
+                  <span className="text-neutral-400">{t("app.blockHint")}</span>
+                  <AreaClipButtons area={areaClip} canCopy={false} className="border border-neutral-600 rounded-sm px-2 py-0.5 hover:bg-neutral-800" />
+                </>
               )}
             </div>
           ) : (
@@ -3115,7 +3145,7 @@ export default function App() {
           {(phase === "run" || editMode) && viewport}
           {joysticks}
           {overlays}
-          {editMode && <FloatToolbar view={settings.geometryView} onView={(v) => setSettings({ ...settings, geometryView: v })} onHelp={() => setShortcutHelp(true)} debugOpen={editorDebug} onDebug={() => setEditorDebug(!editorDebug)} tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager reliefMode={settings.reliefMode} reliefDepth={map.reliefDepth ?? settings.reliefDepth} wallDetail={settings.wallDetail} /></div>} compact={compact} />}
+          {editMode && <FloatToolbar view={settings.geometryView} onView={(v) => setSettings({ ...settings, geometryView: v })} onHelp={() => setShortcutHelp(true)} debugOpen={editorDebug} onDebug={() => setEditorDebug(!editorDebug)} tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager reliefMode={settings.reliefMode} reliefDepth={map.reliefDepth ?? settings.reliefDepth} wallDetail={settings.wallDetail} /></div>} compact={compact} hint={areaClip.hint} />}
         </div>
 
         <div className={`${editMode ? "w-64 xl:w-80 max-md:w-44" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0`}>
