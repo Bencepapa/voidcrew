@@ -14,6 +14,7 @@ import { loadSharedProps } from "./sharedProps";
 import { loadSharedDoors } from "./sharedDoorTypes";
 import { loadSharedActors } from "./sharedActors";
 import { loadSharedDialogues, loadSharedShops } from "./sharedCommon";
+import { loadOnce } from "./loadGate";
 
 const IDLE_DELAY_MS = 1200;
 const TIMEOUT_MS = 10_000;
@@ -99,15 +100,18 @@ async function execute(forGeneration: number) {
     // Stale-while-revalidate: the cached lists show at once, then the network refreshes them.
     applyCachedSharedTextures(activeWorld);
     applyCachedSharedMapHeads(activeWorld);
+    // (each list once per page load: coming back to a world, or the Assets window / a map's own
+    // "needs this id" effect having fetched it already, costs no request)
+    const init = { signal: current.signal };
     await Promise.all([
-      loadSharedTextures(activeWorld, { signal: current.signal }),
-      refreshSharedMapHeads(activeWorld, { signal: current.signal }),
-      loadSharedImages(activeWorld, { signal: current.signal }),
-      loadSharedProps(activeWorld, { signal: current.signal }),
-      loadSharedDoors(activeWorld, { signal: current.signal }),
-      loadSharedActors(activeWorld, { signal: current.signal }),
-      loadSharedShops({ signal: current.signal }),
-      loadSharedDialogues({ signal: current.signal }),
+      loadOnce("textures", activeWorld, () => loadSharedTextures(activeWorld, init)),
+      loadOnce("heads", activeWorld, () => refreshSharedMapHeads(activeWorld, init)),
+      loadOnce("images", activeWorld, () => loadSharedImages(activeWorld, init)),
+      loadOnce("props", activeWorld, () => loadSharedProps(activeWorld, init)),
+      loadOnce("doors", activeWorld, () => loadSharedDoors(activeWorld, init)),
+      loadOnce("actors", activeWorld, () => loadSharedActors(activeWorld, init)),
+      loadOnce("shops", "common", () => loadSharedShops(init)),
+      loadOnce("dialogues", "common", () => loadSharedDialogues(init)),
     ]);
     loaded = true;
     retried = false;

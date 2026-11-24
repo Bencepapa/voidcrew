@@ -6,6 +6,8 @@ import { bundledMaps } from "../game/sharedBuiltins";
 import { SharedLoginForm, sharedButton as button, sharedRequest, useSharedAuth } from "./sharedAuth";
 import { loadSharedTextures } from "./sharedTextures";
 import { loadSharedImages } from "./sharedImages";
+import { loadOnce } from "./loadGate";
+import { autoLoadShared } from "./autoSharedPrefs";
 import { refreshSharedMapHeads, type SharedMapHead } from "./sharedMapHeads";
 import { loadSharedMap, rememberSharedOrigin, sharedOrigin, splitSharedTitle } from "./sharedMaps";
 import { openAssetManager } from "./AssetManager";
@@ -35,8 +37,11 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
   async function refresh() {
     const [latest] = await Promise.all([
       refreshSharedMapHeads(map.world),
-      loadSharedTextures(map.world),
-      loadSharedImages(map.world),
+      // (the textures and pictures: only when this page load has not fetched them yet - opening the dialog or saving a map
+      // changes neither; the Assets window's Refresh button reloads them. A guest's game loads what a map
+      // references when the map opens, so it does not list them here at all.)
+      autoLoadShared() ? loadOnce("textures", map.world, () => loadSharedTextures(map.world)) : undefined,
+      autoLoadShared() ? loadOnce("images", map.world, () => loadSharedImages(map.world)) : undefined,
     ]);
     const available = latest.filter((head) => head.revision > (bundledMaps[map.world]?.[head.id] ?? 0))
       .sort((a, b) => (b.saved_at ?? "").localeCompare(a.saved_at ?? ""));

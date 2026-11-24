@@ -24,6 +24,7 @@ import { autoChannels, isEditable, textureStatus, useTextureVersion, wantSharedT
 import { ChannelCards, useBlobUrl } from "./ChannelControls";
 import { ownedPropTexture, SURFACE_CHANNELS } from "./channelEditor";
 import { loadSharedTextures } from "./sharedTextures";
+import { loadOnce, type LoadKind } from "./loadGate";
 import { SharedHttpError, sharedConfigured, sharedToken } from "./sharedAuth";
 import { migrateLegacyPreviews, readPreview, writePreview, type PreviewMaps } from "./previewStore";
 import { Lock, RefreshCw } from "lucide-react";
@@ -461,12 +462,15 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     if (!sharedConfigured) { if (manual) { setNotice(""); setError(t("assetManager.sharedNotConfigured")); } return; }
     if (manual) { setError(""); setNotice(t("assetManager.sharedRefreshing")); }
     try {
+      // (opening the window reuses what this page load already fetched in full; the Refresh button fetches it all again)
+      const both = (kind: LoadKind, load: (world: WorldId) => Promise<unknown>) =>
+        (["scifi","fantasy"] as const).map((world) => loadOnce(kind, world, () => load(world), manual));
       await Promise.all([
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedTextures(world)),
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedImages(world)),
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedProps(world)),
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedDoors(world)),
-        ...(["scifi","fantasy"] as const).map((world) => loadSharedActors(world)),
+        ...both("textures", (world) => loadSharedTextures(world)),
+        ...both("images", (world) => loadSharedImages(world)),
+        ...both("props", (world) => loadSharedProps(world)),
+        ...both("doors", (world) => loadSharedDoors(world)),
+        ...both("actors", (world) => loadSharedActors(world)),
       ]);
       if (manual) setNotice(t("assetManager.sharedRefreshed"));
     } catch (e) {
