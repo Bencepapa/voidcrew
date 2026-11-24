@@ -5,6 +5,8 @@ import type { Interaction, InteractionTarget } from "../game/interactions";
 import { t } from "../i18n";
 import { PROP_TYPES } from "../game/props";
 import { roofPieceEdited } from "./roofEdits";
+import { fencePieceEdited } from "./fenceEdits";
+import { fenceFormOf } from "../game/fences";
 import type { Direction, MapLight, MapLinkTarget, PropAnchor, StairsDirection, StairsStyle, Vec2 } from "../game/types";
 
 // Edits on a map file (see mapStore.applyEdit): each takes a copy of the
@@ -27,6 +29,9 @@ export type EditTool =
   | "door"
   | "prop"
   | "roofauto"
+  | "fenceblock"
+  | "fenceedge"
+  | "fencemid"
   | "decal"
   | "robot"
   | "item"
@@ -249,6 +254,7 @@ export function updateProp(file: MapFile, index: number, patch: Partial<PropEntr
   const next = { ...prop, ...patch } as Record<string, unknown>;
   for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
   if (prop.auto) roofPieceEdited(file, prop, next, patch);
+  else if (fenceFormOf(prop.prop)) fencePieceEdited(file, index, prop, next, patch);
   file.props![index] = next as PropEntry;
   return file;
 }
