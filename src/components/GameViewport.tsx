@@ -52,6 +52,7 @@ import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
 import { buildOperableModel, setOperablePose } from "../render/operableModel";
 import { operableView } from "../game/operableStore";
+import { operableLink } from "../editor/operableLink";
 import { hasClickables, sourceKeys } from "../game/operables";
 import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, actorHeight, critAt } from "../game/actors";
@@ -7488,8 +7489,8 @@ export function GameViewport({
         const actor = actorsRef.current.find((a) => a.id === actorId);
         return actor ? { kind: "floor", cell: { ...actor.cell }, actor: actorId } : null;
       }
-      // the Door tool: a door pointed at (any part of it)
-      if (editToolRef.current === "door") {
+      // the Door tool: a door pointed at (any part of it) - and the operable props' link mode, which picks doors too
+      if (editToolRef.current === "door" || operableLink.active()) {
         for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
           const at = o.userData.doorCell as Vec2 | undefined;
           if (at) return { kind: "floor", cell: { ...at }, door: { ...at } };

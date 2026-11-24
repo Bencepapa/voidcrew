@@ -1,7 +1,7 @@
 // Run: npx tsx src/editor/operableEdits.test.ts
 import assert from "node:assert/strict";
 import type { MapFile } from "../game/mapFormat";
-import { addTarget, cleanSpec, linkTargetFor, operableInfo, removeTarget, setOperable, updateTarget } from "./operableEdits";
+import { addTarget, cleanSpec, decalOperableInfo, linkTargetFor, operableInfo, removeTarget, setOperable, updateTarget } from "./operableEdits";
 import type { OperableMap } from "../game/operables";
 
 const file = (): MapFile =>
@@ -84,8 +84,13 @@ assert.deepEqual(cleanSpec({ hold: false, delay: undefined }), { hold: false });
 }
 
 // ---- the panel's info
-assert.deepEqual(operableInfo({ prop: "lever1", at: "N" }), { kind: "lever", spec: {}, at: "N", rotation: 0 });
-assert.deepEqual(operableInfo({ prop: "plate1", at: "center", rotation: 90, operable: { hold: false } }), { kind: "plate", spec: { hold: false }, at: "center", rotation: 90 });
-assert.equal(operableInfo({ prop: "crate1", at: "center" }), undefined);
+const source = { from: "prop", index: 3 };
+assert.deepEqual(operableInfo({ prop: "lever1", at: "N" }, 3), { source, kind: "lever", spec: {}, at: "N", rotation: 0 });
+assert.deepEqual(operableInfo({ prop: "plate1", at: "center", rotation: 90, operable: { hold: false } }, 3), { source, kind: "plate", spec: { hold: false }, at: "center", rotation: 90 });
+assert.deepEqual(operableInfo({ prop: "glyph1", at: "W" }, 3), { source, kind: "emitter", spec: {}, at: "W", rotation: 0, projectile: "spell" });
+assert.equal(operableInfo({ prop: "crate1", at: "center" }, 3), undefined);
+assert.equal(decalOperableInfo({}, 0), undefined);
+assert.deepEqual(decalOperableInfo({ operable: { kind: "lever" } }, 2), { source: { from: "decal", index: 2 }, kind: "lever", spec: { kind: "lever" }, at: "", rotation: 0 });
+assert.equal(decalOperableInfo({ operable: { targets: [] } }, 2)?.kind, "button", "a painted switch is a button unless it says otherwise");
 
 console.log("operableEdits: ok");

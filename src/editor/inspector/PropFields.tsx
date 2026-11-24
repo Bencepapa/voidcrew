@@ -10,6 +10,7 @@ import { useSharedPropVersion } from "../sharedProps";
 import { textureSetsOfKind } from "../../render/textureSets";
 import { TexturePicker, textureOptions } from "../TexturePicker";
 import { FencePieceFields } from "./FenceFields";
+import { OperableFields } from "./OperableFields";
 
 export function PropFields(p: EditorBarProps) {
 useTextureVersion();
@@ -53,6 +54,7 @@ return <>
 <Section kind="prop" section="logic">
 {chanceSlider(p.prop.chance, (chance) => p.onPropChange({ chance }))}
 {linkFields(p.prop.links, p.linkIds, p.onPropChange)}
+{p.prop.operable && <OperableFields info={p.prop.operable} onChange={(operable) => p.onPropChange({ operable })}/>}
 </Section>
 <Section kind="prop" section="advanced">
 {propEditable(PROP_TYPES[p.prop.name]) && (

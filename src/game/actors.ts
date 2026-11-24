@@ -1,7 +1,7 @@
 import { cellAt, doorCrossed, floorHeight } from "./map";
 import { fireCells } from "./fire";
 import { DIR_VECTOR, rightOf } from "./movement";
-import { PROP_TYPES } from "./props";
+import { PROP_TYPES, isFloorOperable } from "./props";
 import { passage } from "./heights";
 import { lineOfSight } from "./visibility";
 import type { Body } from "./heights";
@@ -1390,7 +1390,7 @@ export function stepActors(
   // from an actor's eyes (standing at `fromY` in a cell) to the party's
   const clearLine = (from: Vec2, to: Vec2, eyes: number) => lineOfSight(map, from, to, doorOpen, { from: eyes, to: partyY + PARTY_EYE });
   // cells with a prop to hide by (not the ones hung on walls)
-  const propCells = new Set((map.props ?? []).filter((p) => !PROP_TYPES[p.prop]?.wall).map((p) => `${p.cell.x},${p.cell.y}`));
+  const propCells = new Set((map.props ?? []).filter((p) => !PROP_TYPES[p.prop]?.wall && !isFloorOperable(PROP_TYPES[p.prop])).map((p) => `${p.cell.x},${p.cell.y}`));
 
   const next = actors.map((actor) => {
     const type = ACTOR_TYPES[actor.type];

@@ -15,6 +15,8 @@ import type { Direction, LightEffect, Linked, MapLight, MapLinkTarget, StairsDir
 import type { RoofForm } from "../game/roofAutotile";
 import type { FenceForm, FenceStyle } from "../game/fences";
 import type { FenceToolState } from "./inspector/FenceFields";
+import type { OperableSpec } from "../game/operables";
+import type { OperableInfo } from "./operableEdits";
 
 export interface MapLook {
   weather?: Weather;
@@ -132,12 +134,12 @@ export interface EditorBarProps {
   onDecalChoice: (choice: DecalChoice) => void;
   decalRotation: number;
   decal: DecalInfo | null;
-  onDecalChange: (patch: { rotation?: number; scale?: number; chance?: number; action?: string } & Linked, merge?: string) => void;
+  onDecalChange: (patch: { rotation?: number; scale?: number; chance?: number; action?: string; operable?: OperableSpec } & Linked, merge?: string) => void;
   onDecalDelete: () => void;
   onDecalDeselect: () => void;
   // the selected prop, and what the panel does with it
   prop: PropInfo | null;
-  onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string; at?: Direction; fence?: FenceStyle } & Linked, merge?: string) => void;
+  onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string; at?: Direction; fence?: FenceStyle; operable?: OperableSpec } & Linked, merge?: string) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
   // the Smoke tool: the picked emitter
@@ -264,6 +266,8 @@ export interface DecalInfo {
   action?: string;
   chance: number;
   links: Linked;
+  // a painted lever / button that works (see operables.ts)
+  operable?: OperableInfo;
 }
 
 // a smoke emitter's `blow` as the map keeps it: none when it isn't blown,
@@ -330,6 +334,8 @@ export interface PropInfo {
   auto?: { group: string; detached: boolean };
   // a fence or block piece (see fences.ts): which, its settings, and the side of its cell an edge fence is on
   fence?: { form: FenceForm; style: FenceStyle; side: Direction };
+  // a lever, button, plate, trap cell or wall trap: its settings and targets (see operables.ts)
+  operable?: OperableInfo;
 }
 
 // the selected light as the panel shows it

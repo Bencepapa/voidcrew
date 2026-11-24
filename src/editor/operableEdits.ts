@@ -70,13 +70,23 @@ export function linkTargetFor(map: OperableMap, hit: { door?: Vec2; prop?: numbe
 
 // the selected source, as the panel shows it
 export interface OperableInfo {
+  // where its entry is in the map (the panel's link mode names it)
+  source: SourceRef;
   kind: OperableKind;
   spec: OperableSpec;
   // the way a wall trap fires (its facing) is told by the panel
   at: string;
   rotation: number;
+  // a wall trap's usual shot (its type's)
+  projectile?: "arrow" | "spell";
 }
-export function operableInfo(spec: { prop: string; at: string; rotation?: number; operable?: OperableSpec }): OperableInfo | undefined {
+export function operableInfo(spec: { prop: string; at: string; rotation?: number; operable?: OperableSpec }, index: number): OperableInfo | undefined {
   const type = Object.hasOwn(OPERABLE_PROPS, spec.prop) ? OPERABLE_PROPS[spec.prop] : undefined;
-  return type ? { kind: type.kind, spec: spec.operable ?? {}, at: spec.at, rotation: spec.rotation ?? 0 } : undefined;
+  return type
+    ? { source: { from: "prop", index }, kind: type.kind, spec: spec.operable ?? {}, at: spec.at, rotation: spec.rotation ?? 0, ...(type.projectile ? { projectile: type.projectile } : {}) }
+    : undefined;
+}
+// a decal that works as a lever or button (undefined: it is only a picture)
+export function decalOperableInfo(spec: { operable?: OperableSpec }, index: number): OperableInfo | undefined {
+  return spec.operable ? { source: { from: "decal", index }, kind: spec.operable.kind ?? "button", spec: spec.operable, at: "", rotation: 0 } : undefined;
 }

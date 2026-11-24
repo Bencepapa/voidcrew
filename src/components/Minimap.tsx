@@ -9,6 +9,7 @@ import type { Rect } from "../editor/mapEdits";
 import { TEXTURE_SETS, isTextureSetId } from "../render/textureSets";
 import { CATEGORY_COLORS, type Category } from "../editor/categoryColors";
 import { PROP_TYPES } from "../game/props";
+import { operableLinks, operableSources } from "../game/operables";
 import { fenceFormOf, fenceIndex, fenceMarks } from "../game/fences";
 
 interface MinimapProps {
@@ -328,6 +329,15 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
       }
       if (drag?.moved) justDragged.current = true;
     };
+    // the operable props' links (a lever to its doors and traps) and their floor marks: a plate's frame, a trap cell's cross
+    const operableMarks = !visible("prop") ? [] : [
+      ...operableLinks(map).map((l, i) => (
+        <line key={`ol${i}`} x1={l.from.x + 0.5} y1={l.from.y + 0.5} x2={l.to.x + 0.5} y2={l.to.y + 0.5} stroke={l.kind === "door" ? "#fbbf24" : "#ff5a3c"} strokeWidth={0.07} strokeDasharray="0.25 0.15" pointerEvents="none" />
+      )),
+      ...operableSources(map).filter((s) => s.kind === "plate" || s.kind === "trapcell").map((s) => (
+        <rect key={`op${s.key}`} x={s.cell.x + 0.12} y={s.cell.y + 0.12} width={0.76} height={0.76} fill="none" stroke={s.kind === "plate" ? "#3fd0ff" : "#ff4d4d"} strokeWidth={0.09} pointerEvents="none" />
+      )),
+    ];
     return (
       <div className={`border border-green-800 bg-black/60 p-2 flex flex-col gap-1 ${edit.zoomed ? "h-full min-h-0" : ""}`} onPointerDown={(e) => e.stopPropagation()}>
         <div className="text-[10px] font-mono text-neutral-300">
@@ -392,6 +402,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
           {ladders}
           {windows}
           {fenceMarkElements}
+          {operableMarks}
           {markers}
           {edit.selection && (
             <rect
@@ -497,6 +508,8 @@ function chartKey(map: GameMap): string {
       map.stairs?.map((s) => at(s.cell)).join(";"),
       map.chanceWalls?.map((w) => at(w.cell)).join(";"),
       map.restricted?.map(at).join(";"),
+      // (the operable props' links)
+      operableLinks(map).map((l) => `${at(l.from)}>${at(l.to)}${l.kind}`).join(";"),
     ].join("|");
     chartOf.set(map, key);
   }

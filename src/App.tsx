@@ -18,6 +18,8 @@ import { gameClock } from "./game/clock";
 import { moveActionForKey } from "./game/controls";
 import { interactionAt, type ClickEvent, type Interaction, type InteractionTarget } from "./game/interactions";
 import { setInteraction } from "./editor/mapEdits";
+import { addTarget, decalOperableInfo, linkTargetFor, operableInfo } from "./editor/operableEdits";
+import { operableLink } from "./editor/operableLink";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
@@ -1054,7 +1056,31 @@ export default function App() {
   // the floor (the Fill tool, or the right button), paints the surface with
   // the set picked in the palette (the right button paints the map's own
   // texture back), or toggles the cell's ceiling light.
+  // Link mode of the operable props (see editor/operableLink.ts): a click names a target of the source being linked - a
+  // door or a wall trap; the right button ends it
+  const operableLinkClick = (target: EditTarget, alt: boolean): boolean => {
+    const from = operableLink.get();
+    if (!from) return false;
+    if (alt) {
+      operableLink.cancel();
+      return true;
+    }
+    const to = linkTargetFor(map, { door: target.door, prop: target.prop, cell: target.cell });
+    if (!to) {
+      pushLog(t("operable.link.nothing"), "editor");
+      return true;
+    }
+    const result = applyEdit(map.id, (file) => addTarget(file, from, to));
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+    else {
+      replaceMap(result.map);
+      pushLog(t("operable.link.added", { what: t(to.kind === "door" ? "operable.target.door" : "operable.target.trap", { x: to.x, y: to.y, side: to.kind === "trap" && to.side ? ` ${to.side}` : "" }) }), "editor");
+    }
+    setEdits((n) => n + 1);
+    return true;
+  };
   const onEdit = (target: EditTarget, alt: boolean, shift = false, ctrl = false) => {
+    if (operableLinkClick(target, alt)) return;
     let result: ReturnType<typeof applyEdit> | null = null;
     if (!(["dig", "fill", "height", "texture"] as EditTool[]).includes(editTool) && target.cell) lastTouched.current = { x: target.cell.x, y: target.cell.y };
     if (selecting) {
@@ -2019,7 +2045,7 @@ export default function App() {
   const selectedDecalInfo: DecalInfo | null = (() => {
     const spec = selectedDecal === null ? undefined : map.decals?.[selectedDecal];
     return spec
-      ? { name: spec.decal, rotation: spec.rotation ?? 0, scale: spec.scale ?? 1, action: spec.action, chance: spec.chance ?? 1, links: linksOf(spec) }
+      ? { name: spec.decal, rotation: spec.rotation ?? 0, scale: spec.scale ?? 1, action: spec.action, chance: spec.chance ?? 1, links: linksOf(spec), operable: decalOperableInfo(spec, selectedDecal!) }
       : null;
   })();
   const changeDecal = (patch: Parameters<typeof updateDecal>[2], merge?: string) => {
@@ -2101,6 +2127,7 @@ export default function App() {
       top: (spec.elevation ?? 0) + (type?.size[1] ?? 0),
       auto: spec.auto ? { group: spec.auto, detached: !!spec.detached } : undefined,
       fence: fenceFormOf(spec.prop) ? { form: fenceFormOf(spec.prop)!, style: cleanFenceStyle(spec.fence) ?? {}, side: isSide(spec.at) ? spec.at : "N" } : undefined,
+      operable: operableInfo(spec, selectedProp!),
     };
   })();
   const changeProp = (patch: Parameters<typeof updateProp>[2], merge?: string) => {

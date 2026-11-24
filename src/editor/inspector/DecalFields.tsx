@@ -1,6 +1,7 @@
 import { t } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
-import { Section, slider, chanceSlider, linkFields, BUTTON, idle } from "./parts";
+import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle } from "./parts";
+import { OperableFields } from "./OperableFields";
 
 export function DecalFields(p: EditorBarProps) {
 if (!p.decal) return null;
@@ -19,6 +20,15 @@ return <>
                     className="w-28 bg-neutral-800 border border-neutral-700 px-1"
                   />
                 </label>
+<label className="flex items-center gap-1">
+                  <input type="checkbox" checked={!!p.decal.operable} onChange={(e) => p.onDecalChange({ operable: e.target.checked ? { kind: "button" } : undefined })}/>
+                  {t("operable.decal.on")}
+                </label>
+{p.decal.operable && <>
+<KindChoice label={t("operable.decal.kind")} value={p.decal.operable.kind} options={[{ value: "lever", label: t("operable.kind.lever") }, { value: "button", label: t("operable.kind.button") }]}
+  onChange={(kind) => p.onDecalChange({ operable: { ...p.decal!.operable!.spec, kind: kind as "lever" | "button" } })}/>
+<OperableFields info={p.decal.operable} onChange={(operable) => p.onDecalChange({ operable })}/>
+</>}
 {chanceSlider(p.decal.chance, (chance) => p.onDecalChange({ chance }))}
 {linkFields(p.decal.links, p.linkIds, p.onDecalChange)}
 </Section>

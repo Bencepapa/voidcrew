@@ -15,6 +15,7 @@ import { useSharedPropVersion } from "./sharedProps";
 import { useDoorCatalog } from "./sharedDoorTypes";
 import { neutralStyle } from "./inspector/parts";
 import { openAssetManager, type Sample } from "./AssetManager";
+import { operableEntries } from "./operableEntries";
 import { useTextureVersion } from "./textureLibrary";
 import type { EditorBarProps } from "./EditorBar";
 import type { EditSurface, EditTool } from "./mapEdits";
@@ -44,7 +45,7 @@ export function AssetTree(p: EditorBarProps) {
     {id:`${s}:default`,label:t("editorBar.default"),kind:t(`editorBar.${s}`),active:p.paint[s]===null,pick:()=>choose("texture",()=>p.onPaint(s,null)),manager:p.mapLook.textures?.[s] ? "material" as const : undefined,managerId:p.mapLook.textures?.[s]},
     ...textureSetsOfKind(s).map(id => ({id:`${s}:${id}`,label:assetName(TEXTURE_SETS[id].label),search:TEXTURE_SETS[id].label,kind:t(`editorBar.${s}`),image:TEXTURE_SETS[id].diffuse,active:p.paint[s]===id,pick:()=>choose("texture",()=>p.onPaint(s,id)),manager:"material" as const,managerId:id}))
   ]);
-  const props: Entry[] = Object.entries(PROP_TYPES).filter(([id,v])=>assetInWorld(id) && v.kind!=="fence").flatMap(([id,v])=>{
+  const props: Entry[] = Object.entries(PROP_TYPES).filter(([id,v])=>assetInWorld(id) && v.kind!=="fence" && v.kind!=="operable").flatMap(([id,v])=>{
     const kind = ["pillar","chamfer"].includes(v.kind) ? "pillar" : ["billboard","cross"].includes(v.kind) ? "billboard" : "3D";
     if (!query && kind!==propTab) return [];
     const tex = v.kind==="views" ? v.views+"_front" : v.kind==="box" ? v.side : v.kind==="cabin" ? v.door : "texture" in v && v.texture || p.mapLook.textures?.wall || "wall4";
@@ -95,6 +96,7 @@ export function AssetTree(p: EditorBarProps) {
     {id:"prop",label:t("assetManager.props"),entries:props},
     {id:"roof",label:t("roofauto.group"),entries:roofs,bare:true},
     {id:"fence",label:t("fence.group"),entries:fences,bare:true},
+    {id:"operable",label:t("operable.group"),entries:operableEntries(p.propChoice,id=>choose("prop",()=>p.onPropChoice(id))).map(e=>({...e,tool:"prop" as const})),bare:true},
     {id:"decal",label:t("assetTree.decals"),entries:[
       ...decals.filter(id=>assetInWorld(id)).map(id=>({id,label:id,kind:t("assetManager.decal"),image:`${import.meta.env.BASE_URL}decals/${id}/diffuse.png`,active:p.decalChoice===id,pick:(button:HTMLButtonElement)=>{const img=button.querySelector("img");choose("decal",()=>p.onDecalChoice({name:id,width:img?.naturalWidth||64,height:img?.naturalHeight||64}));},manager:"prop" as const,managerId:`decal:${id}`})),
       ...sharedImages.filter(image=>image.type==="decal" && assetInWorld(image.id)).map(image=>({
