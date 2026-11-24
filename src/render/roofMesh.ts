@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { ROOF_THICKNESS, roofProfileAt, type RoofSegment } from "../game/roofPieces";
+import { ROOF_THICKNESS, roofEaveDistance, roofProfileAt, type RoofSegment, type RoofSide } from "../game/roofPieces";
 
 // The geometry of a roof piece (see props.ts, PropType "roof"): a heightfield
 // over its one-cell footprint, its 45 degree slopes and flat stretches kept
@@ -18,7 +18,9 @@ export interface RoofGeometry {
 
 type V3 = [number, number, number];
 
-export function buildRoofGeometry(profile: RoofSegment[], corner?: "outer" | "inner"): RoofGeometry {
+// (`eaves`: a piece with eaves on several sides, instead of a `corner`: its surface is the lowest of the
+// profiles run from each of those sides - a ridge, a hipped end, a pyramid)
+export function buildRoofGeometry(profile: RoofSegment[], corner?: "outer" | "inner", eaves?: readonly RoofSide[]): RoofGeometry {
   const T = ROOF_THICKNESS;
   // the cell's cut lines: eighths, and each bend (from the front and from the
   // side - the corner pieces' two profiles run from two edges)
@@ -37,6 +39,7 @@ export function buildRoofGeometry(profile: RoofSegment[], corner?: "outer" | "in
   const eaveA = (z: number) => 1 - z;
   const eaveB = (x: number) => (corner === "inner" ? 1 - x : x);
   const height = (x: number, z: number) => {
+    if (eaves) return Math.min(...eaves.map((side) => roofProfileAt(profile, roofEaveDistance(side, x, z)).h));
     const a = roofProfileAt(profile, eaveA(z)).h;
     if (!corner) return a;
     const b = roofProfileAt(profile, eaveB(x)).h;
@@ -56,7 +59,16 @@ export function buildRoofGeometry(profile: RoofSegment[], corner?: "outer" | "in
     const flip = n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0;
     return flip ? [a, c, b, true] : [a, b, c, false];
   };
-  const uvOf = (x: number, z: number, onA: boolean): [number, number] => {
+  // (with eaves on several sides each triangle takes the texture of the nearest eave: along it, and the
+  // arc length from it up the slope)
+  const nearestEave = (x: number, z: number): RoofSide =>
+    eaves!.reduce((best, side) => (roofEaveDistance(side, x, z) < roofEaveDistance(best, x, z) ? side : best));
+  const uvOfEave = (x: number, z: number, side: RoofSide): [number, number] => {
+    const along = side === "front" ? x : side === "back" ? 1 - x : side === "left" ? z : 1 - z;
+    return [along, roofProfileAt(profile, roofEaveDistance(side, x, z)).s];
+  };
+  const uvOf = (x: number, z: number, onA: boolean, side?: RoofSide): [number, number] => {
+    if (side) return uvOfEave(x, z, side);
     if (onA) return [x, roofProfileAt(profile, eaveA(z)).s];
     return [corner === "inner" ? 1 - z : z, roofProfileAt(profile, eaveB(x)).s];
   };
@@ -67,7 +79,8 @@ export function buildRoofGeometry(profile: RoofSegment[], corner?: "outer" | "in
     const a = eaveA(cz);
     const b = eaveB(cx);
     const onA = !corner || (corner === "outer" ? a <= b : a >= b);
-    const pts = p.map(([x, z]) => ({ at: point(x, z, T), uv: uvOf(x, z, onA), under: point(x, z, 0), xz: [x, z] as [number, number] }));
+    const side = eaves ? nearestEave(cx, cz) : undefined;
+    const pts = p.map(([x, z]) => ({ at: point(x, z, T), uv: uvOf(x, z, onA, side), under: point(x, z, 0), xz: [x, z] as [number, number] }));
     const [a0, b0, c0] = pts;
     const order = tri(a0.at, b0.at, c0.at, [0, 1, 0]);
     const index = (pt: V3) => pts.find((q) => q.at === pt)!;
@@ -86,8 +99,9 @@ export function buildRoofGeometry(profile: RoofSegment[], corner?: "outer" | "in
   for (let i = 0; i < G.length - 1; i++) {
     for (let j = 0; j < G.length - 1; j++) {
       const [x0, x1, z0, z1] = [G[i], G[i + 1], G[j], G[j + 1]];
-      // cut along the ridge (an outer corner's runs from the front left to the back right...)
-      if (corner === "outer") {
+      // cut along the ridge (an outer corner's runs from the front left to the back right...); a piece with
+      // eaves on several sides has creases along the cell's diagonals: the squares on a diagonal are cut along it
+      if (corner === "outer" || (eaves && i + j === G.length - 2)) {
         emitTop([[x0, z0], [x1, z0], [x0, z1]]);
         emitTop([[x1, z0], [x1, z1], [x0, z1]]);
       } else {

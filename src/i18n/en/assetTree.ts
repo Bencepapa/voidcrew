@@ -68,5 +68,8 @@
 "assetTree.name.roof_corner": "Roof corner (outer)",
 "assetTree.name.roof_corner_flat": "Roof corner (outer) into flat",
 "assetTree.name.roof_inner": "Roof corner (inner)",
-"assetTree.name.roof_inner_flat": "Roof corner (inner) into flat"
+"assetTree.name.roof_inner_flat": "Roof corner (inner) into flat",
+"assetTree.name.roof_ridge": "Roof ridge (tent)",
+"assetTree.name.roof_hipend": "Roof hipped end (half pyramid)",
+"assetTree.name.roof_pyramid": "Roof pyramid"
 } as const;
