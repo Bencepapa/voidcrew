@@ -42,6 +42,7 @@ import { reviveCrew, wipeOutcome } from "./editorWipe";
 import { pickVictim } from "./operables";
 import { lockedMessage } from "./keys";
 import { useOperables } from "./useOperables";
+import { useLocks } from "./useLocks";
 
 // no cell burns (the fire is not armed, see trapsActive)
 const NO_FIRE: ReadonlySet<string> = new Set();
@@ -1191,6 +1192,14 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     raiseFlag,
     pushLog,
   });
+  // The locks on chests, levers and buttons (see propLocks.ts); the lever's own touch goes through the gate
+  const locks = useLocks({ active: variation !== null, mapRef, fullMapRef, hasFlag, raiseFlag, pushLog });
+  const lockGate = locks.gate;
+  const touchOperable = operables.touch;
+  const operateGated = useCallback(
+    (from: "prop" | "decal", index: number) => (locks.gateOperable(from, index) ? touchOperable(from, index) : true),
+    [locks.gateOperable, touchOperable],
+  );
 
   // Takes the lift the party stands in to its other deck: shuts the door,
   // rides (the next map is swapped in mid-ride, behind the closed door),
@@ -1603,7 +1612,9 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       forceDoor(ahead);
       return;
     }
-    const containers = (map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.container && inReach(p.cell, true));
+    const reachable = (map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.container && inReach(p.cell, true));
+    // (a locked one: told why, or unlocked with the key - see propLocks.ts)
+    const containers = reachable.filter((p) => lockGate(p));
     const picked = pickUpItems(true);
     // wrecks within reach, not searched yet: their parts
     const wrecks = actorsRef.current.filter(
@@ -1624,6 +1635,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       setLooted((prev) => new Set([...prev, ...wrecks.map((a) => `${actorKey(map, a.id)} wreck`)]));
       if (!containers.length) return;
     }
+    // (only locked ones within reach: nothing else to use here)
+    if (!containers.length && reachable.length) return;
     if (!containers.length) {
       // a way off the ship underfoot
       const exit = (map.exits ?? []).find((e) => inReach(e.cell, false));
@@ -1674,7 +1687,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       setSpills((prev) => [...prev.slice(-8), ...newSpills]);
     }
     setLooted((prev) => new Set([...prev, ...keys]));
-  }, [map, pos, dir, startLift, startTransit, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey, showTerminal, openDoors, doorLock, openLock, raiseFlag]);
+  }, [map, pos, dir, startLift, startTransit, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey, showTerminal, openDoors, doorLock, openLock, raiseFlag, lockGate]);
 
   // The breaker: the ship's power back on (if it's down)
   const throwBreaker = () => {
@@ -1988,7 +2001,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     jumpDown: jump,
     use,
     // a lever or button touched (see operables.ts)
-    operate: operables.touch,
+    operate: operateGated,
     touch,
     // (a lift ride, or a gate's change of map: nothing else can be done meanwhile)
     inLift: inLift || transit !== null,
