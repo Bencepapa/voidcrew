@@ -36,6 +36,26 @@ export function skyGradientStops(spec: SkyGradient): { offset: number; color: st
   return stops;
 }
 
+// The map settings' sky choice: an image in public/skies/, or a gradient
+// (which wins over the image when both are present in an older file).
+export type SkyChoice = { kind: "image"; image?: string } | { kind: "gradient"; gradient: SkyGradient };
+
+export function skyTextures(
+  current: Record<string, string | SkyGradient | undefined> | undefined,
+  choice: SkyChoice,
+): Record<string, string | SkyGradient | undefined> | undefined {
+  const textures = { ...(current ?? {}) };
+  delete textures.sky;
+  delete textures.skyGradient;
+  if (choice.kind === "image") {
+    if (choice.image) textures.sky = choice.image;
+  } else {
+    const gradient = cleanSkyGradient(choice.gradient);
+    if (gradient) textures.skyGradient = gradient;
+  }
+  return Object.keys(textures).length ? textures : undefined;
+}
+
 export interface SkyGradientPreset {
   id: "day" | "dusk" | "night";
   label: string;

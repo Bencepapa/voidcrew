@@ -30,6 +30,7 @@ export const minimapEn = {
   "minimap.problem.missingSurface": "{kind} has no supporting surface ({surface}).",
   "minimap.problem.missingTerminal": "Terminal {id} is not defined.",
   "minimap.problem.unknownDoorTexture": "{field}: texture not found ({id}).",
+  "minimap.problem.skyGradient": "Invalid gradient sky colours (fix them in the map settings).",
   "minimap.problem.missingKey": "Door key has no source on this map: {id}.",
   "minimap.problem.missingCode": "Code lock has no accessible code terminal.",
   "minimap.value.prop": "Prop",

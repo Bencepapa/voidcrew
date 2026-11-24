@@ -18,6 +18,7 @@ import { SharedCacheDebugSection } from "./SharedCacheDebugSection";
 import { sharedConfigured } from "../editor/sharedAuth";
 import { t, formatNumber, type Key } from "../i18n";
 import type { TextureSetKind } from "../render/textureSets";
+import type { MapFile } from "../game/mapFormat";
 
 interface DebugPanelProps {
   settings: ViewportSettings;
@@ -43,7 +44,7 @@ interface DebugPanelProps {
   // inside the map editor the map's own tab is one click away already
   inEditor?: boolean;
   // the map's default texture sets (MapFile.textures) and changing one
-  mapTextures?: Record<string, string | undefined>;
+  mapTextures?: MapFile["textures"];
   onMapTexture?: (slot: string, setId: string | undefined) => void;
 }
 
@@ -214,7 +215,7 @@ export function DebugPanel({
     select(
       label,
       <select
-        value={mapTextures?.[slot] ?? ""}
+        value={typeof mapTextures?.[slot] === "string" ? mapTextures[slot] as string : ""}
         onChange={(e) => onMapTexture?.(slot, e.target.value || undefined)}
         className={SELECT}
       >

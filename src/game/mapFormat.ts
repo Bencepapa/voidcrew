@@ -11,6 +11,7 @@ import { readLinkTarget } from "./mapLinks";
 import { readDoorTexture } from "./doorTextures";
 import type { Lock, Terminal, Trigger } from "./story";
 import { cleanRenderLook } from "./renderLook";
+import { cleanSkyGradient, type SkyGradient } from "./skyGradient";
 import { worldOfMap } from "./worlds";
 import type { RenderLook } from "./renderLook";
 
@@ -55,9 +56,12 @@ export interface MapFile {
   deck: number;
   // default texture sets for the deck (see GameMap.textures)
   textures?: {
+    [slot: string]: string | SkyGradient | undefined;
     wall?: string;
     accent?: string;
     sky?: string;
+    // a vertical colour ramp instead of a sky image (bad colours are dropped in parseMap)
+    skyGradient?: SkyGradient;
     floor?: string;
     ceiling?: string;
     door?: string;
@@ -342,11 +346,14 @@ export function parseMap(id: string, file: MapFile): GameMap {
   for (const f of file.faceTextures ?? []) {
     if (DIR_VECTOR[f.face] && f.texture) faceTextures.set(`${f.x},${f.y},${f.face}`, f.texture);
   }
+  const gradient = cleanSkyGradient(file.textures?.skyGradient);
+  const textures = file.textures ? { ...file.textures, skyGradient: gradient } : undefined;
+  if (textures && !gradient) delete textures.skyGradient;
 
   return {
     id,
     deck: file.deck,
-    textures: file.textures,
+    textures,
     labelColor: file.labelColor,
     lightColor: file.lightColor,
     accent: file.accent,
@@ -395,6 +402,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
     lights: (file.lights ?? []).map((l) => ({ ...l })),
     structureKey: JSON.stringify({
       ...file,
+      // the cleaned sky spec: a bad colour must not rebuild the scene differently
+      textures,
       lights: undefined,
       lightGridDensity: undefined,
       lightGridAmbient: undefined,

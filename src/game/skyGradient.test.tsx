@@ -1,6 +1,6 @@
 // Run: npx tsx src/game/skyGradient.test.tsx
 import assert from "node:assert/strict";
-import { cleanSkyGradient, SKY_GRADIENT_PRESETS, skyGradientStops } from "./skyGradient";
+import { cleanSkyGradient, SKY_GRADIENT_PRESETS, skyGradientStops, skyTextures } from "./skyGradient";
 
 const spec = { top: "#3B78D8", horizon: "#cfe6ff" };
 
@@ -33,5 +33,16 @@ assert.deepEqual(SKY_GRADIENT_PRESETS.map((p) => p.gradient), [
   { top: "#05060f", horizon: "#1b2a4a" },
 ]);
 assert.equal(new Set(SKY_GRADIENT_PRESETS.map((p) => p.id)).size, 3);
+
+// editor map-settings edits: choosing a kind replaces the other one
+const base = { wall: "wall4", sky: "nappal" };
+assert.deepEqual(skyTextures(base, { kind: "gradient", gradient: spec }), {
+  wall: "wall4",
+  skyGradient: { top: "#3b78d8", horizon: "#cfe6ff" },
+});
+assert.deepEqual(skyTextures(base, { kind: "image", image: "ejszaka" }), { wall: "wall4", sky: "ejszaka" });
+assert.deepEqual(skyTextures({ wall: "wall4", sky: "nappal" }, { kind: "image" }), { wall: "wall4" });
+assert.deepEqual(skyTextures(undefined, { kind: "gradient", gradient: { top: "nope", horizon: "#cfe6ff" } }), undefined);
+assert.equal(base.sky, "nappal", "the current map file is not changed");
 
 console.log("skyGradient ok");
