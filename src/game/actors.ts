@@ -1183,6 +1183,8 @@ export interface ActorState {
   inVentUntil?: number | null;
   // a friendly one (see ActorType.friendly): it wanders about where it starts
   friendly?: boolean;
+  // a dormant (ActorSpec.dormant) one shown in the map editor: drawn faded
+  ghost?: boolean;
 }
 
 // whether a placed actor is friendly: its own say, else its type's
@@ -1210,11 +1212,27 @@ export function createActors(map: GameMap, now: number, level = 0, all = false, 
       if (!isSharedActorId(spec.actor)) console.error(`${map.id}: unknown actor "${spec.actor}" at ${spec.cell.x},${spec.cell.y}`);
       return [];
     }
+    // (one that appears when triggered is not in the world until then - the map editor shows it, faded)
+    if (spec.dormant && !all) return [];
     const wake = actorWake(spec, stance);
     const waiting = wake && level < wake.level && !all;
     if (waiting && wake.mode === "arrive") return [];
     const actor = actorFromSpec(map, spec, id, now);
-    return [{ ...actor, dormant: !!waiting && wake.mode === "dormant", fooled: !!waiting && wake.mode === "fooled" }];
+    return [{ ...actor, dormant: !!waiting && wake.mode === "dormant", fooled: !!waiting && wake.mode === "fooled", ...(spec.dormant ? { ghost: true } : {}) }];
+  });
+}
+
+// The dormant NPCs `indices` (of the map's actors) coming into the world (an operable `spawn` target, see operables.ts): each
+// as its spec places it, on guard - or, if the spec itself says so (`wake`), powered down / fooled until the alert reaches
+// its level (the ship's own stance does not apply: a trap's guard is awake).
+export function spawnActors(map: GameMap, indices: readonly number[], now: number, level = 0): ActorState[] {
+  return indices.flatMap((id) => {
+    const spec = map.actors?.[id];
+    if (!spec || !ACTOR_TYPES[spec.actor]) return [];
+    const wake = spec.wake;
+    const waiting = !!wake && wake.mode !== "arrive" && level < wake.level;
+    const actor = actorFromSpec(map, spec, id, now);
+    return [{ ...actor, dormant: waiting && wake!.mode === "dormant", fooled: waiting && wake!.mode === "fooled" }];
   });
 }
 

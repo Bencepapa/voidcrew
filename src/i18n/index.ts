@@ -59,9 +59,11 @@ import { operableEn } from "./en/operable";
 import { operableHu } from "./hu/operable";
 import { skyEn } from "./en/sky";
 import { skyHu } from "./hu/sky";
+import { emitterTrapsEn } from "./en/emitterTraps";
+import { emitterTrapsHu } from "./hu/emitterTraps";
 
-const en = { ...skyEn, ...operableEn, ...areaEn, ...pickupEn, ...fenceEn, ...linksEn, ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...dialogueEn, ...minimapEn, ...inventoryEn, ...itemInfoEn, ...shopEn, ...shopEditorEn };
-const hu: Partial<Record<Key, string>> = { ...skyHu, ...operableHu, ...areaHu, ...pickupHu, ...fenceHu, ...linksHu, ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...dialogueHu, ...minimapHu, ...inventoryHu, ...itemInfoHu, ...shopHu, ...shopEditorHu };
+const en = { ...skyEn, ...emitterTrapsEn, ...operableEn, ...areaEn, ...pickupEn, ...fenceEn, ...linksEn, ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...dialogueEn, ...minimapEn, ...inventoryEn, ...itemInfoEn, ...shopEn, ...shopEditorEn };
+const hu: Partial<Record<Key, string>> = { ...skyHu, ...emitterTrapsHu, ...operableHu, ...areaHu, ...pickupHu, ...fenceHu, ...linksHu, ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...dialogueHu, ...minimapHu, ...inventoryHu, ...itemInfoHu, ...shopHu, ...shopEditorHu };
 
 export type Key = keyof typeof en;
 // whether a key has a string (for optional, data-driven names)

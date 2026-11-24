@@ -1,5 +1,49 @@
 # Operable props: lever, button, pressure plate, trap cell, wall traps (feature/operable-props)
 
+## 0. Fire, poison-smoke and spawn traps (feature/fire-trap-effects): design summary
+
+Goal: a lever / button / plate / trap cell can switch smoke-fire emitters on and off (one, a cell's, or all in an area),
+raise a damaging poison smoke, bring dormant NPCs and items into the world, and pay credits / items straight to the party.
+Everything is additive to the operable model below (`OperableSource` -> `targets[]`); no new top-level map arrays.
+
+**What exists and is reused**
+
+- Emitters: `SmokeSpec` (`types.ts`; `effect`, `color`, `blow`, `fire`, `light*`, `Linked` ids) in `map.smokes`; the viewport
+  (`GameViewport.buildSmoke`) turns each into a particle emitter (+ a fire light for `effect: "fire"`) and an edit marker;
+  the editor's panel is `SmokeFields.tsx` over `updateSmoke` (`mapEdits.ts`). A fire burns its own cell: `fire.ts fireCells`,
+  read by the actor tick in `useGameState` (only `if trapsActive()`, see `playMode.ts`).
+- Operables: `operables.ts` is the pure state machine (`work` runs a source's targets as it goes on / off),
+  `useOperables.ts` the runtime (doors, flags, `hurt`), `operableStore.ts` the pose store the viewport reads,
+  `operableEdits.ts` / `OperableFields.tsx` / `operableLink.ts` the editor (targets list + link mode).
+- NPCs: `ActorSpec` -> `createActors` / `actorFromSpec` (`actors.ts`; the actor's id is its index in `map.actors`; `arrive`
+  reinforcements are made with `actorFromSpec` in `useGameState.alertTick`). Items: `map.items`, hidden once their
+  `lootKey` is in `looted`. Credits: `meta.ts setCredits` / `getMeta`; items `addToHaul`.
+
+**Decisions**
+
+- **Addresses** are absolute and explicit: a target names `x,y` (+ optional `index` = the n-th entry of that kind in the cell,
+  in file order), or an `id` (the `Linked` id), or an `area` rectangle `{x0,y0,x1,y1}` (all entries inside it). Variation
+  (`chance`) can drop entries, so the playing map is searched, not the file's index.
+- **Emitters on/off**: `SmokeSpec.active` (default true; false = "inactive until switched on"). The runtime keeps an
+  `emit` map (emitter key `x,y#n` -> on) inside `OperableState` (resets with the deck, like the levers); the store
+  `emitterStore.ts` publishes it, the viewport hides inactive emitters (rebuilds the particle systems only when the set of
+  shown emitters changed), the editor always shows all of them.
+- **Fire kind / colour / presets** are patches of the existing smoke fields (`emitterPresets.ts`): Fire, Blue fire, Green
+  fire, Smoke, Steam, Poison smoke, Flame jet from the wall (blow away from the wall the emitter sits against).
+- **Poison smoke** = `SmokeSpec.harm {damage, every, reach, label}`: while the emitter is on and `trapsActive()`, a crewmate
+  standing within `reach` steps (walkable cells, 0..3, default 1) takes `damage` every `every` s through the same `hurt`
+  path as the wall traps. The fire keeps its own-cell burn but now also needs the emitter to be on.
+- **Spawn**: `ActorSpec.dormant` ("appears when triggered") - `createActors` leaves it out of the world until a `spawn`
+  target brings it in (`actorFromSpec` with its map index as id, so the killed-wreck bookkeeping keeps working).
+  `ActorSpec.dormant` is the *map* flag; `ActorState.dormant` (powered down, waiting for the alert) is unrelated.
+- **Items**: `MapItem.dormant`; hidden through the existing `looted` set until an `item` target reveals it (and kept
+  revealed for the run).
+- **Reward**: `{kind:"reward", credits?, items?:[{item,qty}], once?}` - once-only by default, remembered with a run flag.
+- **Play mode**: harm (fire, poison, shots) only while `trapsActive()`; emitters still draw in wander mode; spawned
+  enemies appear but are held by the existing `holdEnemies`.
+
+**Not in this feature**: ceiling-lowering and chasm traps (saved for later).
+
 ## 1. Design summary (written before coding; kept up to date)
 
 ### What exists (and is reused)

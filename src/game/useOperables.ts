@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { t } from "../i18n";
 import { gameClock } from "./clock";
+import { harmTick, smokeKeys } from "./emitters";
+import { emitterView } from "./emitterStore";
+import { stacksText } from "./items";
 import { floorHeight } from "./mapGeometry";
 import {
   doorBlocked, evaluatePlates, initialOperableState, operate, restoreFromFlags, sourceKeys, tick,
@@ -36,7 +39,19 @@ export interface OperableEnv {
   hasFlag: (flag: string) => boolean;
   raiseFlag: (flag: string, on: boolean) => void;
   pushLog: (text: string, kind?: "warn" | "success" | "danger" | "damage") => void;
+  // dormant NPCs (indices in the played map's actors) come into the world: the names of the ones that really came
+  spawnActors: (indices: number[]) => string[];
+  // dormant items (indices in the played map's items) appear
+  revealItems: (indices: number[]) => void;
+  // credits and items go to the party (the pack's overflow is dealt with, and told, there)
+  giveReward: (credits: number, items: { item: string; count: number }[]) => void;
 }
+
+// the run flag that remembers a reward was paid (kept for the run, whatever the deck does)
+export const rewardFlag = (mapId: string, key: string) => `reward.${mapId}.${key}`;
+
+// the emitter of a map by its key (see smokeKeys)
+const smokeAt = (map: GameMap, key: string) => map.smokes?.[smokeKeys(map.smokes).indexOf(key)];
 
 export function useOperables(env: OperableEnv) {
   const envRef = useRef(env);
@@ -52,12 +67,16 @@ export function useOperables(env: OperableEnv) {
       now: gameClock.now(),
       party: e.active && grounded ? e.pos : null,
       doorOpen: (cell) => e.openDoorsRef.current.has(`${cell.x},${cell.y}`),
+      rewarded: (key) => e.hasFlag(rewardFlag(m.id, key)),
     };
   }, []);
 
   const publish = useCallback((state: OperableState) => {
     stateRef.current = state;
-    operableView.set({ mapId: envRef.current.mapRef.current.id, on: state.on });
+    const id = envRef.current.mapRef.current.id;
+    operableView.set({ mapId: id, on: state.on });
+    // (the emitters that are on: the viewport shows them, the fire burns by them - only while the deck is being played)
+    emitterView.set({ mapId: id, playing: envRef.current.active, on: state.emit });
   }, []);
 
   // What a step's effects do in the game. `silent`: a deck being loaded with its sources already on (no door sliding open).
@@ -112,6 +131,34 @@ export function useOperables(env: OperableEnv) {
         case "blocked":
           if (effect.reason === "noDoor" && !silent) e.pushLog(t("operable.noDoor"), "warn");
           break;
+        case "emitters": {
+          // (the emitters themselves follow the published state; this is the log line)
+          if (silent) break;
+          const specs = effect.keys.map((k) => smokeAt(e.mapRef.current, k));
+          const text = !effect.on ? "emitter.off" : specs.some((s) => s?.harm) ? "emitter.poisonOn" : specs.some((s) => s?.fire) ? "emitter.fireOn" : "emitter.on";
+          e.pushLog(t(text), effect.on ? "warn" : undefined);
+          break;
+        }
+        case "spawn": {
+          const names = e.spawnActors(effect.actors);
+          if (!silent) for (const name of names) e.pushLog(t("emitter.spawn", { name }), "danger");
+          break;
+        }
+        case "reveal":
+          e.revealItems(effect.items);
+          if (!silent) e.pushLog(t("emitter.reveal"), "success");
+          break;
+        case "reward": {
+          e.raiseFlag(rewardFlag(e.mapRef.current.id, effect.key), true);
+          const items = effect.items.map((i) => ({ item: i.item, count: i.qty }));
+          e.giveReward(effect.credits, items);
+          const list = stacksText(items);
+          e.pushLog(
+            t(effect.credits && items.length ? "emitter.rewardBoth" : effect.credits ? "emitter.rewardCredits" : "emitter.rewardItems", { credits: effect.credits, items: list }),
+            "success",
+          );
+          break;
+        }
       }
     }
   }, []);
@@ -166,6 +213,26 @@ export function useOperables(env: OperableEnv) {
     }, 250);
     return () => clearInterval(timer);
   }, [env.active, apply, context, publish]);
+
+  // poison smoke and flame jets (SmokeSpec.harm): the crew standing in the smoke of an emitter that is on is hurt now and
+  // then - only while the traps are armed (see playMode.ts) and the game's clock runs
+  const lastHarmRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    if (!env.active) return;
+    lastHarmRef.current = {};
+    const timer = setInterval(() => {
+      const e = envRef.current;
+      const m = e.mapRef.current;
+      if (!m.smokes?.some((s) => s.harm) || gameClock.rate() === 0) return;
+      const c = context();
+      const result = harmTick({ map: m, on: stateRef.current.emit, party: c.party, now: c.now, last: lastHarmRef.current, armed: trapsActive(), doorOpen: c.doorOpen });
+      lastHarmRef.current = result.last;
+      for (const hit of result.hits) {
+        e.hurt(hit.damage, (name) => (hit.label ? t("emitter.hit", { name, label: hit.label }) : t("emitter.poisonHit", { name })));
+      }
+    }, 250);
+    return () => clearInterval(timer);
+  }, [env.active, env.mapId, context]);
 
   return { touch };
 }

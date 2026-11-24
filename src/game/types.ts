@@ -160,6 +160,10 @@ export interface ActorSpec extends Linked {
   // what it says in the simple shop (a friendly NPC with a shop but no dialogue
   // opens the shop directly); empty: a default greeting
   greeting?: string;
+  // "appears when triggered": not in the world (not simulated, not drawn, not an enemy of the story) until an operable
+  // `spawn` target brings it in (see operables.ts); the map editor shows it faded. Not the same as ActorState.dormant
+  // (a robot powered down, waiting for the alert).
+  dormant?: boolean;
 }
 
 // An actor waiting for the ship's alert level (1 suspicious, 2 alert, 3
@@ -301,6 +305,20 @@ export interface SmokeSpec extends Linked {
   opacityDark?: number;
   // the chance (0..1) it's there in a variation (see variation.ts)
   chance?: number;
+  // false: inactive until a lever, button or plate switches it on (see emitters.ts); unset: on from the start
+  active?: boolean;
+  // poison / hot smoke: while it is on, a crewmate within `reach` cells of it is hurt every `every` seconds
+  harm?: SmokeHarm;
+}
+
+// What an emitter does to the crew standing in its smoke (see emitters.ts): `damage` hit points every `every`
+// seconds (default 1), to whoever stands within `reach` steps of it over walkable cells (0..3, default 1), with
+// the log line "<name> <label>." (default "chokes on the poison smoke").
+export interface SmokeHarm {
+  damage: number;
+  every?: number;
+  reach?: number;
+  label?: string;
 }
 
 // Where a link between maps (a gate, stairs - see mapLinks.ts) leads: the
@@ -367,6 +385,8 @@ export interface MapItem extends Linked {
   // flag it raises (see story.ts)
   name?: string;
   sets?: string;
+  // "appears when triggered": not there until an operable `item` target reveals it (see operables.ts)
+  dormant?: boolean;
 }
 
 // A lift cabin: the cell behind a lift door. Its button (a decal with the

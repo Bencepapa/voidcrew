@@ -54,6 +54,7 @@ import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
 import { buildOperableModel, setOperablePose } from "../render/operableModel";
 import { operableView } from "../game/operableStore";
+import { emitterView, emittersShown } from "../game/emitterStore";
 import { operableLink } from "../editor/operableLink";
 import { hasClickables, sourceKeys } from "../game/operables";
 import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
@@ -4712,10 +4713,15 @@ export function GameViewport({
     let petalEmitters: SpriteEmitter[] = [];
     let moteEmitters: PetalEmitter[] = [], mistEmitters: SpriteEmitter[] = [], flyEmitters: SpriteEmitter[] = [];
     const effectColors = new Map<number, THREE.Color>();
+    // which emitters are shown now (see emitterStore.ts: while playing only those that are on; the editor shows all)
+    const shownSig = (m: GameMap) => emittersShown(m).map(Number).join("");
+    let appliedShown = "";
     const buildSmoke = (m: GameMap) => {
       effectColors.clear();
       fireEmitters.clear();
       petalEmitters = []; moteEmitters = []; mistEmitters = []; flyEmitters = [];
+      const shown = emittersShown(m);
+      appliedShown = shownSig(m);
       return createSmoke(
       (m.smokes ?? []).flatMap((spec, index): SmokeEmitter[] => {
         const at = new THREE.Vector3(
@@ -4741,6 +4747,8 @@ export function GameViewport({
           line.scale.setScalar(0.1 + 0.1 * spec.blow.speed);
           marker.add(line);
         }
+        // (an emitter that is switched off makes nothing - its marker stays for the editor)
+        if (!shown[index]) return [];
         const emitter: SmokeEmitter = {
           x: at.x,
           y: at.y,
@@ -4912,6 +4920,14 @@ export function GameViewport({
       scene.add(motes.mesh, mist.mesh, flies.mesh);
       weatherMap = next;
     }
+    // a lever, button or plate switched emitters on or off (see emitterStore.ts): the particle systems are made anew -
+    // only when the set of shown emitters really changed
+    const offEmitters = emitterView.subscribe(() => {
+      const m = latestMapRef.current;
+      if (shownSig(m) === appliedShown) return;
+      applySmoke(m);
+      sceneVersion++;
+    });
 
     // ---- exits: a glowing plate on the floor of each way off the ship ----
     const exitMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(), transparent: true, depthWrite: false, fog: true });
@@ -5801,7 +5817,7 @@ export function GameViewport({
       const lightsChanged = lightsOf(next) !== lightsOf(applied);
       if (lightsChanged) applyLights(next);
       if (JSON.stringify(next.smokes) !== JSON.stringify(applied.smokes)) {
-        const shape = (m: GameMap) => JSON.stringify(m.smokes?.map(({ color, lightColor, lightIntensity, lightReach, ...rest }) => rest));
+        const shape = (m: GameMap) => JSON.stringify(m.smokes?.map(({ color, lightColor, lightIntensity, lightReach, active, harm, ...rest }) => rest));
         if (shape(next) === shape(applied)) {
           next.smokes?.forEach((spec, index) => {
             const effect = spec.effect ?? (spec.petals ? "motes" : spec.fire ? "fire" : "smoke");
@@ -6310,8 +6326,9 @@ export function GameViewport({
         // hit: a red flash; dead: it fades out
         const flash = Math.max(0, 1 - (now - actor.hitAt) / ACTOR_FLASH_MS);
         entry.material.emissive.setRGB(flash * 0.9, flash * 0.12, flash * 0.05);
-        entry.material.transparent = dead > 0;
-        entry.material.opacity = 1 - Math.min(1, dead);
+        // (a dormant NPC - one that appears when triggered - is shown faded while editing)
+        entry.material.transparent = dead > 0 || !!actor.ghost;
+        entry.material.opacity = (1 - Math.min(1, dead)) * (actor.ghost ? 0.4 : 1);
         const yaw = Math.atan2(camX - x, camZ - z);
         mesh.rotation.y = yaw;
 
@@ -7559,7 +7576,7 @@ export function GameViewport({
             (lightTool || h.object.userData.mapLight === undefined) &&
             drawnChain(h.object) &&
             // (the loose items are see-through sprites, but the Item tool can point at them)
-            (!seeThrough(h.object) || ((editToolRef.current === "item" || selecting) && isItemObject(h.object))) &&
+            (!seeThrough(h.object) || ((editToolRef.current === "item" || selecting || operableLink.active()) && isItemObject(h.object))) &&
             // (a fence's floor mark: the Select tool and the fence tools point at it, the others see the floor under it)
             (h.object.parent?.name !== "fenceMarker" || selecting || editToolRef.current.startsWith("fence")) &&
             // (the thing being dragged is looked through: what's behind it is
@@ -7589,13 +7606,13 @@ export function GameViewport({
         }
       }
       // the Smoke tool: an emitter's marker pointed at
-      if (editToolRef.current === "smoke" || (selecting && hit.object.userData.smokeIndex !== undefined)) {
+      if (editToolRef.current === "smoke" || ((selecting || operableLink.active()) && hit.object.userData.smokeIndex !== undefined)) {
         const at = hits.find((h) => h.object.userData.smokeIndex !== undefined);
         const spec = at && latestMapRef.current.smokes?.[at.object.userData.smokeIndex as number];
         if (at && spec) return { kind: "floor", cell: { ...spec.cell }, smoke: at.object.userData.smokeIndex as number };
       }
       // the Item tool: an item pointed at
-      if (editToolRef.current === "item" || selecting) {
+      if (editToolRef.current === "item" || selecting || operableLink.active()) {
         for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
           if (o.userData.itemIndex === undefined) continue;
           const spec = latestMapRef.current.items?.[o.userData.itemIndex as number];
@@ -8691,6 +8708,7 @@ export function GameViewport({
       }
       for (const mat of cutoutFaceMaterials.values()) mat.dispose();
       offOperables();
+      offEmitters();
       if (propWiresRef.current === refreshPropWires) propWiresRef.current = null;
       for (const prop of propObjects.values()) prop.getObjectByName("propEditWires")?.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
       for (const mat of Object.values(wireMats)) mat.dispose();
