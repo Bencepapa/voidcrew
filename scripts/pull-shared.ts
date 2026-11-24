@@ -3,13 +3,28 @@ import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import sharp from "sharp";
-import { generateMaps } from "../src/render/depthNormal";
 import { readPickupAppearance } from "../src/game/bundledImages";
+import { bundleFileNames, readBundleFiles, type BundleExt, type BundleFiles, type BundleMapKey } from "../src/game/bundleFiles";
 import { actorFiles, bundledActorFolder, COMMON_FOLDER, commonFolder, commonIdOk, readCommonDefinition, revisionNumbers, type CommonKind, type DefinitionKind } from "../src/game/sharedContent";
+import { bakeTexture, type TextureBakeInput } from "./bundleTexture";
+import { encodeSource, type Encoded } from "./imageEncode";
 
 // npm run pull:shared [outdir] [--list]
-//   --list (alias --dry-run): only says what would be bundled (and what is kept as it is); nothing is downloaded
-//   beyond the small meta.json / map-head reads, and nothing is written.
+//   --list (alias --dry-run): only says what would be bundled (and what is kept as it is, and which files and formats
+//   each asset would get); nothing is downloaded beyond the small meta.json / map-head reads, and nothing is written.
+//
+// Images in the bundle are LOSSLESS, always (the textures are pixel art): every image file the script writes goes
+// through scripts/imageEncode.ts, which keeps the smaller of an optimised PNG and a lossless WebP (PNG unless the WebP is
+// at least 10% smaller), checks the decoded pixels against the source, and names the file after what it really is
+// (diffuse.webp only when it is WebP). The catalog records the real names (`files`, see src/game/bundleFiles.ts).
+// Every bundled texture gets its Auto normal / depth maps baked in, so the shipped game never derives anything
+// (the client never tracks a bundled texture for upgradeShared: setSharedTextures drops bundled ids).
+// The resolution hook is MAX_TEXTURE_SIZE in scripts/imageEncode.ts (Infinity: nothing is resized).
+//
+// TODO (geometry, not done yet): relief geometry could be baked the same way. The game builds it from a texture's depth
+// map in src/render/reliefMesh.ts; a baked file (say relief.bin, listed in the catalog `files` under a new key) would
+// be produced right after the maps below, from the baked depth, and read instead of loadHeightGrid. See
+// concept/webp-compression-plan.md, "Implementation status".
 const flags = process.argv.slice(2).filter(arg => arg.startsWith("--"));
 const [output] = process.argv.slice(2).filter(arg => !arg.startsWith("--"));
 const dryRun = flags.includes("--list") || flags.includes("--dry-run");
@@ -37,6 +52,8 @@ interface TextureMeta {
   pixelArt?: boolean;
   smooth?: boolean;
   tuning?: unknown;
+  // the store's own file names, when a revision says (a later editor may publish WebP); none: <map>.png
+  files?: unknown;
 }
 
 async function request(path: string, body?: unknown): Promise<Response> {
@@ -68,6 +85,38 @@ async function file(path: string) {
   if (!response.ok) throw new Error(`Missing ${path} (HTTP ${response.status}).`);
   return Buffer.from(await response.arrayBuffer());
 }
+
+// ---- what was written, for the final table ----
+interface Written { asset: string; role: string; name: string; ext: BundleExt; bytes: number; pngBytes: number; sourceBytes?: number }
+const written: Written[] = [];
+const kb = (bytes: number) => `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
+function record(asset: string, role: string, name: string, encoded: Encoded) {
+  written.push({ asset, role, name, ext: encoded.ext, bytes: encoded.bytes.length, pngBytes: encoded.pngBytes, sourceBytes: encoded.sourceBytes });
+  const from = encoded.sourceBytes ? `, from ${kb(encoded.sourceBytes)}` : "";
+  console.log(`  ${name}: ${kb(encoded.bytes.length)}${from} (${encoded.note})`);
+}
+function printSummary() {
+  if (!written.length) return;
+  const rows = new Map<string, { files: number; webp: number; bytes: number; png: number; source: number; sourced: number }>();
+  for (const w of written) {
+    const row = rows.get(w.role) ?? { files: 0, webp: 0, bytes: 0, png: 0, source: 0, sourced: 0 };
+    row.files++; row.webp += w.ext === "webp" ? 1 : 0; row.bytes += w.bytes; row.png += w.pngBytes;
+    if (w.sourceBytes) { row.source += w.sourceBytes; row.sourced += w.bytes; }
+    rows.set(w.role, row);
+  }
+  const total = { files: 0, webp: 0, bytes: 0, png: 0, source: 0, sourced: 0 };
+  console.log("\nImage files written (lossless; 'PNG-opt' = the same pixels as an optimised PNG):");
+  console.log("  kind".padEnd(18) + "files".padStart(7) + "webp".padStart(7) + "bytes".padStart(12) + "PNG-opt".padStart(12) + "saved".padStart(12));
+  for (const [role, row] of [...rows].sort(([a], [b]) => a.localeCompare(b))) {
+    console.log(`  ${role}`.padEnd(18) + String(row.files).padStart(7) + String(row.webp).padStart(7) + kb(row.bytes).padStart(12) + kb(row.png).padStart(12) + kb(row.png - row.bytes).padStart(12));
+    for (const key of Object.keys(total) as (keyof typeof total)[]) total[key] += row[key];
+  }
+  console.log("  total".padEnd(18) + String(total.files).padStart(7) + String(total.webp).padStart(7) + kb(total.bytes).padStart(12) + kb(total.png).padStart(12) + kb(total.png - total.bytes).padStart(12));
+  if (total.source) console.log(`  (the ${kb(total.sourced)} of those that came from a downloaded file were ${kb(total.source)} there; baked Auto maps have no download)`);
+}
+
+/** The file name the store keeps for a map: `meta.files` when a revision names one (a later editor), else `<key>.png`. */
+const storeName = (meta: { files?: unknown }, key: BundleMapKey) => readBundleFiles(meta.files)[key] ?? `${key}.png`;
 
 async function saveCatalog() {
   if (dryRun) return;
@@ -105,41 +154,34 @@ async function pullTexture(world: string, name: string) {
     if (catalog.textures[id]?.rev !== rev) console.warn(`Kept existing ${id}; shared revision: ${rev}.`);
     return;
   }
-  if (dryRun) { console.log(`Would bundle texture ${id} (r${rev}).`); return; }
   const maps = meta.maps ?? {};
-  const files: Record<string, Buffer> = { "diffuse.png": await file(legacy ? folder : folder + "/diffuse.png") };
-  for (const channel of ["normal", "depth", "emissive"]) {
-    if (maps[channel] === "uploaded") files[channel + ".png"] = await file(`${folder}/${channel}.png`);
-  }
-  if (maps.gloss === "uploaded" || maps.metal === "uploaded") files["surface.png"] = await file(folder + "/surface.png");
   const source = meta.transparency?.source;
-  if (maps.normal === "auto" || maps.depth === "auto" || source === "none" || source === "colorKey") {
-    const { data, info: { width, height } } = await sharp(files["diffuse.png"]).toColourspace("srgb").ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    const rgba = new Uint8ClampedArray(data);
-    const hex = /^#([\da-f]{6})$/i.exec(meta.transparency?.colorKey ?? "")?.[1] ?? "ff00ff";
-    const rgb = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
-    if (source === "none" || source === "colorKey") {
-      for (let i = 0; i < rgba.length; i += 4) {
-        if (source === "none") rgba[i + 3] = 255;
-        else if (rgb.every((value, channel) => Math.abs(value - rgba[i + channel]) <= 6)) rgba[i + 3] = 0;
-      }
-    }
-    const png = (pixels: Uint8ClampedArray) => sharp(Buffer.from(pixels), { raw: { width, height, channels: 4 } }).png().toBuffer();
-    if (source === "none" || source === "colorKey") files["diffuse.png"] = await png(rgba);
-    if (maps.normal === "auto" || maps.depth === "auto") {
-      const generated = generateMaps(rgba, width, height);
-      for (const channel of ["normal", "depth"] as const) {
-        if (maps[channel] === "auto") files[channel + ".png"] = await png(generated[channel]);
-      }
-    }
+  if (dryRun) {
+    const how = (channel: string) => maps[channel] === "auto" ? "baked from the diffuse" : maps[channel] === "uploaded" ? "uploaded" : "none (flat)";
+    const surface = maps.gloss === "uploaded" || maps.metal === "uploaded" ? ", surface" : "";
+    console.log(`Would bundle texture ${id} (r${rev}): diffuse${source === "none" || source === "colorKey" ? ` (transparency ${source} baked in)` : ""}, ` +
+      `normal ${how("normal")}, depth ${how("depth")}${maps.emissive === "uploaded" ? ", emissive" : ""}${surface}; each file the smaller of PNG and lossless WebP (sizes known after the download).`);
+    return;
   }
+  console.log(`Texture ${id} (r${rev}):`);
+  const at = (key: BundleMapKey) => legacy ? folder : `${folder}/${storeName(meta, key)}`;
+  const sources: TextureBakeInput["sources"] = { diffuse: await file(at("diffuse")) };
+  for (const channel of ["normal", "depth", "emissive"] as const) {
+    if (maps[channel] === "uploaded") sources[channel] = await file(at(channel));
+  }
+  if (maps.gloss === "uploaded" || maps.metal === "uploaded") sources.surface = await file(at("surface"));
+  // transparency and the Auto maps baked in, every map encoded (scripts/bundleTexture.ts)
+  const encoded = await bakeTexture({ sources, maps, transparency: meta.transparency });
+  const exts: Partial<Record<BundleMapKey, BundleExt>> = {};
+  for (const [key, one] of Object.entries(encoded) as [BundleMapKey, Encoded][]) { exts[key] = one.ext; record(id, key, `${key}.${one.ext}`, one); }
+  const files: BundleFiles = bundleFileNames(exts);
   const kinds = (Array.isArray(meta.kinds) ? meta.kinds : []).filter((kind: unknown) => ["wall", "floor", "ceiling", "propFace"].includes(kind as string));
   await mkdir(dirname(target), { recursive: true });
   const staging = await mkdtemp(join(dirname(target), ".pull-shared-"));
-  for (const [name, bytes] of Object.entries(files)) await writeFile(join(staging, name), bytes);
+  for (const [key, one] of Object.entries(encoded) as [BundleMapKey, Encoded][]) await writeFile(join(staging, files[key]!), one.bytes);
   await rename(staging, target);
   catalog.textures[id] = { rev, label: meta.name, kinds: kinds.length ? kinds : ["wall", "floor"], pixelArt: meta.pixelArt !== false,
-    smooth: meta.smooth === true, files: Object.keys(files), tuning: meta.tuning };
+    smooth: meta.smooth === true, files, tuning: meta.tuning };
   await saveCatalog();
   console.log(`Bundled texture ${id} (r${rev}).`);
 }
@@ -152,7 +194,7 @@ async function pullImages(world: string, type: "portrait" | "decal" | "item") {
     if (!uuid.test(idPart)) continue;
     const path = `${prefix}/${idPart}`;
     const id = `${world}_${type}_${idPart}`;
-    const target = join(root, "public/shared-images", id + ".png");
+    const exists = () => ["png", "webp"].some(ext => existsSync(join(root, "public/shared-images", `${id}.${ext}`)));
     const versions = (await list(path)).flatMap(({ name }) => /^r[1-9]\d*$/.test(name) ? [Number(name.slice(1))] : [])
       .filter(Number.isSafeInteger).sort((a, b) => b - a);
     for (const rev of versions) {
@@ -160,33 +202,46 @@ async function pullImages(world: string, type: "portrait" | "decal" | "item") {
       const response = await asset(folder + "meta.json");
       if (response.status === 400 || response.status === 404) continue;
       if (!response.ok) throw new Error(`Could not read ${folder} metadata (HTTP ${response.status}).`);
-      const { name, type: savedType, width, height, surface, purpose, hasNormal, pickup } = await response.json();
+      const { name, type: savedType, width, height, surface, purpose, hasNormal, pickup, files: storeFiles } = await response.json();
       if (savedType !== type || typeof name !== "string" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) continue;
-      if (existsSync(target) || Object.hasOwn(catalog.images, id)) {
+      if (exists() || Object.hasOwn(catalog.images, id)) {
         if (catalog.images[id]?.rev !== rev) console.warn(`Kept existing ${id}; shared revision: ${rev}.`);
         break;
       }
-      if (dryRun) { console.log(`Would bundle ${type} ${id} (r${rev}).`); break; }
-      const png = await file(folder + "diffuse.png");
-      const actual = await sharp(png).metadata();
-      if (actual.format !== "png" || actual.width !== width || actual.height !== height) throw new Error(`Invalid PNG: ${folder}diffuse.png`);
-      // a decal's own normal map (revisions before it have none): public/shared-images/<id>.normal.png (checked before anything is written)
-      // a pickup's normal and depth maps (publishing always makes both): <id>.normal.png and <id>.depth.png
-      const extra: Record<string, Buffer> = {};
-      if (type === "decal" && hasNormal === true) extra.normal = await file(folder + "normal.png");
-      if (type === "item") for (const channel of ["normal", "depth"]) extra[channel] = await file(`${folder}${channel}.png`);
-      for (const [channel, bytes] of Object.entries(extra)) {
-        const info = await sharp(bytes).metadata();
-        if (info.format !== "png" || info.width !== width || info.height !== height) throw new Error(`Invalid PNG: ${folder}${channel}.png`);
+      if (dryRun) {
+        const maps = type === "item" ? " + normal and depth maps" : type === "decal" && hasNormal === true ? " + normal map" : "";
+        console.log(`Would bundle ${type} ${id} (r${rev}): ${width}x${height}${maps}; each file the smaller of PNG and lossless WebP (sizes known after the download).`);
+        break;
       }
-      await mkdir(dirname(target), { recursive: true });
-      for (const [channel, bytes] of Object.entries(extra)) await writeFile(join(root, "public/shared-images", `${id}.${channel}.png`), bytes, { flag: "wx" });
-      await writeFile(target, png, { flag: "wx" });
+      console.log(`${type} ${id} (r${rev}):`);
+      const names = (key: BundleMapKey) => readBundleFiles(storeFiles)[key] ?? `${key}.png`;
+      // the maps: a decal's own normal map (revisions before it have none), a pickup's normal and depth maps (publishing always makes both)
+      // all downloaded and checked before anything is written
+      const sources: Partial<Record<BundleMapKey, Buffer>> = { diffuse: await file(folder + names("diffuse")) };
+      if (type === "decal" && hasNormal === true) sources.normal = await file(folder + names("normal"));
+      if (type === "item") for (const channel of ["normal", "depth"] as const) sources[channel] = await file(folder + names(channel));
+      for (const [channel, bytes] of Object.entries(sources)) {
+        const info = await sharp(bytes).metadata();
+        if ((info.format !== "png" && info.format !== "webp") || info.width !== width || info.height !== height) throw new Error(`Invalid image: ${folder}${names(channel as BundleMapKey)}`);
+      }
+      const encoded: Partial<Record<BundleMapKey, Encoded>> = {};
+      for (const key of Object.keys(sources) as BundleMapKey[]) encoded[key] = await encodeSource(sources[key]!);
+      const exts: Partial<Record<BundleMapKey, BundleExt>> = {};
+      for (const [key, one] of Object.entries(encoded) as [BundleMapKey, Encoded][]) {
+        exts[key] = one.ext;
+        record(id, key === "diffuse" ? `${type} image` : key, `${key}.${one.ext}`, one);
+      }
+      const files = bundleFileNames(exts);
+      // public/shared-images/<id>.<ext>, <id>.normal.<ext>, <id>.depth.<ext>
+      await mkdir(join(root, "public/shared-images"), { recursive: true });
+      for (const [key, one] of Object.entries(encoded) as [BundleMapKey, Encoded][]) {
+        await writeFile(join(root, "public/shared-images", key === "diffuse" ? `${id}.${one.ext}` : `${id}.${key}.${one.ext}`), one.bytes, { flag: "wx" });
+      }
       const validPurpose = type === "portrait" && (purpose === "loading" || purpose === "portrait" || purpose === "room") ? purpose : undefined;
-      catalog.images[id] = { world, type, name, width, height, rev,
+      catalog.images[id] = { world, type, name, width, height, rev, files,
         ...(validPurpose ? { purpose: validPurpose } : {}),
         ...(type === "decal" && ["wall", "floor", "ceiling"].includes(surface) ? { surface } : {}),
-        ...(type === "decal" && extra.normal ? { hasNormal: true } : {}),
+        ...(type === "decal" && encoded.normal ? { hasNormal: true } : {}),
         ...(type === "item" ? { pickup: readPickupAppearance(pickup) } : {}) };
       await saveCatalog();
       console.log(`Bundled ${type} ${id} (r${rev}).`);
@@ -229,14 +284,26 @@ async function pullDefinitions(world: string, kind: DefinitionKind) {
         console.warn(`Skipped NPC ${id}: invalid definition.`);
         continue;
       }
-      if (dryRun) { console.log(`Would bundle ${kind} ${id} (r${found.rev}).`); continue; }
+      if (dryRun) { console.log(`Would bundle ${kind} ${id} (r${found.rev}): colour map${definition.hasNormal === true ? " + normal map" : ""}; the colour map the smaller of PNG and lossless WebP, the normal map PNG (sizes known after the download).`); continue; }
+      console.log(`${kind} ${id} (r${found.rev}):`);
+      // the colour map may become png or webp (definition.diffuseFile says which, as the editor writes it); the normal map stays a png
       const files: Record<string, Buffer> = {};
       for (const name of actorFiles(definition)) {
-        files[name] = await file(found.folder + name);
-        const info = await sharp(files[name]).metadata();
+        const bytes = await file(found.folder + name);
+        const info = await sharp(bytes).metadata();
         const format = name.endsWith(".webp") ? "webp" : "png";
         if (info.format !== format || (name.startsWith("diffuse") && (info.width !== definition.width || info.height !== definition.height))) {
           throw new Error(`Invalid ${format}: ${found.folder}${name}`);
+        }
+        const diffuse = name.startsWith("diffuse");
+        const one = await encodeSource(bytes, { pngOnly: !diffuse });
+        const stem = diffuse ? "diffuse" : "normal";
+        files[`${stem}.${one.ext}`] = one.bytes;
+        record(id, `npc ${stem}`, `${stem}.${one.ext}`, one);
+        if (diffuse) {
+          // (the definition is what the game reads the name from: an NPC sheet without it is a png)
+          if (one.ext === "webp") definition.diffuseFile = "diffuse.webp";
+          else if (definition.diffuseFile !== undefined) definition.diffuseFile = "diffuse.png";
         }
       }
       await mkdir(dirname(target), { recursive: true });
@@ -315,3 +382,5 @@ for (const world of ["fantasy", "scifi"]) {
     console.log(`Bundled map ${world}/${id} (r${revision}).`);
   }
 }
+
+printSummary();

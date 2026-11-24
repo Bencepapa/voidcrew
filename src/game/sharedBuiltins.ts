@@ -1,6 +1,7 @@
 import catalog from "./sharedBuiltins.json";
 import type { TextureTuning } from "../render/textureTuning";
 import type { BundledImageEntry } from "./bundledImages";
+import type { BundleFiles } from "./bundleFiles";
 
 interface BundledTexture {
   rev: number;
@@ -8,7 +9,8 @@ interface BundledTexture {
   kinds: ("wall" | "floor" | "ceiling" | "propFace")[];
   pixelArt: boolean;
   smooth?: boolean;
-  files: string[];
+  // the real file names per map (see bundleFiles.ts); an old catalog listed them as an array of names
+  files: BundleFiles | string[];
   tuning?: TextureTuning;
 }
 

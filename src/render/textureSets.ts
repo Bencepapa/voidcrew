@@ -5,6 +5,7 @@
 
 import { assetInWorld } from "../game/worlds";
 import { bundledTextures } from "../game/sharedBuiltins";
+import { bundledTexturePaths } from "../game/bundleFiles";
 
 export type TextureSetKind = "wall" | "floor" | "ceiling" | "door" | "window" | "propFace";
 
@@ -417,18 +418,13 @@ export const TEXTURE_SETS = {
 };
 
 for (const [id, entry] of Object.entries(bundledTextures)) {
-  const base = `${import.meta.env.BASE_URL}textures/`;
-  const folder = `${base}${id}/`;
+  // (each file's real name - png or webp - comes from the catalog, see game/bundleFiles.ts)
   (TEXTURE_SETS as Record<string, TextureSetPaths>)[id] = {
-    diffuse: `${folder}diffuse.png`,
+    ...bundledTexturePaths(id, entry.files, import.meta.env.BASE_URL),
     kind: entry.kinds,
     label: entry.label,
     pixelArt: entry.pixelArt,
     smooth: entry.smooth,
-    normal: entry.files.includes("normal.png") ? `${folder}normal.png` : `${base}flat/normal.png`,
-    depth: entry.files.includes("depth.png") ? `${folder}depth.png` : `${base}flat/depth.png`,
-    ...(entry.files.includes("emissive.png") ? { emissive: `${base}${id}/emissive.png` } : {}),
-    ...(entry.files.includes("surface.png") ? { surface: `${base}${id}/surface.png` } : {}),
   };
 }
 
