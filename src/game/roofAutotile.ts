@@ -17,9 +17,18 @@ import { ROOF_SHAPES, roofShapeHeight, type RoofPieceId } from "./roofPieces";
 //  slope  - slope only: it keeps rising to the ridge (hips and valleys closed)
 //  flat   - slope and flat: one cell of full slope round the edge, a flat top
 //  bent   - the same with the bent pieces (half a cell of slope, then flat)
-export type RoofForm = "slope" | "flat" | "bent";
-export const ROOF_FORMS: readonly RoofForm[] = ["slope", "flat", "bent"];
+//  pyramid - slope only with the true peaks: a ridge and hipped ends where `slope` shaves the top
+//           flat, and over a square one pyramid (a lone cell is a one-cell pyramid)
+//  pyramidcell - every cell a pyramid of its own (tower caps side by side)
+//  gable  - a ridge along the longer side of the area, two slopes and open (straight cut) ends: for a
+//           narrow, long house (one cell wide: a row of ridge pieces)
+// See concept/editor-ui/NOTES-roof-forms.md.
+export type RoofForm = "slope" | "flat" | "bent" | "pyramid" | "pyramidcell" | "gable";
+export const ROOF_FORMS: readonly RoofForm[] = ["slope", "flat", "bent", "pyramid", "pyramidcell", "gable"];
 export const isRoofForm = (value: unknown): value is RoofForm => ROOF_FORMS.includes(value as RoofForm);
+
+// the forms made of the distance from the outline (hips, valleys and a ridge); the others are laid out by rule
+type HipForm = "slope" | "flat" | "bent" | "pyramid";
 
 interface FormRule {
   // the highest the roof climbs above its eave (wall heights)
@@ -29,10 +38,11 @@ interface FormRule {
   outer: RoofPieceId;
   inner: RoofPieceId;
 }
-const FORM_RULES: Record<RoofForm, FormRule> = {
+const FORM_RULES: Record<HipForm, FormRule> = {
   slope: { cap: Infinity, flat: "roof_flat", slope: "roof_slope", outer: "roof_corner", inner: "roof_inner" },
   flat: { cap: 1, flat: "roof_flat", slope: "roof_slope", outer: "roof_corner", inner: "roof_inner" },
   bent: { cap: 0.5, flat: "roof_flat", slope: "roof_slope_flat", outer: "roof_corner_flat", inner: "roof_inner_flat" },
+  pyramid: { cap: Infinity, flat: "roof_flat", slope: "roof_slope", outer: "roof_corner", inner: "roof_inner" },
 };
 
 // A roof built with the tool is a group of roof props, each with `auto: <group id>`
@@ -40,9 +50,10 @@ const FORM_RULES: Record<RoofForm, FormRule> = {
 export function roofGroupId(form: RoofForm, n: number): string {
   return `${form}-${n}`;
 }
+const GROUP_ID = new RegExp(`^(${ROOF_FORMS.join("|")})-(\\d+)$`);
 export function parseRoofGroup(id: unknown): { form: RoofForm; n: number } | null {
   if (typeof id !== "string") return null;
-  const m = /^(slope|flat|bent)-(\d+)$/.exec(id);
+  const m = GROUP_ID.exec(id);
   return m ? { form: m[1] as RoofForm, n: Number(m[2]) } : null;
 }
 
@@ -156,7 +167,6 @@ function pieceForCorners(nw: number, ne: number, se: number, sw: number, rule: F
 // three wide roof, say) is the intended closing, not marked: the roof closes
 // at the cell's edges and only the peak is shaved.
 export function planRoof(cells: readonly RoofCell[], form: RoofForm): RoofPiece[] {
-  const rule = FORM_RULES[form];
   const levels = new Map<number, RoofCell[]>();
   for (const c of cells) {
     const key = levelKey(c.level);
@@ -166,14 +176,99 @@ export function planRoof(cells: readonly RoofCell[], form: RoofForm): RoofPiece[
   }
   const pieces = new Map<string, RoofPiece>();
   for (const list of levels.values()) {
-    const dist = outlineDistances(list);
-    const up = (i: number, j: number) => Math.min(dist(i, j), rule.cap);
-    for (const c of list) {
-      const piece = pieceForCorners(up(c.x, c.y), up(c.x + 1, c.y), up(c.x + 1, c.y + 1), up(c.x, c.y + 1), rule);
-      pieces.set(`${c.x},${c.y},${levelKey(c.level)}`, { x: c.x, y: c.y, ...piece });
-    }
+    for (const piece of planArea(list, form)) pieces.set(`${piece.x},${piece.y},${levelKey(list[0].level)}`, piece);
   }
   return cells.map((c) => pieces.get(`${c.x},${c.y},${levelKey(c.level)}`)!);
+}
+
+// the pieces of the cells of one area (one floor height)
+function planArea(list: readonly RoofCell[], form: RoofForm): RoofPiece[] {
+  if (form === "pyramidcell") return list.map((c) => ({ x: c.x, y: c.y, prop: "roof_pyramid", rotation: 0, elevation: 0 }));
+  if (form === "gable") return planGable(list);
+  const rule = FORM_RULES[form];
+  const dist = outlineDistances(list);
+  const up = (i: number, j: number) => Math.min(dist(i, j), rule.cap);
+  const plain = list.map((c) => ({ x: c.x, y: c.y, ...pieceForCorners(up(c.x, c.y), up(c.x + 1, c.y), up(c.x + 1, c.y + 1), up(c.x, c.y + 1), rule) }));
+  if (form !== "pyramid") return plain;
+  // (a flat standing where the roof peaks: the pyramid form puts the real peak there)
+  const field = roofField(list);
+  const peaks = new Map<string, { piece: Omit<RoofPiece, "x" | "y">; open: boolean[] }>();
+  for (const p of plain) {
+    const peak = p.prop === rule.flat && !p.approx ? peakPiece(field, p.x, p.y, p.elevation) : null;
+    if (peak) peaks.set(`${p.x},${p.y}`, peak);
+  }
+  // A ridge goes on over an open side only into a piece that goes on over it too: the edge between
+  // them is half a unit higher than the corners. Where the next cell is a flat or a slope after all
+  // (a ragged outline) the peak stays flat, and so do the pieces that counted on it.
+  const SIDES = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const;
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [key, peak] of peaks) {
+      const [x, y] = key.split(",").map(Number);
+      const lonely = SIDES.some(([dx, dy], i) => peak.open[i] && !peaks.get(`${x + dx},${y + dy}`)?.open[(i + 2) % 4]);
+      if (lonely) {
+        peaks.delete(key);
+        changed = true;
+      }
+    }
+  }
+  return plain.map((p) => ({ x: p.x, y: p.y, ...(peaks.get(`${p.x},${p.y}`)?.piece ?? p) }));
+}
+
+// The piece for a cell whose four corners are level (at `level`) while the roof's true surface still peaks
+// in its middle, half a unit higher: a ridge running on through two opposite sides, the end of a ridge
+// (open on one side), or a pyramid (closed all round). Null when the surface isn't one of these (the
+// caller keeps its flat). Read off the true distance field at the middle of the cell and of each side.
+function peakPiece(field: (px: number, py: number) => number, x: number, y: number, level: number): { piece: Omit<RoofPiece, "x" | "y">; open: boolean[] } | null {
+  if (Math.abs(field(x + 0.5, y + 0.5) - (level + 0.5)) > EPS) return null;
+  // (a side is open where the ridge goes on over it, closed where the surface comes down to the eave's level)
+  const open: boolean[] = [];
+  for (const [px, py] of [[x + 0.5, y], [x + 1, y + 0.5], [x + 0.5, y + 1], [x, y + 0.5]]) {
+    const at = field(px, py);
+    if (Math.abs(at - (level + 0.5)) < EPS) open.push(true);
+    else if (Math.abs(at - level) < EPS) open.push(false);
+    else return null;
+  }
+  const [n, e, s, w] = open;
+  const count = open.filter(Boolean).length;
+  if (count === 0) return { piece: { prop: "roof_pyramid", rotation: 0, elevation: level }, open };
+  if (count === 1) {
+    // the ridge goes on to the east unturned: south at 90, west at 180, north at 270
+    const rotation = e ? 0 : s ? 90 : w ? 180 : 270;
+    return { piece: { prop: "roof_hipend", rotation, elevation: level }, open };
+  }
+  if (count === 2 && e && w) return { piece: { prop: "roof_ridge", rotation: 0, elevation: level }, open };
+  if (count === 2 && n && s) return { piece: { prop: "roof_ridge", rotation: 90, elevation: level }, open };
+  return null;
+}
+
+// A gable roof: a ridge along the longer side of the area (east-west when it is square), the two slopes
+// falling to the eaves on either side and the ends cut straight, open. Every line of cells across the
+// ridge is one run (a ragged area makes runs of different lengths, each with a ridge of its own height):
+// the slope climbs from either end of the run to the middle. An odd run has a ridge piece in the middle
+// (peak half a unit above its eaves), an even one two slopes meeting on the line between two cells.
+function planGable(list: readonly RoofCell[]): RoofPiece[] {
+  const has = new Set(list.map((c) => `${c.x},${c.y}`));
+  const xs = list.map((c) => c.x);
+  const ys = list.map((c) => c.y);
+  const alongX = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
+  return list.map((c) => {
+    // the run through the cell across the ridge, as positions along the across axis
+    const at = alongX ? c.y : c.x;
+    const inRun = (a: number) => has.has(alongX ? `${c.x},${a}` : `${a},${c.y}`);
+    let first = at;
+    while (inRun(first - 1)) first--;
+    let last = at;
+    while (inRun(last + 1)) last++;
+    // the height of the cell's near and far edge (the roof rises one wall height per cell from either end)
+    const near = Math.min(at - first, last + 1 - at);
+    const far = Math.min(at + 1 - first, last - at);
+    if (near === far) return { x: c.x, y: c.y, prop: "roof_ridge", rotation: alongX ? 0 : 90, elevation: near };
+    // (a slope's rotation: 0 has its eave south, 90 west, 180 north, 270 east - so a higher far side,
+    // south or east, is 180 and 90)
+    const rotation = alongX ? (far > near ? 180 : 0) : far > near ? 90 : 270;
+    return { x: c.x, y: c.y, prop: "roof_slope", rotation, elevation: Math.min(near, far) };
+  });
 }
 
 // ---- checking a plan against the surface it stands for
@@ -194,6 +289,12 @@ export function roofPieceHeightAt(piece: Pick<RoofPiece, "prop" | "rotation" | "
 // reaching from x to x + 1): the distance to the nearest cell that isn't in the
 // area (cells of `area` only, one level), capped by the form.
 export function roofFieldAt(area: readonly { x: number; y: number }[], form: RoofForm, px: number, py: number): number {
+  const cap = form in FORM_RULES ? FORM_RULES[form as HipForm].cap : Infinity;
+  return Math.min(roofField(area)(px, py), cap);
+}
+
+// the true distance (cap and all aside) to the nearest cell that isn't in `area`, as a function of the spot
+function roofField(area: readonly { x: number; y: number }[]): (px: number, py: number) => number {
   const has = new Set(area.map((c) => `${c.x},${c.y}`));
   let minX = Infinity;
   let minY = Infinity;
@@ -205,16 +306,18 @@ export function roofFieldAt(area: readonly { x: number; y: number }[], form: Roo
     maxX = Math.max(maxX, c.x);
     maxY = Math.max(maxY, c.y);
   }
-  let best = Infinity;
-  for (let y = minY - 1; y <= maxY + 1; y++) {
-    for (let x = minX - 1; x <= maxX + 1; x++) {
-      if (has.has(`${x},${y}`)) continue;
+  // (the cells just outside the area's bounding box count: they're not in it)
+  const outside: { x: number; y: number }[] = [];
+  for (let y = minY - 1; y <= maxY + 1; y++) for (let x = minX - 1; x <= maxX + 1; x++) if (!has.has(`${x},${y}`)) outside.push({ x, y });
+  return (px, py) => {
+    let best = Infinity;
+    for (const { x, y } of outside) {
       const dx = Math.max(x - px, 0, px - (x + 1));
       const dy = Math.max(y - py, 0, py - (y + 1));
       best = Math.min(best, Math.max(dx, dy));
     }
-  }
-  return Math.min(best, FORM_RULES[form].cap);
+    return best;
+  };
 }
 
 // ---- the raised floor's footprint

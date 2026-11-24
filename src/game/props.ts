@@ -1,5 +1,5 @@
 import type { GameMap, PropAnchor, PropSpec, Vec2 } from "./types";
-import { ROOF_SHAPES, roofRise, type RoofPieceId, type RoofSegment, type RoofShape } from "./roofPieces";
+import { ROOF_SHAPES, roofShapeRise, type RoofPieceId, type RoofSegment, type RoofShape, type RoofSide } from "./roofPieces";
 import { fenceBoxes, fenceIndex, type FenceForm } from "./fences";
 
 // 3D props standing in walkable cells (crates, beds, ...), textured like the
@@ -143,9 +143,11 @@ export type PropType = {
       // Textured with `texture` (a wall-kind set; PropSpec.texture picks
       // another per placement), else the deck's wall set. Decoration: it
       // never blocks (it hangs over the cell, above head height).
+      // `eaves`: instead of `corner`, eaves on several sides (a ridge, a half pyramid, a pyramid)
       kind: "roof";
       profile: RoofSegment[];
       corner?: "outer" | "inner";
+      eaves?: RoofSide[];
       texture?: string;
     }
   | {
@@ -175,7 +177,7 @@ function roof(id: RoofPieceId): PropType {
   const shape: RoofShape = ROOF_SHAPES[id];
   // (the height is the rise: stacking the next piece on it puts its surface
   // level with this one's far edge)
-  return { kind: "roof", size: [1, roofRise(shape.profile), 1], profile: [...shape.profile], corner: shape.corner };
+  return { kind: "roof", size: [1, roofShapeRise(shape), 1], profile: [...shape.profile], corner: shape.corner, ...(shape.eaves ? { eaves: [...shape.eaves] } : {}) };
 }
 
 // Parts are measured off the views (see npm run props:views): x across the
@@ -324,6 +326,10 @@ export const PROP_TYPES: Record<string, PropType> = {
   roof_corner_flat: roof("roof_corner_flat"),
   roof_inner: roof("roof_inner"),
   roof_inner_flat: roof("roof_inner_flat"),
+  // eaves on several sides (a gable's ridge, a hipped end, a pyramid cap); 0.5 high
+  roof_ridge: roof("roof_ridge"),
+  roof_hipend: roof("roof_hipend"),
+  roof_pyramid: roof("roof_pyramid"),
   // fences and blocks (see fences.ts; the fence tools place them, one piece to a cell or an edge)
   fence_block: { kind: "fence", form: "block", size: [1, 1, 1], blocks: true },
   fence_edge: { kind: "fence", form: "edge", size: [1, 1, 0.1] },

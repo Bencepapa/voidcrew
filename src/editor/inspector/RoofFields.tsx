@@ -15,6 +15,7 @@ export function RoofFields(p: EditorBarProps) {
     <KindChoice label={t("roofauto.form")} title={t("roofauto.formHint")} value={p.roofForm}
       options={ROOF_FORMS.map(value => ({ value, label: t(`roofauto.${value}`) }))}
       onChange={form => p.onRoofForm(form as typeof p.roofForm)}/>
+    <p className="text-neutral-500">{t(`roofauto.hint.${p.roofForm}`)}</p>
     <TexturePicker label={t("editorBar.texture")} value={p.roofTexture}
       options={textureOptions(textureSetsOfKind("wall").filter(id => id !== "sky"), [{ value: "", label: t("editorBar.itsOwn") }])}
       onChange={p.onRoofTexture}/>

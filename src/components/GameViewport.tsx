@@ -4210,7 +4210,7 @@ export function GameViewport({
         kit.normal = type.normal;
         const normal = settingsRef.current.normalStrength * (kit.normal ?? 1);
         kit.wallMat.normalScale.set(normal, normal);
-        const { top, under } = buildRoofGeometry(type.profile, type.corner);
+        const { top, under } = buildRoofGeometry(type.profile, type.corner, type.eaves);
         geometries.push(top, under);
         template.add(new THREE.Mesh(top, kit.wallMat), new THREE.Mesh(under, kit.sideMat));
         return template;

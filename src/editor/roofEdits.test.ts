@@ -190,4 +190,45 @@ const roofs = (file: MapFile) => file.props?.filter((p) => p.auto) ?? [];
   assert.equal(JSON.stringify(file.props), once);
 }
 
+// the new forms: a tower cap, a narrow house; the edits and the re-evaluation are the same as for the old forms
+{
+  const file = mapOf();
+  // one cell: a one-cell pyramid at the block's floor
+  const cap = roofGroupFor(file, { x: 4, y: 3 }, "pyramid");
+  assert.equal(cap, "pyramid-1");
+  paintRoof(file, [{ x: 4, y: 3 }], cap);
+  assert.deepEqual(at(file, 4, 3), { prop: "roof_pyramid", x: 4, y: 3, at: "center", auto: "pyramid-1" });
+  // painting beside it joins it and re-works both: a ridge with hipped ends
+  assert.equal(roofGroupFor(file, { x: 5, y: 3 }, "pyramid"), "pyramid-1");
+  paintRoof(file, [{ x: 5, y: 3 }], "pyramid-1");
+  assert.deepEqual([at(file, 4, 3)!.prop, at(file, 4, 3)!.rotation], ["roof_hipend", undefined], "open to the east");
+  assert.deepEqual([at(file, 5, 3)!.prop, at(file, 5, 3)!.rotation], ["roof_hipend", 180], "open to the west");
+  paintRoof(file, [{ x: 6, y: 3 }], "pyramid-1");
+  assert.equal(at(file, 5, 3)!.prop, "roof_ridge");
+  // taking the middle one out leaves two caps
+  eraseRoof(file, [{ x: 5, y: 3 }]);
+  assert.deepEqual([at(file, 4, 3)!.prop, at(file, 6, 3)!.prop], ["roof_pyramid", "roof_pyramid"]);
+  // the same cells with the other form: taken over by that roof
+  paintRoof(file, [{ x: 4, y: 3 }, { x: 6, y: 3 }], "pyramidcell-2");
+  assert.deepEqual([at(file, 4, 3)!.auto, at(file, 6, 3)!.auto], ["pyramidcell-2", "pyramidcell-2"]);
+  eraseRoofGroup(file, "pyramidcell-2");
+  assert.equal(file.props, undefined);
+}
+{
+  const file = mapOf();
+  // a one cell wide house east-west: a row of ridge pieces on the block's floor
+  paintRoof(file, block(3, 2, 7, 2), "gable-1");
+  assert.ok(roofs(file).every((p) => p.prop === "roof_ridge" && p.rotation === undefined && p.elevation === undefined));
+  // grown to 5x3: two slopes and a ridge a storey up
+  paintRoof(file, block(3, 3, 7, 4), "gable-1");
+  assert.deepEqual([at(file, 5, 2)!.prop, at(file, 5, 2)!.rotation], ["roof_slope", 180]);
+  assert.deepEqual([at(file, 5, 3)!.prop, at(file, 5, 3)!.elevation], ["roof_ridge", 1]);
+  assert.deepEqual([at(file, 5, 4)!.prop, at(file, 5, 4)!.rotation], ["roof_slope", undefined]);
+  // taken back to one cell wide, north-south: the ridge turns
+  eraseRoof(file, block(4, 2, 7, 4));
+  assert.ok(roofs(file).length === 3 && roofs(file).every((p) => p.prop === "roof_ridge" && p.rotation === 90 && p.elevation === undefined));
+  eraseRoofGroup(file, "gable-1");
+  assert.equal(file.props, undefined);
+}
+
 console.log("roofEdits ok");

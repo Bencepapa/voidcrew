@@ -68,5 +68,8 @@
 "assetTree.name.roof_corner": "Tet\u0151 sarok (k\u00fcls\u0151)",
 "assetTree.name.roof_corner_flat": "Tet\u0151 sarok (k\u00fcls\u0151), lapos r\u00e9sszel",
 "assetTree.name.roof_inner": "Tet\u0151 sarok (bels\u0151)",
-"assetTree.name.roof_inner_flat": "Tet\u0151 sarok (bels\u0151), lapos r\u00e9sszel"
+"assetTree.name.roof_inner_flat": "Tet\u0151 sarok (bels\u0151), lapos r\u00e9sszel",
+"assetTree.name.roof_ridge": "Tet\u0151 gerinc (s\u00e1tor)",
+"assetTree.name.roof_hipend": "Tet\u0151 konty (f\u00e9lg\u00fala)",
+"assetTree.name.roof_pyramid": "Tet\u0151 g\u00fala"
 } as const;

@@ -98,6 +98,7 @@ const FANTASY_ASSETS = new Set([
   "torch1", "pedestal1", "tree1", "tree2", "pine1", "bush1", "bush2", "fern1", "barrel1", "deadtree1",
   "fence1", "arch1",
   "roof_slope", "roof_slope_flat", "roof_flat", "roof_corner", "roof_corner_flat", "roof_inner", "roof_inner_flat",
+  "roof_ridge", "roof_hipend", "roof_pyramid",
   "fence_block", "fence_edge", "fence_mid",
   "fantasy_bokor_kerek", "fantasy_bokor_bogyos", "fantasy_bokor_pazsit",
   "grass_small", "grass_medium", "grass_large", "grass_white", "grass_yellow", "grass_blades",
