@@ -8,7 +8,7 @@ export const idle = "border-neutral-600 bg-neutral-800 text-neutral-200 hover:bg
 export const active = "border-amber-400 bg-amber-400/20 text-amber-200";
 // Completing a number gesture advances the callback's undo merge key.
 export const CommitContext = createContext<() => void>(() => {});
-export function Section({kind, section, children}: {kind: string; section: "transform" | "look" | "logic" | "advanced" | "light"; children: ReactNode}) {
+export function Section({kind, section, children}: {kind: string; section: "transform" | "look" | "logic" | "advanced" | "light" | "fireType" | "trap"; children: ReactNode}) {
  const key = "voidcrew-inspector:" + kind + ":" + section;
  const [open, setOpen] = useState(() => { try { const saved = localStorage.getItem(key); return saved === "true"; } catch { return false; } });
  return <details open={open} onToggle={e => { const next=e.currentTarget.open; setOpen(next); try { localStorage.setItem(key,String(next)); } catch { /* storage unavailable */ } }} className="border-t border-neutral-700">

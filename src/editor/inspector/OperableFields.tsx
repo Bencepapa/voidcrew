@@ -1,10 +1,41 @@
 import { useContext, useEffect } from "react";
 import { t } from "../../i18n";
+import { ITEM_TYPES } from "../../game/items";
 import { OPERABLE_DEFAULTS, facingOf, type OperableSpec, type OperableTarget } from "../../game/operables";
 import { NumberField } from "../NumberField";
-import { cleanSpec, type OperableInfo, type SourceRef } from "../operableEdits";
+import { areaTarget, cleanSpec, newReward, type OperableInfo, type SourceRef } from "../operableEdits";
+import { useOperableArea } from "../operableArea";
 import { operableLink, useOperableLink } from "../operableLink";
+import { describeTarget } from "../operableTargetText";
 import { BUTTON, CommitContext, KindChoice, active, idle } from "./parts";
+
+// (the item types a reward can hold, by name)
+const REWARD_ITEMS = Object.entries(ITEM_TYPES).map(([id, type]) => ({ id, name: type.name })).sort((a, b) => a.name.localeCompare(b.name));
+
+// A reward target's form: credits, the items (quantity, remove), one more item, and whether it pays only once.
+function RewardFields({ target, onChange, commit }: {
+  target: Extract<OperableTarget, { kind: "reward" }>;
+  onChange: (next: Extract<OperableTarget, { kind: "reward" }>) => void;
+  commit?: () => void;
+}) {
+  const items = target.items ?? [];
+  return <div className="flex min-w-0 flex-col gap-1 pl-2">
+    <NumberField label={t("operable.reward.credits")} value={target.credits ?? 0} min={0} max={100000} step={10} defaultValue={0} onChange={(v) => onChange({ ...target, credits: v > 0 ? Math.round(v) : undefined })} onCommit={commit}/>
+    {items.map((it, i) => <div key={`${i}:${it.item}`} className="flex items-center gap-1">
+      <span className="min-w-0 flex-1 truncate">{ITEM_TYPES[it.item]?.name ?? it.item}</span>
+      <NumberField label="×" value={it.qty} min={1} max={99} step={1} defaultValue={1} onChange={(v) => onChange({ ...target, items: items.map((x, j) => (j === i ? { ...x, qty: Math.max(1, Math.round(v)) } : x)) })} onCommit={commit}/>
+      <button type="button" className={`${BUTTON} ${idle}`} onClick={() => onChange({ ...target, items: items.filter((_, j) => j !== i) })}>{t("operable.removeTarget")}</button>
+    </div>)}
+    <select className="bg-neutral-800 border border-neutral-700 px-1" value="" onChange={(e) => e.target.value && onChange({ ...target, items: [...items, { item: e.target.value, qty: 1 }] })}>
+      <option value="">{t("operable.reward.addItem")}</option>
+      {REWARD_ITEMS.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
+    </select>
+    <label className="flex items-center gap-1" title={t("operable.reward.onceTitle")}>
+      <input type="checkbox" checked={target.once !== false} onChange={(e) => onChange({ ...target, once: e.target.checked ? undefined : false })}/>
+      {t("operable.reward.once")}
+    </label>
+  </div>;
+}
 
 // The operable props' settings in the Inspector (see game/operables.ts): what a lever, button, pressure plate, trap cell
 // or wall trap does, the targets it works (listed, with a link mode to add one by clicking it in the view) and a wall
@@ -19,6 +50,8 @@ export function OperableFields({ info, onChange }: {
   const commit = useContext(CommitContext);
   const { kind, spec, source } = info;
   const linking = same(useOperableLink(), source);
+  const area = useOperableArea();
+  const targetMissing = (target: OperableTarget) => !!info.missing?.includes((info.spec.targets ?? []).indexOf(target));
   const patch = (next: Partial<OperableSpec>) => onChange(cleanSpec({ ...spec, ...next }));
   // (link mode ends with Esc, and when the panel goes away)
   useEffect(() => {
@@ -78,10 +111,8 @@ export function OperableFields({ info, onChange }: {
       </label>
       <strong className="text-neutral-300">{t("operable.targets")}</strong>
       {!targets.length && <span className="text-neutral-500">{t("operable.noTargets")}</span>}
-      {targets.map((target, i) => <div key={`${i}:${target.kind}:${target.x},${target.y}`} className="flex min-w-0 flex-wrap items-center gap-1 border-t border-neutral-800 pt-1">
-        <span className="text-neutral-200">{target.kind === "door"
-          ? t("operable.target.door", { x: target.x, y: target.y })
-          : t("operable.target.trap", { x: target.x, y: target.y, side: target.side ? ` ${target.side}` : "" })}</span>
+      {targets.map((target, i) => <div key={`${i}:${target.kind}`} className="flex min-w-0 flex-wrap items-center gap-1 border-t border-neutral-800 pt-1">
+        <span className={targetMissing(target) ? "text-amber-300" : "text-neutral-200"} title={targetMissing(target) ? t("operable.target.missing") : undefined}>{describeTarget(target)}</span>
         {target.kind === "door" && <>
           <KindChoice value={target.action ?? "open"} options={(["open", "close", "toggle"] as const).map((a) => ({ value: a, label: t(`operable.action.${a}`) }))}
             onChange={(action) => setTarget(i, { ...target, action: action === "open" ? undefined : (action as "close" | "toggle") })}/>
@@ -90,12 +121,22 @@ export function OperableFields({ info, onChange }: {
             {t("operable.force")}
           </label>
         </>}
+        {target.kind === "emitter" && <KindChoice value={target.action ?? "on"} options={(["on", "off", "toggle"] as const).map((a) => ({ value: a, label: t(`operable.emitterAction.${a}`) }))}
+          onChange={(action) => setTarget(i, { ...target, action: action === "on" ? undefined : (action as "off" | "toggle") })}/>}
+        {target.kind === "reward" && <RewardFields target={target} onChange={(next) => setTarget(i, next)} commit={commit}/>}
         <button type="button" className={`${BUTTON} ${idle}`} onClick={() => patch({ targets: targets.filter((_, j) => j !== i) })}>{t("operable.removeTarget")}</button>
       </div>)}
       <button type="button" className={`${BUTTON} ${linking ? active : idle}`} onClick={() => (linking ? operableLink.cancel() : operableLink.start(source))}>
         {linking ? t("operable.link.done") : t("operable.link.start")}
       </button>
       {linking && <span className="text-amber-200">{t("operable.link.active")}</span>}
+      <button type="button" className={`${BUTTON} ${idle}`} onClick={() => patch({ targets: [...targets, newReward()] })}>{t("operable.reward.add")}</button>
+      {area && <div className="flex flex-wrap items-center gap-1 border-t border-neutral-800 pt-1" title={t("operable.area.title")}>
+        <span className="text-neutral-300">{t("operable.area.selected", { from: `${area.x0},${area.y0}`, to: `${area.x1},${area.y1}` })}</span>
+        {(["emitter", "spawn", "item"] as const).map((kind) => (
+          <button key={kind} type="button" className={`${BUTTON} ${idle}`} onClick={() => patch({ targets: [...targets, areaTarget(kind, area)] })}>{t(`operable.area.add.${kind}`)}</button>
+        ))}
+      </div>}
     </>}
   </div>;
 }

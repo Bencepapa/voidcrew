@@ -5,6 +5,7 @@ import type { EditorBarProps } from "../EditorBar";
 import { CommitContext, Section, slider, chanceSlider, linkFields, BUTTON, idle, smokeBlow } from "./parts";
 
 import { EffectFields } from "../EffectFields";
+import { SmokeTrapFields } from "./SmokeTrapFields";
 export function SmokeFields(p: EditorBarProps) {
 const commit=useContext(CommitContext);
 if (!p.smoke) return null;
@@ -12,6 +13,7 @@ return <>
 <Section kind="smoke" section="transform">
 {slider(t("editorBar.height"), p.smoke.height, 0, Math.max(0, p.smoke.roomHeight - 0.05), 0.05, (v) => p.onSmokeChange({ pos: [NaN, v, NaN] }))}
 </Section>
+<SmokeTrapFields {...p}/>
 <Section kind="smoke" section="look">
 <EffectFields onCommit={commit} value={{...p.smoke,height:p.smoke.effectHeight}} onChange={p.onSmokeChange}/>
 {p.smoke.effect==="fire" && (

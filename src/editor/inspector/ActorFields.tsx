@@ -115,6 +115,10 @@ return <>
 <TalkGroup {...p}/>
 <Section kind="actor" section="logic">
 {chanceSlider(p.actor.chance, (chance) => p.onActorChange({ chance }))}
+<label className="flex items-center gap-1" title={t("trap.dormantNpcTitle")}>
+  <input type="checkbox" checked={!!p.actor.dormant} onChange={e => p.onActorChange({ dormant: e.target.checked || undefined })}/>
+  {t("trap.dormantNpc")}
+</label>
 {linkFields(p.actor.links, p.linkIds, p.onActorChange)}
 </Section>
 <Section kind="actor" section="advanced">

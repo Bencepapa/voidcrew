@@ -134,7 +134,10 @@ export function validateMap(map: GameMap): Problem[] {
     if (d.lock?.code && !codes) add("missingCode", d.cell);
   }
   // levers, buttons, plates and traps: every target has to be a door or a wall trap; a wall trap should not face a wall
-  for (const p of operableProblems(map)) add(p.code, p.cell, p.code === "operableNoTarget" ? { kind: t(`operable.kind.${p.params!.kind as OperableKind}`) } : p.params);
+  for (const p of operableProblems(map)) {
+    add(p.code, p.cell, p.code === "operableNoTarget" ? { kind: t(`operable.kind.${p.params!.kind as OperableKind}`) }
+      : p.code === "operableDormantUnused" ? { what: t(`minimap.problem.what.${p.params!.what as "npc" | "item"}`) } : p.params);
+  }
   // a door's own leaf / frame texture must be a texture set (a shared one counts once it's loaded)
   for (const u of unknownDoorTextures(map.doors, isTextureSetId)) add("unknownDoorTexture", u.cell, { id: u.id, field: t(`editorBar.door${u.field === "leafTexture" ? "Leaf" : "Frame"}Texture`) });
   return [...out, ...placementProblems(placedMap(map), c => !open(c))];

@@ -1,4 +1,4 @@
-import type { SmokeSpec, Weather } from "../game/types";
+import type { SmokeHarm, SmokeSpec, Weather } from "../game/types";
 import type { MapFile } from "../game/mapFormat";
 import { t, type Key } from "../i18n";
 // The map editor's props and info types, the tool labels and the tool help
@@ -95,7 +95,7 @@ export interface EditorBarProps {
   robotChoice: string | null;
   onRobotChoice: (type: string) => void;
   actor: ActorInfo | null;
-  onActorChange: (patch: { actor?: string; facing?: Direction; chance?: number; wake?: ActorWake; friendly?: boolean; dialogue?: { library: string; entry: string }; portrait?: string; shop?: string; greeting?: string } & Linked, merge?: string) => void;
+  onActorChange: (patch: { actor?: string; facing?: Direction; chance?: number; wake?: ActorWake; friendly?: boolean; dialogue?: { library: string; entry: string }; portrait?: string; shop?: string; greeting?: string; dormant?: boolean } & Linked, merge?: string) => void;
   onActorClearRoute: () => void;
   onActorDelete: () => void;
   onActorDeselect: () => void;
@@ -171,6 +171,8 @@ export interface EditorBarProps {
       decorative?: boolean;
       opacity?: number;
       opacityDark?: number;
+      active?: boolean;
+      harm?: SmokeHarm;
     } & Linked,
     merge?: string,
   ) => void;
@@ -190,7 +192,7 @@ export interface EditorBarProps {
   itemChoice: string;
   onItemChoice: (item: string) => void;
   item: ItemInfo | null;
-  onItemChange: (patch: { count?: number; elevation?: number; chance?: number; item?: string; name?: string; sets?: string } & Linked, merge?: string) => void;
+  onItemChange: (patch: { count?: number; elevation?: number; chance?: number; item?: string; name?: string; sets?: string; dormant?: boolean } & Linked, merge?: string) => void;
   onItemDelete: () => void;
   onItemDeselect: () => void;
   // the Chance wall tool: the picked one
@@ -242,6 +244,8 @@ export interface ActorInfo {
   portrait?: string;
   shop?: string;
   greeting?: string;
+  // appears when an operable `spawn` target brings it in (see ActorSpec.dormant)
+  dormant?: boolean;
 }
 
 // a door's lock with a change: none once it has neither a key nor a hack
@@ -309,6 +313,11 @@ export interface SmokeInfo {
   opacityDark: number;
   chance: number;
   links: Linked;
+  // false: inactive until a lever, button or plate switches it on; and what it does to the crew in its smoke (see SmokeSpec)
+  active?: boolean;
+  harm?: SmokeHarm;
+  // the heading that blows away from the wall it sits against (the "Flame jet from the wall" preset)
+  jetYaw?: number;
 }
 
 // the selected loose item as the panel shows it
@@ -323,6 +332,8 @@ export interface ItemInfo {
   // a story item - a key: what it is called when picked up, and the flag it raises (see story.ts, keys.ts)
   name?: string;
   sets?: string;
+  // appears when an operable `item` target reveals it (see MapItem.dormant)
+  dormant?: boolean;
 }
 
 // the selected prop as the panel shows it
