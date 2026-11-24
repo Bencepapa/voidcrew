@@ -37,6 +37,14 @@ const still = bundledImageOf(`fantasy_portrait_${uuid}`, { world: "fantasy", typ
 assert.equal(still.normalUrl, undefined);
 assert.equal(still.purpose, "loading");
 
+// a bundled sky: the picture alone (png or webp as the catalog says), loaded from the bundle without any network
+const sky = bundledImageOf(`fantasy_sky_${uuid}`, { world: "fantasy", type: "sky", name: "Storm", width: 2048, height: 1024, rev: 1, files: { diffuse: "diffuse.webp" } }, "/voidcrew/");
+assert.equal(sky.url, `/voidcrew/shared-images/fantasy_sky_${uuid}.webp`);
+assert.equal(sky.type, "sky");
+assert.equal(sky.normalUrl, undefined);
+assert.equal(sky.pickup, undefined);
+assert.equal(bundledImageOf(`fantasy_sky_${uuid}`, { world: "fantasy", type: "sky", name: "Storm", width: 2048, height: 1024, rev: 1 }, "/").url, `/shared-images/fantasy_sky_${uuid}.png`, "no files entry: a png");
+
 assert.deepEqual(readPickupAppearance(null), { category: "salvage", height: 0.2, glow: 0 });
 assert.equal(readPickupAppearance({ category: "bogus" as never }).category, "salvage");
 assert.equal(readPickupAppearance({ value: -3 }).value, undefined);

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import sharp from "sharp";
 import { readPickupAppearance } from "../src/game/bundledImages";
+import { skyIssues, SKY_MAX_WIDTH, SKY_MIN_WIDTH } from "../src/game/skyImage";
 import { bundleFileNames, readBundleFiles, type BundleExt, type BundleFiles, type BundleMapKey } from "../src/game/bundleFiles";
 import { actorFiles, bundledActorFolder, COMMON_FOLDER, commonFolder, commonIdOk, readCommonDefinition, revisionNumbers, type CommonKind, type DefinitionKind } from "../src/game/sharedContent";
 import { bakeTexture, type TextureBakeInput } from "./bundleTexture";
@@ -216,9 +217,10 @@ async function pullTexture(world: string, name: string) {
   console.log(`Bundled texture ${id} (r${rev}).`);
 }
 
-// Stills (portrait), decals and pickups (item). A pickup comes with its normal and depth maps
+// Stills (portrait), decals, pickups (item) and skies (sky). A pickup comes with its normal and depth maps
 // (public/shared-images/<id>.normal.png / .depth.png) and its look (category, height, glow, value) in the catalog.
-async function pullImages(world: string, type: "portrait" | "decal" | "item") {
+// A sky is a single 2:1 panorama (public/shared-images/<id>.<ext>, lossless like the rest); a map names it by its id.
+async function pullImages(world: string, type: "portrait" | "decal" | "item" | "sky") {
   const prefix = `${world}/${type}`;
   for (const { name: idPart } of await list(prefix)) {
     if (!uuid.test(idPart)) continue;
@@ -238,8 +240,13 @@ async function pullImages(world: string, type: "portrait" | "decal" | "item") {
         if (catalog.images[id]?.rev !== rev) console.warn(`Kept existing ${id}; shared revision: ${rev}.`);
         break;
       }
+      // a sky that is not a usable 2:1 panorama would only look wrong in the game: not bundled (the editor refuses it too)
+      if (type === "sky" && skyIssues(width, height).errors.length) {
+        console.warn(`Skipped sky ${id} (r${rev}): ${width}x${height} is not a usable 2:1 panorama (width ${SKY_MIN_WIDTH}-${SKY_MAX_WIDTH}).`);
+        break;
+      }
       if (dryRun) {
-        const maps = type === "item" ? " + normal and depth maps" : type === "decal" && hasNormal === true ? " + normal map" : "";
+        const maps = type === "item" ? " + normal and depth maps" : type === "decal" && hasNormal === true ? " + normal map" : type === "sky" ? " (2:1 sky panorama)" : "";
         console.log(`Would bundle ${type} ${id} (r${rev}): ${width}x${height}${maps}; each file the smaller of PNG and lossless WebP (sizes known after the download).`);
         break;
       }
@@ -388,6 +395,7 @@ for (const world of ["fantasy", "scifi"]) {
   await pullImages(world, "portrait");
   await pullImages(world, "decal");
   await pullImages(world, "item");
+  await pullImages(world, "sky");
   for (const kind of ["prop", "door", "actor"] as const) await pullDefinitions(world, kind);
   const heads = await pages<{ id: string; revision: number }>(offset =>
     request(`/rest/v1/void_map_heads?select=id,revision&world=eq.${world}&order=id&limit=100&offset=${offset}`));
