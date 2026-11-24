@@ -1,5 +1,6 @@
 import { createElement, useCallback, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from "react";
 import { t } from "../i18n";
+import { uploadCacheControl } from "./sharedUploadPolicy";
 
 const project = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, "");
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -260,9 +261,11 @@ export class SharedHttpError extends Error {
 }
 
 // One storage upload (append-only: never overwrites; an existing object is a 409).
+// A file of a revision folder is immutable, so it is stored with a year-long Cache-Control.
 export async function sharedUpload(path: string, body: Blob | string, contentType: string): Promise<void> {
+  const cacheControl = uploadCacheControl(path, false);
   const res = await authorizedFetch(path, { method: "POST", body, headers: {
-    "Content-Type": contentType, "x-upsert": "false",
+    "Content-Type": contentType, "x-upsert": "false", ...(cacheControl ? { "cache-control": cacheControl } : {}),
   } });
   if (res.ok) return;
   const detail = await res.json().catch(() => ({}));
