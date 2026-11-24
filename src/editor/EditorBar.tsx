@@ -1,4 +1,5 @@
 import type { SmokeSpec, Weather } from "../game/types";
+import type { MapFile } from "../game/mapFormat";
 import { t, type Key } from "../i18n";
 // The map editor's props and info types, the tool labels and the tool help
 // line. The old top bar is gone: tools live in the floating strip (FloatToolbar)
@@ -24,8 +25,8 @@ export interface MapLook {
   lightGridDensity?: number;
   lightGridAmbient?: number;
   reliefDepth?: number;
-  // the deck's default texture sets (see MapFile.textures)
-  textures?: Record<string, string | undefined>;
+  // the deck's default texture sets and its sky (see MapFile.textures)
+  textures?: MapFile["textures"];
   // the deck's accent hue (see GameMap.accent)
   accent?: { hue: number; range?: number };
   // the "Place – Name" caption on entering (undefined: by default, on when the map has a place)

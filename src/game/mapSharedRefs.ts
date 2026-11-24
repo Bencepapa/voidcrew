@@ -43,7 +43,7 @@ export function mapSharedRefs(map: GameMap, lookups: RefLookups): SharedRefs {
     else image(value?.portrait);
   };
 
-  for (const id of Object.values(map.textures ?? {})) texture(id);
+  for (const id of Object.values(map.textures ?? {})) if (typeof id === "string") texture(id);
   // (painted cells: one pass over the grid)
   for (let y = 0; y < map.height; y++) for (let x = 0; x < map.width; x++) {
     texture(map.floorAt?.(x, y));

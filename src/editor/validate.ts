@@ -14,6 +14,7 @@ import { unknownDoorTextures } from "../game/doorTextures";
 import { isTextureSetId } from "../render/textureSets";
 import { fenceProblems } from "../game/fences";
 import { operableProblems, type OperableKind } from "../game/operables";
+import { cleanSkyGradient } from "../game/skyGradient";
 
 export type Problem = { severity: "error" | "warning"; code: string; cell?: Vec2; key: string; params?: Record<string, string | number> };
 
@@ -24,6 +25,8 @@ export function validateMap(map: GameMap): Problem[] {
   const add = (code: string, cell?: Vec2, params?: Problem["params"], severity: Problem["severity"] = "warning") => out.push({ severity, code, cell, key: `minimap.problem.${code}`, params });
   const open = (c: Vec2) => cellAt(map, c.x, c.y) !== "wall";
   if (!map.start?.cell) add("noStart", undefined, undefined, "error");
+  // parseMap drops bad colours, but a map built by hand can still carry one
+  if (map.textures?.skyGradient && !cleanSkyGradient(map.textures.skyGradient)) add("skyGradient", undefined, undefined, "error");
 
   if (!map.exits?.length && !map.stairs?.length) add("noExit");
   // gates: where they lead must exist (the way back and the arrival only warn)

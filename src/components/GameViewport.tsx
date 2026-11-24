@@ -1,4 +1,6 @@
 import { isTextEntry } from "../keyboardFocus";
+import { cleanSkyGradient, skyGradientStops, type SkyGradient } from "../game/skyGradient";
+
 import { createWeather } from "../render/weather";
 import { createGroundFog } from "../render/groundFog";
 import { createFireflies } from "../render/fireflies";
@@ -852,12 +854,28 @@ function makeSkyTexture(): THREE.Texture {
   return texture;
 }
 
+// A gradient sky needs no file: a narrow canvas, zenith at its top, horizon
+// halfway down and the ground colour (when there is one) at its bottom.
+function makeSkyGradientTexture(spec: SkyGradient): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 4;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d")!;
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  for (const stop of skyGradientStops(spec)) gradient.addColorStop(stop.offset, stop.color);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 // A pane of sky: it shows the sky image in the direction the camera looks
 // through it, so panes next to each other join up and the sky stays far away
 // whatever the pane's distance. Not lit, not fogged.
 function makeSkyMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { map: { value: makeSkyTexture() } },
+    uniforms: { map: { value: makeSkyTexture() }, gradientMode: { value: 0 } },
     side: THREE.DoubleSide,
     vertexShader: `
       varying vec3 vWorld;
@@ -868,12 +886,21 @@ function makeSkyMaterial(): THREE.ShaderMaterial {
       }`,
     fragmentShader: `
       uniform sampler2D map;
+      uniform float gradientMode;
       varying vec3 vWorld;
       void main() {
         vec3 dir = normalize(vWorld - cameraPosition);
-        // the sky image covers the upper hemisphere: the horizon along its bottom edge, the zenith at the top
-        vec2 uv = vec2(atan(dir.z, dir.x) / 6.2831853 + 0.5, clamp(asin(clamp(dir.y, -1.0, 1.0)) / 1.5707963, 0.0, 1.0));
-        gl_FragColor = vec4(texture2D(map, uv).rgb, 1.0);
+        float elevation = asin(clamp(dir.y, -1.0, 1.0));
+        // the image covers the upper hemisphere (horizon at its bottom edge);
+        // a gradient's canvas also has room below the horizon for its ground colour
+        float v = gradientMode > 0.5 ? elevation / 3.14159265 + 0.5 : clamp(elevation / 1.5707963, 0.0, 1.0);
+        vec2 uv = vec2(atan(dir.z, dir.x) / 6.2831853 + 0.5, v);
+        vec3 color = texture2D(map, uv).rgb;
+        if (gradientMode > 0.5) {
+          // the canvas colour is sRGB: undo the GPU's decode so the ramp shows its colours
+          color = mix(color * 12.92, 1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), color));
+        }
+        gl_FragColor = vec4(color, 1.0);
       }`,
   });
 }
@@ -2713,8 +2740,16 @@ export function GameViewport({
       if (!skyMat) {
         const material = makeSkyMaterial();
         skyMat = material;
-        // the map's own sky image, when it names one (the starry sky shows till it's in)
-        const name = map.textures?.sky;
+        // a gradient wins over the image name (the starry sky shows till one is in)
+        const gradient = cleanSkyGradient(map.textures?.skyGradient);
+        if (gradient) {
+          const tex = makeSkyGradientTexture(gradient);
+          (material.uniforms.map.value as THREE.Texture).dispose();
+          material.uniforms.map.value = tex;
+          material.uniforms.gradientMode.value = 1;
+          decals.setWaterSky(tex);
+        }
+        const name = gradient ? undefined : map.textures?.sky;
         if (name) {
           loader.load(
             `${import.meta.env.BASE_URL}skies/${name}.png${bust}`,

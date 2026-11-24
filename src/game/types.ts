@@ -4,6 +4,7 @@ import type { WorldId } from "./worlds";
 import type { Interaction, WallInteractionTarget } from "./interactions";
 import type { FenceStyle } from "./fences";
 import type { OperableSpec } from "./operables";
+import type { SkyGradient } from "./skyGradient";
 
 export type Direction = "N" | "E" | "S" | "W";
 
@@ -58,12 +59,16 @@ export interface GameMap {
   // the deck's own look: its default texture sets (renderer ids) - any
   // omitted falls back to the renderer's settings
   textures?: {
+    // extra deck-specific keys are kept; the ones the renderer reads are typed below
+    [slot: string]: string | SkyGradient | undefined;
     wall?: string;
     // a second wall set, mixed in on a share of the walls (render.accentRatio)
     accent?: string;
     // the sky image of an open-air deck: a file name in public/skies/ (without
-    // .png) - none: the generated starry sky
+    // .png) - none: the generated starry sky. A gradient, when set, wins over it.
     sky?: string;
+    // a vertical colour ramp instead of a sky image (no file to load)
+    skyGradient?: SkyGradient;
     floor?: string;
     ceiling?: string;
     door?: string;

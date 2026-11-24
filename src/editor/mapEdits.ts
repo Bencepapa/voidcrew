@@ -1,4 +1,6 @@
 import type { MapFile } from "../game/mapFormat";
+import { skyTextures, type SkyChoice } from "../game/skyGradient";
+export { skyTextures, type SkyChoice } from "../game/skyGradient";
 import { doorAt } from "../game/map";
 import { wallFaceSpans } from "../game/mapGeometry";
 import type { Interaction, InteractionTarget } from "../game/interactions";
@@ -46,6 +48,13 @@ export type EditTool =
 // Where the party starts the deck, and which way it looks.
 export function setStart(file: MapFile, cell: Vec2, facing: Direction): MapFile {
   file.start = { x: cell.x, y: cell.y, facing };
+  return file;
+}
+
+// The map settings' sky choice (see skyGradient.ts): switching kinds clears
+// the other one, and a bad gradient leaves no sky at all.
+export function setMapSky(file: MapFile, choice: SkyChoice): MapFile {
+  file.textures = skyTextures(file.textures, choice);
   return file;
 }
 
