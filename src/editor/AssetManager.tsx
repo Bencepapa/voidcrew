@@ -35,7 +35,7 @@ import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid } from "
 
 const button = "rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1 text-left text-neutral-200 hover:bg-neutral-700 aria-pressed:border-amber-400 aria-pressed:bg-amber-400/15 aria-pressed:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40";
 const selectClass = "min-w-0 rounded-sm border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-200";
-export type Sample = "material" | "actor" | "prop" | "item" | "still" | "door" | "dialogue" | "shop";
+export type Sample = "material" | "actor" | "prop" | "item" | "still" | "sky" | "door" | "dialogue" | "shop";
 type Entry = { key: string; label: string; img: string; groups: string[]; world: WorldId; draft?: ImageDraft; image?: SharedImage; builtinDecal?: string; propDraft?: PropDraft; actorDraft?: ActorDraft };
 import { ITEM_TYPES } from "../game/items";
 import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/worlds";
@@ -103,6 +103,7 @@ const categories: { value: Sample; label: Key }[] = [
   { value: "actor", label: "assetManager.npcs" },
   { value: "item", label: "assetManager.pickups" },
   { value: "still", label: "assetManager.stills" },
+  { value: "sky", label: "assetManager.skies" },
   { value: "dialogue", label: "assetManager.dialogues" },
   { value: "shop", label: "assetManager.shops" },
 ];
@@ -113,6 +114,7 @@ const subsOf: Record<Sample, string[]> = {
   door: ["All"],
   item: ["All"],
   still: ["All", "loading", "portrait", "room"],
+  sky: ["All"],
   dialogue: ["All"],
   shop: ["All"],
 };
@@ -269,6 +271,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         // (a local image draft: its category, purpose and world)
         if (imageDraft.type === "decal") { setSample("prop"); setSub("decal"); }
         else if (imageDraft.type === "item") { setSample("item"); setSub("All"); }
+        else if (imageDraft.type === "sky") { setSample("sky"); setSub("All"); }
         else { setSample("still"); setSub(imageDraft.purpose ?? "portrait"); }
         setWorld(imageDraft.world);
       } else if (sample === "material") {
@@ -302,6 +305,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const decalDrafts = imageDrafts.filter(d => d.type === "decal");
   const stillDrafts = imageDrafts.filter(d => d.type === "portrait");
   const pickupDrafts = imageDrafts.filter(d => d.type === "item");
+  const skyDrafts = imageDrafts.filter(d => d.type === "sky");
   // (the Dialogues and Shops categories are panels of their own, with no asset list, world or preview)
   const ownPanel = sample==="dialogue" || sample==="shop";
   const entries: Entry[] = ownPanel ? []
@@ -332,6 +336,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       ...imageCatalog.filter(image=>image.type==="portrait").map(image=>({key:image.id,label:image.name,img:image.url,groups:[image.purpose ?? "portrait"],world:image.world,image})),
       ...stillDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:[d.purpose ?? "portrait"],world:d.world,draft:d})),
     ]
+    : sample==="sky" ? [
+      // (a published sky being revised is listed once: as its draft)
+      ...imageCatalog.filter(image=>image.type==="sky" && !skyDrafts.some(d=>d.id===image.id)).map(image=>({key:image.id,label:image.name,img:image.url,groups:[],world:image.world,image})),
+      ...skyDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:[],world:d.world,draft:d})),
+    ]
     : [...Object.entries(PROP_TYPES).filter(([key,v])=>v.kind!=="fence" && v.kind!=="operable" && !propDrafts.some(draft=>draft.id===key)).map(([key,v])=>({key,label:v.name ?? key,img:propImage(key),groups:[v.kind==="billboard"||v.kind==="cross"?"billboard":"3D"],world:assetWorld(key)})),
       ...propDrafts.map(d=>({key:d.id,label:d.definition.name || t("assetManager.untitled"),img:catalog[d.definition.texture]?.diffuse ?? propTextures(d.world).get(d.definition.texture)?.diffuse ?? "",
         groups:[d.definition.kind==="panel"?"3D":"billboard"],world:d.world,propDraft:d})),
@@ -351,16 +360,18 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const selectedDecalDraft = selectedImageDraft?.type === "decal" ? selectedImageDraft : undefined;
   const selectedStillDraft = selectedImageDraft?.type === "portrait" ? selectedImageDraft : undefined;
   const selectedPickupDraft = selectedImageDraft?.type === "item" ? selectedImageDraft : undefined;
+  const selectedSkyDraft = selectedImageDraft?.type === "sky" ? selectedImageDraft : undefined;
   const isPickupDraft = !!selectedPickupDraft;
   const pickup = sample === "item" ? selectedPickupDraft?.pickup ?? entry?.image?.pickup : undefined;
   const pickupMaps = usePickupDraftMaps(selectedPickupDraft, setError);
   const pickupDraftPreview = useImageDraftPreview(selectedPickupDraft);
   const [inventoryPreview, setInventoryPreview] = useState(false);
-  const preview2D = sample === "still" || (sample === "item" && inventoryPreview);
+  const preview2D = sample === "still" || sample === "sky" || (sample === "item" && inventoryPreview);
   const decalDraftPreview = useImageDraftPreview(selectedDecalDraft);
   const decalDraftNormal = useBlobUrl(selectedDecalDraft?.decalNormal);
   const stillDraftPreview = useImageDraftPreview(selectedStillDraft);
-  const previewUrl = selectedDecalDraft ? decalDraftPreview : selectedStillDraft ? stillDraftPreview : isPickupDraft ? pickupDraftPreview : (entry?.img ?? "");
+  const skyDraftPreview = useImageDraftPreview(selectedSkyDraft);
+  const previewUrl = selectedDecalDraft ? decalDraftPreview : selectedStillDraft ? stillDraftPreview : selectedSkyDraft ? skyDraftPreview : isPickupDraft ? pickupDraftPreview : (entry?.img ?? "");
   const isDecal = sample === "prop" && !!entry && entry.groups.includes("decal");
   const builtinDecalSize = useImageSize(entry?.builtinDecal ? entry.img : undefined);
   const propDraft = entry?.propDraft;
@@ -409,7 +420,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     if(!open || !id || npcEditor)return;
     let active=true;
     setGroups({}); showPreview({});
-    if(sample==="still" || sample==="door" || ownPanel || (sample==="actor" && !selectedActor))return;
+    if(sample==="still" || sample==="sky" || sample==="door" || ownPanel || (sample==="actor" && !selectedActor))return;
     async function read(){
       let result:Record<string,MaterialMaps>={};
       if(propDraft && (!propDraft.definition.texture || (ownedTexture && !selectedTexture))){
@@ -519,6 +530,15 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       select(draft.id);
     } catch (e) { setError(errorText(e)); }
   }
+  async function createSky() {
+    try {
+      const draft = await createImageDraft(world === "All" ? activeWorld() : world, "sky");
+      setSub("All");
+      setQuery("");
+      pendingScroll.current = draft.id;
+      select(draft.id);
+    } catch (e) { setError(errorText(e)); }
+  }
   async function createPickup() {
     try {
       const draft = await createImageDraft(world === "All" ? activeWorld() : world, "item");
@@ -603,7 +623,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [saveNote, setSaveNote] = useState("");
   const [copyNote, setCopyNote] = useState("");
   // the texture whose look the sliders tune (an NPC's normal strength is set in the NPC editor, a decal has none)
-  const tuneId = !entry || sample==="actor" || sample==="still" || sample==="door" || isDecal || pickup || (propDraft && !ownedTexture) || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : ownedTexture || propTexture(id);
+  const tuneId = !entry || sample==="actor" || sample==="still" || sample==="sky" || sample==="door" || isDecal || pickup || (propDraft && !ownedTexture) || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : ownedTexture || propTexture(id);
   // a prop that uses a shared wall / floor / ceiling texture: that texture's maps are edited in Textures (a link says so)
   const propSurfaceTexture = sample==="prop" && !ownedTexture && prop && "texture" in prop && prop.texture ? prop.texture : "";
   const elsewhereTexture = propSurfaceTexture && isEditable(propSurfaceTexture) && !isPropTexture([catalog[propSurfaceTexture]?.kind ?? []].flat()) ? propSurfaceTexture : "";
@@ -1038,6 +1058,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const newInfo: { disabled: boolean; title: string; run?: () => Promise<void> } =
     sample === "material" ? { disabled: false, title: t("assetManager.newTexture"), run: createTexture }
       : sample === "still" ? { disabled: false, title: t("assetManager.newStill"), run: createStill }
+        : sample === "sky" ? { disabled: false, title: t("assetManager.newSky"), run: createSky }
         : sample === "item" ? { disabled: false, title: t("assetManager.pickup.new"), run: createPickup }
         : sample === "door" ? { disabled: false, title: t("assetManager.doorType.new"), run: createDoor }
         : sample === "actor" ? { disabled: openingNpc, title: t("assetManager.npcSheet.new"), run: () => openNpcEditor() }
@@ -1143,7 +1164,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
           {panelOpen ? <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-neutral-800 pl-2">
             <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setPanelOpen(false)}>▶</button></div>
             {sample==="door" ? doorAsset && <DoorAssetFields key={id} asset={doorAsset} editable={!!doorDraft} onError={setError}/>
-              : sample==="still" || isDecal || (sample==="item" && (isPickupDraft || entry?.image?.pickup)) ? <>
+              : sample==="still" || sample==="sky" || isDecal || (sample==="item" && (isPickupDraft || entry?.image?.pickup)) ? <>
               {selectedImageDraft && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName(selectedImageDraft.world)}</p>}
               <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError} onRevised={select}/>
             </> : <>

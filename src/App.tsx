@@ -44,7 +44,8 @@ import { doorType, loadSharedDoors } from "./editor/sharedDoorTypes";
 import { loadSharedActors } from "./editor/sharedActors";
 import { isSharedActorId } from "./game/actorSheets";
 import { loadSharedTextures } from "./editor/sharedTextures";
-import { sharedImage } from "./render/sharedImages";
+import { sharedImage, useSharedImages } from "./render/sharedImages";
+import { isSharedSkyId } from "./game/skyImage";
 import { PropEditor } from "./editor/PropEditor";
 import {
   applyEdit,
@@ -472,6 +473,7 @@ export default function App() {
   const needsSharedImages = editMode || loadingImageIds.some((id) => !sharedImage(id)) ||
     (activeInteraction?.kind === "image" && !!activeInteraction.image && !sharedImage(activeInteraction.image)) ||
     !!map.decals?.some(({ decal }) => /^(fantasy|scifi)_decal_/.test(decal) && !sharedImage(decal)) ||
+    (isSharedSkyId(map.textures?.sky) && !sharedImage(map.textures.sky)) ||
     !!map.items?.some(({ item }) => isSharedPickupId(item) && !sharedImage(item)) ||
     !!map.props?.some(({ loot }) => loot?.some(({ item }) => isSharedPickupId(item) && !sharedImage(item)));
   // Each list of the store is fetched in full once per page load (loadGate), and only when the whole store is
@@ -1508,7 +1510,10 @@ export default function App() {
       return false;
     }
   });
-  const problems = useMemo(()=>editMode ? validateMap(map) : [],[editMode,map]);
+  // (the sky check of validateMap answers once the shared sky is registered: App follows the registry for that)
+  useSharedImages();
+  const skyLoaded = isSharedSkyId(map.textures?.sky) && !!sharedImage(map.textures.sky);
+  const problems = useMemo(()=>editMode ? validateMap(map) : [],[editMode,map,skyLoaded]);
   const repairProblems = (code:"inWall"|"duplicate") => {
     const result=applyEdit(map.id,code==="inWall"?removeInWall:removeDuplicates);
     if("error" in result)pushLog(t("app.editorError",{error:result.error}),"error");

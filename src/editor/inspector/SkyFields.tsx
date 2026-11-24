@@ -2,10 +2,14 @@ import { useEffect, useState } from "react";
 import { t, type Key } from "../../i18n";
 import type { MapFile } from "../../game/mapFormat";
 import { cleanSkyGradient, skyGradientStops, SKY_GRADIENT_PRESETS, skyTextures, type SkyGradient } from "../../game/skyGradient";
+import { activeWorld } from "../../game/worlds";
+import { skyOptions } from "../../game/skyImage";
+import { useSharedImages } from "../../render/sharedImages";
+import { TexturePicker } from "../TexturePicker";
 import { BUTTON, idle, KindChoice } from "./parts";
 
-// The map settings' "Égbolt" fields: an image from public/skies/, or a
-// gradient drawn from three colours. The choice lives in textures.skyGradient.
+// The map settings' "Égbolt" fields: an image (a built-in one from public/skies/ or an uploaded shared sky), or a
+// gradient drawn from three colours. The choice lives in textures.sky / textures.skyGradient.
 export function SkyFields({ value, onChange }: { value: MapFile["textures"]; onChange: (textures: MapFile["textures"] | undefined) => void }) {
   const [skies, setSkies] = useState<string[]>([]);
   useEffect(() => {
@@ -16,6 +20,18 @@ export function SkyFields({ value, onChange }: { value: MapFile["textures"]; onC
       .catch(() => {});
     return () => { live = false; };
   }, []);
+
+  // the built-in names, then the loaded shared skies of the map's world (see game/skyImage.ts)
+  const shared = useSharedImages().filter((image) => image.type === "sky");
+  const options = skyOptions({
+    builtins: skies,
+    shared,
+    world: activeWorld(),
+    current: typeof value?.sky === "string" && value.sky ? value.sky : undefined,
+    baseUrl: import.meta.env.BASE_URL,
+    generatedLabel: t("editorBar.skyGenerated"),
+    missingLabel: (id) => t("editorBar.skyNotLoaded", { id }),
+  });
 
   const gradient = cleanSkyGradient(value?.skyGradient);
   const kind = gradient ? "gradient" : "image";
@@ -36,17 +52,13 @@ export function SkyFields({ value, onChange }: { value: MapFile["textures"]; onC
       ]}
       onChange={(next) => change(skyTextures(value, next === "gradient" ? { kind: "gradient", gradient: SKY_GRADIENT_PRESETS[0].gradient } : { kind: "image", image: typeof value?.sky === "string" ? value.sky : undefined }))}
     />
-    {kind === "image" ? <label className="flex items-center gap-1">
-      <span>{t("editorBar.skyImage")}</span>
-      <select
-        value={typeof value?.sky === "string" ? value.sky : ""}
-        onChange={(e) => change(skyTextures(value, { kind: "image", image: e.target.value || undefined }))}
-        className="min-w-0 max-w-full flex-1 bg-neutral-800 border border-neutral-700 px-1 py-0.5"
-      >
-        <option value="">{t("editorBar.skyGenerated")}</option>
-        {skies.map((name) => <option key={name} value={name}>{name}</option>)}
-      </select>
-    </label> : <>
+    {kind === "image" ? <TexturePicker
+      label={t("editorBar.skyImage")}
+      title={t("editorBar.skyImageHint")}
+      value={typeof value?.sky === "string" ? value.sky : ""}
+      options={options}
+      onChange={(next) => change(skyTextures(value, { kind: "image", image: next || undefined }))}
+    /> : <>
       <div className="flex min-w-0 flex-wrap items-center gap-1">
         <span>{t("editorBar.skyPreset")}</span>
         {SKY_GRADIENT_PRESETS.map((preset) => (

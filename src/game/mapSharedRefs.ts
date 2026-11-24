@@ -1,7 +1,7 @@
 // Which shared (store) assets a map references by id. Pure: the editor's on-demand loader uses it, so a guest
 // fetches exactly what the current map needs and nothing else (see editor/guestShared.ts).
 //
-// An id says what it is: `<world>_shared_<uuid>` a texture, `<world>_<decal|item|portrait>_<uuid>` an image,
+// An id says what it is: `<world>_shared_<uuid>` a texture, `<world>_<decal|item|portrait|sky>_<uuid>` an image,
 // `<world>_<prop|door|actor>_<uuid>` a definition. A prop's or a door type's own textures are known only once
 // its definition is loaded, so the caller asks again afterwards (the lookups below answer for what is loaded).
 
@@ -24,7 +24,7 @@ export interface RefLookups {
 
 const UUID = "[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}";
 const TEXTURE = /^(?:fantasy|scifi)_shared_[A-Za-z0-9_-]+$/;
-const IMAGE = new RegExp(`^(?:fantasy|scifi)_(?:decal|item|portrait)_${UUID}$`);
+const IMAGE = new RegExp(`^(?:fantasy|scifi)_(?:decal|item|portrait|sky)_${UUID}$`);
 const PROP = new RegExp(`^(?:fantasy|scifi)_prop_${UUID}$`);
 const DOOR = new RegExp(`^(?:fantasy|scifi)_door_${UUID}$`);
 const ACTOR = new RegExp(`^(?:fantasy|scifi)_actor_${UUID}$`);
@@ -84,6 +84,8 @@ export function mapSharedRefs(map: GameMap, lookups: RefLookups): SharedRefs {
   }
   for (const target of map.wallInteractions ?? []) interaction(target.interaction);
   image(map.loadingImage);
+  // the map's sky: a shared sky id is an image (a built-in name or a texture-like value matches nothing)
+  image(map.textures?.sky);
   return refs;
 }
 

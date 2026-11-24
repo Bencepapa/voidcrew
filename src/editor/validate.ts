@@ -15,6 +15,8 @@ import { isTextureSetId } from "../render/textureSets";
 import { fenceProblems } from "../game/fences";
 import { operableProblems, type OperableKind } from "../game/operables";
 import { cleanSkyGradient } from "../game/skyGradient";
+import { isSharedSkyId } from "../game/skyImage";
+import { sharedImage } from "../render/sharedImages";
 
 export type Problem = { severity: "error" | "warning"; code: string; cell?: Vec2; key: string; params?: Record<string, string | number> };
 
@@ -27,6 +29,8 @@ export function validateMap(map: GameMap): Problem[] {
   if (!map.start?.cell) add("noStart", undefined, undefined, "error");
   // parseMap drops bad colours, but a map built by hand can still carry one
   if (map.textures?.skyGradient && !cleanSkyGradient(map.textures.skyGradient)) add("skyGradient", undefined, undefined, "error");
+  // a shared sky that is not loaded (not published, or still on its way) leaves the starry sky: only a warning, like other shared refs
+  if (isSharedSkyId(map.textures?.sky) && !map.textures.skyGradient && !sharedImage(map.textures.sky)) add("unknownSky", undefined, { id: map.textures.sky });
 
   if (!map.exits?.length && !map.stairs?.length) add("noExit");
   // gates: where they lead must exist (the way back and the arrival only warn)

@@ -85,7 +85,8 @@ import { mapUsesTexture, wantSharedUrl } from "../editor/textureLibrary";
 import { onSharedPropsChanged } from "../editor/sharedProps";
 import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import { doorLeafMotion, type DoorType } from "../game/doorTypes";
-import { onSharedDecalsChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
+import { onSharedDecalsChanged, onSharedImagesChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
+import { isSharedSkyId, skySource } from "../game/skyImage";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
@@ -2736,6 +2737,8 @@ export function GameViewport({
     const backingColor = () => new THREE.Color().setHSL((0.13 + backingColorSerial++ * 0.61803398875) % 1, 0.85, 0.55);
     const backingColors: number[] = [];
     let skyMat: THREE.ShaderMaterial | null = null;
+    // (a shared sky's picture that is not registered yet: this stops waiting for it)
+    let stopSkyWait: (() => void) | null = null;
     const skySurface = () => {
       if (!skyMat) {
         const material = makeSkyMaterial();
@@ -2751,8 +2754,8 @@ export function GameViewport({
         }
         const name = gradient ? undefined : map.textures?.sky;
         if (name) {
-          loader.load(
-            `${import.meta.env.BASE_URL}skies/${name}.png${bust}`,
+          const loadSky = (url: string) => loader.load(
+            url,
             (tex) => {
               if (disposed) {
                 tex.dispose();
@@ -2765,8 +2768,21 @@ export function GameViewport({
               decals.setWaterSky(tex);
             },
             undefined,
-            () => console.warn(`Sky "${name}" not found in public/skies/`),
+            () => console.warn(`Sky "${name}" could not be loaded (${isSharedSkyId(name) ? "shared sky" : "public/skies/"})`),
           );
+          // a built-in name is a file in public/skies/; a shared sky is its registered (or bundled) picture, which may
+          // still be on its way: the starry sky shows till it is in (see game/skyImage.ts)
+          const source = skySource(name, import.meta.env.BASE_URL, bust, (id) => sharedImage(id)?.url);
+          if (source.kind === "url") loadSky(source.url);
+          else {
+            stopSkyWait = onSharedImagesChanged(() => {
+              const url = sharedImage(source.id)?.url;
+              if (!url || disposed) return;
+              stopSkyWait?.();
+              stopSkyWait = null;
+              loadSky(url);
+            });
+          }
         }
       }
       return skyMat;
@@ -8696,6 +8712,7 @@ export function GameViewport({
       for (const mat of fixtureMats.values()) mat.dispose();
       (selectBox.material as THREE.Material).dispose();
       stopSharedDecals();
+      stopSkyWait?.();
       decals.dispose();
       disposeLightGrid(lightGrid);
       fenceMarkTexture.dispose();

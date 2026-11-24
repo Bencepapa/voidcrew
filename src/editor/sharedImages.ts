@@ -10,6 +10,8 @@ import { sharedConfigured, sharedToken, sharedUpload } from "./sharedAuth";
 import { listSharedObjects, sharedAssetBase } from "./sharedTextures";
 import { derive } from "./textureLibrary";
 import { canReviseImage, draftFromPublished, sharedDecalNormalUrl } from "./imageDraftLogic";
+import { skyIssues } from "../game/skyImage";
+import { skyIssueText } from "./skyUpload";
 
 export interface ImageDraft {
   id: string;
@@ -47,7 +49,7 @@ function readPickup(value?: Partial<PickupAppearance> | null): PickupAppearance 
 
 // An old draft has no purpose, and an older one may miss a field: normalize both.
 function normalizeDraft(value: Partial<ImageDraft>): ImageDraft {
-  const type: SharedImageType = value.type === "decal" || value.type === "item" ? value.type : "portrait";
+  const type: SharedImageType = value.type === "decal" || value.type === "item" || value.type === "sky" ? value.type : "portrait";
   const world: WorldId = value.world === "scifi" ? "scifi" : "fantasy";
   const uuid = typeof value.uuid === "string" && value.uuid ? value.uuid : crypto.randomUUID();
   const transparency = value.transparency;
@@ -180,7 +182,7 @@ export async function discardImageDraft(id: string): Promise<void> {
 }
 
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
-const imageLimit = (type: SharedImageType) => type === "portrait" ? 4096 : 512;
+const imageLimit = (type: SharedImageType) => type === "portrait" || type === "sky" ? 4096 : 512;
 const revisions = (entries: { name: string }[]) => entries
   .flatMap(({ name }) => /^r[1-9]\d*$/.test(name) ? [Number(name.slice(1))] : [])
   .filter(Number.isSafeInteger).sort((a, b) => b - a);
@@ -229,7 +231,7 @@ export async function loadSharedImages(world: WorldId, init?: RequestInit) {
   if (!sharedConfigured) return;
   const version = (loads.get(world) ?? 0) + 1;
   loads.set(world, version);
-  const collections = await Promise.all((["portrait", "decal", "item"] as const).map(async (type) => {
+  const collections = await Promise.all((["portrait", "decal", "item", "sky"] as const).map(async (type) => {
     const entries = await listSharedObjects(`${world}/${type}`, init);
     return Promise.all(entries.filter(e => uuidPattern.test(e.name)).map(e => publishedImage(world, type, e.name, init)));
   }));
@@ -240,7 +242,7 @@ export async function loadSharedImages(world: WorldId, init?: RequestInit) {
 
 // Just these pictures (asset ids): each by its own folder, the store is not listed. What a map references, for a guest;
 // adds to what is registered. Returns the ids that exist.
-const imageIdPattern = /^(fantasy|scifi)_(decal|item|portrait)_([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/;
+const imageIdPattern = /^(fantasy|scifi)_(decal|item|portrait|sky)_([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/;
 export async function loadSharedImagesById(ids: readonly string[], init?: RequestInit): Promise<string[]> {
   if (!sharedConfigured || !ids.length) return [];
   const found = (await Promise.all(ids.map(async (id) => {
@@ -277,6 +279,8 @@ export async function publishImage(draft: ImageDraft) {
   if (!sharedToken()) throw new Error(t("assetManager.err.signInFirst"));
   const purpose = draft.type === "portrait" ? (isImagePurpose(draft.purpose) ? draft.purpose : "portrait") : undefined;
   const { width, height } = await checkImagePng(draft.png, name, draft.type);
+  // a sky must be a 2:1 panorama of a usable size (see game/skyImage.ts); the first error is the one shown
+  if (draft.type === "sky") { const [problem] = skyIssues(width, height).errors; if (problem) throw new Error(skyIssueText(problem)); }
   const maps = draft.type === "item"
     ? await resolvePickupMaps(draft.png, draft.transparency, draft.pickupMaps?.depth, draft.pickupMaps?.normal)
     : undefined;
