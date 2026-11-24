@@ -13,6 +13,7 @@ import type { WorldId } from "../game/worlds";
 import { sharedTexturesChanged } from "../render/sharedTextureEvents";
 import { setSharedTuning, textureTuning, type TextureTuning } from "../render/textureTuning";
 import { autoRecipe, generateAutoMaps } from "./autoMaps";
+import { upgradeCacheKey } from "./derivedCache";
 import { idb } from "./idb";
 import { applyTransparency, composeSurface, decode, encode, hasAlpha, splitSurface, type Transparency } from "./imageTools";
 import { draftById, draftId, getDrafts, saveDraft, subscribeDrafts, type MapKey, type MapMode, type MapSlot, type DraftTextureKind, type TextureDraft } from "./textureDrafts";
@@ -310,43 +311,109 @@ export function setSharedTextures(world: WorldId, list: SharedInfo[]) {
     if (!id.startsWith(prefix) || keep.has(id)) continue;
     infos.delete(id);
     baselines.delete(id);
+    upgrades.delete(id);
     if (!draftById(id)) { delete registry[id]; setSharedTuning(id, undefined); }
   }
   for (const info of list) {
-    const old = infos.get(info.id);
     infos.set(info.id, info);
-    const base = sharedBaseline(info);
+    const base = withUpgrade(info, sharedBaseline(info));
     baselines.set(info.id, base);
     if (!draftById(info.id)) { registry[info.id] = base; setSharedTuning(info.id, info.meta?.tuning); }
-    if (!old || old.rev !== info.rev) void upgradeShared(info);
+    trackUpgrade(info);
   }
   bump();
 }
 
 export function installSharedTexture(info: SharedInfo) {
-  const others = [...infos.values()].filter(row => row.world === info.world && row.id !== info.id);
+  const others = sharedInfos(info.world).filter(row => row.id !== info.id);
   setSharedTextures(info.world, [...others, info]);
 }
 
-// the Auto maps and the transparency of a published texture are made on this side
+// the published textures of one world as they are registered now (a publish or a delete patches this list)
+export const sharedInfos = (world: WorldId): SharedInfo[] => [...infos.values()].filter(row => row.world === world);
+
+// ---- the Auto maps and the transparency of a published texture are made on this side ----
+//
+// Only for a texture that is wanted: one the scene is built from (see wantSharedUrl, called for every
+// texture URL the game resolves) or one the Assets window shows. Each costs a download of the full
+// diffuse, so the rest of the store stays untouched; what is made is kept in IndexedDB per id + revision.
+
+interface Upgraded { rev: number; diffuse?: string; normal?: string; depth?: string }
+const upgrades = new Map<string, Upgraded>();
+const wanted = new Set<string>();
+const started = new Map<string, number>();
+// the plain diffuse URL of every texture that needs the step, to the texture's id
+const needing = new Map<string, string>();
+
+function upgradeAuto(info: SharedInfo) {
+  const meta = info.meta;
+  if (info.legacy || !meta) return undefined;
+  const auto = { normal: meta.maps.normal === "auto", depth: meta.maps.depth === "auto" };
+  return !auto.normal && !auto.depth && meta.transparency.source === "alpha" ? undefined : auto;
+}
+
+// (a texture registered again with the same revision keeps what was made from it)
+function withUpgrade(info: SharedInfo, base: TextureSetPaths): TextureSetPaths {
+  const done = upgrades.get(info.id);
+  return done && done.rev === info.rev ? { ...base, ...(done.diffuse ? { diffuse: done.diffuse } : {}), ...(done.normal ? { normal: done.normal } : {}), ...(done.depth ? { depth: done.depth } : {}) } : base;
+}
+
+function trackUpgrade(info: SharedInfo) {
+  if (!upgradeAuto(info)) return;
+  if (upgrades.get(info.id)?.rev !== info.rev) needing.set(fileUrls(info).diffuse, info.id);
+  if (wanted.has(info.id)) startUpgrade(info);
+}
+
+/** This texture is in use (shown in the scene or the Assets window): make its Auto maps now. */
+export function wantSharedTexture(id: string) {
+  wanted.add(id);
+  const info = infos.get(id);
+  if (info) startUpgrade(info);
+}
+
+/** The game resolved this texture URL: if it is a shared texture's plain diffuse, the texture is in use. */
+export function wantSharedUrl(url: string) {
+  const id = needing.get(url);
+  if (id) wantSharedTexture(id);
+}
+
+function startUpgrade(info: SharedInfo) {
+  if (started.get(info.id) === info.rev || upgrades.get(info.id)?.rev === info.rev) return;
+  started.set(info.id, info.rev);
+  void upgradeShared(info);
+}
+
 async function upgradeShared(info: SharedInfo) {
   const meta = info.meta;
-  if (info.legacy || !meta) return;
-  const auto = { normal: meta.maps.normal === "auto", depth: meta.maps.depth === "auto" };
-  if (!auto.normal && !auto.depth && meta.transparency.source === "alpha") return;
+  const auto = upgradeAuto(info);
+  if (!meta || !auto) return;
   try {
-    const raw = await (await fetch(fileUrls(info).diffuse)).blob();
-    const derived = await derive(raw, meta.transparency, auto, `${info.id}:r${info.rev}`);
-    if (infos.get(info.id) !== info) return;
-    const base = { ...baselines.get(info.id)! };
-    const url = (b: Blob) => { const u = URL.createObjectURL(b); return u; };
-    if (derived.diffuse) base.diffuse = url(derived.diffuse);
-    if (auto.normal && derived.normal) base.normal = url(derived.normal);
-    if (auto.depth && derived.depth) base.depth = url(derived.depth);
+    const key = upgradeCacheKey({ id: info.id, rev: info.rev, transparency: meta.transparency, auto, recipe: autoRecipe.version });
+    let derived = await idb.get<Derived>("auto", key).catch(() => undefined);
+    if (!derived) {
+      const response = await fetch(fileUrls(info).diffuse);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      derived = await derive(await response.blob(), meta.transparency, auto, `${info.id}:r${info.rev}`);
+      void idb.put("auto", { diffuse: derived.diffuse, normal: derived.normal, depth: derived.depth }, key).catch(() => {});
+    }
+    const current = infos.get(info.id);
+    if (!current || current.rev !== info.rev) return;
+    const url = (b: Blob) => URL.createObjectURL(b);
+    upgrades.set(info.id, {
+      rev: info.rev,
+      ...(derived.diffuse ? { diffuse: url(derived.diffuse) } : {}),
+      ...(auto.normal && derived.normal ? { normal: url(derived.normal) } : {}),
+      ...(auto.depth && derived.depth ? { depth: url(derived.depth) } : {}),
+    });
+    needing.delete(fileUrls(current).diffuse);
+    const base = withUpgrade(current, sharedBaseline(current));
     baselines.set(info.id, base);
     if (!draftById(info.id)) registry[info.id] = base;
     bump();
-  } catch { /* the plain files stay in place */ }
+  } catch {
+    // the plain files stay in place; a later want tries again
+    if (started.get(info.id) === info.rev) started.delete(info.id);
+  }
 }
 
 // A draft of a published texture: its uploaded maps fetched into Blobs. One draft per texture.

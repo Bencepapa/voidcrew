@@ -20,7 +20,7 @@ import { AutoBadge, ChannelControls, errorText, SignInPopover, TextureFields, Un
 import { useDialogueDrafts } from "./dialogueDrafts";
 import { useShopDrafts } from "./shopDrafts";
 import { draftCounts, draftId, isPropTexture, newDraft, saveDraft, useDrafts, type SurfaceKind } from "./textureDrafts";
-import { autoChannels, isEditable, textureStatus, useTextureVersion } from "./textureLibrary";
+import { autoChannels, isEditable, textureStatus, useTextureVersion, wantSharedTexture } from "./textureLibrary";
 import { ChannelCards, useBlobUrl } from "./ChannelControls";
 import { ownedPropTexture, SURFACE_CHANNELS } from "./channelEditor";
 import { loadSharedTextures } from "./sharedTextures";
@@ -382,6 +382,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [hidden,setHidden] = useState<Record<string,boolean>>({});
   const [edits, setEdits] = useState<MaterialMaps>({});
   const primary = propDraft ? propDraft.definition.texture || id : prop ? propTexture(id) : id;
+  // the selected texture (or the prop's / door's own) is shown: its Auto maps are made now (the rest of the store's are not)
+  const doorLeaf = doorAsset?.definition.leaf, doorFrame = doorAsset?.definition.frame;
+  useEffect(() => { if (open) for (const tex of [id, primary, doorLeaf, doorFrame]) if (tex) wantSharedTexture(tex); }, [open, id, primary, doorLeaf, doorFrame]);
   const maskKey = (group:string, channel:Channel) => [sample,id,group,channel].join(":");
   // the files of the selected texture (they change when a draft changes a map)
   const selectedTexture = (sample === "material" || sample === "prop") ? catalog[primary] : undefined;
