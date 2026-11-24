@@ -1,5 +1,6 @@
 // Run: npx tsx src/game/keys.test.ts
 import assert from "node:assert/strict";
+import { register } from "node:module";
 import { keyFlagFor, keyFlags, lockKeyMissing, lockedMessage } from "./keys";
 
 // ---- the flags a map raises
@@ -32,5 +33,27 @@ assert.equal(lockedMessage({ hack: 1 }, "Ada"), "It's locked. Ada could hack it 
 assert.equal(lockedMessage({ hack: 1 }), "It's locked.", "no hacker: no hint");
 assert.equal(lockedMessage({}, "Ada"), "It's locked.", "a lock that can't be hacked: no hint");
 assert.equal(lockedMessage({ message: "Nope.", hack: 2 }, "Ada"), "Nope. Ada could hack it (Use).");
+
+// ---- one key for a door and a chest (see propLocks.test.ts for the chest's own lock)
+{
+  // (propLocks reads the prop types, which read Vite's import.meta.glob: a stand-in is put in its place)
+  register("data:text/javascript," + encodeURIComponent(`
+export async function load(url, context, nextLoad) {
+  const result = await nextLoad(url, context);
+  if (result.source && !url.includes("node_modules")) {
+    result.source = String(result.source).replaceAll("import.meta.env", "({BASE_URL:'/'})").replaceAll("import.meta.glob", "((..._)=>({}))");
+  }
+  return result;
+}`), import.meta.url);
+  const { lockStep } = await import("./propLocks");
+  const door = { key: keyFlagFor("keycard") };
+  const chest = { key: keyFlagFor("keycard") };
+  assert.equal(lockKeyMissing(door, map), false);
+  const given = new Set<string>();
+  const st = () => ({ unlocked: false, hasFlag: (f: string) => given.has(f), countItem: () => 0, map });
+  assert.equal(lockStep(chest, st()).kind, "locked", "no keycard yet: the chest is shut");
+  given.add("key.keycard"); // (the keycard picked up raises it)
+  assert.equal(lockStep(chest, st()).kind, "unlock", "the same flag that opens the door opens the chest");
+}
 
 console.log("keys: ok");
