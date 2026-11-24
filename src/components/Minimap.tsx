@@ -43,6 +43,10 @@ interface MinimapProps {
     onZoom?: () => void;
     selection?: Rect | null;
     onSelect?: (rect: Rect | null) => void;
+    // an area being pasted (see editor/useAreaClipboard): its outline and cells follow the pointer cell, which is
+    // reported through onHover (null: it left the map)
+    paste?: { w: number; h: number; at: Vec2; layout: string[] } | null;
+    onHover?: (cell: Vec2 | null) => void;
   };
 }
 
@@ -310,6 +314,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
     };
     const dragMove = (e: React.PointerEvent<SVGSVGElement>) => {
       const drag = dragRef.current;
+      if (!drag && edit.onHover) edit.onHover(cellOf(e));
       if (!drag || !edit.onSelect) return;
       const to = cellOf(e, true);
       if (!to) return;
@@ -373,6 +378,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
           onPointerMove={dragMove}
           onPointerUp={dragEnd}
           onPointerCancel={dragEnd}
+          onPointerLeave={() => edit.onHover?.(null)}
         >
         {textureDefs}
         {paper && (
@@ -405,6 +411,19 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
               strokeDasharray="0.4 0.25"
               pointerEvents="none"
             />
+          )}
+          {edit.paste && (
+            <g pointerEvents="none">
+              {edit.paste.layout.flatMap((row, ly) =>
+                [...row].map((char, lx) => {
+                  const x = edit.paste!.at.x + lx;
+                  const y = edit.paste!.at.y + ly;
+                  if (x < 0 || y < 0 || x >= W || y >= H) return null;
+                  return <rect key={`p${lx},${ly}`} x={x} y={y} width={1} height={1} fill={char === "W" ? "rgba(0, 0, 0, 0.55)" : char === "D" ? "rgba(160, 60, 60, 0.6)" : "rgba(255, 196, 0, 0.28)"} />;
+                }),
+              )}
+              <rect x={edit.paste.at.x} y={edit.paste.at.y} width={edit.paste.w} height={edit.paste.h} fill="none" stroke="#ffc400" strokeWidth={0.14} strokeDasharray="0.4 0.25" />
+            </g>
           )}
           <rect x={0} y={0} width={W} height={H} fill="none" stroke={edit.surface === "floor" ? "#4ade80" : "#38bdf8"} strokeWidth={0.1} strokeDasharray="0.5 0.3" />
           {/* the deck's start: a flag-like marker, pointing the way the party faces there */}
@@ -503,6 +522,7 @@ function chartKey(map: GameMap): string {
   return key;
 }
 const rectKey = (r: Rect | null | undefined) => (r ? `${r.x0},${r.y0},${r.x1},${r.y1}` : "");
+const pasteKey = (p: { w: number; h: number; at: Vec2; layout: string[] } | null | undefined) => (p ? `${p.at.x},${p.at.y},${p.w},${p.h},${p.layout.join("")}` : "");
 // The chart is drawn again only when something it shows changed: it is a few hundred SVG elements, and the
 // editor changes the map on every step of a dragged slider. (The callbacks in `edit` are not compared: the
 // ones that look at changing state go through refs in the app.)
@@ -514,7 +534,7 @@ function sameChart(a: MinimapProps, b: MinimapProps): boolean {
   const f = b.edit;
   if (!!e !== !!f) return false;
   if (e && f) {
-    if (e.verb !== f.verb || e.surface !== f.surface || e.zoomed !== f.zoomed || rectKey(e.selection) !== rectKey(f.selection)) return false;
+    if (e.verb !== f.verb || e.surface !== f.surface || e.zoomed !== f.zoomed || rectKey(e.selection) !== rectKey(f.selection) || pasteKey(e.paste) !== pasteKey(f.paste)) return false;
     if ([...(e.hiddenCategories ?? [])].sort().join() !== [...(f.hiddenCategories ?? [])].sort().join()) return false;
     if (!!e.onMarker !== !!f.onMarker || !!e.onSelect !== !!f.onSelect || !!e.onZoom !== !!f.onZoom) return false;
   }

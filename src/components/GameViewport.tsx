@@ -1203,6 +1203,9 @@ interface GameViewportProps {
   // the surface under the pointer whenever it changes - the editor's
   // texture palette follows it
   onEditHover?: (target: EditTarget | null) => void;
+  // an area being pasted (see editor/useAreaClipboard): its size in cells - its outline lies on the floor with its
+  // top-left corner on the cell pointed at
+  areaGhost?: { w: number; h: number } | null;
   // The editor: something dragged (see App and EditDrag). The first call may
   // copy it (Ctrl held); it returns the index of what is being dragged from
   // then on - for a door dropped, whether the map took it.
@@ -1583,6 +1586,7 @@ export function GameViewport({
   editTool,
   onEdit,
   onEditHover,
+  areaGhost,
   onEditDrag,
   onEditPaint,
   onEditAdjust,
@@ -1765,6 +1769,8 @@ export function GameViewport({
   editToolRef.current = editTool ?? "dig";
   const onEditHoverRef = useRef(onEditHover);
   onEditHoverRef.current = onEditHover;
+  const areaGhostRef = useRef(areaGhost);
+  areaGhostRef.current = areaGhost;
   const onEditDragRef = useRef(onEditDrag);
   onEditDragRef.current = onEditDrag;
   const onEditPaintRef = useRef(onEditPaint);
@@ -7813,6 +7819,16 @@ export function GameViewport({
       }
       updateSelectionBox();
       editBox.visible = mode !== null;
+      // an area being pasted: its outline on the floor, its top-left corner on the cell pointed at
+      const ghost = areaGhostRef.current;
+      if (ghost && target) {
+        const base = target.kind === "wall" && target.from ? target.from : target.cell;
+        editBox.visible = true;
+        editBox.position.set(target.cell.x + (ghost.w - 1) / 2, floorY(base.x, base.y) + 0.02, target.cell.y + (ghost.h - 1) / 2);
+        editBox.scale.set(ghost.w - 0.02, 0.04, ghost.h - 0.02);
+        (editBox.material as THREE.LineBasicMaterial).color.setHex(0xffc400);
+        return;
+      }
       if (!target || !mode) return;
       const mat = editBox.material as THREE.LineBasicMaterial;
       if (mode === "actor") {

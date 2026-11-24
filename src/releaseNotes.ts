@@ -28,6 +28,7 @@ export const RELEASES: Release[] = [
       { title: "Stabil hátizsák- és boltablak", text: "Az ablak mérete már nem ugrál hover közben, a tárgy leírását kattintásra rögzítheted, a használati súgó a ? gomb mögött van." },
       { title: "Egész blokknyi magasítás", text: "A Magasság eszközzel a Ctrl+kattintás egy egész blokkot emel (Ctrl+jobb kattintás: süllyeszt) a padlón és a plafonon." },
       { title: "Kerítések és blokkok", text: "A Tető mellett új eszközök: blokk, kerítés a cella szélén és kerítés a közepén (átlátszó textúrával is, a mögötte lévő jelenet látszik), a textúrát pedig miniatűrös listából választhatod az Inspectorban." },
+      { title: "Területek másolása", text: "A kijelölt terület minden eleme (falak, tárgyak, ajtók, tetők, kerítések) másolható, elforgatható és beilleszthető, akár másik pályába is." },
     ],
   },
 ];

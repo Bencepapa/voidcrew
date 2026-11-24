@@ -54,6 +54,17 @@ const SELECTION: Group = {
   ],
 };
 
+const AREA: Group = {
+  title: "area.group",
+  rows: [
+    ["Ctrl + C", "area.scCopy"],
+    ["Ctrl + V", "area.scPaste"],
+    ["R / Shift + R", "area.scTurn"],
+    ["F", "area.scMirror"],
+    ["Esc / right click", "area.scStop"],
+  ],
+};
+
 const TOOLS: Group[] = [
   {
     title: "editorBar.select",
@@ -196,6 +207,7 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
             <GroupBlock group={VIEW} />
           </div>
           <GroupBlock group={SELECTION} />
+          <GroupBlock group={AREA} />
           <h4 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">{t("editorShell.shortcutsTools")}</h4>
           <div className="grid gap-4 sm:grid-cols-2">
             {TOOLS.map((group) => (
