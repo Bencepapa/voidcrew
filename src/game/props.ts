@@ -1,5 +1,6 @@
 import type { GameMap, PropAnchor, PropSpec, Vec2 } from "./types";
 import { ROOF_SHAPES, roofRise, type RoofPieceId, type RoofSegment, type RoofShape } from "./roofPieces";
+import { fenceBoxes, fenceIndex, type FenceForm } from "./fences";
 
 // 3D props standing in walkable cells (crates, beds, ...), textured like the
 // walls. They sit pushed against a side or a corner of their cell. Small
@@ -146,6 +147,13 @@ export type PropType = {
       profile: RoofSegment[];
       corner?: "outer" | "inner";
       texture?: string;
+    }
+  | {
+      // a fence or block piece (see fences.ts): a block that closes its cell, a fence along one edge of it, or
+      // one through its middle. The piece's model comes from the fence tools' settings (PropSpec.fence,
+      // PropSpec.texture) and its neighbours; `size` is only a nominal one.
+      kind: "fence";
+      form: FenceForm;
     }
 );
 
@@ -305,6 +313,10 @@ export const PROP_TYPES: Record<string, PropType> = {
   roof_corner_flat: roof("roof_corner_flat"),
   roof_inner: roof("roof_inner"),
   roof_inner_flat: roof("roof_inner_flat"),
+  // fences and blocks (see fences.ts; the fence tools place them, one piece to a cell or an edge)
+  fence_block: { kind: "fence", form: "block", size: [1, 1, 1], blocks: true },
+  fence_edge: { kind: "fence", form: "edge", size: [1, 1, 0.1] },
+  fence_mid: { kind: "fence", form: "mid", size: [1, 1, 0.1], blocks: true },
 };
 
 // The prop editor's saves (see src/editor/PropEditor.tsx): src/props/<name>.json
@@ -321,7 +333,7 @@ export interface PropEdit {
 }
 // (a pillar's and a chamfer's sizes are their shape's: not edited)
 export function propEditable(type: PropType | undefined): boolean {
-  return !!type && type.kind !== "pillar" && type.kind !== "chamfer" && type.kind !== "roof";
+  return !!type && type.kind !== "pillar" && type.kind !== "chamfer" && type.kind !== "roof" && type.kind !== "fence";
 }
 const EDITS = import.meta.glob<PropEdit>("../props/*.json", { eager: true, import: "default" });
 for (const [file, edit] of Object.entries(EDITS)) {
@@ -350,7 +362,7 @@ const CHAMFER_YAW = { NE: 45, SE: 135, SW: 225, NW: 315 };
 // the texture sets a prop can wear instead of its own (see
 // PropSpec.texture): only the one-texture kinds
 export function propRetexturable(type: PropType): boolean {
-  return type.kind === "box" || type.kind === "pillar" || type.kind === "chamfer" || type.kind === "panel" || type.kind === "cross" || type.kind === "roof";
+  return type.kind === "box" || type.kind === "pillar" || type.kind === "chamfer" || type.kind === "panel" || type.kind === "cross" || type.kind === "roof" || type.kind === "fence";
 }
 
 // Props are small: their relief usually starts shallower than the walls'.
@@ -412,6 +424,8 @@ export interface PropPlacement {
 const WALL_FACING: Partial<Record<PropAnchor, number>> = { N: 0, NE: 0, NW: 0, S: 180, SE: 180, SW: 180, E: 90, W: 270 };
 
 export function propPlacement(spec: PropSpec, type: PropType = PROP_TYPES[spec.prop] ?? { kind: "panel", texture: "", size: [0, 0, 0] }): PropPlacement {
+  // a fence piece's model is laid out round its cell's middle (see fences.ts): it is put there whatever its anchor
+  if (type.kind === "fence") return { x: spec.cell.x, z: spec.cell.y, yaw: 0, reachX: 0.5, reachZ: 0.5, type };
   if (type.kind === "chamfer") {
     // its middle halfway along the cut, flush with the walls it meets
     // (nudged and turned from there as any prop)
@@ -463,13 +477,16 @@ export function flamePosition(spec: PropSpec): [number, number, number] | null {
 // footprints of the props in a cell (axis-aligned around their turn), with
 // their heights above the cell's floor
 export function propBoxes(map: GameMap, cx: number, cy: number) {
-  return (map.props ?? [])
-    // (a roof is decoration: it hangs over the cell, never in the way)
-    .filter((p) => p.cell.x === cx && p.cell.y === cy && PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "roof")
+  const boxes = (map.props ?? [])
+    // (a roof is decoration: it hangs over the cell, never in the way; a fence has boxes of its own, below)
+    .filter((p) => p.cell.x === cx && p.cell.y === cy && PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "roof" && PROP_TYPES[p.prop].kind !== "fence")
     .map((p) => {
       const { x, z, reachX, reachZ } = propPlacement(p);
       return { minX: x - reachX, maxX: x + reachX, minZ: z - reachZ, maxZ: z + reachZ, height: (p.elevation ?? 0) + propHeight(map, p) };
     });
+  // the fences and blocks in the cell and the edge fences round it (the bars of a mid fence, not its whole cell)
+  const fences = fenceBoxes(fenceIndex(map.props), cx, cy);
+  return fences.length ? [...boxes, ...fences.map(({ minX, maxX, minZ, maxZ, height }) => ({ minX, maxX, minZ, maxZ, height }))] : boxes;
 }
 
 // whether a big prop closes the cell to grid movement

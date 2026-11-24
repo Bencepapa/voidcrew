@@ -2434,7 +2434,7 @@ export function GameViewport({
             ? [type.door, type.inside, `${type.views}_side`, `${type.views}_top`]
             : type.kind === "pillar"
               ? [type.texture ?? primarySet]
-              : type.kind === "chamfer" || type.kind === "roof"
+              : type.kind === "chamfer" || type.kind === "roof" || type.kind === "fence"
                 ? []
                 : [type.texture];
     // door panel kits by door kind, created on demand
@@ -4083,7 +4083,7 @@ export function GameViewport({
         template.add(new THREE.Mesh(top, kit.wallMat), new THREE.Mesh(under, kit.sideMat));
         return template;
       }
-      if (type.kind === "pillar" || type.kind === "chamfer") return null;
+      if (type.kind === "pillar" || type.kind === "chamfer" || type.kind === "fence") return null;
       const [front, side, top] = propSets(type).map((id) => propKitFor(id));
       // What each view covers (see PropType's px): at one pixel scale -
       // the front view's across the prop's length - standing on the floor,

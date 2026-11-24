@@ -1,5 +1,6 @@
 import { bridgeAt, cellAt, ceilingHeight, floorHeight, ladderBetween } from "./map";
 import { BRIDGE_THICKNESS } from "./mapGeometry";
+import { edgeFenceBetween, fenceIndex } from "./fences";
 import { propBlocks } from "./props";
 import type { Direction, GameMap, Vec2 } from "./types";
 
@@ -66,6 +67,8 @@ export function spaceAbove(map: GameMap, cell: Vec2, y: number): number {
 export function passage(map: GameMap, from: Vec2, fromY: number, to: Vec2, dir: Direction, body: Body = PARTY_BODY): Passage {
   const step = body.step;
   if (cellAt(map, to.x, to.y) === "wall") return { kind: "blocked", reason: "wall" };
+  // a fence along the edge between the two cells shuts it, whoever walks (both cells reach it from their side)
+  if (edgeFenceBetween(fenceIndex(map.props), from, to)) return { kind: "blocked", reason: "prop" };
 
   const fromFloor = floorHeight(map, from.x, from.y);
   const toFloor = floorHeight(map, to.x, to.y);
