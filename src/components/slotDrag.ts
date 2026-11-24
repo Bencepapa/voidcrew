@@ -1,5 +1,7 @@
 import { useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import type { Slot } from "../game/inventory";
+import { dropTargetOf, type DropMarks, type DropTarget } from "../game/worldDrop";
+import { dropWorldItemOn } from "../game/worldDropHandler";
 
 // Moving things between slots (the backpack's cells, the hands, a shop's): by
 // dragging (pointer events, so a finger works too), or from the keyboard by
@@ -18,6 +20,12 @@ interface DragState {
   y: number;
   // the slot under the pointer
   over: string | null;
+  // an item lying in the world, dragged from the 3D view (`from` is "world:<index>"): its index
+  // in the map's items, and what is under the pointer besides a slot (see beginWorldDrag)
+  source?: "world";
+  itemIndex?: number;
+  overCrew?: string | null;
+  overPack?: boolean;
 }
 
 let drag: DragState | null = null;
@@ -175,6 +183,98 @@ export function beginDrag(e: ReactPointerEvent, from: string, slot: Slot, onMove
   window.addEventListener("pointermove", move, true);
   window.addEventListener("pointerup", up, true);
   window.addEventListener("pointercancel", cancel, true);
+  cancelActive = cancel;
+}
+
+// --- an item from the world ---
+// A loose item in the 3D view can be dragged onto the screen's elements: a hand box, a crewmate's
+// card, the inventory button or window (the rules are in game/worldDrop.ts). The drop's target is
+// found from `data-slot` (a hand or a cell), `data-drop-crew` (a card) and `data-drop-pack` (the
+// button, the window) on what lies under the pointer.
+
+// the world item's index is the one that is being dragged (the view hides its mesh meanwhile)
+export const draggedWorldItem = (): number | null => (drag?.source === "world" ? (drag.itemIndex ?? null) : null);
+// the crewmate whose card, and whether the inventory, is under a dragged world item (to light up)
+export const useDropOverCrew = () => useSyncExternalStore(subscribe, () => (drag?.source === "world" ? (drag.overCrew ?? null) : null));
+export const useDropOverPack = () => useSyncExternalStore(subscribe, () => drag?.source === "world" && !!drag.overPack);
+
+const marksOf = (el: Element | null): DropMarks => ({
+  slot: el?.closest<HTMLElement>("[data-slot]")?.dataset.slot,
+  crew: el?.closest<HTMLElement>("[data-drop-crew]")?.dataset.dropCrew,
+  pack: !!el?.closest("[data-drop-pack]"),
+});
+const within = (el: Element, x: number, y: number) => {
+  const r = el.getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+};
+// what is under a point: the top element and what it sits in first (a hand box in a card is the
+// hand); then - for a card or a window that lets the pointer through (the mobile party strip does)
+// - whichever of them covers the point
+function dropTargetAt(x: number, y: number): DropTarget | null {
+  const marks = [marksOf(document.elementFromPoint(x, y))];
+  for (const el of document.querySelectorAll<HTMLElement>("[data-drop-crew]")) if (within(el, x, y)) marks.push({ crew: el.dataset.dropCrew });
+  for (const el of document.querySelectorAll<HTMLElement>("[data-drop-pack]")) if (within(el, x, y)) marks.push({ pack: true });
+  return dropTargetOf(marks);
+}
+
+// A press on a loose item in the 3D view (the view calls this; the press is also, until the pointer
+// has moved a few pixels, a click that picks the item up). Past that it is a drag: the item shows
+// under the pointer, and where it is let go the game decides (see worldDropHandler.ts). Esc or a
+// cancelled pointer lets it lie.
+export function beginWorldDrag(e: { clientX: number; clientY: number; pointerId: number }, index: number, slot: Slot) {
+  if (drag) return;
+  const startX = e.clientX;
+  const startY = e.clientY;
+  let active = false;
+  const move = (ev: PointerEvent) => {
+    if (ev.pointerId !== e.pointerId) return;
+    if (!active && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 8) return;
+    active = true;
+    const target = dropTargetAt(ev.clientX, ev.clientY);
+    drag = {
+      from: `world:${index}`,
+      slot,
+      x: ev.clientX,
+      y: ev.clientY,
+      over: slotUnder(ev.clientX, ev.clientY),
+      source: "world",
+      itemIndex: index,
+      overCrew: target?.kind === "avatar" ? target.crew : null,
+      overPack: target?.kind === "pack",
+    };
+    emit();
+  };
+  const key = (ev: KeyboardEvent) => {
+    if (ev.key !== "Escape" || !active) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    cancel();
+  };
+  const stop = () => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", up, true);
+    window.removeEventListener("pointercancel", cancel, true);
+    window.removeEventListener("keydown", key, true);
+    cancelActive = null;
+  };
+  const end = (target: DropTarget | null) => {
+    stop();
+    if (!active) return;
+    drag = null;
+    lastDragEnd = performance.now();
+    emit();
+    // (let go over nothing: it lies where it was)
+    if (target) dropWorldItemOn(index, target);
+  };
+  const up = (ev: PointerEvent) => {
+    if (ev.pointerId !== e.pointerId) return;
+    end(active ? dropTargetAt(ev.clientX, ev.clientY) : null);
+  };
+  const cancel = () => end(null);
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", up, true);
+  window.addEventListener("pointercancel", cancel, true);
+  window.addEventListener("keydown", key, true);
   cancelActive = cancel;
 }
 

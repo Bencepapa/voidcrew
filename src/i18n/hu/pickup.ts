@@ -15,5 +15,10 @@ export const pickupHu = {
   "play.stop": "Vissza a barangoló módba: ellenfelek és csapdák kikapcsolva",
   "play.wander": "Barangoló mód: ellenfelek és csapdák kikapcsolva",
   "play.logOn": "Játék mód: az ellenfelek és a csapdák élesek.",
+  "pickup.dropFull": "Tele a hátizsák - a tárgy ott marad, ahol van.",
+  "pickup.dropHand": "{who} kézbe veszi: {item}.",
+  "pickup.dropUse": "{who} használja: {item} ({gains}).",
+  "pickup.dropDown": "{who} elesett - {item} a hátizsákba kerül.",
+  "pickup.dropNoNeed": "{who}: most nincs rá szüksége - {item} a hátizsákba kerül.",
   "play.logOff": "Barangoló mód: az ellenfelek állnak, a csapdák ki vannak kapcsolva.",
 } as const satisfies Record<string, string>;

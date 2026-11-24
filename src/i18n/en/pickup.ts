@@ -15,5 +15,10 @@ export const pickupEn = {
   "play.stop": "Back to wander mode: enemies and traps off",
   "play.wander": "Wander mode: enemies and traps off",
   "play.logOn": "Play mode: the enemies and the traps are active.",
+  "pickup.dropFull": "Your backpack is full - the item stays where it lies.",
+  "pickup.dropHand": "{who} takes {item} in hand.",
+  "pickup.dropUse": "{who} uses the {item}: {gains}.",
+  "pickup.dropDown": "{who} is down - {item} goes in the backpack.",
+  "pickup.dropNoNeed": "{who} doesn't need it now - {item} goes in the backpack.",
   "play.logOff": "Wander mode: the enemies stand still and the traps are off.",
 } as const satisfies Record<string, string>;

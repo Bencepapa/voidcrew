@@ -6,7 +6,7 @@ import { haulOf, useInventory } from "../game/inventoryStore";
 import { activeWorld } from "../game/worlds";
 import { t } from "../i18n";
 import { HelpTip, InfoArea, QtyPopover, SlotGrid, moveInInventory, slotOfKey, splitInInventory } from "./InventorySlots";
-import { cancelDrag, cancelQty, clearInfo, clearSelection, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
+import { cancelDrag, cancelQty, clearInfo, clearSelection, useDropOverPack, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
 
 // the arrow keys move between slots: the nearest one that way
 export function focusNeighbor(root: HTMLElement, key: string) {
@@ -54,6 +54,7 @@ export function InventoryPanel({ partyDock, onClose }: {
   const inventory = useInventory();
   const selected = useSelectedSlot();
   const notice = useSlotNotice();
+  const overPack = useDropOverPack();
   const root = useRef<HTMLElement>(null);
   const [bottomInset, setBottomInset] = useState(0);
 
@@ -140,7 +141,8 @@ export function InventoryPanel({ partyDock, onClose }: {
         role="dialog"
         aria-modal="true"
         aria-label={t("inventory.title")}
-        className="pointer-events-auto flex max-h-full w-full max-w-md flex-col gap-2 overflow-auto rounded border border-neutral-500 bg-neutral-950 p-3 font-mono text-[11px] text-neutral-200 shadow-xl"
+        data-drop-pack
+        className={`pointer-events-auto flex max-h-full w-full max-w-md flex-col gap-2 overflow-auto rounded border bg-neutral-950 p-3 font-mono text-[11px] text-neutral-200 shadow-xl ${overPack ? "border-emerald-400" : "border-neutral-500"}`}
       >
         <header className="flex items-center justify-between">
           <span className="text-amber-200">

@@ -6,6 +6,7 @@ import { handWeapon, useInventory } from "../game/inventoryStore";
 import { itemRules } from "../game/itemRules";
 import { readyAtOf, type ReadyAt } from "../game/handCooldown";
 import { HandBoxes, infoLine } from "./InventorySlots";
+import { useDropOverCrew } from "./slotDrag";
 
 function Bar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
@@ -126,12 +127,15 @@ export function PartyPanel({
   onUseHand: (index: number, hand: HandIndex) => boolean;
 }) {
   useCooldownTick(readyAt);
+  // (a loose item dragged from the view is over this card: it is a drop target, see worldDrop.ts)
+  const dropOver = useDropOverCrew();
+  const lit = (id: string) => (dropOver === id ? "outline outline-2 outline-emerald-400" : "");
   if (compact) {
     // translucent strip for the mobile overlay layout: name + bars only
     return (
       <div className="grid grid-cols-4 gap-1">
         {crew.map((c, i) => (
-          <div key={c.id} className="border border-neutral-700/70 bg-black/80 px-1 py-0.5 flex gap-1">
+          <div key={c.id} data-drop-crew={c.id} className={`border border-neutral-700/70 bg-black/80 px-1 py-0.5 flex gap-1 ${lit(c.id)}`}>
             <Avatar mate={c} className="hidden landscape:block w-9 h-9 shrink-0 self-center" />
             <div className="flex-1 min-w-0 flex flex-col gap-0.5">
               <div className={`text-[11px] font-semibold truncate ${c.hp > 0 ? "text-neutral-200" : "text-red-400"}`}>
@@ -151,7 +155,7 @@ export function PartyPanel({
   return (
     <div className="grid grid-cols-4 gap-2">
       {crew.map((c, i) => (
-        <div key={c.id} className="border border-neutral-700 bg-neutral-900/80 p-2 flex gap-2">
+        <div key={c.id} data-drop-crew={c.id} className={`border border-neutral-700 bg-neutral-900/80 p-2 flex gap-2 ${lit(c.id)}`}>
           <Avatar mate={c} className="hidden landscape:block w-16 h-16 shrink-0 self-start" />
           <div className="flex-1 min-w-0 flex flex-col gap-1">
             <div className="flex items-center justify-between text-[10px] text-neutral-400">
