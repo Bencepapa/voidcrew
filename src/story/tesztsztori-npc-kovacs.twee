@@ -1,0 +1,37 @@
+:: StoryTitle
+tesztsztori, globális NPC: Borbás kovács
+
+:: FileData
+@kind global
+@var met = false
+
+:: Start Smith [start]
+@npc tesztsztori_kovacs
+@if !met
+@set met = true
+Borbás felnéz az üllőtől. "Új arcok. Ha fegyver kell, jó helyen jársz."
+@else
+"Megint te. Mit hozhatok?"
+@endif
+@if campaign.tyrant_fate == "killed"
+"Hallottam, mit tettél Vargával. Az egész város rólad beszél."
+@endif
+@if quest("tesztsztori_kard") == "expired"
+"Jó kardot akartam verni neked, de az érc elfogyott. Az ilyesmi nem vár."
+@endif
+@if has("tesztsztori_runakard") > 0
+"Szépen tartod a rúnás kardot."
+@endif
+[[Vásárolnék->Smith Shop]]
+[[Mást kérdeznék->Talk]]
+[[Viszlát->Smith Bye]]
+
+:: Talk
+"A műhely régi, apámtól örököltem. Ha kérdeznél valamit a városról, Lana többet tud nálam."
+[[Köszi->Start Smith]]
+
+:: Smith Shop
+@shop
+
+:: Smith Bye
+@end

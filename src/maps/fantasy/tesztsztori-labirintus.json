@@ -1,0 +1,36 @@
+{
+  "name": "tesztsztori-labirintus",
+  "showTitle": false,
+  "deck": 1,
+  "textures": { "wall": "fantasywall1", "floor": "fantasyfloor1", "door": "fantasygate1", "doorFrame": "fantasydoorframe1" },
+  "render": { "roughness": 1, "metalness": 0, "normalStrength": 0.2, "reliefMode": "smooth", "headlamp": true, "bobEnabled": false },
+  "start": { "x": 1, "y": 1, "facing": "E" },
+  "layout": [
+    "WWWWWWWWWWWW",
+    "W.......W..W",
+    "WWWW.WW.W.WW",
+    "W.......W..W",
+    "W.WWWWWWWW.W",
+    "W..........W",
+    "WWW.WWW.WWWW",
+    "W.......WWWW",
+    "W.WWWWWWWWWW",
+    "W..........W",
+    "WWWWWWWWWWWW"
+  ],
+  "lights": [
+    { "x": 4, "y": 1, "color": "#4d9900", "intensity": 0.9 },
+    { "x": 4, "y": 5, "color": "#0059ff", "intensity": 0.9 },
+    { "x": 9, "y": 2, "color": "#ffc27a", "intensity": 0.9 },
+    { "x": 3, "y": 7, "color": "#a30f17", "intensity": 0.6 },
+    { "x": 9, "y": 9, "color": "#ffc27a", "intensity": 1 }
+  ],
+  "exits": [
+    { "x": 1, "y": 1, "name": "Bejárat", "to": { "map": "tesztsztori", "arrival": "Labirintus", "facing": "S" } },
+    { "x": 10, "y": 9, "name": "Kijárat", "to": { "map": "tesztsztori", "arrival": "Labirintus", "facing": "S" } }
+  ],
+  "actors": [
+    { "actor": "tesztsztori_zarandok", "x": 10, "y": 1, "facing": "W", "dialogue": { "library": "tesztsztori", "entry": "Start Csend" } },
+    { "actor": "tesztsztori_kapitany", "x": 8, "y": 9, "facing": "E", "dialogue": { "library": "tesztsztori", "entry": "Start Csend" } }
+  ]
+}

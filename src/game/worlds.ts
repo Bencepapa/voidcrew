@@ -107,7 +107,8 @@ const FANTASY_ASSETS = new Set([
 const SHARED_ASSETS = new Set(["sky", "chamfer1", "chamfer2", "pillar1", "pillar2"]);
 
 export function assetWorld(id: string): WorldId {
-  return id.startsWith("fantasy") || FANTASY_ASSETS.has(id) ? "fantasy" : "scifi";
+  // (tesztsztori: remove together - the test story's actors and items are fantasy ones)
+  return id.startsWith("fantasy") || id.startsWith("tesztsztori") || FANTASY_ASSETS.has(id) ? "fantasy" : "scifi";
 }
 // whether an asset is offered in a world's palettes
 export function assetInWorld(id: string, world: WorldId = current): boolean {

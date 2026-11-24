@@ -2,6 +2,7 @@
 // Vite-only (import.meta.glob); the pure bundle building is in game/story/storyBundle.ts.
 // No campaign file (or an empty folder): the story layer stays off and the game is unchanged.
 import { buildStoryFromSources, storySources, type BuiltStory } from "../game/story/storyBundle";
+import { isTestStoryFile, testStoryOn } from "./tesztsztori-switch"; // tesztsztori: remove together
 
 const RAW = import.meta.glob<string>("./*.twee", { query: "?raw", import: "default", eager: true });
 
@@ -11,7 +12,8 @@ let logged = false;
 /** The bundled story, or null when this folder has no campaign file. The checker's problems are logged once. */
 export function loadStory(): BuiltStory | null {
   if (built !== undefined) return built;
-  const sources = storySources(RAW);
+  // tesztsztori: remove together - the test story's files only count when the switch says so
+  const sources = storySources(RAW).filter((s) => !isTestStoryFile(s.id) || testStoryOn());
   built = sources.length ? buildStoryFromSources(sources) : null;
   if (built && !logged) {
     logged = true;

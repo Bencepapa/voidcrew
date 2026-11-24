@@ -1,0 +1,112 @@
+:: StoryTitle
+tesztsztori, 1. fejezet: A zsarnok
+
+:: FileData
+@kind chapter
+@var heard_rumor = false
+@returns tyrant_fate, heroism
+
+:: Intro [on]
+@on chapter_start
+Gróf Varga lezáratta a kapukat, és adót szed minden szekérből. A város morog, de senki sem mer szólni.
+
+:: Tyrant killed [on]
+@on enemy_dead tesztsztori_zsarnok
+@set campaign.tyrant_fate = "killed"
+@set campaign.heroism += 2
+@endchapter
+
+:: Tyrant judgement [start]
+@npc tesztsztori_zsarnok
+Varga térdre rogyott. "Kegyelmezz, és megnyitom a kapukat."
+[[Megkíméled->Tyrant spared]]
+[[Végzel vele->Tyrant fight]]
+
+:: Tyrant spared
+@set campaign.tyrant_fate = "spared"
+@set campaign.heroism += 1
+@emit tyrant_spared
+@endchapter
+Varga összeroskad, és intésére kinyílnak a kapuk.
+@end
+
+:: Tyrant fight
+Varga kardot ránt, és a trónterem felé hátrál. (A harc a játékban folyik: a trónteremben álló Varga legyőzését az `enemy_dead tesztsztori_zsarnok` esemény jelzi.)
+@end
+
+:: Smith Chapter1 [start]
+@npc tesztsztori_kovacs
+@overlay
+Borbás a kovácsműhely előtt áll, a kezében letört adóbehajtói lándzsa. "Ha Vargával akartok végezni, jó fegyver kell."
+@if quest("tesztsztori_kard") == "none"
+[[Kérek egy jó kardot->Smith Sword Offer]]
+@endif
+@if quest("tesztsztori_kard") == "active"
+[[Hol tartsak az érccel?->Smith Sword Remind]]
+@endif
+@if quest("tesztsztori_kard") == "ready"
+[[Meghoztam az ércet->Smith Sword Turnin]]
+@endif
+@if quest("tesztsztori_kard") == "done"
+[[Köszönöm a kardot->Smith Sword Thanks]]
+@endif
+[[Csak vásárolnék->Smith Shop]]
+[[Mást kérdeznék->tesztsztori-npc-kovacs/Talk]]
+
+:: Smith Sword Offer
+@quest start tesztsztori_kard
+"Fagyérc kell a pincebejáratnál lévő bányából, három darab. Hozd el, és olyan pengét verek, amitől Varga is megremeg."
+[[Rendben->Smith Chapter1]]
+
+:: Smith Sword Remind
+"Három darab fagyérc kell. A bánya a pince bejáratánál van."
+[[Megyek->Smith Chapter1]]
+
+:: Smith Sword Turnin
+@take tesztsztori_fagyerc 3
+@give tesztsztori_runakard
+@quest done tesztsztori_kard
+@reward credits 20
+"Ez az! Vidd, és bánj vele jól."
+[[Köszönöm->Smith Chapter1]]
+
+:: Smith Sword Thanks
+"Vigyázz rá. Az érc többé nem terem."
+[[Viszlát->Smith Chapter1]]
+
+:: Smith Shop
+@shop
+
+:: Lana Chapter1 [start]
+@npc tesztsztori_lana
+@overlay
+Lana a pult mögött törölgeti a poharakat. "Tegnap is behajtották az adót. Aki nem fizet, annak a háza leég."
+@if !heard_rumor
+[[Mit tudsz Vargáról?->Lana Rumor]]
+@endif
+@if quest("tesztsztori_gyuru") == "none"
+[[Valami baj van?->Lana Ring Offer]]
+@endif
+[[Mást kérdeznék->tesztsztori-npc-lana/Talk]]
+
+:: Lana Rumor
+@set heard_rumor = true
+"Pénzt rejteget a kriptában. Az őrei éjjel nem alszanak, de napközben a kapuk őrsége megfogyatkozik."
+[[Köszi->Lana Chapter1]]
+
+:: Lana Ring Offer
+@quest start tesztsztori_gyuru
+"A gyűrűm leesett a pince csatornájába, anyámtól kaptam. Ha megtalálod, nem felejtem el."
+[[Megkeresem->Lana Chapter1]]
+
+:: Quest tesztsztori_kard [quest]
+@title Kard a kovácstól
+@goal Hozz 3 fagyércet a pincebányából Borbásnak.
+@ready_when has("tesztsztori_fagyerc") >= 3
+@fate expires
+
+:: Quest tesztsztori_gyuru [quest]
+@title Lana gyűrűje
+@goal Keresd meg Lana gyűrűjét a pince csatornájában.
+@ready_when has("tesztsztori_gyuru") >= 1
+@fate carry

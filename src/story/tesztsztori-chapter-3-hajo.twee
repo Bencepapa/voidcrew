@@ -1,0 +1,10 @@
+:: StoryTitle
+tesztsztori, 3. fejezet: A hajó (váz)
+
+:: FileData
+@kind chapter
+@returns heroism
+
+:: Intro [on]
+@on chapter_start
+A fedélzet imbolyog, a kikötő eltűnik a ködben. Új fejezet kezdődik.

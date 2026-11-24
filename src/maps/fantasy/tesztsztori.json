@@ -1,0 +1,44 @@
+{
+  "name": "tesztsztori",
+  "showTitle": false,
+  "deck": 2,
+  "textures": { "wall": "fantasywall1", "floor": "fantasyearth1", "door": "fantasygate1", "doorFrame": "fantasydoorframe1" },
+  "render": { "roughness": 1, "metalness": 0, "normalStrength": 0.2, "reliefMode": "smooth", "headlamp": true, "bobEnabled": false },
+  "start": { "x": 2, "y": 3, "facing": "E" },
+  "layout": [
+    "WWWWWWWWWWWW",
+    "W..........W",
+    "W..........W",
+    "W..........W",
+    "W..........W",
+    "WWW.WWWW.WWW",
+    "W.....W....W",
+    "W.....W....W",
+    "W.....W....W",
+    "W.....W....W",
+    "WWWWW.WWWWWW",
+    "WWWWWWWWWWWW"
+  ],
+  "lights": [
+    { "x": 3, "y": 2, "color": "#ffc27a" },
+    { "x": 8, "y": 2, "color": "#ffc27a" },
+    { "x": 3, "y": 7, "color": "#27449b", "intensity": 1.2 },
+    { "x": 5, "y": 9, "color": "#2458c2", "intensity": 0.8 },
+    { "x": 8, "y": 7, "color": "#a30f17", "intensity": 0.9 }
+  ],
+  "exits": [
+    { "x": 1, "y": 1, "name": "Labirintus", "to": { "map": "tesztsztori-labirintus", "arrival": "Bejárat", "facing": "E" } }
+  ],
+  "actors": [
+    { "actor": "tesztsztori_kovacs", "x": 4, "y": 3, "facing": "W", "dialogue": { "library": "void-fantasy", "entry": "Start Smith" }, "shop": "smith-shop" },
+    { "actor": "tesztsztori_lana", "x": 7, "y": 2, "facing": "S", "dialogue": { "library": "tesztsztori", "entry": "Start Csend" } },
+    { "actor": "tesztsztori_zsarnok", "x": 9, "y": 2, "facing": "W", "friendly": true, "dialogue": { "library": "tesztsztori", "entry": "Start Csend" } },
+    { "actor": "tesztsztori_zsarnok", "x": 9, "y": 8, "facing": "N" }
+  ],
+  "items": [
+    { "item": "tesztsztori_fagyerc", "x": 1, "y": 8 },
+    { "item": "tesztsztori_fagyerc", "x": 1, "y": 9 },
+    { "item": "tesztsztori_fagyerc", "x": 2, "y": 9 },
+    { "item": "tesztsztori_gyuru", "x": 5, "y": 10 }
+  ]
+}

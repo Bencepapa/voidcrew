@@ -1094,6 +1094,21 @@ export const ACTOR_TYPES: Record<string, ActorType> = {
   },
 };
 
+// tesztsztori: remove together (the whole block, see src/story/TESZTSZTORI-REMOVE.md)
+// The test story's actors (src/story/tesztsztori-*.twee binds NPCs by actor type): new types on existing sheets and
+// stats - the four townspeople are the friendly smith1's stats on other sheets, the tyrant is a tougher ogre1.
+for (const [type, name, base] of [
+  ["tesztsztori_kovacs", "Smith", "smith1"],
+  ["tesztsztori_lana", "Innkeeper Lana", "thief1"],
+  ["tesztsztori_kapitany", "Captain", "goblin2"],
+  ["tesztsztori_zarandok", "Pilgrim", "mage1"],
+] as const) {
+  const look = ACTOR_TYPES[base];
+  ACTOR_TYPES[type] = { ...ACTOR_TYPES.smith1, name, sheet: look.sheet, height: look.height, eyeHeight: look.eyeHeight };
+}
+ACTOR_TYPES.tesztsztori_zsarnok = { ...ACTOR_TYPES.ogre1, name: "Count Varga", hp: 160, damage: [9, 15], attackCooldownMs: 2000 };
+// (end of tesztsztori)
+
 export interface ActorState {
   id: number;
   type: string;

@@ -1,0 +1,6 @@
+:: StoryTitle
+tesztsztori (a próbatörténet NPC-inek tartalék párbeszéde; törlés: src/story/TESZTSZTORI-REMOVE.md)
+
+:: Start Csend [start]
+A próbatörténet nincs bekapcsolva, vagy ennek a szereplőnek most nincs mondanivalója. (Nyisd meg a játékot a ?world=fantasy&map=tesztsztori címen.)
+@end

@@ -1,0 +1,58 @@
+:: StoryTitle
+tesztsztori, 2. fejezet: A labirintus
+
+:: FileData
+@kind chapter
+@var pilgrim_helped = false
+@returns labyrinth_route, heroism
+
+:: Intro [on]
+@on chapter_start
+@if campaign.tyrant_fate == "killed"
+A kapuk nyitva. Ahogy elhagyjátok a várost, mindenki rátok néz, mert Varga már nem fenyeget.
+@else
+A kapuk nyitva, de a katonák mogorván néznek utánatok. Vargának még sok híve él.
+@endif
+Előttetek a labirintus bejárata.
+
+:: Pilgrim [start]
+@npc tesztsztori_zarandok
+Egy zarándok kuporog a fal mellett. "Eltévedtem. Ha kivezetsz, megmutatom a titkos utat."
+[[Kivezetem->Pilgrim Helped]]
+[[Nem érek rá->Pilgrim Left]]
+
+:: Pilgrim Helped
+@set pilgrim_helped = true
+@set campaign.labyrinth_route = "secret"
+@set campaign.heroism += 1
+"Köszönöm! A bal oldali fali fáklya mögött van a rejtett átjáró."
+@end
+
+:: Pilgrim Left
+"Hát jó. Majd kitalálok valamit."
+@end
+
+:: Exit [on]
+@on level_exit tesztsztori-labirintus
+@if pilgrim_helped
+@set campaign.labyrinth_route = "secret"
+@else
+@set campaign.labyrinth_route = "front"
+@endif
+
+:: Captain [start]
+@npc tesztsztori_kapitany
+A kijáratnál egy hajó kapitánya vár. "Két utat látok: a kikötőbe vagy lejjebb, a mélybe. Merre?"
+[[Hajóra szállsz->Captain Ship]]
+[[Az alvilág felé veszed az utad->Captain Underworld]]
+
+:: Captain Ship
+@set campaign.heroism += 1
+@endchapter tesztsztori-chapter-3-hajo
+"Szívesen látunk a fedélzeten."
+@end
+
+:: Captain Underworld
+@endchapter
+"Akkor ég veled. Ha visszajössz, megvárlak."
+@end

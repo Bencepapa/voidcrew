@@ -1,0 +1,48 @@
+:: StoryTitle
+tesztsztori, globális NPC: Lana, a korcsmáros
+
+:: FileData
+@kind global
+@var met = false
+
+:: Start Lana [start]
+@npc tesztsztori_lana
+@if !met
+@set met = true
+Lana intett. "Üdv a Rozsdás Kancsóban. Ülj le, mesélek, amit akarsz."
+@else
+"Szia megint. Hozhatok valamit?"
+@endif
+@if quest("tesztsztori_gyuru") == "ready"
+[[Megtaláltam a gyűrűdet->Lana Ring Turnin]]
+@endif
+@if quest("tesztsztori_gyuru") == "active"
+[[Még keresem a gyűrűdet->Lana Ring Remind]]
+@endif
+@if quest("tesztsztori_gyuru") == "done"
+[[Hogy áll a gyűrű?->Lana Ring Thanks]]
+@endif
+[[Mást kérdeznék->Talk]]
+[[Viszlát->Lana Bye]]
+
+:: Talk
+"A város a kereskedőkből él. A kovács jó ember, de zárkózott. A hajósok néha hoznak érdekes híreket."
+[[Köszi->Start Lana]]
+
+:: Lana Ring Turnin
+@take tesztsztori_gyuru
+@quest done tesztsztori_gyuru
+@reward credits 40
+"A gyűrűm! Köszönöm, mindig számíthatsz rám."
+[[Szívesen->Start Lana]]
+
+:: Lana Ring Remind
+"A pince csatornájában kell lennie, ahol régen lejárt a lépcső."
+[[Megyek->Start Lana]]
+
+:: Lana Ring Thanks
+"A gyűrű rajtam, azóta is rád gondolok, valahányszor ránézek."
+[[Szívesen->Start Lana]]
+
+:: Lana Bye
+@end
