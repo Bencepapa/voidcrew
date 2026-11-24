@@ -108,6 +108,9 @@ export function sharedToken() {
   return token;
 }
 
+// (called when the sign-in state changes: sign-in, sign-out, a refused session)
+export const subscribeSharedAuth = subscribe;
+
 function currentSignedInName() {
   return signedInName;
 }

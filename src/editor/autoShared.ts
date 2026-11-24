@@ -1,7 +1,8 @@
 // Background loading of the latest shared content for
 // the active world. It runs only after the first scene is ready, off the
 // critical path (a delay, then an idle callback), with a timeout and at most
-// one retry a minute. The Debug panel's switch turns it off.
+// one retry a minute. It is on for signed-in editors and dev builds, off for
+// guests (see autoSharedPolicy.ts); the Debug panel's switch and `?shared=` decide otherwise.
 
 import type { WorldId } from "../game/worlds";
 import { autoLoadShared, subscribeAutoLoadShared } from "./autoSharedPrefs";
@@ -163,6 +164,11 @@ export function setAutoSharedWorld(next: WorldId) {
 export function autoSharedSceneReady() {
   if (sceneReady) return;
   sceneReady = true;
+  if (sharedConfigured && !autoLoadShared()) {
+    console.info("[shared] the whole shared store is not loaded automatically (guest / plain build): only what the current map " +
+      "references is fetched, and bundled content (npm run pull:shared) is used as is. Add ?shared=on to the URL, sign in as an " +
+      "editor or use the Debug panel's switch to load everything.");
+  }
   schedule();
 }
 
