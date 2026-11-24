@@ -977,7 +977,7 @@ export default function App() {
   // the floor (the Fill tool, or the right button), paints the surface with
   // the set picked in the palette (the right button paints the map's own
   // texture back), or toggles the cell's ceiling light.
-  const onEdit = (target: EditTarget, alt: boolean, shift = false) => {
+  const onEdit = (target: EditTarget, alt: boolean, shift = false, ctrl = false) => {
     let result: ReturnType<typeof applyEdit> | null = null;
     if (!(["dig", "fill", "height", "texture"] as EditTool[]).includes(editTool) && target.cell) lastTouched.current = { x: target.cell.x, y: target.cell.y };
     if (selecting) {
@@ -1047,11 +1047,11 @@ export default function App() {
         setSelectedLight(count);
       }
     } else if (editTool === "height") {
-      // raise (lower: right button) the floor or ceiling pointed at
+      // raise (lower: right button) the floor or ceiling pointed at; Ctrl: a whole block (1.0) instead of a quarter
       if (target.kind === "wall") return;
       const cell = target.cell;
       const floor = floorHeight(map, cell.x, cell.y);
-      const step = alt ? -0.25 : 0.25;
+      const step = (ctrl ? 1 : 0.25) * (alt ? -1 : 1);
       if (target.kind === "ceiling") {
         const value = ceilingHeight(map, cell.x, cell.y) + step;
         // one panel above the floor is the default: no need to write it

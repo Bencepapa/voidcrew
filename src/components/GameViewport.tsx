@@ -1175,7 +1175,7 @@ interface GameViewportProps {
   lockedLayers?: ReadonlySet<string>;
   // the tool the editor has picked: what the highlight says a click does
   editTool?: EditTool;
-  onEdit?: (target: EditTarget, alt: boolean, shift: boolean) => void;
+  onEdit?: (target: EditTarget, alt: boolean, shift: boolean, ctrl?: boolean) => void;
   // the Event tool's selected event: the target it is attached to
   selectedEvent?: InteractionTarget | null;
   // the Light tool's selected light (its index in the map's lights)
@@ -7108,7 +7108,7 @@ export function GameViewport({
           return;
         }
         const target = editTargetAt(ndc);
-        if (target) onEditRef.current?.(target, e.button === 2, e.shiftKey);
+        if (target) onEditRef.current?.(target, e.button === 2, e.shiftKey, e.ctrlKey || e.metaKey);
         return;
       }
       if (interactionCallbacks.current.interactionOpen) return;

@@ -54,7 +54,7 @@ export const editorShellEn = {
   "editorShell.scWheelSel": "Raise / lower it (prop, item, light)",
   "editorShell.scScaleRotate": "Scale / rotate it (prop, decal)",
   "editorShell.scDig": "Dig out a wall / fill a floor in",
-  "editorShell.scHeight": "Raise / lower the floor or ceiling",
+  "editorShell.scHeight": "Raise / lower the floor or ceiling (Ctrl: a whole block)",
   "editorShell.scTexture": "Paint the picked set / the map's own texture",
   "editorShell.scLightClick": "Place or pick a ceiling light; right click removes it",
   "editorShell.scLightShift": "Place a free-standing light",

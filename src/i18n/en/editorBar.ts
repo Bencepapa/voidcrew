@@ -61,7 +61,7 @@ export const editorBarEn = {
   "editorBar.digFill": "Dig/Fill",
   "editorBar.leftClickDigAWallOutRight": "Left click: dig a wall out - right click: fill a floor in",
   "editorBar.height": "Height",
-  "editorBar.raiseLeftClickOrLowerRightClick": "Raise (left click) or lower (right click) a floor or ceiling",
+  "editorBar.raiseLeftClickOrLowerRightClick": "Raise (left click) or lower (right click) a floor or ceiling; Ctrl: a whole block at a time",
   "editorBar.texture": "Texture",
   "editorBar.paintASurface": "Paint a surface",
   "editorBar.light": "Light",

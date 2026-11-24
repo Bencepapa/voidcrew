@@ -55,7 +55,7 @@ export const editorShellHu: Record<keyof typeof editorShellEn, string> = {
   "editorShell.scWheelSel": "Emelés / süllyesztés (prop, tárgy, fény)",
   "editorShell.scScaleRotate": "Méretezés / forgatás (prop, matrica)",
   "editorShell.scDig": "Fal kiásása / padló betömése",
-  "editorShell.scHeight": "Padló vagy plafon emelése / süllyesztése",
+  "editorShell.scHeight": "Padló vagy plafon emelése / süllyesztése (Ctrl: egész blokk)",
   "editorShell.scTexture": "A kiválasztott készlet festése / a pálya saját textúrája",
   "editorShell.scLightClick": "Plafonlámpa elhelyezése vagy kijelölése; jobb kattintás: eltávolítás",
   "editorShell.scLightShift": "Szabadon álló fény elhelyezése",

@@ -61,7 +61,7 @@ export const editorBarHu = {
   "editorBar.digFill": "Ásás/Betömés",
   "editorBar.leftClickDigAWallOutRight": "Bal kattintás: fal kiásása - jobb kattintás: padló betömése",
   "editorBar.height": "Magasság",
-  "editorBar.raiseLeftClickOrLowerRightClick": "Padló vagy plafon emelése (bal kattintás), süllyesztése (jobb kattintás)",
+  "editorBar.raiseLeftClickOrLowerRightClick": "Padló vagy plafon emelése (bal kattintás), süllyesztése (jobb kattintás); Ctrl: egész blokknyit",
   "editorBar.texture": "Textúra",
   "editorBar.paintASurface": "Felület festése",
   "editorBar.light": "Fény",
