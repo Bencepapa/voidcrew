@@ -8,8 +8,8 @@ import { isTextureSetId, TEXTURE_SETS, textureFolder } from "../render/textureSe
 import { propOwnTextureId } from "./channelEditor";
 import { sharedConfigured, sharedToken } from "./sharedAuth";
 import { loadDefinitions, publishDefinition } from "./sharedDefinitions";
-import { installSharedTexture, textureStatus } from "./textureLibrary";
-import { loadSharedTextures, publishTextureRevision } from "./sharedTextures";
+import { textureStatus } from "./textureLibrary";
+import { loadSharedTexturesById, patchSharedTexture, publishTextureRevision } from "./sharedTextures";
 import { discardDraft, draftById, draftsReady, isPropTexture, newDraft } from "./textureDrafts";
 
 export const PROP_SHAPES = ["panel", "billboard", "cross"] as const;
@@ -187,6 +187,15 @@ export async function loadSharedProps(world: WorldId, init?: RequestInit) {
   install(world, new Map([...bundledProps(world), ...definitions]));
 }
 
+// Just these props (asset ids of one world), by their own folders: what a map references, for a guest.
+// Adds to what is installed; the other props of the store stay unknown.
+export async function loadSharedPropsById(world: WorldId, ids: ReadonlySet<string>, init?: RequestInit) {
+  if (!sharedConfigured || !ids.size) return;
+  const definitions = await loadDefinitions(world, "prop", usable, init, ids);
+  if (init?.signal?.aborted) return;
+  install(world, new Map([...(installed.get(world) ?? bundledProps(world)), ...definitions]));
+}
+
 export async function publishProp(draft: PropDraft) {
   const definition = readDefinition(draft.definition);
   if (!definition?.name?.trim()) throw new Error(t("assetManager.propDraft.needName"));
@@ -200,10 +209,10 @@ export async function publishProp(draft: PropDraft) {
       const published = await publishTextureRevision({ ...texture, name: definition.name }, (d, theirs) =>
         window.confirm(t("assetManager.conflict", { name: definition.name!, theirs, mine: d.baseRev })));
       if (!published) return;
-      installSharedTexture(published);
+      patchSharedTexture(published);
       await discardDraft(texture.uuid);
     } else {
-      if (!isTextureSetId(definition.texture)) await loadSharedTextures(draft.world);
+      if (!isTextureSetId(definition.texture)) await loadSharedTexturesById([definition.texture]);
       if (!isTextureSetId(definition.texture)) throw new Error(t("assetManager.propDraft.needTexture"));
     }
   } else if (!propTextures(draft.world).has(definition.texture)) {

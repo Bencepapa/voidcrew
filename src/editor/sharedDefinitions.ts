@@ -7,9 +7,12 @@ const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const revisions = (rows: { name: string }[]) => rows.flatMap(({ name }) =>
   /^r[1-9]\d*$/.test(name) ? [Number(name.slice(1))] : []).filter(Number.isSafeInteger).sort((a, b) => b - a);
 
-export async function loadDefinitions<T>(world: WorldId, kind: Kind, read: (raw: unknown, base: string) => T | undefined, init?: RequestInit) {
+// `only`: asset ids (`<world>_<kind>_<uuid>`): just those, by their own folders - the store is not listed.
+export async function loadDefinitions<T>(world: WorldId, kind: Kind, read: (raw: unknown, base: string) => T | undefined, init?: RequestInit, only?: ReadonlySet<string>) {
   const prefix = `${world}/${kind}`;
-  const rows = await listSharedObjects(prefix, init);
+  const rows = only
+    ? [...only].map(id => ({ name: id.slice(`${world}_${kind}_`.length) }))
+    : await listSharedObjects(prefix, init);
   const definitions = await Promise.all(rows.filter(({ name }) => uuidPattern.test(name)).map(async ({ name }) => {
     const path = `${prefix}/${name}`;
     for (const revision of revisions(await listSharedObjects(path, init))) {
