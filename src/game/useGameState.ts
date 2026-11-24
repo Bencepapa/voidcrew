@@ -36,6 +36,9 @@ import { enemiesOff, storedPickupMode } from "./playPrefs";
 import { holdEnemies, isEnemy } from "./enemiesOff";
 import { clickPickup, inPickupReach, resolvePickupMode, stepCollects } from "./pickupMode";
 import { reviveCrew, wipeOutcome } from "./editorWipe";
+import { pickVictim } from "./operables";
+import { lockedMessage } from "./keys";
+import { useOperables } from "./useOperables";
 
 // What a log line is, which colours it (see LogPanel): ordinary news (the
 // default), the map editor's own lines, errors (an edit refused, a save that
@@ -858,10 +861,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   }, []);
   // the crew's hacker, if they're standing
   const hacker = () => crewRef.current.find((c) => c.role === HACKER_ROLE && c.hp > 0);
-  const lockedText = (lock: Lock) => {
-    const h = lock.hack ? hacker() : undefined;
-    return `${lock.message ?? "It's locked."}${h ? ` ${h.name} could hack it (Use).` : ""}`;
-  };
+  const lockedText = (lock: Lock) => lockedMessage(lock, hacker()?.name);
   // A lock opened, if it can be: its key known (at once), else hacked (when
   // `hack` - the hacker's energy and some time); `done` once it's open.
   // False: it stays shut (and the party has been told why).
@@ -1140,6 +1140,41 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     }
     fireEvent({ on: "enter", cell: pos });
   }, [pos, map.id, variation, fireEvent]);
+
+  // Levers, buttons, pressure plates, trap cells and wall traps (see operables.ts): what they work goes through the
+  // game's own doors, flags and crew
+  const operables = useOperables({
+    active: variation !== null,
+    mapRef,
+    mapId: map.id,
+    pos,
+    elevation,
+    openDoorsRef,
+    openDoor: (cell, animated) =>
+      animated ? storyRef.current.open(cell) : setOpenDoors((prev) => new Set(prev).add(doorCellKey(cell))),
+    closeDoor: (cell) =>
+      setOpenDoors((prev) => {
+        const next = new Set(prev);
+        next.delete(doorCellKey(cell));
+        return next;
+      }),
+    isLocked: (cell) => doorLock(cell) !== null,
+    unlock: (cell) => raiseFlag(unlockedFlag(mapRef.current.id, cell), true),
+    // a trap's hit lands on a random crewmate still standing, like the fire's
+    hurt: (damage, describe) => {
+      const victim = pickVictim(crewRef.current, Math.random());
+      if (!victim || wipedRef.current !== null) return;
+      const hp = Math.max(immortalRef.current ? Math.min(1, victim.hp) : 0, victim.hp - damage);
+      crewRef.current = crewRef.current.map((c) => (c.id === victim.id ? { ...c, hp } : c));
+      setCrew(crewRef.current);
+      setHurtAt(performance.now());
+      pushLog(describe(victim.name) + (hp === 0 ? ` ${victim.name} goes down!` : ""), hp === 0 ? "danger" : "damage");
+      wipeIfDownRef.current();
+    },
+    hasFlag,
+    raiseFlag,
+    pushLog,
+  });
 
   // Takes the lift the party stands in to its other deck: shuts the door,
   // rides (the next map is swapped in mid-ride, behind the closed door),
@@ -1882,6 +1917,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     elevation,
     jumpDown: jump,
     use,
+    // a lever or button touched (see operables.ts)
+    operate: operables.touch,
     touch,
     // (a lift ride, or a gate's change of map: nothing else can be done meanwhile)
     inLift: inLift || transit !== null,

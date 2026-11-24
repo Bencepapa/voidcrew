@@ -155,7 +155,18 @@ export type PropType = {
       kind: "fence";
       form: FenceForm;
     }
+  | {
+      // a lever, button, pressure plate, trap cell or wall trap (see operables.ts): drawn from plain boxes in
+      // render/operableModel.ts, with a pose that follows its state (a lever down, a button sunk, a plate pressed).
+      // `elevation` (above) is how high it hangs; a plate and a trap cell lie flat on their cell's floor.
+      kind: "operable";
+      model: OperableModel;
+    }
 );
+export type OperableModel = "lever" | "button" | "plate" | "trapcell" | "slit" | "glyph";
+// the models that lie on the floor, filling their cell (the party walks over them)
+export const FLOOR_OPERABLES: readonly OperableModel[] = ["plate", "trapcell"];
+export const isFloorOperable = (type: PropType | undefined) => type?.kind === "operable" && FLOOR_OPERABLES.includes(type.model);
 
 // (the roof pieces' shapes live in roofPieces.ts, loadable without the build)
 export type { RoofSegment } from "./roofPieces";
@@ -317,6 +328,14 @@ export const PROP_TYPES: Record<string, PropType> = {
   fence_block: { kind: "fence", form: "block", size: [1, 1, 1], blocks: true },
   fence_edge: { kind: "fence", form: "edge", size: [1, 1, 0.1] },
   fence_mid: { kind: "fence", form: "mid", size: [1, 1, 0.1], blocks: true },
+  // operables (see operables.ts OPERABLE_PROPS): a wall lever and button, a floor plate and a hidden trap cell, and the
+  // wall traps they set off - an arrow slit and a spell glyph
+  lever1: { kind: "operable", model: "lever", size: [0.16, 0.3, 0.1], wall: true, elevation: 0.35 },
+  button1: { kind: "operable", model: "button", size: [0.14, 0.14, 0.06], wall: true, elevation: 0.4 },
+  plate1: { kind: "operable", model: "plate", size: [0.62, 0.05, 0.62] },
+  trapcell1: { kind: "operable", model: "trapcell", size: [0.9, 0.02, 0.9] },
+  arrowslit1: { kind: "operable", model: "slit", size: [0.3, 0.24, 0.06], wall: true, elevation: 0.45 },
+  glyph1: { kind: "operable", model: "glyph", size: [0.36, 0.36, 0.04], wall: true, elevation: 0.35 },
 };
 
 // The prop editor's saves (see src/editor/PropEditor.tsx): src/props/<name>.json
@@ -333,7 +352,7 @@ export interface PropEdit {
 }
 // (a pillar's and a chamfer's sizes are their shape's: not edited)
 export function propEditable(type: PropType | undefined): boolean {
-  return !!type && type.kind !== "pillar" && type.kind !== "chamfer" && type.kind !== "roof" && type.kind !== "fence";
+  return !!type && type.kind !== "pillar" && type.kind !== "chamfer" && type.kind !== "roof" && type.kind !== "fence" && type.kind !== "operable";
 }
 const EDITS = import.meta.glob<PropEdit>("../props/*.json", { eager: true, import: "default" });
 for (const [file, edit] of Object.entries(EDITS)) {
@@ -426,6 +445,8 @@ const WALL_FACING: Partial<Record<PropAnchor, number>> = { N: 0, NE: 0, NW: 0, S
 export function propPlacement(spec: PropSpec, type: PropType = PROP_TYPES[spec.prop] ?? { kind: "panel", texture: "", size: [0, 0, 0] }): PropPlacement {
   // a fence piece's model is laid out round its cell's middle (see fences.ts): it is put there whatever its anchor
   if (type.kind === "fence") return { x: spec.cell.x, z: spec.cell.y, yaw: 0, reachX: 0.5, reachZ: 0.5, type };
+  // a floor plate or trap cell lies in the middle of its cell, whatever anchor it was put at
+  if (isFloorOperable(type)) return { x: spec.cell.x, z: spec.cell.y, yaw: ((spec.rotation ?? 0) * Math.PI) / 180, reachX: type.size[0] / 2, reachZ: type.size[2] / 2, type };
   if (type.kind === "chamfer") {
     // its middle halfway along the cut, flush with the walls it meets
     // (nudged and turned from there as any prop)
@@ -478,8 +499,8 @@ export function flamePosition(spec: PropSpec): [number, number, number] | null {
 // their heights above the cell's floor
 export function propBoxes(map: GameMap, cx: number, cy: number) {
   const boxes = (map.props ?? [])
-    // (a roof is decoration: it hangs over the cell, never in the way; a fence has boxes of its own, below)
-    .filter((p) => p.cell.x === cx && p.cell.y === cy && PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "roof" && PROP_TYPES[p.prop].kind !== "fence")
+    // (a roof is decoration: it hangs over the cell, never in the way; a fence has boxes of its own, below; a plate is walked over)
+    .filter((p) => p.cell.x === cx && p.cell.y === cy && PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "roof" && PROP_TYPES[p.prop].kind !== "fence" && !isFloorOperable(PROP_TYPES[p.prop]))
     .map((p) => {
       const { x, z, reachX, reachZ } = propPlacement(p);
       return { minX: x - reachX, maxX: x + reachX, minZ: z - reachZ, maxZ: z + reachZ, height: (p.elevation ?? 0) + propHeight(map, p) };

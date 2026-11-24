@@ -58,8 +58,9 @@ return <>
               />
             </label>
 <label className="flex items-center gap-1" title={t("editorBar.theFlagThatOpensItACode")}>
-              {t("editorBar.lockKey")}<input
+              {t("editorBar.lockKey")}<datalist id="door-key-flags">{(p.keyFlags ?? []).map((k) => <option key={k.flag} value={k.flag}>{k.name ?? ""}</option>)}</datalist><input
                 type="text"
+                list="door-key-flags"
                 value={p.door.lock?.key ?? ""}
                 onChange={(e) => p.onDoorChange({ lock: doorLock(p.door!.lock, { key: e.target.value || undefined }) })}
                 className="w-20 bg-neutral-800 border border-neutral-700 px-1"

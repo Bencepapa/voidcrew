@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 1,
     date: "2026-11-23",
     items: [
+      { title: "Működtethető elemek", text: "Kar, gomb, nyomólap és csapda rakható le, amelyek ajtót nyitnak vagy a csapatot támadják; az ajtókhoz kulcs is megadható." },
       { title: "Felvétel kattintással és tesztelési segédletek", text: "A tárgyak felvétele kattintással is működik (a fantasy világban alapból így), az ellenfelek kikapcsolhatók a Debug panelben, és szerkesztés közben a csapat halála nem dob ki a pályáról." },
       { title: "NPC méretigazítás", text: "Elérhető az Asset managerben (NPC-k): csúszkával állítható, a goblinok kicsit kisebbek lettek." },
       { title: "Ajtónkénti textúra", text: "Az ajtó lapja és kerete ajtónként is állítható az Inspector Kinézet szakaszában." },
