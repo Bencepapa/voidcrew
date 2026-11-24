@@ -44,6 +44,15 @@ execSync(`npx vite build --outDir "${gameDir}" --emptyOutDir`, {
   env: { ...process.env, VITE_WORLD: world, VOID_BASE: "/" },
 });
 
+// A packaged world has no shared store and no service worker: public/sw.js (the shared-file cache, see
+// src/editor/swPolicy.ts) is copied from public/ into every build, so take it out and check it is gone.
+// (Its registration is a no-op without a configured store anyway.)
+fs.rmSync(path.join(gameDir, "sw.js"), { force: true });
+if (fs.existsSync(path.join(gameDir, "sw.js"))) {
+  console.error("The packaged game must not contain sw.js");
+  process.exit(1);
+}
+
 // the launchers
 for (const file of ["server.ps1", "Start-Game.bat", "start.sh"]) {
   fs.copyFileSync(path.join(root, "packaging", file), path.join(pkgDir, file));

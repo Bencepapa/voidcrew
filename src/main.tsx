@@ -6,9 +6,12 @@ import { START_MAP } from "./game/map";
 import { WORLDS } from "./game/worlds";
 import { ActorEditor } from "./editor/ActorEditor";
 import { installBundledDefinitions } from "./editor/bundledDefinitions";
+import { initSharedServiceWorker } from "./editor/sharedServiceWorker";
 import "./index.css";
 
 installBundledDefinitions();
+// keeps the shared store's immutable files in the browser (only with the store configured; see sharedServiceWorker.ts)
+initSharedServiceWorker();
 
 document.documentElement.classList.toggle("theme-fantasy", START_MAP.world === "fantasy");
 document.title = WORLDS[START_MAP.world].name;

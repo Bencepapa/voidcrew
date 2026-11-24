@@ -14,6 +14,8 @@ import type { WorldId } from "../game/worlds";
 import { LangSwitch } from "../i18n/LangSwitch";
 import { storyEnabled } from "../game/story/storyRuntime";
 import { StoryDebugSection } from "./StoryDebugSection";
+import { SharedCacheDebugSection } from "./SharedCacheDebugSection";
+import { sharedConfigured } from "../editor/sharedAuth";
 import { t, formatNumber, type Key } from "../i18n";
 import type { TextureSetKind } from "../render/textureSets";
 
@@ -576,6 +578,8 @@ export function DebugPanel({
           {check("enemyScanner", t("debug.scannerEnemyOutlinesCrewGear"))}
         </>,
       )}
+
+      {sharedConfigured && section(t("debug.swTitle"), <SharedCacheDebugSection />)}
 
       {storyEnabled() && section(t("debug.story"), <StoryDebugSection />)}
 
