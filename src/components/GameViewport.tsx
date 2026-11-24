@@ -4,6 +4,7 @@ import { cleanSkyGradient, skyGradientStops, type SkyGradient } from "../game/sk
 import { createWeather } from "../render/weather";
 import { createGroundFog } from "../render/groundFog";
 import { createFireflies } from "../render/fireflies";
+import { lockMarkerMaterial } from "../render/lockMarker";
 import { createMotes } from "../render/motes";
 import type { SpriteEmitter } from "../render/spriteCloud";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -8131,8 +8132,37 @@ export function GameViewport({
         add({ kind: "item", index }, spec.interaction, x + dx, floorY(x, y) + (spec.elevation ?? 0) * wallHeight + 0.25, y + dz);
       });
     }
+    // a padlock over each locked prop, while editing (see game/propLocks.ts)
+    const lockMarkers = new THREE.Group();
+    const lockMaterial = lockMarkerMaterial();
+    scene.add(lockMarkers);
+    let lockMarkerMap: GameMap | undefined;
+    let lockMarkerLayers: ReadonlySet<string> | undefined;
+    function updateLockMarkers() {
+      const m = latestMapRef.current;
+      const hidden = hiddenLayersRef.current;
+      lockMarkers.visible = !!editModeRef.current;
+      if (!lockMarkers.visible || (lockMarkerMap === m && lockMarkerLayers === hidden)) return;
+      lockMarkerMap = m;
+      lockMarkerLayers = hidden;
+      lockMarkers.clear();
+      if (hidden.has("prop")) return;
+      for (const spec of m.props ?? []) {
+        if (!spec.lock || !PROP_TYPES[spec.prop]) continue;
+        const { x, z, type } = propPlacement(spec);
+        const lift = (type.elevation ?? 0) * (spec.scale ?? 1);
+        const y = floorY(spec.cell.x, spec.cell.y) + ((spec.elevation ?? 0) + lift + propHeight(m, spec)) * wallHeight + 0.3;
+        const inward = type.wall ? 0.3 : 0;
+        const sprite = new THREE.Sprite(lockMaterial);
+        sprite.position.set(THREE.MathUtils.lerp(x, spec.cell.x, inward), Math.min(y, ceilingY(spec.cell.x, spec.cell.y) - 0.12), THREE.MathUtils.lerp(z, spec.cell.y, inward));
+        sprite.scale.setScalar(0.22);
+        sprite.renderOrder = 101;
+        lockMarkers.add(sprite);
+      }
+    }
     function renderFrame() {
       updateEventMarkers();
+      updateLockMarkers();
       const s = settingsRef.current;
       const now = performance.now();
       const t = (now - startedAt) / 1000;

@@ -4,6 +4,7 @@ import type { WorldId } from "./worlds";
 import type { Interaction, WallInteractionTarget } from "./interactions";
 import type { FenceStyle } from "./fences";
 import type { OperableSpec } from "./operables";
+import type { PropLock } from "./propLocks";
 import type { SkyGradient } from "./skyGradient";
 
 export type Direction = "N" | "E" | "S" | "W";
@@ -254,6 +255,8 @@ export interface PropSpec extends Linked {
   fence?: FenceStyle;
   // a lever, button, plate, trap cell or wall trap: what it works (see operables.ts)
   operable?: OperableSpec;
+  // a container, lever or button that stays shut until the party has its key (see propLocks.ts)
+  lock?: PropLock;
 }
 
 // A smoke emitter (see render/smoke.ts): a leaking pipe, a smouldering

@@ -19,6 +19,8 @@ import type { FenceToolState } from "./inspector/FenceFields";
 import type { OperableSpec } from "../game/operables";
 import type { OperableInfo } from "./operableEdits";
 import type { KeyFlag } from "../game/keys";
+import type { PropLock } from "../game/propLocks";
+import type { PropLockInfo } from "./lockEdits";
 
 export interface MapLook {
   weather?: Weather;
@@ -143,7 +145,7 @@ export interface EditorBarProps {
   onDecalDeselect: () => void;
   // the selected prop, and what the panel does with it
   prop: PropInfo | null;
-  onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string; at?: Direction; fence?: FenceStyle; operable?: OperableSpec } & Linked, merge?: string) => void;
+  onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string; at?: Direction; fence?: FenceStyle; operable?: OperableSpec; lock?: PropLock } & Linked, merge?: string) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
   // the flags something on the map raises (a door's lock key can be one of them)
@@ -345,6 +347,8 @@ export interface PropInfo {
   fence?: { form: FenceForm; style: FenceStyle; side: Direction };
   // a lever, button, plate, trap cell or wall trap: its settings and targets (see operables.ts)
   operable?: OperableInfo;
+  // a container, lever or button: its lock and the keys on offer (see game/propLocks.ts; undefined: it cannot be locked)
+  lock?: PropLockInfo;
 }
 
 // the selected light as the panel shows it

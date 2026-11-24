@@ -1,0 +1,31 @@
+// A tárgyak zárainak (ládák, kasznik, karok, gombok) magyar szövegei (lásd game/propLocks.ts).
+import type { lockEn } from "../en/lock";
+
+export const lockHu: Partial<Record<keyof typeof lockEn, string>> = {
+  "lock.locked": "Zárva van.",
+  "lock.unlocked": "Kinyitod: {what}.",
+  "lock.keyUsedUp": "A kulcs elhasználódott.",
+  "lock.title": "Zár",
+  "lock.on": "Zárva",
+  "lock.onTitle": "A csapat nem tudja kinyitni vagy meghúzni, amíg nincs meg a kulcsa.",
+  "lock.key": "Kulcs",
+  "lock.keyTitle": "A történetjelző (flag), ami kinyitja a zárat: egy felvett kulcs-tárgy emeli fel (a tárgy panelén a „Legyen belőle kulcs”). Több zár - ajtók is - osztozhat egy kulcson; egy zárhoz pontosan egy kulcs kell.",
+  "lock.keyNone": "- nincs -",
+  "lock.from.item": "tárgy",
+  "lock.from.action": "történet",
+  "lock.from.contents": "tárolóban",
+  "lock.from.door": "ajtó kulcsa",
+  "lock.from.lock": "másik zár kulcsa",
+  "lock.message": "Üzenet",
+  "lock.messageTitle": "Amit a csapat hall, amíg zárva van.",
+  "lock.consume": "Kulcs elhasználódik",
+  "lock.consumeTitle": "A kinyitás elveszi a csapattól a kulcs-tárgyat (és a jelzőt is, ha nem marad több).",
+  "lock.create": "Kulcs létrehozása ehhez a zárhoz",
+  "lock.createTitle": "Új kulcsjelzőt nevez el ehhez a zárhoz. Utána tegyél a pályára egy tárgyat, és legyen belőle kulcs ezzel a jelzővel.",
+  "lock.created": "Kulcsjelző: {flag}. Most tegyél a pályára egy tárgyat, és a panelén add meg neki ezt a kulcsjelzőt.",
+  "lock.nobody": "A pályán semmi sem adja meg ezt a kulcsot: ezt senki sem tudja kinyitni.",
+  "lock.noKey": "Válassz vagy hozz létre kulcsot, különben soha nem nyílik.",
+  "minimap.problem.lockNoKey": "A zárnak nincs kulcsa: soha nem nyílik ki.",
+  "minimap.problem.lockKeyNobody": "A pályán semmi sem adja meg a zár kulcsát ({id}): ezt senki sem tudja kinyitni.",
+  "minimap.problem.lockNotLockable": "A(z) {prop} nem zárható (csak tárolók, karok és gombok).",
+};
