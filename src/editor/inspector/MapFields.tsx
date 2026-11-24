@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import { t, type Key } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
-import { KindChoice, OptionalNumber, CommitContext, Section, slider, BUTTON, idle, active } from "./parts";
+import { OptionalNumber, CommitContext, Section, slider, BUTTON, idle, active } from "./parts";
 import { MAPS } from "../../game/map";
 import { worldOfMap } from "../../game/worlds";
 import { MapList } from "../MapList";
@@ -11,7 +11,8 @@ import { useAutoLoadShared } from "../autoSharedPrefs";
 import { useSharedMapHeads } from "../sharedMapHeads";
 import { splitSharedTitle } from "../sharedMaps";
 
-import { TEXTURE_SETS, textureSetsOfKind } from "../../render/textureSets";
+import { textureSetsOfKind } from "../../render/textureSets";
+import { TexturePicker, textureOptions } from "../TexturePicker";
 
 import { WeatherFields } from "../WeatherFields";
 import { MapRenderSettings } from "../../components/MapRenderSettings";
@@ -88,7 +89,7 @@ return <>
                 p.onMapLook({ accent: { ...p.mapLook.accent!, range: v === 30 ? undefined : v } }),
               )}
 {TEXTURE_SLOTS.map(({ slot, label, kind }) => (
-              <KindChoice key={slot} label={t(label)} title={t("editorBar.defaultTexture", {surface:t(label).toLowerCase()})} value={p.mapLook.textures?.[slot] ?? ""} options={[{value:"",label:t("editorBar.defaultLower")},...textureSetsOfKind(kind).map(value => ({value,label:TEXTURE_SETS[value].label}))]} onChange={v => {
+              <TexturePicker key={slot} label={t(label)} title={t("editorBar.defaultTexture", {surface:t(label).toLowerCase()})} value={p.mapLook.textures?.[slot] ?? ""} options={textureOptions(textureSetsOfKind(kind), [{value:"",label:t("editorBar.defaultLower")}])} onChange={v => {
  const textures = {...p.mapLook.textures,[slot]:v || undefined};
  for (const k of Object.keys(textures)) if (!textures[k]) delete textures[k];
  p.onMapLook({textures:Object.keys(textures).length ? textures : undefined});

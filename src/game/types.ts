@@ -2,6 +2,7 @@ import type { Lock, Terminal, Trigger } from "./story";
 import type { RenderLook } from "./renderLook";
 import type { WorldId } from "./worlds";
 import type { Interaction, WallInteractionTarget } from "./interactions";
+import type { FenceStyle } from "./fences";
 
 export type Direction = "N" | "E" | "S" | "W";
 
@@ -240,6 +241,9 @@ export interface PropSpec extends Linked {
   // for its neighbours)
   auto?: string;
   detached?: boolean;
+  // a fence or block piece (see fences.ts): its own settings - height, thickness, a top texture, whether it
+  // blocks sight, a decoration every few pieces. (An edge fence's side is `at`; a lone mid fence's way is `rotation`.)
+  fence?: FenceStyle;
 }
 
 // A smoke emitter (see render/smoke.ts): a leaking pipe, a smouldering

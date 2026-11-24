@@ -97,6 +97,13 @@ const TOOLS: Group[] = [
     ],
   },
   {
+    title: "fence.group",
+    rows: [
+      ["Click / drag", "fence.scPaint"],
+      ["Right click / drag", "fence.scErase"],
+    ],
+  },
+  {
     title: "editorBar.decal",
     rows: [
       ["Click / drag / arrows", "editorShell.scDecalClick"],

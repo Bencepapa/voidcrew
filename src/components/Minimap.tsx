@@ -9,6 +9,7 @@ import type { Rect } from "../editor/mapEdits";
 import { TEXTURE_SETS, isTextureSetId } from "../render/textureSets";
 import { CATEGORY_COLORS, type Category } from "../editor/categoryColors";
 import { PROP_TYPES } from "../game/props";
+import { fenceFormOf, fenceIndex, fenceMarks } from "../game/fences";
 
 interface MinimapProps {
   map: GameMap;
@@ -235,6 +236,21 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
   };
   const ladders = (visible("ladder") ? map.ladders ?? [] : []).map((l) => edge(`l${l.cell.x},${l.cell.y},${l.wall}`, l.cell, l.wall, edit ? CATEGORY_COLORS.ladder : LADDER_COLOR));
   const windows = windowPanels(map).map((p) => edge(`w${p.cell.x},${p.cell.y},${p.wall}`, p.cell, p.wall, WINDOW_COLOR));
+  // the fences and blocks (see game/fences.ts), in play too: a block is an amber square with a cross (dashed when it is
+  // see-through), a fence a line - cyan along an edge, green through the middle - each on a dark underline
+  const fenceMarkElements = fenceMarks(fenceIndex(map.props)).map((m, i) =>
+    m.kind === "block" ? (
+      <g key={`fb${i}`} pointerEvents="none">
+        <rect x={m.x + 0.1} y={m.y + 0.1} width={0.8} height={0.8} fill="#d9a441" fillOpacity={m.opaque ? 0.95 : 0.55} stroke="#151515" strokeWidth={0.08} strokeDasharray={m.opaque ? undefined : "0.18 0.1"} />
+        <path d={`M ${m.x + 0.2} ${m.y + 0.2} L ${m.x + 0.8} ${m.y + 0.8} M ${m.x + 0.8} ${m.y + 0.2} L ${m.x + 0.2} ${m.y + 0.8}`} stroke="#151515" strokeWidth={0.1} />
+      </g>
+    ) : (
+      <g key={`fl${i}`} pointerEvents="none">
+        <line x1={m.x1 + 0.5} y1={m.y1 + 0.5} x2={m.x2 + 0.5} y2={m.y2 + 0.5} stroke="#151515" strokeWidth={0.26} strokeLinecap="butt" />
+        <line x1={m.x1 + 0.5} y1={m.y1 + 0.5} x2={m.x2 + 0.5} y2={m.y2 + 0.5} stroke={m.form === "edge" ? "#4fd1ff" : "#7dff9a"} strokeWidth={0.14} strokeLinecap="butt" strokeDasharray={m.opaque ? undefined : "0.2 0.12"} />
+      </g>
+    ),
+  );
   // loot: a dot for a little, a glowing diamond for a lot (one mark a cell,
   // the bigger)
   const lootCells = new Map<string, { x: number; y: number; big: boolean }>();
@@ -375,6 +391,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
           {bridges}
           {ladders}
           {windows}
+          {fenceMarkElements}
           {markers}
           {edit.selection && (
             <rect
@@ -436,6 +453,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
           {bridges}
           {ladders}
           {windows}
+          {fenceMarkElements}
           {lootMarks}
         </g>
         {/* the party: an arrowhead with a notched tail, pointing its way */}
@@ -468,7 +486,8 @@ function chartKey(map: GameMap): string {
     key = [
       map.id,
       map.structureKey ?? "",
-      map.props?.map((p) => `${p.prop}${at(p.cell)}${p.at}${p.offset?.join(",") ?? ""}`).join(";"),
+      // (a fence piece's marks follow its side and its turn)
+      map.props?.map((p) => `${p.prop}${at(p.cell)}${p.at}${p.offset?.join(",") ?? ""}${fenceFormOf(p.prop) ? `${p.rotation ?? ""}${p.fence?.opaque ?? ""}` : ""}`).join(";"),
       map.decals?.map((d) => `${at(d.cell)}${d.surface}`).join(";"),
       map.actors?.map((a) => `${at(a.cell)}${a.facing}`).join(";"),
       map.items?.map((i) => `${at(i.cell)}${i.offset?.join(",") ?? ""}`).join(";"),

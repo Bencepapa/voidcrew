@@ -5,6 +5,7 @@ import { wallFaceSpans, type WallFacePart } from "./mapGeometry";
 import { PROP_TYPES, isSharedPropId } from "./props";
 import { parseRoofGroup } from "./roofAutotile";
 import { isRoofPieceId } from "./roofPieces";
+import { cleanFenceStyle, fenceFormOf, isSide, type FenceStyle } from "./fences";
 import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, MapLinkTarget, PropAnchor, StairsDirection, StairsStyle } from "./types";
 import { readLinkTarget } from "./mapLinks";
 import { readDoorTexture } from "./doorTextures";
@@ -205,6 +206,8 @@ export interface MapFile {
     // roof autotile (see PropSpec.auto)
     auto?: string;
     detached?: boolean;
+    // fence and block pieces (see PropSpec.fence)
+    fence?: FenceStyle;
     id?: string;
     with?: string;
     without?: string;
@@ -425,6 +428,10 @@ export function parseMap(id: string, file: MapFile): GameMap {
         if (!parseRoofGroup(p.auto)) throw new Error(`prop at ${p.x},${p.y}: "${String(p.auto)}" isn't a roof group (<slope|flat|bent>-<number>)`);
         if (!isRoofPieceId(p.prop)) throw new Error(`prop at ${p.x},${p.y}: a roof group's piece must be a roof prop, not "${p.prop}"`);
       }
+      const form = fenceFormOf(p.prop);
+      if (p.fence !== undefined && !form) throw new Error(`prop at ${p.x},${p.y}: "${p.prop}" is no fence piece, it has no fence settings`);
+      if (p.fence !== undefined && (typeof p.fence !== "object" || p.fence === null || Array.isArray(p.fence))) throw new Error(`prop at ${p.x},${p.y}: fence settings must be an object`);
+      if (form === "edge" && !isSide(p.at)) throw new Error(`prop at ${p.x},${p.y}: a fence_edge needs the side of its cell it stands on (at: N, E, S or W)`);
       return {
         prop: p.prop,
         interaction: readInteraction(p.interaction),
@@ -439,6 +446,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         loot: p.loot,
         auto: p.auto,
         detached: p.detached,
+        fence: cleanFenceStyle(p.fence),
         id: p.id,
         with: p.with,
         without: p.without,

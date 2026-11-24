@@ -1,5 +1,6 @@
 import { bridgeAt, cellAt, ceilingHeight, floorHeight } from "./map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH } from "./heights";
+import { fenceBlocksSight, fenceIndex } from "./fences";
 import type { GameMap } from "./types";
 
 // Which cells can be seen from a point, on the map grid: walls and closed
@@ -39,6 +40,23 @@ export function lineOfSight(
 ): boolean {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
+  // an opaque fence or block in the way (a see-through one - a hedge, a wooden fence - is looked through; it
+  // stops bodies, not sight). The viewer's cells themselves are looked out of, like a wall cell at either end.
+  const fences = fenceIndex(map.props);
+  if (
+    fences.opaque.length &&
+    fenceBlocksSight(
+      fences,
+      from.x,
+      from.y,
+      to.x,
+      to.y,
+      heights && ((t) => heights.from + (heights.to - heights.from) * t),
+      heights && ((x, y) => floorHeight(map, x, y)),
+    )
+  ) {
+    return false;
+  }
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / STEP));
   let prevH = heights?.from ?? 0;
   for (let i = 0; i <= steps; i++) {

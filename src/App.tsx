@@ -83,6 +83,9 @@ import { doorTextureIds } from "./game/doorTextures";
 import { isTextureSetId } from "./render/textureSets";
 import { eraseRoof, eraseRoofGroup, paintRoof, roofFootprint, roofGroupFor, setRoofDetached } from "./editor/roofEdits";
 import type { RoofForm } from "./game/roofAutotile";
+import { eraseFence, fenceRun, paintFence } from "./editor/fenceEdits";
+import { FENCE_TOOL_DEFAULT, type FenceToolState } from "./editor/inspector/FenceFields";
+import { cleanFenceStyle, fenceFormOf, isSide, sideFromPoint, type FenceForm } from "./game/fences";
 import type { TextureSetId } from "./render/textureSets";
 import { AimOverlay } from "./components/AimOverlay";
 import { bankHaul, failRun, getMeta, payRevival, revivalBill, useMeta } from "./game/meta";
@@ -258,6 +261,11 @@ export default function App() {
   const [roofTexture, setRoofTexture] = useState("");
   const roofStroke = useRef<{ id: number; group: string } | null>(null);
   const roofStrokeSerial = useRef(0);
+  // the fence and block tools (see game/fences.ts): what their next pieces are made with, the side the
+  // edge stroke under way began on, and a counter that gives each stroke one undo step
+  const [fence, setFence] = useState<FenceToolState>(FENCE_TOOL_DEFAULT);
+  const fenceStroke = useRef<{ side: Direction | null } | null>(null);
+  const fenceStrokeSerial = useRef(0);
   // the Decal tool: the decal a click puts on (and its size in surface
   // pixels), how it's turned, and the selected one (its index in the map's
   // decals)
@@ -984,6 +992,42 @@ export default function App() {
     }
     setEdits((n) => n + 1);
   };
+  // The fence and block tools (see game/fences.ts, editor/fenceEdits.ts): a stroke puts a piece in each cell it
+  // crosses - the edge tool on the side of the cell the stroke began on: the one nearest the first click, or the
+  // one picked in the panel - and the right button takes them out. A stroke is one undo step.
+  const FENCE_TOOLS: Partial<Record<EditTool, FenceForm>> = { fenceblock: "block", fenceedge: "edge", fencemid: "mid" };
+  const fencePaint = (target: EditTarget, stroke: { first: boolean; erase: boolean }) => {
+    const form = FENCE_TOOLS[editTool];
+    // (a wall, or a step's face - that cell is the lower one beside it, not what is pointed at)
+    if (!form || target.kind === "wall" || target.face) return;
+    const file = mapFile(map.id);
+    if (!file) return;
+    const cell = target.cell;
+    if (stroke.first) {
+      fenceStrokeSerial.current++;
+      fenceStroke.current = null;
+    }
+    const merge = `fence stroke ${fenceStrokeSerial.current}`;
+    let side: Direction | undefined;
+    if (form === "edge") {
+      if (!fenceStroke.current) {
+        const picked: Direction | null = fence.side !== "auto" ? fence.side : target.at ? sideFromPoint(target.at[0] - cell.x, target.at[1] - cell.y) : null;
+        // (in the middle of the cell the click does not say which edge: the panel does)
+        if (!picked) {
+          pushLog(t("fence.pickSide"), "editor");
+          return;
+        }
+        fenceStroke.current = { side: picked };
+      }
+      side = fenceStroke.current.side ?? undefined;
+    }
+    const paint = { texture: fence.texture || undefined, style: fence.style, rotation: fence.rotation };
+    const result = applyEdit(map.id, (f) => (stroke.erase ? eraseFence(f, form, [cell], side) : paintFence(f, form, [cell], paint, side)), merge);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+    else replaceMap(result.map);
+    setSelectedProp(null);
+    setEdits((n) => n + 1);
+  };
   // The map editor's edits: a click digs out the wall pointed at or fills in
   // the floor (the Fill tool, or the right button), paints the surface with
   // the set picked in the palette (the right button paints the map's own
@@ -1239,6 +1283,10 @@ export default function App() {
     } else if (editTool === "roofauto") {
       // (the view's strokes reach the tool through onEditPaint; this is a click on the minimap)
       roofPaint(target, { first: true, erase: alt, shift, ctrl: false });
+      return;
+    } else if (editTool === "fenceblock" || editTool === "fenceedge" || editTool === "fencemid") {
+      // (the same: the view's strokes come through onEditPaint, this is a click on the minimap)
+      fencePaint(target, { first: true, erase: alt });
       return;
     } else if (editTool === "smoke") {
       // a click on an emitter's marker picks it (the right button takes it
@@ -2030,11 +2078,13 @@ export default function App() {
       // where a prop stacked on it stands: on its top
       top: (spec.elevation ?? 0) + (type?.size[1] ?? 0),
       auto: spec.auto ? { group: spec.auto, detached: !!spec.detached } : undefined,
+      fence: fenceFormOf(spec.prop) ? { form: fenceFormOf(spec.prop)!, style: cleanFenceStyle(spec.fence) ?? {}, side: isSide(spec.at) ? spec.at : "N" } : undefined,
     };
   })();
   const changeProp = (patch: Parameters<typeof updateProp>[2], merge?: string) => {
     if (selectedProp === null) return;
-    remember("prop", patch);
+    // (a fence's texture is its own: the next crate does not wear it)
+    if (!fenceFormOf(map.props?.[selectedProp]?.prop ?? "")) remember("prop", patch);
     const index = selectedProp;
     const result = applyEdit(
       map.id,
@@ -2089,6 +2139,21 @@ export default function App() {
       replaceMap(result.map);
       pushLog(t("roofauto.erasedRoof", { group }), "editor");
     }
+    setSelectedProp(null);
+    setEdits((n) => n + 1);
+  };
+  // the whole run of fence pieces the selected one is part of, taken away (one undo step)
+  const fenceRemoveRun = () => {
+    if (selectedProp === null) return;
+    const index = selectedProp;
+    const result = applyEdit(map.id, (file) => {
+      const run = new Set(fenceRun(file, index));
+      file.props = (file.props ?? []).filter((_, i) => !run.has(i));
+      if (!file.props.length) delete file.props;
+      return file;
+    });
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+    else replaceMap(result.map);
     setSelectedProp(null);
     setEdits((n) => n + 1);
   };
@@ -2519,7 +2584,7 @@ export default function App() {
       lockedLayers={lockedLayers}
       editTool={altHeld && editMode ? "select" : editTool}
       onEdit={onEdit}
-      onEditPaint={(target, stroke) => roofPaint(target, stroke)}
+      onEditPaint={(target, stroke) => (editTool === "roofauto" ? roofPaint(target, stroke) : fencePaint(target, stroke))}
       selectedEvent={editMode && eventTarget && interactionAt(map, eventTarget) ? eventTarget : null}
       selectedLight={selectedLightInfo ? selectedLight : null}
       selectedProp={selectedPropInfo ? selectedProp : null}
@@ -2682,6 +2747,8 @@ export default function App() {
           onRoofForm={setRoofForm}
           roofTexture={roofTexture}
           onRoofTexture={setRoofTexture}
+          fence={fence}
+          onFence={(patch) => setFence((f) => ({ ...f, ...patch }))}
           propRotation={propRotation}
           onPropRotate={() => setPropRotation((r) => (r + 90) % 360)}
           robotChoice={robotChoice}
@@ -2730,6 +2797,7 @@ export default function App() {
           onPropStack={stackProp}
           onPropRoofDetach={roofDetach}
           onPropRoofRemove={roofRemove}
+          onPropFenceRemoveRun={fenceRemoveRun}
           onPropDelete={deleteProp}
           onPropDeselect={() => setSelectedProp(null)}
           linkIds={linkIds}

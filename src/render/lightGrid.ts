@@ -420,7 +420,8 @@ interface Occluders {
 
 export function propCastsBakedShadow(spec: NonNullable<GameMap["props"]>[number]): boolean {
   const kind = PROP_TYPES[spec.prop]?.kind;
-  return !!kind && kind !== "cross" && kind !== "roof";
+  // (a fence or a block is mostly gaps and thin faces, or a see-through hedge: no baked shadow)
+  return !!kind && kind !== "cross" && kind !== "roof" && kind !== "fence";
 }
 
 function occludersOf(map: LightBakeMap): Occluders {
@@ -435,7 +436,7 @@ function occludersOf(map: LightBakeMap): Occluders {
   for (const spec of map.props ?? []) {
     const sharedType = map.sharedPropTypes?.[spec.prop];
     const type = sharedType ?? PROP_TYPES[spec.prop];
-    if (!type || type.kind === "cross" || type.kind === "roof") continue;
+    if (!type || type.kind === "cross" || type.kind === "roof" || type.kind === "fence") continue;
     const { x, z, reachX, reachZ } = propPlacement(spec, type);
     const lift = sharedType?.elevation ?? 0;
     const bottom = floorHeight(map, spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) + lift * (spec.scale ?? 1);
