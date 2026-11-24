@@ -14,6 +14,7 @@ import { canReviseImage } from "./imageDraftLogic";
 import { errorText, SignInPopover } from "./TexturePanel";
 import { active, BUTTON, idle, KindChoice, neutralStyle } from "./inspector/parts";
 import { NumberField } from "./NumberField";
+import { SkyDraftFields, SkyWrapPreview } from "./SkyDraftFields";
 import { ChannelCards, useBlobUrl } from "./ChannelControls";
 import type { ChannelEditor } from "./channelEditor";
 import type { MapKey } from "./textureDrafts";
@@ -99,6 +100,7 @@ function PublishedDetails({ image, onError, onRevised }: { image: SharedImage; o
     <p className="text-xs text-neutral-400">{t("assetManager.image.readOnly")}</p>
     {canReviseImage(image) && <button type="button" className={`${BUTTON} ${idle} self-start`} disabled={reviving} title={t("assetManager.image.editHint")} onClick={() => void revise()}>{t("assetManager.image.edit")}</button>}
     <img className="max-h-52 max-w-full self-start object-contain" src={image.url} alt={image.name}/>
+    {image.type === "sky" && <SkyWrapPreview url={image.url}/>}
     <p><span className="text-neutral-400">{t("assetManager.image.name")}: </span>{image.name}</p>
     <p><span className="text-neutral-400">{t("assetManager.image.type")}: </span>{t(`assetManager.image.${image.type}`)}</p>
     {image.type === "portrait"
@@ -314,6 +316,9 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRe
   };
   return <div className="relative flex min-w-0 flex-col gap-2 text-sm" style={neutralStyle}>
     <fieldset className="flex min-w-0 flex-col gap-2" disabled={locked}>
+    {current.type === "sky"
+      ? <SkyDraftFields draft={current} busy={busy} change={change} run={run} onStatus={setStatus}/>
+      : <>
     <label className="flex min-w-0 flex-col gap-1">{t("assetManager.image.file")}
       <input className={field} type="file" accept="image/png,.png" disabled={busy} onChange={event => {
         const file = event.currentTarget.files?.[0];
@@ -324,6 +329,7 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRe
     {preview
       ? <img className="max-h-52 max-w-full self-start object-contain" src={preview} alt={current.name}/>
       : <p className="text-xs text-neutral-500">{t("assetManager.image.noPng")}</p>}
+      </>}
 
     <label className="flex min-w-0 flex-col gap-1">{t("assetManager.image.name")}
       <input className={field} value={current.name} maxLength={100}
@@ -358,14 +364,14 @@ export function ImageAssetInspector({ draft, image, pickupPreview, onError, onRe
       </div>
     </>}
 
-    <KindChoice label={t("assetManager.image.transparency")} value={current.transparency.source}
+    {current.type !== "sky" && <KindChoice label={t("assetManager.image.transparency")} value={current.transparency.source}
       options={[
         { value: "alpha", label: t("assetManager.image.alpha") },
         { value: "colorKey", label: t("assetManager.image.colorKey") },
         { value: "none", label: t("assetManager.image.none") },
       ]}
-      onChange={value => autosaveTransparency({ source: value as Transparency["source"] })}/>
-    {current.transparency.source === "colorKey" && <label className="flex items-center gap-2">{t("assetManager.image.colorKey")}
+      onChange={value => autosaveTransparency({ source: value as Transparency["source"] })}/>}
+    {current.type !== "sky" && current.transparency.source === "colorKey" && <label className="flex items-center gap-2">{t("assetManager.image.colorKey")}
       <input type="color" value={current.transparency.colorKey}
         onChange={event => autosaveTransparency({ colorKey: event.target.value })}/>
     </label>}

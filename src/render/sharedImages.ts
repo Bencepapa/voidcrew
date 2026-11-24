@@ -6,7 +6,8 @@ import { ITEM_TYPES, isSharedPickupId, type PickupAppearance } from "../game/ite
 import { pickupValue } from "../game/pickupValue";
 import { textureFolder, type TextureSetFiles } from "./textureSets";
 
-export type SharedImageType = "portrait" | "decal" | "item";
+// ("sky": a 2:1 panorama a map can use as its sky, see game/skyImage.ts)
+export type SharedImageType = "portrait" | "decal" | "item" | "sky";
 export type DecalSurfaceKind = "wall" | "floor" | "ceiling";
 // The stored type "portrait" covers every still image; this says which one it is.
 // A legacy image without a purpose is a portrait.
@@ -50,6 +51,8 @@ const subscribe = (listener: () => void) => {
   return () => { listeners.delete(listener); };
 };
 export const useSharedImages = () => useSyncExternalStore(subscribe, getSharedImages);
+// (outside React: a sky that waits for its shared picture to be registered)
+export const onSharedImagesChanged = subscribe;
 // Has the browser fetch pictures (shared image ids) ahead of time, so a loading
 // screen shows its picture at once
 const preloaded = new Set<string>();

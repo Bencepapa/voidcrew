@@ -50,6 +50,14 @@ const plain = { width: 1, height: 1, props: [{ prop: "crate1", cell: { x: 0, y: 
 refs = mapSharedRefs(plain, { propTexture: () => undefined, doorTextures: () => [] });
 assert.equal(refs.textures.size + refs.images.size + refs.props.size + refs.doors.size + refs.actors.size, 0);
 
+// the map's sky: a shared sky id is an image to load (a built-in name, like "night" above, is not)
+const sky = `fantasy_sky_${u(30)}`;
+const skyMap = { width: 1, height: 1, textures: { sky } } as unknown as GameMap;
+refs = mapSharedRefs(skyMap, { propTexture: () => undefined, doorTextures: () => [] });
+assert.deepEqual([...refs.images], [sky]);
+assert.equal(refs.textures.size, 0, "a sky is not a texture set");
+assert.ok(isSharedImageId(sky) && worldOfAssetId(`scifi_sky_${u(1)}`) === "scifi");
+
 // id shapes
 assert.ok(isSharedTextureId(tex(1)) && isSharedTextureId("scifi_shared_0b8c1f6e-1111-4222-8333-444455556666-name"));
 assert.ok(!isSharedTextureId("stone") && !isSharedTextureId("fantasy_shared_"));

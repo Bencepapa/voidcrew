@@ -29,6 +29,18 @@ assert.equal(canReviseImage(pickup), true);
 assert.equal(canReviseImage(decal), true);
 assert.equal(canReviseImage(still), false);
 assert.equal(canReviseImage({ id: "puddle", world: "fantasy", type: "decal" }), false);
+// a published sky can be revised too (a new upload, or the seam fixed); its draft keeps id, uuid and name, and has no maps
+{
+  const sky: SharedImage = { id: `fantasy_sky_${uuid}`, world: "fantasy", type: "sky", name: "Storm", width: 2048, height: 1024, url: "https://x/r1/diffuse.png" };
+  assert.equal(publishedUuid(sky), uuid);
+  assert.equal(canReviseImage(sky), true);
+  const draft = draftFromPublished(sky, { png: new Blob(["s"]) });
+  assert.equal(draft.type, "sky");
+  assert.equal(draft.id, sky.id);
+  assert.equal(draft.name, "Storm");
+  assert.equal(draft.pickup, undefined);
+  assert.equal(draft.decalNormal, undefined);
+}
 
 // a pickup's draft: same id and uuid (so Publish makes the next revision), appearance without URLs, the maps as uploads
 {

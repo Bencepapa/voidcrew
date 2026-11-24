@@ -19,9 +19,10 @@ export function publishedUuid(image: Pick<SharedImage, "id" | "world" | "type">)
 export const sharedDecalNormalUrl = (type: SharedImage["type"], hasNormal: unknown, base: string) =>
   type === "decal" && hasNormal === true ? base + "normal.png" : undefined;
 
-// pickups and decals have maps worth editing; a still is a flat picture and keeps its read-only view
+// pickups and decals have maps worth editing, a sky can be re-uploaded or have its seam fixed; a still is a flat
+// picture and keeps its read-only view
 export const canReviseImage = (image: Pick<SharedImage, "id" | "world" | "type">) =>
-  (image.type === "item" || image.type === "decal") && publishedUuid(image) !== "";
+  (image.type === "item" || image.type === "decal" || image.type === "sky") && publishedUuid(image) !== "";
 
 // the draft of a published picture: its files are the uploads. The published diffuse already has its transparency applied,
 // so the draft keeps the alpha channel as it is; a pickup's maps become uploaded maps (the published files, auto-made or not).
