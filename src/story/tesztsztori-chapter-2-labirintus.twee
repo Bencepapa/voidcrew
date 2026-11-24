@@ -15,6 +15,13 @@ A kapuk nyitva, de a katonák mogorván néznek utánatok. Vargának még sok h�
 @endif
 Előttetek a labirintus bejárata.
 
+:: Pilgrim Thanks [start]
+@npc tesztsztori_zarandok
+@when pilgrim_helped
+@priority 1
+A zarándok mosolyog. "Köszönöm a segítséget! A titkos út a bal oldali fáklya mögött van."
+@end
+
 :: Pilgrim [start]
 @npc tesztsztori_zarandok
 Egy zarándok kuporog a fal mellett. "Eltévedtem. Ha kivezetsz, megmutatom a titkos utat."
@@ -54,5 +61,5 @@ A kijáratnál egy hajó kapitánya vár. "Két utat látok: a kikötőbe vagy l
 
 :: Captain Underworld
 @endchapter
-"Akkor ég veled. Ha visszajössz, megvárlak."
+"Akkor ég veled. Ha visszajössz, megvárlak." (A teszt-történet itt véget ér: nincs több fejezet.)
 @end

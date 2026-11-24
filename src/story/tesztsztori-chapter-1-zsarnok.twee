@@ -87,7 +87,40 @@ Lana a pult mögött törölgeti a poharakat. "Tegnap is behajtották az adót. 
 @if quest("tesztsztori_gyuru") == "none"
 [[Valami baj van?->Lana Ring Offer]]
 @endif
+@if quest("tesztsztori_gyuru") == "ready"
+[[Megtaláltam a gyűrűdet->tesztsztori-npc-lana/Lana Ring Turnin]]
+@endif
+[[Mi a teendőm? (teszt-útmutató)->Lana Guide]]
 [[Mást kérdeznék->tesztsztori-npc-lana/Talk]]
+
+:: Lana Guide
+Teszt-útmutató (ez nem a játék része, a tesztelőnek szól).
+@if quest("tesztsztori_kard") == "none"
+Kard: kérj kardot Borbástól, a kovácstól (4,3).
+@endif
+@if quest("tesztsztori_kard") == "active"
+Kard: hozz három fagyércet a délnyugati pincéből (1,8), (1,9), (2,9), aztán vidd vissza Borbásnak.
+@endif
+@if quest("tesztsztori_kard") == "ready"
+Kard: megvan a három fagyérc, vidd vissza Borbásnak, ő adja át a rúnás kardot.
+@endif
+@if quest("tesztsztori_kard") == "done"
+Kard: kész, a rúnás kard a hátizsákban van.
+@endif
+@if quest("tesztsztori_gyuru") == "none"
+Gyűrű: kérdezd meg tőlem, mi baj van.
+@endif
+@if quest("tesztsztori_gyuru") == "active"
+Gyűrű: keresd a pince déli fülkéjében (5,10), aztán hozd vissza nekem.
+@endif
+@if quest("tesztsztori_gyuru") == "ready"
+Gyűrű: megvan, add át nekem.
+@endif
+@if quest("tesztsztori_gyuru") == "done"
+Gyűrű: kész.
+@endif
+Figyelem: Vargával (kegyelem a térdelőnél, vagy a harcos legyőzése) lezárul az 1. fejezet. Amit addig nem fejeztél be, a kard-küldetés elévül (a gyűrű megmarad).
+[[Vissza->Lana Chapter1]]
 
 :: Lana Rumor
 @set heard_rumor = true

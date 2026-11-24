@@ -261,6 +261,8 @@ export const debugHu = {
   "debug.storyQuestNone": "nincs",
   "debug.storyJump": "Ugrás fejezetre",
   "debug.storyJumpGo": "Ugrás",
+  "debug.storyRestart": "Történet újraindítása",
+  "debug.storyRestartTip": "A történet állapota visszaáll az elejére, a teszt-sztori tárgyai kikerülnek a hátizsákból, majd az oldal újratölt.",
   "debug.storyLog": "Utolsó hatások",
   "debug.storyLogEmpty": "(még semmi)",
   "debug.swTitle": "Megosztott fájlok gyorsítótára",

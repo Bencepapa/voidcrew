@@ -261,6 +261,8 @@ export const debugEn = {
   "debug.storyQuestNone": "none",
   "debug.storyJump": "Jump to chapter",
   "debug.storyJumpGo": "Jump",
+  "debug.storyRestart": "Restart the story",
+  "debug.storyRestartTip": "Story state back to the start, the test story's items out of the backpack, then the page reloads.",
   "debug.storyLog": "Last effects",
   "debug.storyLogEmpty": "(nothing yet)",
   "debug.swTitle": "Shared file cache",

@@ -1,8 +1,23 @@
 import { useState } from "react";
 import type { QuestState } from "../game/story/state";
 import type { Effect } from "../game/story/storyEngine";
-import { storyDebug, storyDebugSetQuest, storyDebugSetVar, storyJumpToChapter, useStoryRevision } from "../game/story/storyRuntime";
+import { removeItem } from "../game/inventory";
+import { changeInventory, haulOf } from "../game/inventoryStore";
+import { storyDebug, storyDebugSetQuest, storyDebugSetVar, storyJumpToChapter, storyReset, storySave, useStoryRevision } from "../game/story/storyRuntime";
 import { t } from "../i18n";
+
+// Starts the story over: the story state is fresh, the test story's items (the `tesztsztori*` ones) leave the
+// backpack, and the page reloads so the map's actors and pickups are back where they started.
+function restartStory() {
+  changeInventory((inv) => {
+    let next = inv;
+    for (const item of Object.keys(haulOf(inv))) if (item.startsWith("tesztsztori")) next = removeItem(next, item, 9999).inv;
+    return next;
+  });
+  storyReset();
+  storySave();
+  window.setTimeout(() => window.location.reload(), 150);
+}
 
 const QUEST_STATES: QuestState[] = ["none", "active", "ready", "done", "failed", "expired"];
 const FIELD = "bg-neutral-800 border border-neutral-700 text-[11px] px-1 py-0.5 rounded-sm";
@@ -65,6 +80,8 @@ export function StoryDebugSection() {
       <button type="button" disabled={!jump} onClick={() => storyJumpToChapter(jump)}
         className="text-[11px] border border-neutral-600 rounded-sm px-2 py-0.5 hover:bg-neutral-800">{t("debug.storyJumpGo")}</button>
     </div>
+    <button type="button" onClick={restartStory} title={t("debug.storyRestartTip")}
+      className="self-start text-[11px] border border-amber-700 text-amber-200 rounded-sm px-2 py-0.5 hover:bg-neutral-800">{t("debug.storyRestart")}</button>
     <VarGroup title={t("debug.storyCampaignVars")} scope="campaign" vars={state.campaign}/>
     <VarGroup title={t("debug.storyChapterVars")} scope="chapter" vars={state.chapterVars}/>
     {Object.entries(state.globals).map(([file, vars]) =>

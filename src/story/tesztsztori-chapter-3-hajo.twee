@@ -8,3 +8,18 @@ tesztsztori, 3. fejezet: A hajó (váz)
 :: Intro [on]
 @on chapter_start
 A fedélzet imbolyog, a kikötő eltűnik a ködben. Új fejezet kezdődik.
+
+:: Captain Deck [start]
+@npc tesztsztori_kapitany
+A kapitány a kormánynál áll. "Kifutottunk. A hírneved már előttünk jár."
+@if campaign.tyrant_fate == "killed"
+"Hallottam, hogy Vargát le is győztétek."
+@endif
+@if campaign.tyrant_fate == "spared"
+"Hallottam, hogy kegyelmet adtál Vargának. Ki tudja, jól tetted-e."
+@endif
+@if campaign.labyrinth_route == "secret"
+"A titkos úton jöttetek ki a labirintusból, ritka eset."
+@endif
+(A teszt-történet 3. fejezete csak váz: a kapitány a fedélzeten mondja el, mit őriz meg a történet a korábbi döntésekből.)
+@end

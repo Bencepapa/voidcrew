@@ -2,7 +2,7 @@
   "name": "tesztsztori-labirintus",
   "showTitle": false,
   "deck": 1,
-  "textures": { "wall": "fantasywall1", "floor": "fantasyfloor1", "door": "fantasygate1", "doorFrame": "fantasydoorframe1" },
+  "textures": { "wall": "fantasywall1", "floor": "fantasyfloor1", "ceiling": "fantasywall1", "door": "fantasygate1", "doorFrame": "fantasydoorframe1" },
   "render": { "roughness": 1, "metalness": 0, "normalStrength": 0.2, "reliefMode": "smooth", "headlamp": true, "bobEnabled": false },
   "start": { "x": 1, "y": 1, "facing": "E" },
   "layout": [
@@ -14,7 +14,7 @@
     "W..........W",
     "WWW.WWW.WWWW",
     "W.......WWWW",
-    "W.WWWWWWWWWW",
+    "W.WWWWWWW.WW",
     "W..........W",
     "WWWWWWWWWWWW"
   ],
@@ -31,6 +31,6 @@
   ],
   "actors": [
     { "actor": "tesztsztori_zarandok", "x": 10, "y": 1, "facing": "W", "dialogue": { "library": "tesztsztori", "entry": "Start Csend" } },
-    { "actor": "tesztsztori_kapitany", "x": 8, "y": 9, "facing": "E", "dialogue": { "library": "tesztsztori", "entry": "Start Csend" } }
+    { "actor": "tesztsztori_kapitany", "x": 9, "y": 8, "facing": "S", "dialogue": { "library": "tesztsztori", "entry": "Start Csend" } }
   ]
 }
