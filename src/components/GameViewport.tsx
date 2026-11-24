@@ -1949,8 +1949,10 @@ export function GameViewport({
     scene.add(shaftLight);
 
     const bust = textureVersion ? `?v=${textureVersion}` : "";
-    // (a draft texture's or an Auto map's blob: URL can't take a query string; those change their URL instead)
-    const busted = (url: string) => (/^(blob|data):/.test(url) ? url : url + bust);
+    // (a draft texture's or an Auto map's blob: URL can't take a query string; those change their URL instead.
+    // A remote (shared store) URL is a revision folder `.../rN/...` that never changes, so it never gets one either:
+    // a `?v=` would only force a re-download of every shared file on each bump, see concept/supabase-egress-audit.md)
+    const busted = (url: string) => (/^(blob|data):/.test(url) || (/^https?:\/\//i.test(url) && !url.startsWith(window.location.origin)) ? url : url + bust);
     if (cache.version !== bust) {
       clearSceneCache(cache);
       cache.version = bust;
