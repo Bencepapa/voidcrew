@@ -33,12 +33,18 @@ import { gateLink, loadingImageFor, resolveArrival, stairsLink, type LinkKind, t
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 import { enemiesOff, storedPickupMode } from "./playPrefs";
+import { playActive, trapsActive, usePlayActive } from "./playMode";
+import { applyWorldDrop, planWorldDrop, type DropTarget } from "./worldDrop";
+import { setWorldDropHandler } from "./worldDropHandler";
 import { holdEnemies, isEnemy } from "./enemiesOff";
 import { clickPickup, inPickupReach, resolvePickupMode, stepCollects } from "./pickupMode";
 import { reviveCrew, wipeOutcome } from "./editorWipe";
 import { pickVictim } from "./operables";
 import { lockedMessage } from "./keys";
 import { useOperables } from "./useOperables";
+
+// no cell burns (the fire is not armed, see trapsActive)
+const NO_FIRE: ReadonlySet<string> = new Set();
 
 // What a log line is, which colours it (see LogPanel): ordinary news (the
 // default), the map editor's own lines, errors (an edit refused, a save that
@@ -544,6 +550,14 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   const replaceMap = useCallback((next: GameMap) => {
     if (next.id === mapRef.current.id) setMap(next);
   }, []);
+  // Play / wander mode (see playMode.ts): a line when it changes
+  const playing = usePlayActive();
+  const playingRef = useRef(playing);
+  useEffect(() => {
+    if (playingRef.current === playing) return;
+    playingRef.current = playing;
+    pushLog(t(playing ? "play.logOn" : "play.logOff"), playing ? "warn" : undefined);
+  }, [playing, pushLog]);
   useEffect(() => {
     const timer = setInterval(() => {
       const m = mapRef.current;
@@ -561,8 +575,9 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
         spotted,
       );
       // testing: "Enemies inactive" - the hostile ones stay as they were and do no harm (the friendly
-      // ones, the crew's own turrets and the story go on)
-      const inactive = enemiesOff();
+      // ones, the crew's own turrets and the story go on). They are inactive too while the world is
+      // only wandered (the Play button is not pressed, see playMode.ts)
+      const inactive = !playActive() || enemiesOff();
       const stepped = inactive ? holdEnemies(actorsRef.current, stepResult.actors) : stepResult.actors;
       const attacks = inactive ? [] : stepResult.attacks;
       const alarms = inactive ? [] : stepResult.alarms;
@@ -612,8 +627,9 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
         }
       }
       // fire (see fire.ts): every so often it burns a crewmate standing in
-      // it, and anything else in it
-      const burning = fireCells(m);
+      // it, and anything else in it - a hazard like a trap, so it is on only while playing (the
+      // fire itself still burns and lights the deck; the ship's simulation goes on)
+      const burning = trapsActive() ? fireCells(m) : NO_FIRE;
       burnClockRef.current = burning.size ? burnClockRef.current + ACTOR_TICK_MS : 0;
       const burnNow = burnClockRef.current >= FIRE_BURN_MS;
       if (burnNow) {
@@ -1495,6 +1511,60 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     },
     [map, fullMap, pos, elevation, looted, lootKey, pushLog, addToHaul, raiseFlag, fireEvent],
   );
+  // A loose item dragged from the view and let go over a hand box (taken in that hand), a crewmate's
+  // card (a consumable is used on them, else it goes into the backpack), or the inventory (button,
+  // window, a cell) - see worldDrop.ts. As far as a click can reach; a full backpack leaves it lying.
+  const dropWorldItem = useCallback(
+    (index: number, target: DropTarget) => {
+      const it = map.items?.[index];
+      if (!it || variationRef.current === null || (isSharedPickupId(it.item) && !Object.hasOwn(ITEM_TYPES, it.item))) return;
+      const use = ITEM_TYPES[it.item]?.use;
+      const plan = planWorldDrop({
+        target,
+        taken: looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))),
+        busy: busy(),
+        reach: inPickupReach(pos, elevation, it.cell, floorHeight(map, it.cell.x, it.cell.y)),
+        usable: !!use,
+      });
+      if (plan === "cancel") return;
+      if (plan === "far") {
+        pushLog(t("pickup.tooFar"), "warn");
+        return;
+      }
+      const stack = { item: it.item, qty: it.count ?? 1 };
+      const result = applyWorldDrop({ plan, target, inv: getInventory(), crew: crewRef.current, stack, use, rules: itemRules, roll: rollAmount });
+      if (!result.ok) {
+        pushLog(t("pickup.dropFull"), "warn");
+        return;
+      }
+      changeInventory(() => result.inv);
+      const what = it.name ? `the ${it.name}` : stacksText([{ item: it.item, count: stack.qty }]);
+      const who = crewRef.current.find((c) => c.id === (target.kind === "pack" ? "" : target.crew))?.name ?? "";
+      if (result.how === "hand") pushLog(t("pickup.dropHand", { who, item: what }), "success");
+      else if (result.how === "used" && result.crew) {
+        crewRef.current = result.crew;
+        setCrew(result.crew);
+        const helped = result.crew.find((c) => c.id === result.target);
+        const gains = [(result.hp ?? 0) > 0 ? `+${result.hp} HP` : "", (result.en ?? 0) > 0 ? `+${result.en} EN` : ""].filter(Boolean).join(", ");
+        pushLog(t("pickup.dropUse", { who: helped?.name ?? who, item: (ITEM_TYPES[it.item]?.name ?? it.item).toLowerCase(), gains }), "heal");
+      } else if (result.notUsed) {
+        pushLog(t(result.notUsed === "down" ? "pickup.dropDown" : "pickup.dropNoNeed", { who, item: what }), "warn");
+      } else {
+        pushLog(it.name ? `You pick up the ${it.name}.` : `You pick up ${stacksText([{ item: it.item, count: stack.qty }])}.`, "success");
+      }
+      storyEvent("item_picked", it.item);
+      setLooted((prev) => new Set([...prev, lootKey("item", (fullMap.items ?? []).indexOf(it))]));
+      if (it.sets) raiseFlag(it.sets, true);
+      fireEvent({ on: "pickup", item: it.item });
+    },
+    [map, fullMap, pos, elevation, looted, lootKey, pushLog, raiseFlag, fireEvent],
+  );
+  const dropWorldItemRef = useRef(dropWorldItem);
+  dropWorldItemRef.current = dropWorldItem;
+  useEffect(() => {
+    setWorldDropHandler((index, target) => dropWorldItemRef.current(index, target));
+    return () => setWorldDropHandler(null);
+  }, []);
 
   // Use: whatever is in front of the party - a lift's button, or the
   // containers within reach: everything in them spills out and goes into

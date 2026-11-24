@@ -15,12 +15,14 @@ export function applyUse(
   userId: string,
   use: ItemUse,
   roll: (range: [number, number]) => number,
+  // an item given to one crewmate (dropped on their avatar): it is theirs to use, whoever it says
+  onto?: string,
 ): UseOutcome {
-  const user = crew.find((c) => c.id === userId);
+  const user = crew.find((c) => c.id === (onto ?? userId));
   if (!user || user.hp <= 0) return { ok: false, reason: "down" };
   const lacks = (c: Crewmate) => (use.hp ? c.maxHp - c.hp : 0) + (use.en ? c.maxEn - c.en : 0);
   let target: Crewmate | undefined;
-  if (use.target === "self") target = lacks(user) > 0 ? user : undefined;
+  if (use.target === "self" || onto !== undefined) target = lacks(user) > 0 ? user : undefined;
   else
     target = crew
       .filter((c) => c.hp > 0 && lacks(c) > 0)

@@ -3,6 +3,8 @@
 // under it (arrows) - and beside them a few buttons whose labels follow the
 // situation (a door ahead: Open; a crate: Search...). Grid movement only.
 
+import { useDropOverPack } from "./slotDrag";
+
 interface MoveControlsProps {
   onTurnLeft: () => void;
   onForward: () => void;
@@ -24,6 +26,7 @@ const SIDE =
   "px-2 h-8 min-w-[5.5rem] flex items-center justify-center border border-neutral-600 bg-neutral-900/80 text-neutral-200 text-[11px] rounded-sm hover:bg-neutral-700 active:bg-neutral-600 select-none";
 
 export function MoveControls(p: MoveControlsProps) {
+  const overPack = useDropOverPack();
   const arrow = (label: string, title: string, onClick: () => void) => (
     <button type="button" className={ARROW} title={title} aria-label={title} onClick={onClick}>
       {label}
@@ -43,7 +46,8 @@ export function MoveControls(p: MoveControlsProps) {
         <button type="button" className={SIDE} onClick={p.onUse}>
           {p.useLabel}
         </button>
-        <button type="button" className={SIDE} onClick={p.onInventory}>
+        {/* (a loose item dragged from the view can be let go on it: into the backpack) */}
+        <button type="button" data-drop-pack className={`${SIDE} ${overPack ? "outline outline-2 outline-emerald-400" : ""}`} onClick={p.onInventory}>
           Inventory
         </button>
         {p.onJumpDown && (

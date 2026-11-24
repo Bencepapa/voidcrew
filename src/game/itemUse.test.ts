@@ -28,4 +28,11 @@ r = applyUse([mate("a", 20, 2)], "a", ITEM_TYPES.potion_blue.use!, ([, hi]) => h
 assert.ok(r.ok && r.hp === 0 && r.en === 8 && r.crew[0].en === 10);
 assert.deepEqual(applyUse([mate("a", 5, 10)], "a", ITEM_TYPES.potion_blue.use!, low), { ok: false, reason: "nothing" });
 
+// given to one crewmate (dropped on their avatar): theirs to use, even a medkit meant for the most hurt
+r = applyUse(crew, "a", ITEM_TYPES.medkit.use!, low, "c");
+assert.ok(r.ok && r.target === "c" && r.crew[2].hp > 12);
+assert.deepEqual(applyUse(crew, "a", ITEM_TYPES.medkit.use!, low, "a"), { ok: false, reason: "nothing" });
+assert.deepEqual(applyUse([mate("a", 0), mate("b", 5)], "b", ITEM_TYPES.medkit.use!, low, "a"), { ok: false, reason: "down" });
+assert.deepEqual(applyUse(crew, "a", ITEM_TYPES.medkit.use!, low, "nobody"), { ok: false, reason: "down" });
+
 console.log("itemUse tests passed");

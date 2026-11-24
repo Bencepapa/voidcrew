@@ -86,6 +86,7 @@ import { doorLeafMotion, type DoorType } from "../game/doorTypes";
 import { onSharedDecalsChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
+import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
 
 import type { ReliefMode } from "../game/renderLook";
 
@@ -6152,7 +6153,8 @@ export function GameViewport({
           flyers.push({ obj: item.obj, from: item.obj.position.clone(), rest: item.obj.position.clone(), start: now - SPILL_REST_MS });
         }
         if (item.taken) continue;
-        item.obj.visible = sight.cells.has(item.cell);
+        // (not the one being dragged to the screen's hands and backpack - see slotDrag's beginWorldDrag)
+        item.obj.visible = sight.cells.has(item.cell) && draggedWorldItem() !== index;
         item.obj.rotation.y = Math.atan2(camX - item.obj.position.x, camZ - item.obj.position.z);
       }
       const feet = new THREE.Vector3(camX, feetY + ITEM_LIFT, camZ);
@@ -7032,6 +7034,22 @@ export function GameViewport({
       // (the top-down camera floats high above the map: its reach is its own)
       return p && p.distanceTo(editRaycaster.ray.origin) <= (topdown.on ? TOPDOWN_REACH : EDIT_REACH) ? p : null;
     }
+    // the loose item (not taken yet) the nearest thing under a point of the view is, with what it is
+    function pressedItem(ndc: THREE.Vector2): { index: number; slot: { item: string; qty: number } } | null {
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObjects(group.children, true);
+      if (!hits.length) return null;
+      // (a decal on a wall counts if it is as near as the nearest hit: that is its click)
+      if (hits.some((h) => h.object.userData.action && h.distance <= hits[0].distance + 0.02)) return null;
+      for (let o: THREE.Object3D | null = hits[0].object; o; o = o.parent) {
+        if (typeof o.userData.itemIndex !== "number") continue;
+        const index = o.userData.itemIndex as number;
+        const spec = latestMapRef.current.items?.[index];
+        if (!spec || looseItems.get(index)?.taken || lootRef.current.takenItems?.has(index)) return null;
+        return { index, slot: { item: spec.item, qty: spec.count ?? 1 } };
+      }
+      return null;
+    }
     const onPress = (e: PointerEvent) => {
       // The canvas handles editing in top-down view. Keep the outer
       // first-person pointer controls from starting a look drag.
@@ -7039,6 +7057,16 @@ export function GameViewport({
       press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), ndc: viewNdc(e.clientX, e.clientY) };
       dragItem = null;
       roofStroke = null;
+      // A loose item pressed while playing: dragged on, it goes to the screen's hand boxes, cards and
+      // backpack (slotDrag's beginWorldDrag); released without moving, it is the click pickup below.
+      // (The press is the item's: the view's own drag - peeking round - mustn't start on it.)
+      if (!editModeRef.current && !interactionCallbacks.current.interactionOpen && (e.pointerType !== "mouse" || e.button === 0)) {
+        const grabbed = pressedItem(press.ndc);
+        if (grabbed) {
+          e.stopPropagation();
+          beginWorldDrag(e, grabbed.index, grabbed.slot);
+        }
+      }
       // the Roof tool: a press starts a stroke (either button); the cell under it is the first
       if (editModeRef.current && STROKE_TOOLS.has(editToolRef.current) && (e.button === 0 || e.button === 2) && !toolLocked()) {
         const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
@@ -7236,6 +7264,8 @@ export function GameViewport({
       const p = press;
       if (p && p.id !== e.pointerId) return;
       press = null;
+      // a loose item dragged to the screen and let go (slotDrag's beginWorldDrag): not a click
+      if (justDragged()) return;
       // the Roof tool's strokes did it all (the minimap's clicks reach the tool on their own)
       if (roofStroke?.pointer === e.pointerId) {
         roofStroke = null;
