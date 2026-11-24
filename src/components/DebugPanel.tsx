@@ -13,6 +13,7 @@ import { GRAPHICS_PRESETS, VIEW_DISTANCE_HIGH, VIEW_DISTANCE_MAX, effectiveViewD
 import type { WorldId } from "../game/worlds";
 import { LangSwitch } from "../i18n/LangSwitch";
 import { storyEnabled } from "../game/story/storyRuntime";
+import { PlayToggle } from "./PlayToggle";
 import { StoryDebugSection } from "./StoryDebugSection";
 import { SharedCacheDebugSection } from "./SharedCacheDebugSection";
 import { parsePickupMode, worldDefaultPickup } from "../game/pickupMode";
@@ -250,7 +251,10 @@ export function DebugPanel({
     <div
       className={`w-full flex flex-col gap-1 border border-neutral-700 rounded-sm p-2 text-neutral-200 ${compact ? "bg-neutral-950/95" : "h-full bg-neutral-900/80 overflow-y-auto"}`}
     >
-      <div className="text-[11px] font-semibold text-neutral-200 uppercase tracking-wide">{t("debug.debug")}</div>
+      <div className="relative flex items-center justify-between gap-2 text-[11px] font-semibold text-neutral-200 uppercase tracking-wide">
+        {t("debug.debug")}
+        {!inEditor && <PlayToggle />}
+      </div>
       <div className="flex items-center justify-between gap-2 text-[11px] text-neutral-300">
         <span>{t("common.language")}</span>
         <LangSwitch />

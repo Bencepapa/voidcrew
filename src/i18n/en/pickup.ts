@@ -11,4 +11,9 @@ export const pickupEn = {
   "pickup.mapHint": "How loose items are picked up on this map. Unset: the player's choice, else the world's (the ship loop: auto, the open world: click).",
   "debug.enemiesInactive": "Enemies inactive (they stand still and do no harm)",
   "editor.crewRevived": "Editor: the crew was revived",
+  "play.start": "Play: turn the enemies and the traps on",
+  "play.stop": "Back to wander mode: enemies and traps off",
+  "play.wander": "Wander mode: enemies and traps off",
+  "play.logOn": "Play mode: the enemies and the traps are active.",
+  "play.logOff": "Wander mode: the enemies stand still and the traps are off.",
 } as const satisfies Record<string, string>;

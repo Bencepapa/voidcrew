@@ -11,4 +11,9 @@ export const pickupHu = {
   "pickup.mapHint": "Hogyan veszik fel a földön heverő tárgyakat ezen a pályán. Üresen: a játékos választása, különben a világé (hajós kör: auto, nyílt világ: kattintás).",
   "debug.enemiesInactive": "Ellenfelek inaktívak (állnak, és nem ártanak)",
   "editor.crewRevived": "Szerkesztő: a csapat újraélesztve",
+  "play.start": "Play: az ellenfelek és a csapdák bekapcsolása",
+  "play.stop": "Vissza a barangoló módba: ellenfelek és csapdák kikapcsolva",
+  "play.wander": "Barangoló mód: ellenfelek és csapdák kikapcsolva",
+  "play.logOn": "Játék mód: az ellenfelek és a csapdák élesek.",
+  "play.logOff": "Barangoló mód: az ellenfelek állnak, a csapdák ki vannak kapcsolva.",
 } as const satisfies Record<string, string>;

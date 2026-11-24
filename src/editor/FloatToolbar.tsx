@@ -5,6 +5,7 @@ import { TOOL_HELP } from "./EditorBar";
 import type { EditTool } from "./mapEdits";
 import type { ViewportSettings } from "../components/GameViewport";
 import { neutralStyle } from "./inspector/parts";
+import { PlayToggle } from "../components/PlayToggle";
 
 // The floating tool strip and File/Map menu over the 3D view while editing
 // (see concept/editor-ui/topbar-removal-plan.md, steps 1-2): Select, Dig/Fill,
@@ -83,6 +84,7 @@ export function FloatToolbar(p: FloatToolbarProps) {
       </select>
       <button type="button" className={`${BTN} ${idle}`} title={t("editorShell.shortcutsOpen")} aria-label={t("editorShell.shortcutsOpen")} onClick={(e) => { p.onHelp(); e.currentTarget.blur(); }}><HelpCircle size={16} aria-hidden="true" /></button>
       <button type="button" className={`${BTN} ${p.debugOpen ? active : idle}`} title={t("editorShell.debug")} aria-label={t("editorShell.debug")} aria-expanded={p.debugOpen} onClick={(e) => { p.onDebug(); e.currentTarget.blur(); }}><Bug size={16} aria-hidden="true" /></button>
+      <PlayToggle />
     </div>
     <div
       style={neutralStyle}

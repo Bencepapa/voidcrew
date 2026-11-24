@@ -33,9 +33,13 @@ import { gateLink, loadingImageFor, resolveArrival, stairsLink, type LinkKind, t
 import type { ShotResult } from "./combat";
 import { cellKey, visibleCells } from "./visibility";
 import { enemiesOff, storedPickupMode } from "./playPrefs";
+import { playActive, trapsActive, usePlayActive } from "./playMode";
 import { holdEnemies, isEnemy } from "./enemiesOff";
 import { clickPickup, inPickupReach, resolvePickupMode, stepCollects } from "./pickupMode";
 import { reviveCrew, wipeOutcome } from "./editorWipe";
+
+// no cell burns (the fire is not armed, see trapsActive)
+const NO_FIRE: ReadonlySet<string> = new Set();
 
 // What a log line is, which colours it (see LogPanel): ordinary news (the
 // default), the map editor's own lines, errors (an edit refused, a save that
@@ -541,6 +545,14 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   const replaceMap = useCallback((next: GameMap) => {
     if (next.id === mapRef.current.id) setMap(next);
   }, []);
+  // Play / wander mode (see playMode.ts): a line when it changes
+  const playing = usePlayActive();
+  const playingRef = useRef(playing);
+  useEffect(() => {
+    if (playingRef.current === playing) return;
+    playingRef.current = playing;
+    pushLog(t(playing ? "play.logOn" : "play.logOff"), playing ? "warn" : undefined);
+  }, [playing, pushLog]);
   useEffect(() => {
     const timer = setInterval(() => {
       const m = mapRef.current;
@@ -558,8 +570,9 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
         spotted,
       );
       // testing: "Enemies inactive" - the hostile ones stay as they were and do no harm (the friendly
-      // ones, the crew's own turrets and the story go on)
-      const inactive = enemiesOff();
+      // ones, the crew's own turrets and the story go on). They are inactive too while the world is
+      // only wandered (the Play button is not pressed, see playMode.ts)
+      const inactive = !playActive() || enemiesOff();
       const stepped = inactive ? holdEnemies(actorsRef.current, stepResult.actors) : stepResult.actors;
       const attacks = inactive ? [] : stepResult.attacks;
       const alarms = inactive ? [] : stepResult.alarms;
@@ -609,8 +622,9 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
         }
       }
       // fire (see fire.ts): every so often it burns a crewmate standing in
-      // it, and anything else in it
-      const burning = fireCells(m);
+      // it, and anything else in it - a hazard like a trap, so it is on only while playing (the
+      // fire itself still burns and lights the deck; the ship's simulation goes on)
+      const burning = trapsActive() ? fireCells(m) : NO_FIRE;
       burnClockRef.current = burning.size ? burnClockRef.current + ACTOR_TICK_MS : 0;
       const burnNow = burnClockRef.current >= FIRE_BURN_MS;
       if (burnNow) {
