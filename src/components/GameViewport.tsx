@@ -4464,7 +4464,8 @@ export function GameViewport({
       obj.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
       obj.rotation.y = -yaw;
       // (bigger or smaller: a pillar only wider - it still fills its room)
-      const scale = spec.scale ?? 1;
+      // (a fence or block piece is the size its settings say: its bodies don't scale)
+      const scale = type.kind === "fence" ? 1 : spec.scale ?? 1;
       obj.scale.set(scale, type.kind === "pillar" ? 1 : scale, scale);
     }
     // the props as last applied (a build finishing late places its prop where
@@ -7436,6 +7437,8 @@ export function GameViewport({
             drawnChain(h.object) &&
             // (the loose items are see-through sprites, but the Item tool can point at them)
             (!seeThrough(h.object) || ((editToolRef.current === "item" || selecting) && isItemObject(h.object))) &&
+            // (a fence's floor mark: the Select tool and the fence tools point at it, the others see the floor under it)
+            (h.object.parent?.name !== "fenceMarker" || selecting || editToolRef.current.startsWith("fence")) &&
             // (the thing being dragged is looked through: what's behind it is
             // where it goes)
             !(dragItem?.moved && ownedByDrag(h.object))
