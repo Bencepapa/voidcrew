@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 1,
     date: "2026-11-23",
     items: [
+      { title: "Play gomb és tárgyhúzás", text: "A szerkesztő alapból békés módban indul (ellenfelek és csapdák kikapcsolva), a Play gomb élesíti őket; a világban fekvő tárgyat a hátizsákra, kézre vagy karakterre húzva is felvehetsz." },
       { title: "Felvétel kattintással és tesztelési segédletek", text: "A tárgyak felvétele kattintással is működik (a fantasy világban alapból így), az ellenfelek kikapcsolhatók a Debug panelben, és szerkesztés közben a csapat halála nem dob ki a pályáról." },
       { title: "NPC méretigazítás", text: "Elérhető az Asset managerben (NPC-k): csúszkával állítható, a goblinok kicsit kisebbek lettek." },
       { title: "Ajtónkénti textúra", text: "Az ajtó lapja és kerete ajtónként is állítható az Inspector Kinézet szakaszában." },

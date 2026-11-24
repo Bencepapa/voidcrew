@@ -8,8 +8,9 @@
 // Which mode is on: the map's own `pickup` (MapFile.pickup), else the choice stored in this browser
 // (the Debug panel), else the world's default - the ship loop collects, the open world does not.
 //
-// Not done yet (the next step): dragging an item from the 3D view onto the inventory, a crewmate's
-// card or a hand box (the drag code in components/slotDrag.ts only knows slots, not the world view).
+// Besides a click, a loose item can be dragged from the 3D view onto a hand box, a crewmate's card or
+// the inventory (button, window): see worldDrop.ts (the rules) and components/slotDrag.ts (the drag).
+// It works in both modes and has the same reach as a click.
 
 import type { WorldId } from "./worlds";
 
