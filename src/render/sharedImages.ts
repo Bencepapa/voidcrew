@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { WorldId } from "../game/worlds";
 import { bundledImages } from "../game/sharedBuiltins";
+import { bundledImageOf } from "../game/bundledImages";
 import { ITEM_TYPES, isSharedPickupId, type PickupAppearance } from "../game/items";
 import { pickupValue } from "../game/pickupValue";
 import { textureFolder, type TextureSetFiles } from "./textureSets";
@@ -33,11 +34,13 @@ const worlds = new Map<WorldId, SharedImage[]>();
 const listeners = new Set<() => void>();
 const decalListeners = new Set<(ids: ReadonlySet<string>) => void>();
 const pickupListeners = new Set<(ids: ReadonlySet<string>) => void>();
-const builtins: SharedImage[] = Object.entries(bundledImages).map(([id, { hasNormal, ...entry }]) => ({
-  ...entry, id, url: `${import.meta.env.BASE_URL}shared-images/${id}.png`,
-  // (a decal bundled with its own normal map: public/shared-images/<id>.normal.png)
-  ...(hasNormal ? { normalUrl: `${import.meta.env.BASE_URL}shared-images/${id}.normal.png` } : {}),
-}));
+const pickupItemType = (image: SharedImage & { pickup: PickupAppearance }) =>
+  ({ name: image.name, category: image.pickup.category, value: pickupValue(image.pickup.value, image.pickup.category) });
+
+// (a decal bundled with its own normal map: public/shared-images/<id>.normal.png; a pickup's normal and depth maps likewise)
+const builtins: SharedImage[] = Object.entries(bundledImages).map(([id, entry]) => bundledImageOf(id, entry, import.meta.env.BASE_URL));
+// a bundled pickup is an item type from the start: nothing has to be fetched to know it
+for (const image of builtins) if (image.type === "item" && image.pickup && isSharedPickupId(image.id)) ITEM_TYPES[image.id] = pickupItemType(image as SharedImage & { pickup: PickupAppearance });
 let snapshot: readonly SharedImage[] = builtins;
 
 export const getSharedImages = () => snapshot;
@@ -90,7 +93,7 @@ export function setSharedImages(world: WorldId, images: SharedImage[]) {
   }
   for (const [id, image] of newPickups) {
     if (!image.pickup) continue;
-    ITEM_TYPES[id] = { name: image.name, category: image.pickup.category, value: pickupValue(image.pickup.value, image.pickup.category) };
+    ITEM_TYPES[id] = pickupItemType(image as SharedImage & { pickup: PickupAppearance });
     if (JSON.stringify(oldPickups.get(id)) !== JSON.stringify(image)) updatedPickups.add(id);
   }
   for (const listener of listeners) listener();
