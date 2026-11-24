@@ -4,7 +4,16 @@ import { uploadCacheControl } from "./sharedUploadPolicy";
 
 const project = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, "");
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-export const sharedConfigured = Boolean(project && key);
+// `?shared=none` in the URL (this page load) or `voidcrew-shared` = "none" in localStorage: the store is treated as not
+// configured at all, so nothing on the page calls Supabase - for tests and sessions that don't touch shared content
+export const sharedOffline = ((): boolean => {
+  try {
+    return new URLSearchParams(window.location.search).get("shared")?.toLowerCase() === "none" || window.localStorage.getItem("voidcrew-shared") === "none";
+  } catch {
+    return false;
+  }
+})();
+export const sharedConfigured = Boolean(project && key) && !sharedOffline;
 // the store's base URL (for public object URLs and per-store cache keys)
 export const sharedProject = project;
 
