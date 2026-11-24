@@ -20,7 +20,7 @@ import { effectiveViewDistance, loadGraphics } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, isSharedPickupId, itemSpot } from "../game/items";
-import { actorInteraction, interactionAt, sameInteractionCell, type Interaction, type InteractionTarget, type WallInteractionTarget } from "../game/interactions";
+import { actorInteraction, interactionAt, operableInteraction, sameInteractionCell, touchAt, type ClickEvent, type Interaction, type InteractionTarget, type WallInteractionTarget } from "../game/interactions";
 import { wallFaceSpans, type WallFacePart } from "../game/mapGeometry";
 import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
@@ -50,6 +50,9 @@ import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type 
 import { fireLightColor, generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
+import { buildOperableModel, setOperablePose } from "../render/operableModel";
+import { operableView } from "../game/operableStore";
+import { hasClickables, sourceKeys } from "../game/operables";
 import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, actorHeight, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
@@ -1164,7 +1167,7 @@ interface GameViewportProps {
   // an interactive decal (DecalSpec.action) was clicked or tapped within
   // reach
   onTouch?: (action: string) => void;
-  onInteraction?: (interaction: Interaction) => boolean;
+  onInteraction?: (interaction: ClickEvent) => boolean;
   onEditInteraction?: (target: InteractionTarget | null, remove: boolean) => void;
   interactionUseRef?: MutableRefObject<(() => boolean) | null>;
   interactionOpen?: boolean;
@@ -2444,7 +2447,7 @@ export function GameViewport({
             ? [type.door, type.inside, `${type.views}_side`, `${type.views}_top`]
             : type.kind === "pillar"
               ? [type.texture ?? primarySet]
-              : type.kind === "chamfer" || type.kind === "roof" || type.kind === "fence"
+              : type.kind === "chamfer" || type.kind === "roof" || type.kind === "fence" || type.kind === "operable"
                 ? []
                 : [type.texture];
     // door panel kits by door kind, created on demand
@@ -4074,6 +4077,15 @@ export function GameViewport({
       };
       const relief = propReliefAmount(propReliefDepth, type, hybrid);
       const template = new THREE.Group();
+      // a lever, button, plate or trap: plain boxes (see render/operableModel.ts)
+      if (type.kind === "operable") {
+        const built = buildOperableModel(type.model, type.size, type.elevation ?? 0, wallHeight, (mat) => {
+          useLightGrid(mat, lightGrid);
+          ownMaterials.push(mat);
+        });
+        geometries.push(...built.geometries);
+        return built.group;
+      }
       const face = (
         geo: THREE.BufferGeometry,
         kit: WallKit,
@@ -4514,6 +4526,7 @@ export function GameViewport({
         if (PROP_TYPES[now.prop].kind === "billboard") billboardProps.push(prop);
         propObjects.set(index, prop);
         group.add(prop);
+        if (PROP_TYPES[now.prop].kind === "operable") syncOperables(false);
         // (a fence's floor mark: shown while editing)
         const marker = prop.getObjectByName("fenceMarker");
         if (marker) fenceMarkers.set(index, { marker, owner: prop });
@@ -4528,6 +4541,17 @@ export function GameViewport({
       for (let index = 0; index < propSpecs.length; index++) buildProp(m, index);
     }
     buildProps(map);
+    // The operable props' poses follow the game's state (see operableStore.ts): a lever down, a button sunk, a plate pressed
+    function syncOperables(animate: boolean) {
+      const view = operableView.get();
+      const keys = sourceKeys(propsMap).props;
+      for (const [index, obj] of propObjects) {
+        if (PROP_TYPES[propSpecs[index]?.prop]?.kind !== "operable") continue;
+        const key = keys.get(index);
+        setOperablePose(obj, !!key && view.mapId === propsMap.id && !!view.on[key], animate);
+      }
+    }
+    const offOperables = operableView.subscribe(() => syncOperables(true));
     // the props gone from the scene (before they're built anew)
     function clearProps() {
       propsVersion++;
@@ -6488,7 +6512,7 @@ export function GameViewport({
       const m = latestMapRef.current;
       if (!editing && !m.wallInteractions?.length &&
           !m.doors?.some(d => d.interaction) && !m.decals?.some(d => d.interaction) &&
-          !m.props?.some(p => p.interaction) && !m.items?.some(i => i.interaction) && !m.actors?.some(a => a.dialogue || a.shop)) return null;
+          !m.props?.some(p => p.interaction) && !m.items?.some(i => i.interaction) && !m.actors?.some(a => a.dialogue || a.shop) && !hasClickables(m)) return null;
       interactionRay.far = editing ? (topdown.on ? TOPDOWN_REACH : EDIT_REACH) : interactionReach;
       interactionRay.setFromCamera(ndc, camera);
       let solidDistance = Infinity;
@@ -6508,7 +6532,7 @@ export function GameViewport({
           else if (hit.uv && alphaAt(actor.type, hit.uv.x, hit.uv.y) < 128) continue;
         } else if (target && !visibleTexel(hit)) continue;
         if (target?.kind === "decal") {
-          if (editing || interactionAt(m, target)) return { target, distance: hit.distance };
+          if (editing || touchAt(m, target)) return { target, distance: hit.distance };
           continue;
         }
         if (seeThrough(hit.object) && target?.kind !== "item") continue;
@@ -6518,13 +6542,13 @@ export function GameViewport({
       }
       return solidDistance < Infinity ? { target: solidTarget, distance: solidDistance } : null;
     }
-    type UseCandidate = { event: Interaction; ndc: THREE.Vector2; distance: number; mount?: WallInteractionTarget };
+    type UseCandidate = { event: ClickEvent; ndc: THREE.Vector2; distance: number; mount?: WallInteractionTarget };
     function activateInteraction(ndc: THREE.Vector2, source: "use" | "pointer", candidate?: UseCandidate) {
       const { onInteraction, interactionOpen } = interactionCallbacks.current;
       if (editModeRef.current || interactionOpen || !onInteraction) return false;
       const hit = findInteractionHit(ndc, false);
       const target = hit?.target;
-      const event = target && interactionAt(latestMapRef.current, target);
+      const event = target && touchAt(latestMapRef.current, target);
       if (event && (source === "pointer" || !event.clickOnly) && (!candidate || event === candidate.event)) {
         return onInteraction(event);
       }
@@ -6557,7 +6581,7 @@ export function GameViewport({
       const center = new THREE.Vector3();
       const size = new THREE.Vector3();
       const right = new THREE.Vector3(-forward.z, 0, forward.x);
-      function consider(event: Interaction | undefined, point: THREE.Vector3, mount?: WallInteractionTarget) {
+      function consider(event: ClickEvent | undefined, point: THREE.Vector3, mount?: WallInteractionTarget) {
         if (!event || event.clickOnly) return;
         const relative = point.clone().sub(camera.position);
         const distance = relative.length();
@@ -6568,7 +6592,8 @@ export function GameViewport({
         candidates.push({ event, ndc: new THREE.Vector2(projected.x, projected.y), distance, mount });
       }
       m.props?.forEach((spec, index) => {
-        const { interaction } = spec;
+        // (a lever or button is touched the same way)
+        const interaction = spec.interaction ?? operableInteraction(spec, "prop", index);
         const object = interaction && propObjects.get(index);
         if (!object || !drawnChain(object)) return;
         bounds.setFromObject(object);
@@ -6602,7 +6627,8 @@ export function GameViewport({
         consider(event, new THREE.Vector3(center.x, center.y + size.y / 4, center.z));
         consider(event, new THREE.Vector3(center.x, center.y - size.y / 4, center.z));
       }
-      m.decals?.forEach(({ interaction }, index) => {
+      m.decals?.forEach((spec, index) => {
+        const interaction = spec.interaction ?? operableInteraction(spec, "decal", index);
         const point = interaction && decals.center(index);
         if (point) consider(interaction, point);
       });
@@ -8561,6 +8587,7 @@ export function GameViewport({
         material.dispose();
       }
       for (const mat of cutoutFaceMaterials.values()) mat.dispose();
+      offOperables();
       if (propWiresRef.current === refreshPropWires) propWiresRef.current = null;
       for (const prop of propObjects.values()) prop.getObjectByName("propEditWires")?.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
       for (const mat of Object.values(wireMats)) mat.dispose();

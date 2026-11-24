@@ -9,6 +9,7 @@ import { cleanFenceStyle, fenceFormOf, isSide, type FenceStyle } from "./fences"
 import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, MapLinkTarget, PropAnchor, StairsDirection, StairsStyle } from "./types";
 import { readLinkTarget } from "./mapLinks";
 import { readDoorTexture } from "./doorTextures";
+import { readOperable, type OperableSpec } from "./operables";
 import type { Lock, Terminal, Trigger } from "./story";
 import { cleanRenderLook } from "./renderLook";
 import { worldOfMap } from "./worlds";
@@ -208,6 +209,8 @@ export interface MapFile {
     detached?: boolean;
     // fence and block pieces (see PropSpec.fence)
     fence?: FenceStyle;
+    // a lever, button, plate, trap cell or wall trap's targets and settings (see operables.ts)
+    operable?: OperableSpec;
     id?: string;
     with?: string;
     without?: string;
@@ -242,6 +245,8 @@ export interface MapFile {
     rotation?: number;
     scale?: number;
     action?: string;
+    // a painted lever / button that works (see PropSpec.operable; `kind` says which)
+    operable?: OperableSpec;
     chance?: number;
     id?: string;
     with?: string;
@@ -447,6 +452,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         auto: p.auto,
         detached: p.detached,
         fence: cleanFenceStyle(p.fence),
+        operable: readOperable(p.operable),
         id: p.id,
         with: p.with,
         without: p.without,
@@ -563,6 +569,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       rotation: d.rotation,
       scale: d.scale,
       action: d.action,
+      operable: readOperable(d.operable),
       chance: d.chance,
       id: d.id,
       with: d.with,

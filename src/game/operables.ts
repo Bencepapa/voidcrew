@@ -172,6 +172,9 @@ export function sourceKeys(map: OperableMap): { props: Map<number, string>; deca
 
 // whether touching it is what works it (a lever, a button)
 export const isClickable = (kind: OperableKind) => kind === "lever" || kind === "button";
+// whether a map has anything to touch (a lever or button prop, a decal that is one)
+export const hasClickables = (map: { props?: { prop: string }[]; decals?: { operable?: OperableSpec }[] }) =>
+  !!map.props?.some((p) => Object.hasOwn(OPERABLE_PROPS, p.prop) && isClickable(OPERABLE_PROPS[p.prop].kind)) || !!map.decals?.some((d) => d.operable);
 
 const same = (a: Vec2, b: Vec2) => a.x === b.x && a.y === b.y;
 

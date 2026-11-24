@@ -3,6 +3,7 @@ import type { RenderLook } from "./renderLook";
 import type { WorldId } from "./worlds";
 import type { Interaction, WallInteractionTarget } from "./interactions";
 import type { FenceStyle } from "./fences";
+import type { OperableSpec } from "./operables";
 
 export type Direction = "N" | "E" | "S" | "W";
 
@@ -244,6 +245,8 @@ export interface PropSpec extends Linked {
   // a fence or block piece (see fences.ts): its own settings - height, thickness, a top texture, whether it
   // blocks sight, a decoration every few pieces. (An edge fence's side is `at`; a lone mid fence's way is `rotation`.)
   fence?: FenceStyle;
+  // a lever, button, plate, trap cell or wall trap: what it works (see operables.ts)
+  operable?: OperableSpec;
 }
 
 // A smoke emitter (see render/smoke.ts): a leaking pipe, a smouldering
@@ -455,6 +458,8 @@ export interface DecalSpec extends Linked {
   scale?: number;
   // touching (clicking, tapping) the decal does this - e.g. "lift"
   action?: string;
+  // a painted lever or button that really works (touching it works its targets - see operables.ts)
+  operable?: OperableSpec;
   // the chance (0..1) it's there in a variation of the deck (see
   // variation.ts); unset: always
   chance?: number;

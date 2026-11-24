@@ -16,7 +16,7 @@ import { ShopPanel } from "./components/ShopPanel";
 import { getShopIds } from "./game/shopCatalog";
 import { gameClock } from "./game/clock";
 import { moveActionForKey } from "./game/controls";
-import { interactionAt, type Interaction, type InteractionTarget } from "./game/interactions";
+import { interactionAt, type ClickEvent, type Interaction, type InteractionTarget } from "./game/interactions";
 import { setInteraction } from "./editor/mapEdits";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
@@ -154,6 +154,7 @@ export default function App() {
     elevation,
     jumpDown,
     use: useBase,
+    operate,
     haul,
     lootedProps,
     takenItems,
@@ -401,8 +402,10 @@ export default function App() {
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [closeInteraction]);
-  const openInteraction = (event: Interaction) => {
+  const openInteraction = (event: ClickEvent) => {
     if (editMode || phase !== "run" || inLift || terminal || keypad || aim || runEnd || wipedAt !== null || activeInteractionRef.current || inventoryShown) return false;
+    // a lever or button: worked, no popup (see operables.ts)
+    if (event.kind === "operate") return operate(event.from, event.index);
     activeInteractionRef.current = event;
     // an NPC the story has an entry for talks through the engine (npc = the actor's type); else the old path
     const story = (event.kind === "dialogue" || event.kind === "shop") && !!event.npc && storyTalk(event.npc, event.shop || undefined) !== null;

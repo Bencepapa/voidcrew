@@ -31,7 +31,6 @@ function world(open: string[] = []) {
   };
   return { doors, ctx, apply };
 }
-const types = (effects: OperableEffect[]) => effects.map((e) => e.type);
 const doorEffects = (effects: OperableEffect[]) => effects.flatMap((e) => (e.type === "door" ? [`${e.action}@${e.cell.x},${e.cell.y}${e.force ? "!" : ""}`] : []));
 
 // ---- reading a map file's block: junk is dropped

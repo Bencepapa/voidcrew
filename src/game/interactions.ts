@@ -1,4 +1,5 @@
-import type { Direction, GameMap, Vec2, ActorSpec } from "./types";
+import type { Direction, GameMap, Vec2, ActorSpec, PropSpec, DecalSpec } from "./types";
+import { OPERABLE_PROPS, isClickable } from "./operables";
 import type { WallFacePart } from "./mapGeometry";
 import { isFriendlySpec } from "./actors";
 import { readShopInteraction, talkMode } from "./simpleShop";
@@ -14,6 +15,12 @@ export type Interaction = { clickOnly?: true } & (
   // (empty = the default one); an NPC without a dialogue opens it too (npc, actorId)
   | { kind: "shop"; shop: string; greeting?: string; portrait?: string; npc?: string; actorId?: number }
 );
+
+// A lever or button pulled / pressed: never in a map file (it is made from the prop or decal that is one, see
+// operableInteraction), so it is no `Interaction` of the editor's events - it only travels the same way from a click
+// or Use in the view to the game.
+export type OperateEvent = { clickOnly?: true; kind: "operate"; from: "prop" | "decal"; index: number };
+export type ClickEvent = Interaction | OperateEvent;
 
 export type WallInteractionTarget = { kind: "wall"; cell: Vec2; side: Direction; part?: WallFacePart };
 
@@ -39,6 +46,27 @@ export function actorInteraction(spec: ActorSpec | undefined, index: number): In
     talks.set(spec, event);
   }
   return event;
+}
+
+// A lever or a button (a prop of that type, or a decal that carries `operable`) is touched like any interaction: the
+// event comes back as the same object every time (the spec is the key), so Use can match what it aimed at.
+const operations = new WeakMap<object, OperateEvent>();
+export function operableInteraction(spec: PropSpec | DecalSpec | undefined, from: "prop" | "decal", index: number): OperateEvent | undefined {
+  if (!spec) return undefined;
+  const kind = from === "prop" ? OPERABLE_PROPS[(spec as PropSpec).prop]?.kind : spec.operable ? spec.operable.kind ?? "button" : undefined;
+  if (!kind || !isClickable(kind)) return undefined;
+  let event = operations.get(spec);
+  if (!event || event.index !== index) {
+    event = { kind: "operate", from, index };
+    operations.set(spec, event);
+  }
+  return event;
+}
+
+// what a click or Use on a target does: an interaction of the map's events, or a lever / button worked
+export function touchAt(map: GameMap, target: InteractionTarget): ClickEvent | undefined {
+  return interactionAt(map, target) ?? (target.kind === "prop" ? operableInteraction(map.props?.[target.index], "prop", target.index)
+    : target.kind === "decal" ? operableInteraction(map.decals?.[target.index], "decal", target.index) : undefined);
 }
 
 export function interactionAt(map: GameMap, target: InteractionTarget): Interaction | undefined {
