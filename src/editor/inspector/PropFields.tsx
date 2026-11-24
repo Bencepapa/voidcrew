@@ -19,6 +19,8 @@ if (!p.prop) return null;
 // (the sets as they are now: a shared one loaded since counts)
 const PROP_TEXTURES = [...textureSetsOfKind("wall"), ...textureSetsOfKind("propFace")].filter(id => !id.endsWith("_top"));
 return <>
+{/* a lever, button, plate or trap: what it does comes first, not folded away */}
+{p.prop.operable && <div className="px-2 pt-2"><OperableFields info={p.prop.operable} onChange={(operable) => p.onPropChange({ operable })}/></div>}
 <Section kind="prop" section="transform">
 {!p.prop.fence && slider(t("editorBar.turn"), p.prop.rotation, 0, 345, 15, (v) => p.onPropChange({ rotation: v || undefined }))}
 {!p.prop.fence && slider(t("editorBar.scale"), p.prop.scale, 0.25, 4, 0.05, (v) => p.onPropChange({ scale: v === 1 ? undefined : v }))}
@@ -54,7 +56,6 @@ return <>
 <Section kind="prop" section="logic">
 {chanceSlider(p.prop.chance, (chance) => p.onPropChange({ chance }))}
 {linkFields(p.prop.links, p.linkIds, p.onPropChange)}
-{p.prop.operable && <OperableFields info={p.prop.operable} onChange={(operable) => p.onPropChange({ operable })}/>}
 </Section>
 <Section kind="prop" section="advanced">
 {propEditable(PROP_TYPES[p.prop.name]) && (

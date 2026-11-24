@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 1,
     date: "2026-11-23",
     items: [
+      { title: "Működtethető elemek", text: "Kar, gomb, nyomólap és csapda rakható le, amelyek ajtót nyitnak vagy a csapatot támadják; az ajtókhoz kulcs is megadható." },
       { title: "NPC méretigazítás", text: "Elérhető az Asset managerben (NPC-k): csúszkával állítható, a goblinok kicsit kisebbek lettek." },
       { title: "Ajtónkénti textúra", text: "Az ajtó lapja és kerete ajtónként is állítható az Inspector Kinézet szakaszában." },
       { title: "Nincs fekete sík a falak mögött", text: "Átlátszó textúrájú fal és emelt padló oldala mögött már a valódi háttér látszik." },
