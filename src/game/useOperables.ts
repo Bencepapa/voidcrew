@@ -7,6 +7,7 @@ import {
   type OperableContext, type OperableEffect, type OperableState,
 } from "./operables";
 import { operableView } from "./operableStore";
+import { trapsActive } from "./playMode";
 import type { GameMap, Vec2 } from "./types";
 
 // The runtime of the operable props (see operables.ts): a lever pulled or a button pressed, the party stepping on or off
@@ -89,6 +90,8 @@ export function useOperables(env: OperableEnv) {
           break;
         }
         case "shot": {
+          // (wander mode: the traps are not armed - no shot, no damage, no log; see playMode.ts)
+          if (!trapsActive()) break;
           const arrow = effect.projectile === "arrow";
           if (effect.hit) {
             e.hurt(effect.damage, (name) => t(arrow ? "operable.arrowHit" : "operable.spellHit", { name, damage: effect.damage }));
