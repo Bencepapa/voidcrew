@@ -9,7 +9,8 @@ assert.equal(bundledDialogueId("x\\y\\a.b.twee"), "a.b");
 // every bundled file parses without errors
 const dir = "src/dialogues";
 // (tesztsztori: remove together - the test story's fallback library is not part of this sample check, see src/story/TESZTSZTORI-REMOVE.md)
-const bundled = readdirSync(dir).filter(f => f.endsWith(".twee") && !f.startsWith("tesztsztori")).map(f => ({ id: bundledDialogueId(f), twee: readFileSync(`${dir}/${f}`, "utf8") }));
+// (voidfantasy.twee is the published library pulled from the shared store by `npm run pull:shared`, not the hand-made sample)
+const bundled = readdirSync(dir).filter(f => f.endsWith(".twee") && !f.startsWith("tesztsztori") && f !== "voidfantasy.twee").map(f => ({ id: bundledDialogueId(f), twee: readFileSync(`${dir}/${f}`, "utf8") }));
 assert.ok(bundled.some(b => b.id === "void-fantasy"));
 const base = buildDialogueCatalog(bundled);
 const fantasy = base.get("void-fantasy")!;
