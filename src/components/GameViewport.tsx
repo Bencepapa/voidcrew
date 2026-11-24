@@ -4995,7 +4995,8 @@ export function GameViewport({
     }
     // the loose items, by index in map.items; and what's flying (spilled
     // out of a container, or drawn in to the party's feet)
-    const looseItems = new Map<number, { obj: THREE.Object3D; cell: string; taken: boolean }>();
+    // (`toss`: an item the party has just dropped, flying from its hands to where it lies)
+    const looseItems = new Map<number, { obj: THREE.Object3D; cell: string; taken: boolean; toss?: { start: number; from?: THREE.Vector3; rest: THREE.Vector3 } }>();
     interface Flyer {
       obj: THREE.Object3D;
       from: THREE.Vector3;
@@ -5005,9 +5006,14 @@ export function GameViewport({
     const flyers: Flyer[] = [];
     // (built again, in place, when the map's items change - see applyLightsRef)
     let itemsVersion = 0;
+    // the newest item the party dropped that has been shown (a build later does not toss it again)
+    let lastDrop = Math.max(-1, ...(latestMapRef.current.items ?? []).map((i) => i.dropped ?? -1));
     function buildItems(m: GameMap) {
     const version = ++itemsVersion;
     (m.items ?? []).forEach((spec, index) => {
+      // (a dropped item that is new tosses from the party's hands; see updateLoot)
+      const tossed = spec.dropped !== undefined && spec.dropped > lastDrop;
+      if (tossed) lastDrop = spec.dropped!;
       track(async () => {
         const template = await itemTemplate(spec.item);
         if (!template || disposed || version !== itemsVersion) return;
@@ -5019,7 +5025,14 @@ export function GameViewport({
         obj.userData.itemIndex = index;
         obj.visible = false;
         group.add(obj);
-        looseItems.set(index, { obj, cell: cellKey(spec.cell.x, spec.cell.y), taken: false });
+        // (one taken before this build - a deck entered again, items changed in place - is not drawn in again)
+        looseItems.set(index, {
+          obj,
+          cell: cellKey(spec.cell.x, spec.cell.y),
+          taken: !!lootRef.current.takenItems?.has(index),
+          // (real time: the game's clock stands still while the inventory is open, which is where an item is dropped from)
+          toss: tossed ? { start: performance.now(), rest: obj.position.clone() } : undefined,
+        });
       }).catch((err) => console.error("Item build failed:", err));
     });
     }
@@ -6204,6 +6217,20 @@ export function GameViewport({
           flyers.push({ obj: item.obj, from: item.obj.position.clone(), rest: item.obj.position.clone(), start: now - SPILL_REST_MS });
         }
         if (item.taken) continue;
+        if (item.toss) {
+          // just dropped: out of the party's hands to where it lies, in a little arc (as a spill's items fly)
+          const toss = item.toss;
+          toss.from ??= new THREE.Vector3(camX, feetY + ITEM_LIFT + 0.35 * wallHeight, camZ);
+          const p = (performance.now() - toss.start) / SPILL_OUT_MS;
+          if (p >= 1) {
+            item.obj.position.copy(toss.rest);
+            item.toss = undefined;
+          } else {
+            const q = Math.max(0, p);
+            item.obj.position.lerpVectors(toss.from, toss.rest, q);
+            item.obj.position.y += Math.sin(q * Math.PI) * 0.18;
+          }
+        }
         // (not the one being dragged to the screen's hands and backpack - see slotDrag's beginWorldDrag)
         item.obj.visible = sight.cells.has(item.cell) && draggedWorldItem() !== index;
         item.obj.rotation.y = Math.atan2(camX - item.obj.position.x, camZ - item.obj.position.z);
@@ -8778,7 +8805,7 @@ export function GameViewport({
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
-      <div ref={containerRef} className="absolute inset-0" />
+      <div ref={containerRef} data-drop-world className="absolute inset-0" />
       {editMode && (
         <button
           type="button"
