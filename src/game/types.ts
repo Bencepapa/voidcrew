@@ -367,6 +367,9 @@ export interface MapItem extends Linked {
   // flag it raises (see story.ts)
   name?: string;
   sets?: string;
+  // RUNTIME ONLY, never in a map file: set on an item the party dropped from its inventory (the id of the
+  // drop - see game/dropItem.ts); the played map carries it appended to its items
+  dropped?: number;
 }
 
 // A lift cabin: the cell behind a lift door. Its button (a decal with the

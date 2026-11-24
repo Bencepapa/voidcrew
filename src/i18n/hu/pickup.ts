@@ -21,4 +21,9 @@ export const pickupHu = {
   "pickup.dropDown": "{who} elesett - {item} a hátizsákba kerül.",
   "pickup.dropNoNeed": "{who}: most nincs rá szüksége - {item} a hátizsákba kerül.",
   "play.logOff": "Barangoló mód: az ellenfelek állnak, a csapdák ki vannak kapcsolva.",
+  "drop.done": "Eldobtad: {item}.",
+  "drop.editor": "Szerkesztés közben nem lehet: a szerkesztett pályára nem kerül eldobott tárgy.",
+  "drop.busy": "Most nem tudsz eldobni semmit.",
+  "drop.keep": "{item} nem dobható el.",
+  "drop.crowded": "Itt tele a föld: dobd el máshol.",
 } as const satisfies Record<string, string>;

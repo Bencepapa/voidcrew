@@ -1,7 +1,7 @@
 import { useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
-import type { Slot } from "../game/inventory";
+import { parseLoc, type Slot } from "../game/inventory";
 import { dropTargetOf, type DropMarks, type DropTarget } from "../game/worldDrop";
-import { dropWorldItemOn } from "../game/worldDropHandler";
+import { canDropToWorld, dropInventoryItemToWorld, dropWorldItemOn } from "../game/worldDropHandler";
 
 // Moving things between slots (the backpack's cells, the hands, a shop's): by
 // dragging (pointer events, so a finger works too), or from the keyboard by
@@ -70,6 +70,9 @@ function say(reason: string | null) {
 let inspected: string | null = null;
 let hovered: string | null = null;
 export const useInfoSlot = () => useSyncExternalStore(subscribe, () => inspected ?? hovered);
+// the slot a click pinned (the Drop button's and the D key's, when no slot has the focus)
+export const pinnedSlot = (): string | null => inspected;
+export const usePinnedSlot = () => useSyncExternalStore(subscribe, pinnedSlot);
 export function inspectSlot(key: string | null) {
   if (inspected === key) return;
   inspected = key;
@@ -141,6 +144,24 @@ export function confirmQty(qty: number) {
 
 const slotUnder = (x: number, y: number) => document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-slot]")?.dataset.slot ?? null;
 
+// --- onto the floor ---
+// An item let go over the 3D view (an element with `data-drop-world`: the viewport, and the backdrop round the
+// inventory panel) and not over a slot, the panel or a crewmate's card is dropped on the floor (see game/dropItem.ts).
+export function overWorld(x: number, y: number): boolean {
+  const el = document.elementFromPoint(x, y);
+  return !!el?.closest("[data-drop-world]") && !el.closest("[data-slot], [data-drop-pack], [data-drop-crew]");
+}
+
+// Drops what a slot holds (all of it, or `qty`): why not goes to the panel's notice.
+export function dropSlot(key: string, qty?: number) {
+  say(dropInventoryItemToWorld(key, qty));
+}
+// The same, asking how many first when it is a stack (a chooser at `at`).
+export function dropSlotAsking(key: string, stack: number, at: { x: number; y: number }) {
+  if (stack > 1) askQty({ x: at.x, y: at.y, max: stack, apply: (n) => dropInventoryItemToWorld(key, n) });
+  else dropSlot(key);
+}
+
 // A drag from `from` starts at a pointer press on an item; it becomes a drag
 // once the pointer has moved a few pixels (before that it is a click), and
 // ends where the pointer is let go: over another slot, onMove. Esc cancels.
@@ -175,6 +196,16 @@ export function beginDrag(e: ReactPointerEvent, from: string, slot: Slot, onMove
         return;
       }
       say(onMove(from, over));
+      return;
+    }
+    // let go over the 3D view, outside the panel: onto the floor (the whole stack; with Shift, choose how many)
+    if (!over && ev && canDropToWorld() && parseLoc(from) && overWorld(ev.clientX, ev.clientY)) {
+      selected = null;
+      if (ev.shiftKey && maxQty > 1 && from.startsWith("pack:")) {
+        askQty({ x: ev.clientX, y: ev.clientY, max: maxQty, apply: (n) => dropInventoryItemToWorld(from, n) });
+        return;
+      }
+      say(dropInventoryItemToWorld(from));
     }
   };
   const up = (ev: PointerEvent) => end(slotUnder(ev.clientX, ev.clientY), ev);

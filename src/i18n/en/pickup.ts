@@ -21,4 +21,9 @@ export const pickupEn = {
   "pickup.dropDown": "{who} is down - {item} goes in the backpack.",
   "pickup.dropNoNeed": "{who} doesn't need it now - {item} goes in the backpack.",
   "play.logOff": "Wander mode: the enemies stand still and the traps are off.",
+  "drop.done": "You drop {item}.",
+  "drop.editor": "Not while editing: nothing is dropped on the map being edited.",
+  "drop.busy": "You can't drop anything just now.",
+  "drop.keep": "{item} cannot be dropped.",
+  "drop.crowded": "The floor here is covered: drop it somewhere else.",
 } as const satisfies Record<string, string>;

@@ -248,6 +248,9 @@ assert.equal(facingOf("N", -90), "E");
   s = evaluatePlates(once, s.state, w.ctx(2000, at(2, 2)));
   assert.equal(s.effects.some((e) => e.type === "shot"), false, "only the first time");
   assert.equal(s.state.on["trapcell1@2,2:center"], true, "(it still shows as stepped on)");
+  // an item dropped on a trap cell does not fire it (only a plate answers to items)
+  const lying = evaluatePlates(every, initialOperableState(), w.ctx(0, null, (c) => (c.x === 2 && c.y === 2 ? 1 : 0)));
+  assert.equal(lying.effects.length, 0, "an item on a trap cell: nothing");
 }
 
 // ---- a wall trap: reach, misses, cooling, sides, doors

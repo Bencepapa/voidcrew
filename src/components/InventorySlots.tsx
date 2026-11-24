@@ -382,14 +382,35 @@ export const infoLine = (slot: Slot): string => {
 // grew under the pointer made the item lose the hover and the panel shrink
 // again, every frame): a long text scrolls inside it.
 const INFO_BOX = "h-[6.5em] overflow-y-auto border-t border-neutral-700 pt-1";
-export function InfoArea({ slot, empty, extra }: { slot: Slot | null; empty: string; extra?: string }) {
+export function InfoArea({ slot, empty, extra, onDrop }: {
+  slot: Slot | null;
+  empty: string;
+  extra?: string;
+  // a Drop button beside the name (the inventory panel's: the item onto the floor); not in a shop's
+  onDrop?: (at: { x: number; y: number }) => void;
+}) {
   if (!slot) return <div className={INFO_BOX + " text-neutral-500"}>{empty}</div>;
   const info = itemInfo(slot.item, infoTexts, slot.uid, getMeta().weapons);
   return (
     <div className={INFO_BOX} aria-live="polite" tabIndex={-1}>
-      <div className="text-amber-200">
-        {info.name}
-        {slot.qty > 1 && <span className="text-neutral-400"> x{slot.qty}</span>}
+      <div className="flex items-start justify-between gap-2 text-amber-200">
+        <span>
+          {info.name}
+          {slot.qty > 1 && <span className="text-neutral-400"> x{slot.qty}</span>}
+        </span>
+        {onDrop && (
+          <button
+            type="button"
+            title={t("inventory.dropTitle")}
+            className="shrink-0 rounded-sm border border-neutral-600 px-1.5 leading-tight text-neutral-200 hover:border-amber-300 hover:text-amber-200"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              onDrop({ x: r.left + r.width / 2, y: r.top });
+            }}
+          >
+            {t("inventory.drop")}
+          </button>
+        )}
       </div>
       <ul className="mt-0.5 space-y-0.5 text-neutral-300">
         {info.lines.map((line, i) => (
