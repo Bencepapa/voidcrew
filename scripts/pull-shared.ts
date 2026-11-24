@@ -17,7 +17,7 @@ for (const flag of flags) if (!["--list", "--dry-run"].includes(flag)) throw new
 const root = resolve(output ?? ".");
 const catalogPath = join(root, "src/game/sharedBuiltins.json");
 const catalog = existsSync(catalogPath)
-  ? JSON.parse(await readFile(catalogPath, "utf8"))
+  ? JSON.parse((await readFile(catalogPath, "utf8")).replace(/^﻿/, "")) // (an editor may have left a BOM)
   : { textures: {}, maps: {} };
 catalog.images ??= {};
 for (const path of [".env.local", ".env"]) if (existsSync(path)) loadEnvFile(path);
