@@ -72,6 +72,7 @@ export const debugHu = {
   "debug.audioOrbit": "Köröző csippantás (6 mp)",
   "debug.audioMuffled": "Tompított csippantás (alul-áteresztő)",
   "debug.audioMany": "20 csippantás egyszerre",
+  "debug.audioHrtf": "HRTF (elöl/hátul érzet, fejhallgatóhoz)",
   "debug.audioStop": "Leállítás",
   "debug.audioStatus": "Hang: {state}, {rate} Hz, {active} szól",
   "debug.quickBakeSamplesPerCell": "Gyors előszámítás szerkesztés után, minta/mező (0: ki)",

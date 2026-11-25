@@ -72,6 +72,7 @@ export const debugEn = {
   "debug.audioOrbit": "Circling beep (6 s)",
   "debug.audioMuffled": "Muffled beep (low-pass)",
   "debug.audioMany": "20 beeps at once",
+  "debug.audioHrtf": "HRTF (front/back cues, headphones)",
   "debug.audioStop": "Stop",
   "debug.audioStatus": "Audio: {state}, {rate} Hz, {active} playing",
   "debug.quickBakeSamplesPerCell": "Quick bake after an edit, samples per cell (0: off)",

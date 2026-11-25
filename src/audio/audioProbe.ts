@@ -24,7 +24,9 @@ export function setListener(x: number, y: number, z: number, fx: number, fz: num
 
 // ---- a generated test sound: a short decaying tone (no file needed) ----
 
-function toneWav(frequency: number, seconds: number, rate = 22050): string {
+// `harmonics`: how many overtones ride on the base tone (a rich sound: a low-pass is audible on it); `decay`: how fast it
+// dies (0: it holds, with only a short fade in and out)
+function toneWav(frequency: number, seconds: number, harmonics = 6, decay = 4, rate = 22050): string {
   const samples = Math.floor(seconds * rate);
   const buffer = new ArrayBuffer(44 + samples * 2);
   const view = new DataView(buffer);
@@ -33,18 +35,41 @@ function toneWav(frequency: number, seconds: number, rate = 22050): string {
   view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
   view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
   text(36, "data"); view.setUint32(40, samples * 2, true);
+  let norm = 0;
+  for (let h = 1; h <= harmonics; h++) norm += 1 / Math.sqrt(h);
   for (let i = 0; i < samples; i++) {
     const t = i / rate;
-    const envelope = Math.min(1, t / 0.01) * Math.exp(-t * 5);
-    view.setInt16(44 + i * 2, Math.round(Math.sin(2 * Math.PI * frequency * t) * envelope * 0.6 * 32767), true);
+    const left = seconds - t;
+    const envelope = Math.min(1, t / 0.01, left / 0.05) * (decay > 0 ? Math.exp(-t * decay) : 1);
+    let wave = 0;
+    for (let h = 1; h <= harmonics; h++) wave += Math.sin(2 * Math.PI * frequency * h * t) / Math.sqrt(h); // (a saw-like sum)
+    view.setInt16(44 + i * 2, Math.round((wave / norm) * envelope * 0.9 * 32767), true);
   }
   return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+}
+
+let limited = false;
+// the master goes through a compressor used as a limiter (20 sounds at once clipped without it)
+function ensureLimiter() {
+  if (limited) return;
+  const ctx = Howler.ctx as AudioContext | undefined;
+  if (!ctx) return;
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -6;
+  limiter.knee.value = 6;
+  limiter.ratio.value = 12;
+  limiter.attack.value = 0.003;
+  limiter.release.value = 0.15;
+  Howler.masterGain.disconnect();
+  Howler.masterGain.connect(limiter);
+  limiter.connect(ctx.destination);
+  limited = true;
 }
 
 let beep: Howl | undefined;
 function theBeep(): Howl {
   listenerSeen = true;
-  if (!beep) beep = new Howl({ src: [toneWav(660, 0.6)], format: ["wav"], volume: 0.7 });
+  if (!beep) beep = new Howl({ src: [toneWav(440, 0.7, 10, 3)], format: ["wav"], volume: 1 });
   return beep;
 }
 
@@ -53,24 +78,33 @@ export interface ProbeSource {
   x: number; y: number; z: number;
   /** a low-pass cutoff (Hz): the muffled sound of a house, 0: none */
   muffle?: number;
+  /** 0..1 (default 1) */
+  volume?: number;
 }
 
-const panner = { panningModel: "HRTF" as const, distanceModel: "inverse" as const, refDistance: 1, maxDistance: 20, rolloffFactor: 1.4 };
+// Equal-power panning is what plays well on speakers (clear left / right); HRTF adds front / back cues, which only
+// show on headphones. Falloff: full volume up to 2 cells, then 1/distance.
+let hrtf = false;
+export function setHrtf(on: boolean) { hrtf = on; }
+export const isHrtf = () => hrtf;
+const pannerOptions = () => ({ panningModel: hrtf ? ("HRTF" as const) : ("equalpower" as const), distanceModel: "inverse" as const, refDistance: 2, maxDistance: 40, rolloffFactor: 1 });
 
 /** Plays one instance of the test sound at a world position (it stays there while the listener turns and walks). */
 export function playAt(source: ProbeSource): number {
   const howl = theBeep();
+  ensureLimiter();
   Howler.pos(listener.x, listener.y, listener.z);
   Howler.orientation(listener.fx, 0, listener.fz, 0, 1, 0);
   const id = howl.play();
+  howl.volume(source.volume ?? 1, id);
   howl.pos(source.x, source.y, source.z, id);
-  howl.pannerAttr(panner, id);
+  howl.pannerAttr(pannerOptions(), id);
   if (source.muffle) muffle(howl, id, source.muffle);
   return id;
 }
 
-// Inserts a low-pass filter into one instance's chain (Howler keeps no hook for it: its gain node feeds its
-// panner). Part of what the probe checks: can the chain be reached without breaking on a Howler update?
+// Inserts a low-pass filter into one instance's chain (Howler keeps no hook for it: its chain is source -> panner ->
+// gain node -> master, so the filter goes between the panner and the gain). Part of what the probe checks: can the chain be reached without breaking on a Howler update?
 function muffle(howl: Howl, id: number, cutoff: number) {
   try {
     const sound = (howl as unknown as { _soundById(id: number): { _node: GainNode; _panner?: PannerNode } | null })._soundById(id);
@@ -78,9 +112,9 @@ function muffle(howl: Howl, id: number, cutoff: number) {
     const filter = Howler.ctx.createBiquadFilter();
     filter.type = "lowpass";
     filter.frequency.value = cutoff;
-    sound._node.disconnect();
-    sound._node.connect(filter);
-    filter.connect(sound._panner);
+    sound._panner.disconnect();
+    sound._panner.connect(filter);
+    filter.connect(sound._node);
   } catch (error) {
     console.warn("[audio probe] muffle failed", error);
   }
@@ -98,7 +132,7 @@ export function playMany(count: number): number {
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2;
     const distance = 2 + (i % 5);
-    playAt({ x: listener.x + Math.cos(angle) * distance, y: listener.y, z: listener.z + Math.sin(angle) * distance });
+    playAt({ x: listener.x + Math.cos(angle) * distance, y: listener.y, z: listener.z + Math.sin(angle) * distance, volume: 0.3 });
     started++;
   }
   return started;
@@ -111,12 +145,13 @@ export function playOrbit(): void {
   stopOrbit();
   const centre = { ...listener };
   const start = performance.now();
-  const loop = new Howl({ src: [toneWav(440, 6, 11025)], format: ["wav"], volume: 0.5 });
+  ensureLimiter();
+  const loop = new Howl({ src: [toneWav(330, 6, 10, 0, 22050)], format: ["wav"], volume: 1 });
   listenerSeen = true;
   Howler.pos(centre.x, centre.y, centre.z);
   Howler.orientation(centre.fx, 0, centre.fz, 0, 1, 0);
   const id = loop.play();
-  loop.pannerAttr(panner, id);
+  loop.pannerAttr(pannerOptions(), id);
   orbit = setInterval(() => {
     const t = (performance.now() - start) / 1000;
     if (t > 6) { stopOrbit(); return; }
