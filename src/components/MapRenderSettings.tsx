@@ -74,12 +74,12 @@ const MATERIAL_SLIDERS: SliderConfig[] = [
 
 // times of day for the sky's light: strength, colour, where from, how high
 const SKY_PRESETS: Record<string, Partial<ViewportSettings>> = {
-  "Night (moon)": { skyLightIntensity: 0.6, skyLightColor: "#8fa8ff", skyLightAzimuth: 200, skyLightElevation: 45 },
-  "Dawn": { skyLightIntensity: 1.0, skyLightColor: "#ffc08a", skyLightAzimuth: 95, skyLightElevation: 12 },
-  "Noon": { skyLightIntensity: 1.6, skyLightColor: "#fff4d6", skyLightAzimuth: 180, skyLightElevation: 75 },
-  "Afternoon": { skyLightIntensity: 1.3, skyLightColor: "#ffe6b0", skyLightAzimuth: 235, skyLightElevation: 40 },
-  "Dusk": { skyLightIntensity: 1.0, skyLightColor: "#ff8f5a", skyLightAzimuth: 265, skyLightElevation: 10 },
-  "Off": { skyLightIntensity: 0 },
+  "Night (moon)": { skyDomeIntensity: 0.3, skyLightIntensity: 0.6, skyLightColor: "#8fa8ff", skyLightAzimuth: 200, skyLightElevation: 45 },
+  "Dawn": { skyDomeIntensity: 0.5, skyLightIntensity: 1.0, skyLightColor: "#ffc08a", skyLightAzimuth: 95, skyLightElevation: 12 },
+  "Noon": { skyDomeIntensity: 0.75, skyLightIntensity: 1.6, skyLightColor: "#fff4d6", skyLightAzimuth: 180, skyLightElevation: 75 },
+  "Afternoon": { skyDomeIntensity: 0.65, skyLightIntensity: 1.3, skyLightColor: "#ffe6b0", skyLightAzimuth: 235, skyLightElevation: 40 },
+  "Dusk": { skyDomeIntensity: 0.5, skyLightIntensity: 1.0, skyLightColor: "#ff8f5a", skyLightAzimuth: 265, skyLightElevation: 10 },
+  "Off": { skyDomeIntensity: 0, skyLightIntensity: 0 },
 };
 
 const SKY_LABELS: Record<string, Key> = {"Night (moon)":"debug.sky.Nightmoon","Dawn":"debug.sky.Dawn","Noon":"debug.sky.Noon","Afternoon":"debug.sky.Afternoon","Dusk":"debug.sky.Dusk","Off":"debug.sky.Off"};
@@ -230,6 +230,7 @@ export function MapRenderSettings({
             </select>,
           )}
           {slider({ key: "skyLightIntensity", label: "debug.skyLightStrength0None", min: 0, max: 3, step: 0.05 })}
+          {slider({ key: "skyDomeIntensity", label: "debug.skyDomeStrength0None", min: 0, max: 3, step: 0.05 })}
           {slider({ key: "skyLightAzimuth", label: "debug.skyLightFromCompass0North", min: 0, max: 359, step: 1 })}
           {slider({ key: "skyLightElevation", label: "debug.skyLightHeightDegrees", min: 5, max: 90, step: 1 })}
           <label className="flex items-center justify-between gap-2 text-[11px]">

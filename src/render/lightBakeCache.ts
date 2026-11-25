@@ -9,6 +9,7 @@ export interface BakeKeyInput {
   cells: unknown;
   floorHeights?: unknown;
   ceilingHeights?: unknown;
+  skySurfaces?: Uint8Array;
   props?: unknown;
   bridges?: unknown;
   sharedPropTypes?: unknown;
@@ -20,8 +21,8 @@ export interface BakeKeyInput {
 
 /** What the bake is a function of, as a string (equal strings: the same grid). */
 export function bakeCacheKey(input: BakeKeyInput): string {
-  const { width, height, cells, floorHeights, ceilingHeights, props, bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity } = input;
-  return JSON.stringify([width, height, cells, floorHeights, ceilingHeights, props, bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity ?? null]);
+  const { width, height, cells, floorHeights, ceilingHeights, skySurfaces, props, bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity } = input;
+  return JSON.stringify([width, height, cells, floorHeights, ceilingHeights, skySurfaces?.join(","), props, bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity ?? null]);
 }
 
 /** A least-recently-used cache of at most `max` entries. */

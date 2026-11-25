@@ -9,7 +9,7 @@ export const inspectorHu = {
   "inspector.floors": "Padló",
   "inspector.material": "Anyag",
   "inspector.light": "Fény",
-  "inspector.skyLight": "Égfény",
+  "inspector.skyLight": "Nap és égbolt",
   "inspector.gameplay": "Játék",
   "inspector.next": "Következő: {kind}",
 };

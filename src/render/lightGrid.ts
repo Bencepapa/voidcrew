@@ -1,14 +1,14 @@
 import { createWeatherUniforms, useWeatherSurface, type WeatherUniforms } from "./weather";
 import * as THREE from "three";
 import { ACCENT_GLSL, ACCENT_UNIFORMS } from "./accent";
-import { BRIDGE_THICKNESS, BRIDGE_WIDTH, cellAt, ceilingHeight, floorHeight } from "../game/mapGeometry";
-import { PROP_TYPES, propHeight, propPlacement, type PropType } from "../game/props";
+import { cellAt, ceilingHeight, floorHeight } from "../game/mapGeometry";
+import { clearLine, SKY_CEILING, type LightBakeMap } from "./bakeOcclusion";
+import { occludersOf } from "./bakeOccluders";
+import { AMBIENT_SHARE, createSkyBake, type SkyLight } from "./skyBake";
 import type { LightSpec } from "../game/lights";
-import type { GameMap } from "../game/types";
 
-export type LightBakeMap = Pick<GameMap, "width" | "height" | "cells" | "floorHeights" | "ceilingHeights" | "props" | "bridges"> & {
-  sharedPropTypes?: Record<string, PropType>;
-};
+export { type LightBakeMap } from "./bakeOcclusion";
+export { propCastsBakedShadow } from "./bakeOccluders";
 
 // Baked lighting: a deck's static lights summed up once, on a grid of sample
 // points through its rooms (an irradiance volume, like Quake's light grid),
@@ -36,12 +36,6 @@ export const GRID_PER_CELL = 3;
 //   there, and the rest as ambient (as Quake 3's light grid) - the shader
 //   treats the main part as a real light, highlights on metal included
 export type LightGridMode = "cube" | "directional";
-// the light not from the main direction, as ambient: about the share a
-// surface gets of light from all round
-const AMBIENT_SHARE = 0.3;
-// the march's step (cells), and how far from a light its own cell is ignored
-// (a light behind a window's glass sits in the wall)
-const MARCH_STEP = 0.12;
 
 export interface LightGridData {
   // samples along x (columns), z (rows) and y (up)
@@ -90,7 +84,7 @@ export function bakeLightGrid(
   wallHeight: number,
   // bounce: how strong the light bounced round corners is (see bounceLight;
   // 0: none - a room no light sees stays dark)
-  options: { perCell?: number; mode?: LightGridMode; bounce?: number } = {},
+  options: { perCell?: number; mode?: LightGridMode; bounce?: number; sky?: SkyLight } = {},
 ): LightGridData {
   const perCell = Math.max(1, Math.round(options.perCell ?? GRID_PER_CELL));
   const mode = options.mode ?? "cube";
@@ -116,7 +110,10 @@ export function bakeLightGrid(
   const index = (i: number, k: number, j: number) => i + k * nx + j * nx * nz;
   const count = nx * nz * ny;
 
-  const occluders = occludersOf(map);
+  const { sky, bounce = 0 } = options;
+  const hasSky = !!sky && (sky.intensity > 0 || sky.domeIntensity > 0) &&
+    !!map.skySurfaces?.some((mask) => mask & SKY_CEILING);
+  const occluders = occludersOf(map, hasSky);
   // where a sample stands in a room (its cell open, between its floor and
   // ceiling) - one inside a prop still counts: the prop's own surfaces read
   // it (see clearLine)
@@ -139,6 +136,19 @@ export function bakeLightGrid(
   // brightness-weighted sum of where each light comes from), then how much
   // comes from along it and the rest (pass 1)
   const mainDir = mode === "directional" ? new Float32Array(count * 3) : null;
+  const skyColor = hasSky && sky ? color.setHex(sky.color) : undefined;
+  const skyBake = skyColor && sky ? createSkyBake(map, occluders, wallHeight, sky,
+    [skyColor.r, skyColor.g, skyColor.b], faces, mainDir, bounce > 0) : undefined;
+  if (skyBake) {
+    for (let j = 0; j < ny; j++) {
+      for (let k = 0; k < nz; k++) {
+        for (let i = 0; i < nx; i++) {
+          const n = index(i, k, j);
+          if (valid[n]) skyBake.sample(n, sx(i), sy(j), sz(k));
+        }
+      }
+    }
+  }
   const passes = mode === "directional" ? [0, 1] : [1];
   for (const pass of passes) {
     for (const light of lights) {
@@ -213,12 +223,13 @@ export function bakeLightGrid(
       }
     }
   }
+  skyBake?.applySun();
 
   // the light bounced round corners (see bounceLight), as ambient: on all
   // six sides of the cube, or the directional grid's ambient part
-  const bounce = options.bounce ?? 0;
   if (bounce > 0) {
     const cellLight = bounceLight(map, lights);
+    skyBake?.addBounce(cellLight, BOUNCE_STEPS, BOUNCE_FALLOFF);
     const W = map.width;
     const open = (x: number, z: number) => x >= 0 && z >= 0 && x < W && z < map.height && cellAt(map, x, z) !== "wall";
     const targets = mode === "cube" ? faces : [faces[0]];
@@ -348,7 +359,6 @@ const BOUNCE_FALLOFF = 0.55;
 // how bright a lamp's bounce is in its own cell, at a bounce setting of 1
 // (a part of its strength - most of it is the direct light)
 const BOUNCE_SCALE = 0.12;
-const SKY_BOUNCE_SHARE = 0.25;
 
 function bounceLight(map: LightBakeMap, lights: LightSpec[]): Float32Array {
   const W = map.width;
@@ -375,9 +385,7 @@ function bounceLight(map: LightBakeMap, lights: LightSpec[]): Float32Array {
     color.setHex(light.color);
     let frontier = [sz * W + sx];
     seen[sz * W + sx] = li;
-    // (the sky is one light per cell under it: their bounces overlap
-    // several times over, so each counts for less)
-    let strength = light.intensity * (light.kind === "sky" ? SKY_BOUNCE_SHARE : 1);
+    let strength = light.intensity;
     for (let step = 0; step <= BOUNCE_STEPS && frontier.length; step++) {
       const next: number[] = [];
       for (const c of frontier) {
@@ -398,103 +406,6 @@ function bounceLight(map: LightBakeMap, lights: LightSpec[]): Float32Array {
     }
   });
   return out;
-}
-
-// What else casts shadows in the bake: the props (but plants - they're
-// mostly leaves and gaps) and the bridges' decks, as boxes (x, z in cells;
-// y in wall heights) listed under each cell they reach into. Doors don't:
-// the grid is baked once, as if they were all open.
-interface Occluder {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
-  minZ: number;
-  maxZ: number;
-}
-// (per cell, row by row; none: an empty list)
-interface Occluders {
-  width: number;
-  cells: (Occluder[] | undefined)[];
-}
-
-export function propCastsBakedShadow(spec: NonNullable<GameMap["props"]>[number]): boolean {
-  const kind = PROP_TYPES[spec.prop]?.kind;
-  // (a fence or a block is mostly gaps and thin faces, or a see-through hedge: no baked shadow)
-  return !!kind && kind !== "cross" && kind !== "roof" && kind !== "fence";
-}
-
-function occludersOf(map: LightBakeMap): Occluders {
-  const out: Occluders = { width: map.width, cells: [] };
-  const add = (box: Occluder) => {
-    for (let z = Math.max(0, Math.round(box.minZ)); z <= Math.min(map.height - 1, Math.round(box.maxZ)); z++) {
-      for (let x = Math.max(0, Math.round(box.minX)); x <= Math.min(map.width - 1, Math.round(box.maxX)); x++) {
-        (out.cells[z * map.width + x] ??= []).push(box);
-      }
-    }
-  };
-  for (const spec of map.props ?? []) {
-    const sharedType = map.sharedPropTypes?.[spec.prop];
-    const type = sharedType ?? PROP_TYPES[spec.prop];
-    if (!type || type.kind === "cross" || type.kind === "roof" || type.kind === "fence") continue;
-    const { x, z, reachX, reachZ } = propPlacement(spec, type);
-    const lift = sharedType?.elevation ?? 0;
-    const bottom = floorHeight(map, spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) + lift * (spec.scale ?? 1);
-    add({ minX: x - reachX, maxX: x + reachX, minY: bottom, maxY: bottom + propHeight(map, spec, type), minZ: z - reachZ, maxZ: z + reachZ });
-  }
-  for (const bridge of map.bridges ?? []) {
-    const half = BRIDGE_WIDTH / 2;
-    const [hx, hz] = bridge.axis === "NS" ? [half, 0.5] : [0.5, half];
-    const { x, y } = bridge.cell;
-    add({ minX: x - hx, maxX: x + hx, minY: bridge.height - BRIDGE_THICKNESS, maxY: bridge.height, minZ: y - hz, maxZ: y + hz });
-  }
-  return out;
-}
-
-const inside = (b: Occluder, x: number, y: number, z: number) =>
-  x > b.minX && x < b.maxX && y > b.minY && y < b.maxY && z > b.minZ && z < b.maxZ;
-
-// the box around a point in its cell, if any (but `skip`)
-function blockedAt(occluders: Occluders, cx: number, cz: number, x: number, y: number, z: number, skip?: Occluder[]): boolean {
-  if (cx < 0 || cx >= occluders.width || cz < 0) return false;
-  const boxes = occluders.cells[cz * occluders.width + cx];
-  if (!boxes) return false;
-  return boxes.some((b) => inside(b, x, y, z) && !skip?.includes(b));
-}
-
-// whether the line from a sample to a light crosses no wall, floor or
-// ceiling, prop or bridge (the light's own cell doesn't count - it may sit
-// in a wall, or on a prop)
-function clearLine(
-  map: LightBakeMap,
-  occluders: Occluders,
-  px: number,
-  py: number,
-  pz: number,
-  lx: number,
-  ly: number,
-  lz: number,
-  lightCell: { x: number; z: number },
-): boolean {
-  const steps = Math.ceil(Math.hypot(lx - px, lz - pz, ly - py) / MARCH_STEP);
-  // a sample inside a prop isn't in the prop's own shadow (its surfaces read
-  // it, and they're lit as if it weren't there)
-  const cx0 = Math.round(px);
-  const cz0 = Math.round(pz);
-  const own = cx0 >= 0 && cx0 < occluders.width && cz0 >= 0 ? (occluders.cells[cz0 * occluders.width + cx0] ?? []).filter((b) => inside(b, px, py, pz)) : [];
-  for (let s = 1; s < steps; s++) {
-    const t = s / steps;
-    const x = px + (lx - px) * t;
-    const y = py + (ly - py) * t;
-    const z = pz + (lz - pz) * t;
-    const cx = Math.round(x);
-    const cz = Math.round(z);
-    if (cx === lightCell.x && cz === lightCell.z) continue;
-    if (cellAt(map, cx, cz) === "wall") return false;
-    if (y < floorHeight(map, cx, cz) - 1e-3 || y > ceilingHeight(map, cx, cz) + 1e-3) return false;
-    if (blockedAt(occluders, cx, cz, x, y, z, own)) return false;
-  }
-  return true;
 }
 
 // The shared uniforms every lit material reads the grid through (one set per

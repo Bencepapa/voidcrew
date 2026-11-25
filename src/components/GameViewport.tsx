@@ -571,7 +571,10 @@ export function GameViewport({
   const topdownRef = useRef({ on: false, x: 0, z: 0, h: 9, tilt: Math.PI / 2, yaw: 0, fresh: false });
   const editHoverRef = useRef<THREE.Vector2 | null>(null);
   const rebakeRef = useRef<(() => void) | null>(null);
-  useEffect(() => rebakeRef.current?.(), [settings.lightGridDensity, settings.lightGridMode, settings.lightBounce]);
+  useEffect(() => rebakeRef.current?.(), [
+    settings.lightGridDensity, settings.lightGridMode, settings.lightBounce,
+    settings.skyLightIntensity, settings.skyDomeIntensity, settings.skyLightAzimuth, settings.skyLightElevation, settings.skyLightColor,
+  ]);
   // the map as it is now (lights included - the scene's may be older)
   const latestMapRef = useRef(map);
   latestMapRef.current = map;
@@ -942,7 +945,7 @@ export function GameViewport({
       }
       return kit;
     }
-    const mapLightState = createMapLightState(map, settings);
+    const mapLightState = createMapLightState(map);
     // the walls' relief depth: the map's own, else the settings'
     const reliefDepth = map.reliefDepth ?? settings.reliefDepth;
     // the floors have a relief depth of their own (0: the Asset Manager's own baseline, so a texture's tuned depth is
@@ -2598,7 +2601,7 @@ export function GameViewport({
       const lightsChanged = lightsOf(next) !== lightsOf(applied);
       if (lightsChanged) {
         sceneVersion++;
-        lightFixtures.applyLights(next, settingsRef.current);
+        lightFixtures.applyLights(next);
         // the new fixtures get culled with the rest on the next frame
         culledCount = -1;
       }
@@ -4374,10 +4377,6 @@ export function GameViewport({
     settings.normalMaps,
     settings.particleQuality,
     settings.floorReliefDepth,
-    settings.skyLightIntensity,
-    settings.skyLightAzimuth,
-    settings.skyLightElevation,
-    settings.skyLightColor,
     settings.aoRadius,
     textureVersion,
   ]);

@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 3,
     date: "2026-11-25",
     items: [
+      { title: "Nap és égbolt fény", text: "A nap irányított árnyékot vet, az árnyékos kültéri részeket pedig állítható, szórt égboltfény deríti." },
       { title: "Pálya közzététele újabb változat fölé", text: "Ütközéskor jóváhagyhatod a saját pályád közzétételét a legfrissebb változat után, a korábbi változatok megőrzésével." },
       { title: "Fű és búza a kerítéseken", text: "A fantasy kerítésekhez közepes fű, magas fű és búza választható, áttetsző hézagokkal és folytonosan illeszkedő szélekkel." },
       { title: "Növényzet: réteges és X kerítés", text: "A Kerítések csoportban a Réteges kerítés (a szélen vagy a közepén több párhuzamos síkban) és az X kerítés (két keresztező sík a cella közepén) sűrű, minden oldalról kitöltött sövényt, magas füvet és búzát ad; a rétegek száma, távolsága és eltolása állítható, alapból járható és átlátszó." },

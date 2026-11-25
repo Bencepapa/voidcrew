@@ -1,12 +1,33 @@
 import type { LightSpec } from "../../game/lights";
+import { cellAt } from "../../game/mapGeometry";
+import { DIR_VECTOR } from "../../game/movement";
 import { isSharedPropId, PROP_TYPES } from "../../game/props";
 import type { GameMap } from "../../game/types";
 import type { LightBakeRequest, LightBakeResult } from "../lightBake.worker";
 import { bakeLightGrid, packLightGrid, setLightGrid, type LightGridUniforms } from "../lightGrid";
+import { isTextureSetId } from "../textureSets";
 import { bakeInputs, shouldBakeQuickFirst } from "./bakeInputs";
 import { EDIT_SETTLE_MS, LIGHT_EDIT_SETTLE_MS } from "./constants";
 import { bakeCache } from "./sceneCache";
 import type { ViewportSettings } from "./settings";
+import type { SkyWall } from "./skyBakeInputs";
+import { wallVariantRoll } from "./walls";
+
+function skyWallOf(map: GameMap, settings: ViewportSettings): SkyWall {
+  const deckWall = isTextureSetId(map.textures?.wall) ? map.textures.wall : undefined;
+  const primary = deckWall ?? settings.textureSet;
+  const accent = isTextureSetId(map.textures?.accent) ? map.textures.accent : deckWall ? "none" : settings.accentTextureSet;
+  const hasAccent = accent !== "none" && accent !== "sky" && accent !== primary && settings.accentRatio > 0;
+  return (x, z, direction) => {
+    const offset = DIR_VECTOR[direction];
+    const face = cellAt(map, x + offset.x, z + offset.y) !== "wall" ? map.faceTextureAt?.(x, z, direction) : undefined;
+    if (isTextureSetId(face)) return face === "sky";
+    const wall = map.wallTextureAt?.(x, z);
+    if (isTextureSetId(wall)) return wall === "sky";
+    return primary === "sky" &&
+      (!hasAccent || wallVariantRoll(x + offset.x * 0.5, z + offset.y * 0.5) >= settings.accentRatio);
+  };
+}
 
 interface BakeRuntimeContext {
   map: GameMap;
@@ -28,11 +49,13 @@ export function createBakeRuntime({
   // the bake (and a coarser one for the ambient part, if the map asks)
   let cancelBake: (() => void) | undefined;
   const inputsFor = (m: GameMap, quick: boolean) =>
-    bakeInputs(m, quick, getLiveMap() !== map, settingsRef.current, getMapLights(), wallHeight, PROP_TYPES, isSharedPropId);
+    bakeInputs(m, quick, getLiveMap() !== map, settingsRef.current, getMapLights(), wallHeight, PROP_TYPES, isSharedPropId, skyWallOf(m, settingsRef.current));
   const bake = (m: GameMap, quick = false): Promise<void> => {
     cancelBake?.();
     const bakeFrom = performance.now();
-    const { options, ambientDensity, lights, sharedPropTypes, cacheKey } = inputsFor(m, quick);
+    const { options, ambientDensity, lights, sharedPropTypes, skySurfaces, cacheKey } = inputsFor(m, quick);
+    const { width, height, cells, floorHeights, ceilingHeights, props, bridges } = m;
+    const bakeMap = { width, height, cells, floorHeights, ceilingHeights, props, bridges, sharedPropTypes, skySurfaces };
     const applyBake = ({ data, ambient, timing }: LightBakeResult) => {
       bakeCache.set(cacheKey, { data, ambient });
       const applyFrom = performance.now();
@@ -48,9 +71,9 @@ export function createBakeRuntime({
       tick("light bake", bakeFrom);
     };
     const fallback = () => applyBake({
-      data: packLightGrid(bakeLightGrid({ ...m, sharedPropTypes }, lights, wallHeight, options)),
+      data: packLightGrid(bakeLightGrid(bakeMap, lights, wallHeight, options)),
       ambient: ambientDensity === undefined ? undefined
-        : packLightGrid(bakeLightGrid({ ...m, sharedPropTypes }, lights, wallHeight, { ...options, perCell: ambientDensity }), true),
+        : packLightGrid(bakeLightGrid(bakeMap, lights, wallHeight, { ...options, perCell: ambientDensity }), true),
     });
     // the same inputs as a bake before (a rebuild for a texture change, say): its result, at once
     const cached = bakeCache.get(cacheKey);
@@ -96,9 +119,8 @@ export function createBakeRuntime({
         finish();
         recover();
       };
-      const { width, height, cells, floorHeights, ceilingHeights, props, bridges } = m;
       const request: LightBakeRequest = {
-        map: { width, height, cells, floorHeights, ceilingHeights, props, bridges, sharedPropTypes },
+        map: bakeMap,
         lights, wallHeight, options, ambientDensity,
       };
       try {
