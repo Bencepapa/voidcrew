@@ -11,12 +11,13 @@ interface FakeVoice {
   state: VoiceState | null;
   stopped: boolean;
   sets: number;
+  portal: boolean;
 }
 function fakeBackend() {
   const voices: FakeVoice[] = [];
   const backend: SoundBackend<FakeVoice> = {
-    start: (wave) => {
-      const voice: FakeVoice = { id: voices.length, wave, state: null, stopped: false, sets: 0 };
+    start: (wave, options) => {
+      const voice: FakeVoice = { id: voices.length, wave, state: null, stopped: false, sets: 0, portal: options?.portal === true };
       voices.push(voice);
       return voice;
     },
@@ -168,6 +169,43 @@ const ears = (x: number, z: number, fx = 1, fz = 0) => ({ x, y: 0.5, z, fx, fz }
   assert.equal(voice.state!.gate, 1);
   assert.equal(live().length, 1);
   assert.equal(live()[0], voice, "one voice all along");
+}
+
+// ---- the stereo balance and the pulse's edges ride along with each state
+{
+  doorOpen = true;
+  const { backend, live } = fakeBackend();
+  const system = createSoundSystem(backend, { now: () => 0 });
+  // (a sound exactly to the east, the listener looking north: to the right)
+  system.setScene(scene([{ x: 4, y: 3, kind: "tone", volume: 0.8, range: 30, pulse: { on: 1, off: 1, attack: 0.1, release: 0.4 } }]));
+  system.frame({ x: 3, y: 0.5, z: 3, fx: 0, fz: -1 });
+  const state = live()[0].state!;
+  assert.ok(state.pan > 0 && state.pan < 0.4, "close and loud: right, but not hard right");
+  assert.equal(state.attack, 0.1);
+  assert.equal(state.release, 0.4);
+  system.frame({ x: 5, y: 0.5, z: 3, fx: 0, fz: -1 });
+  assert.ok(live()[0].state!.pan < 0, "walked past it: now on the left");
+  system.frame({ x: 4, y: 0.5, z: 5, fx: 0, fz: -1 });
+  assert.ok(Math.abs(live()[0].state!.pan) < 1e-9, "straight ahead: the middle");
+  // a pulse with no edges set: the defaults (a short edge)
+  const { backend: b2, live: live2 } = fakeBackend();
+  const s2 = createSoundSystem(b2, { now: () => 0 });
+  s2.setScene(scene([{ x: 4, y: 3, kind: "tone", volume: 1, range: 30, pulse: { on: 1, off: 1 } }]));
+  s2.frame(ears(3, 3));
+  assert.equal(live2()[0].state!.attack, 0.02);
+  assert.equal(live2()[0].state!.release, 0.02);
+}
+
+// ---- the doorway's voice is started as one (it fades slowly) and is wide-set
+{
+  doorOpen = true;
+  const { backend, voices } = fakeBackend();
+  const system = createSoundSystem(backend, { now: () => 0 });
+  system.setScene(scene([FIXTURE_SOUND]));
+  system.frame(ears(FIXTURE_LISTENER.x, FIXTURE_LISTENER.z));
+  assert.deepEqual(voices.map((v) => v.portal).sort(), [false, true], "one direct voice, one portal voice");
+  const portal = voices.find((v) => v.portal)!;
+  assert.ok(Math.abs(portal.state!.pan) <= 0.6 + 1e-9, "the doorway's voice is wide");
 }
 
 // ---- what is worked out when: the searches only on a change of cell, a fifth of a second, or an invalidation; the

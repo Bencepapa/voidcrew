@@ -18,6 +18,9 @@ export interface SoundPulse {
   // seconds sounding, then seconds silent, over and over
   on: number;
   off: number;
+  // seconds the burst takes to swell in / die away (0..1, default short): the gate is smoothed, not a switch
+  attack?: number;
+  release?: number;
 }
 
 export interface SoundSpec {
@@ -40,8 +43,10 @@ export interface SoundSpec {
   range: number;
   // how fast it dies away with distance (default 1: like the air does; 0.5 carries far, 3 is gone quickly)
   rolloff?: number;
-  // false: silent until something switches it on (the operables will, as they do a smoke emitter's `active`)
+  // false: silent until something switches it on (a lever, button or plate: an operable target of kind "sound")
   active?: boolean;
+  // a name for the operable targets to address it by (like a smoke emitter's), instead of its cell
+  id?: string;
 }
 
 export const SOUND_LIMITS = {
@@ -50,10 +55,15 @@ export const SOUND_LIMITS = {
   range: { min: 0.25, max: 100, default: 12 },
   rolloff: { min: 0.5, max: 3, default: 1 },
   pulse: { min: 0, max: 60 },
+  // a pulse's attack and release (seconds)
+  edge: { min: 0, max: 1, default: 0.02 },
   // the spot in its cell: across and along (cells), up (wall heights)
   across: { min: -0.5, max: 0.5 },
   up: { min: 0, max: 8, default: 0.5 },
 } as const;
+
+// the longest `id` kept
+const SOUND_ID_MAX = 60;
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const limit = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -92,16 +102,20 @@ export function readSound(raw: unknown): SoundSpec | undefined {
   const pulse = s.pulse as Record<string, unknown> | null | undefined;
   if (pulse && typeof pulse === "object" && finite(pulse.on) && finite(pulse.off)) {
     out.pulse = { on: round(limit(pulse.on, SOUND_LIMITS.pulse.min, SOUND_LIMITS.pulse.max)), off: round(limit(pulse.off, SOUND_LIMITS.pulse.min, SOUND_LIMITS.pulse.max)) };
+    if (finite(pulse.attack)) out.pulse.attack = round(limit(pulse.attack, SOUND_LIMITS.edge.min, SOUND_LIMITS.edge.max), 3);
+    if (finite(pulse.release)) out.pulse.release = round(limit(pulse.release, SOUND_LIMITS.edge.min, SOUND_LIMITS.edge.max), 3);
   }
   if (finite(s.rolloff)) out.rolloff = round(limit(s.rolloff, SOUND_LIMITS.rolloff.min, SOUND_LIMITS.rolloff.max));
   if (s.active === false) out.active = false;
+  if (typeof s.id === "string" && s.id.trim()) out.id = s.id.trim().slice(0, SOUND_ID_MAX);
   return out;
 }
 
 // A new sound for a cell, made as the Sound tool puts one in: the settings of the last one worked on (`template`), else
 // a plain beep. Cleaned like any sound read from a file.
 export function newSound(x: number, y: number, template: Record<string, unknown> = {}): SoundSpec {
-  return readSound({ kind: "tone", ...template, x, y }) as SoundSpec;
+  // (a name belongs to one sound: it is not handed on to the next)
+  return readSound({ kind: "tone", ...template, x, y, id: undefined }) as SoundSpec;
 }
 
 // the whole list of a map file: the sounds that are sounds, in order (the editor addresses them by index, so a
@@ -121,7 +135,7 @@ export interface ResolvedSound {
   pitch: number;
   noise: NoiseColor;
   volume: number;
-  pulse?: SoundPulse;
+  pulse?: Required<SoundPulse>;
   range: number;
   rolloff: number;
   active: boolean;
@@ -137,7 +151,10 @@ export function resolveSound(spec: SoundSpec): ResolvedSound {
     noise: spec.noise ?? "white",
     volume: spec.volume,
     // (an `off` of nothing is no pulse at all: it never stops)
-    pulse: spec.pulse && spec.pulse.off > 0 ? spec.pulse : undefined,
+    pulse:
+      spec.pulse && spec.pulse.off > 0
+        ? { on: spec.pulse.on, off: spec.pulse.off, attack: spec.pulse.attack ?? SOUND_LIMITS.edge.default, release: spec.pulse.release ?? SOUND_LIMITS.edge.default }
+        : undefined,
     range: spec.range,
     rolloff: spec.rolloff ?? SOUND_LIMITS.rolloff.default,
     active: spec.active !== false,
@@ -157,6 +174,16 @@ export function pulseOn(pulse: SoundPulse | undefined, t: number): boolean {
   const cycle = pulse.on + pulse.off;
   if (cycle <= 0) return true;
   return ((t % cycle) + cycle) % cycle < pulse.on;
+}
+
+// A pulse with some of its settings changed, as the map keeps it: an attack or release left at the default is not
+// written (a pulse is `{ on, off }` unless it asks for more).
+export function changePulse(pulse: SoundPulse, patch: Partial<SoundPulse>): SoundPulse {
+  const next = { ...pulse, ...patch };
+  const out: SoundPulse = { on: next.on, off: next.off };
+  if (next.attack !== undefined && next.attack !== SOUND_LIMITS.edge.default) out.attack = next.attack;
+  if (next.release !== undefined && next.release !== SOUND_LIMITS.edge.default) out.release = next.release;
+  return out;
 }
 
 // The map's sounds as editor problems (see editor/validate.ts): a sound that makes nothing, or reaches nowhere.

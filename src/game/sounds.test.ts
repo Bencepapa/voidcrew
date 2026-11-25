@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import { readFileSync } from "node:fs";
-import { NOISE_COLORS, SOUND_LIMITS, newSound, pulseOn, readSound, readSounds, resolveSound, soundProblems, waveKey, type SoundSpec } from "./sounds";
+import { NOISE_COLORS, SOUND_LIMITS, changePulse, newSound, pulseOn, readSound, readSounds, resolveSound, soundProblems, waveKey, type SoundSpec } from "./sounds";
 import { fixtureFile } from "../audio/soundFixture";
 
 // (the map reader pulls in the game's props, which read Vite's import.meta.glob: a stand-in is put in its place)
@@ -79,7 +79,8 @@ assert.equal(readSounds([{ x: 0, y: 0, kind: "tone" }, null, { x: 1, y: 1, kind:
   assert.deepEqual(r.pos, [0, 0.5, 0]);
   assert.equal(r.pulse, undefined);
   assert.equal(resolveSound({ x: 0, y: 0, kind: "tone", volume: 0.5, range: 10, pulse: { on: 1, off: 0 } }).pulse, undefined, "an `off` of nothing never stops");
-  assert.deepEqual(resolveSound({ x: 0, y: 0, kind: "tone", volume: 0.5, range: 10, pulse: { on: 1, off: 2 } }).pulse, { on: 1, off: 2 });
+  assert.deepEqual(resolveSound({ x: 0, y: 0, kind: "tone", volume: 0.5, range: 10, pulse: { on: 1, off: 2 } }).pulse, { on: 1, off: 2, attack: 0.02, release: 0.02 }, "a short edge unless it says");
+  assert.deepEqual(resolveSound({ x: 0, y: 0, kind: "tone", volume: 0.5, range: 10, pulse: { on: 1, off: 2, attack: 0.3, release: 0 } }).pulse, { on: 1, off: 2, attack: 0.3, release: 0 });
   assert.equal(resolveSound({ x: 0, y: 0, kind: "tone", volume: 0.5, range: 10, active: false }).active, false);
 }
 
@@ -94,6 +95,29 @@ assert.equal(readSounds([{ x: 0, y: 0, kind: "tone" }, null, { x: 1, y: 1, kind:
   assert.notEqual(key({ kind: "noise" }), key({ kind: "noise", noise: "pink" }));
   assert.equal(key({ kind: "noise", wave: "saw" }), key({ kind: "noise" }), "a noise has no wave form");
   assert.equal(NOISE_COLORS.map((c) => key({ kind: "noise", noise: c })).length, 3);
+}
+
+// ---- the pulse's edges and a sound's name: read, limited, kept
+{
+  assert.deepEqual(readSound({ x: 1, y: 1, kind: "tone", pulse: { on: 1, off: 1, attack: 0.25, release: 0.5 } })!.pulse, { on: 1, off: 1, attack: 0.25, release: 0.5 });
+  assert.deepEqual(readSound({ x: 1, y: 1, kind: "tone", pulse: { on: 1, off: 1, attack: 9, release: -3 } })!.pulse, { on: 1, off: 1, attack: 1, release: 0 }, "limited to 0..1 seconds");
+  assert.deepEqual(readSound({ x: 1, y: 1, kind: "tone", pulse: { on: 1, off: 1, attack: "slow", release: NaN } })!.pulse, { on: 1, off: 1 }, "junk edges are left off");
+  assert.equal(readSound({ x: 1, y: 1, kind: "tone", pulse: { on: 1, off: 1 } })!.pulse!.attack, undefined, "not written when not given");
+  assert.equal(readSound({ x: 1, y: 1, kind: "tone", attack: 0.5 } as never)!.pulse, undefined, "an edge needs its pulse");
+  assert.equal(readSound({ x: 1, y: 1, kind: "tone", id: "  alarm " })!.id, "alarm");
+  assert.equal(readSound({ x: 1, y: 1, kind: "tone", id: "   " })!.id, undefined);
+  assert.equal(readSound({ x: 1, y: 1, kind: "tone", id: 7 })!.id, undefined);
+  assert.equal(readSound({ x: 1, y: 1, kind: "tone", id: "x".repeat(200) })!.id!.length, 60);
+  assert.equal(newSound(2, 3, { id: "alarm", volume: 0.2 }).id, undefined, "a name is not handed on to the next sound");
+  assert.equal(newSound(2, 3, { id: "alarm", volume: 0.2 }).volume, 0.2);
+  // what the panel writes: an edge left at the default is not written
+  assert.deepEqual(changePulse({ on: 0.3, off: 0.7 }, { attack: 0.02 }), { on: 0.3, off: 0.7 });
+  assert.deepEqual(changePulse({ on: 0.3, off: 0.7 }, { attack: 0.2 }), { on: 0.3, off: 0.7, attack: 0.2 });
+  assert.deepEqual(changePulse({ on: 0.3, off: 0.7, attack: 0.2 }, { on: 1 }), { on: 1, off: 0.7, attack: 0.2 }, "the other edges stay");
+  assert.deepEqual(changePulse({ on: 0.3, off: 0.7, attack: 0.2, release: 0.5 }, { attack: 0.02 }), { on: 0.3, off: 0.7, release: 0.5 });
+  // (and it survives the map: a clean round trip)
+  const spec = readSound({ x: 1, y: 1, kind: "tone", id: "alarm", pulse: changePulse({ on: 0.3, off: 0.7 }, { release: 0.4 }) })!;
+  assert.deepEqual(readSound(JSON.parse(JSON.stringify(spec))), spec);
 }
 
 // ---- the pulse

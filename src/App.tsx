@@ -2049,7 +2049,7 @@ export default function App() {
     const sound = resolveSound(spec);
     return {
       kind: sound.kind, wave: sound.wave, pitch: sound.pitch, noise: sound.noise, volume: sound.volume,
-      pulse: sound.pulse ?? spec.pulse, range: sound.range, rolloff: sound.rolloff, active: sound.active,
+      pulse: sound.pulse ?? spec.pulse, range: sound.range, rolloff: sound.rolloff, active: sound.active, id: spec.id,
       pos: sound.pos, roomHeight: ceilingHeight(map, spec.x, spec.y) - floorHeight(map, spec.x, spec.y), listening,
     };
   };

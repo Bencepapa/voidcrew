@@ -4,7 +4,8 @@
 // (soundField.ts): only the places and the lengths are made up here. Nothing is saved.
 import { engine, engineStatus, getListener, type Voice } from "./engine";
 import { attenuation, distanceTo, muffle } from "./soundField";
-import type { WaveSpec } from "./soundSystem";
+import { stereoPan } from "./stereo";
+import type { VoiceState, WaveSpec } from "./soundSystem";
 
 const BEEP: WaveSpec = { kind: "tone", wave: "saw", pitch: 440, noise: "white" };
 const HISS: WaveSpec = { kind: "noise", wave: "sine", pitch: 440, noise: "pink" };
@@ -25,10 +26,13 @@ export interface ProbeSource {
 const probeVoices = new Set<Voice>();
 
 // how a probe voice is set: loudness from the distance (as a sound emitter's is), dulled by its walls
-function stateOf(source: ProbeSource) {
+function stateOf(source: ProbeSource): VoiceState {
   const wall = muffle(source.walls ?? 0);
-  const level = 0.7 * (source.volume ?? 1) * attenuation(distanceTo(getListener(), source), RANGE, 1);
-  return { x: source.x, y: source.y, z: source.z, level, gate: 1, cutoff: wall.cutoff, wallGain: wall.gain };
+  const listener = getListener();
+  const distance = distanceTo(listener, source);
+  const level = 0.7 * (source.volume ?? 1) * attenuation(distance, RANGE, 1);
+  const pan = stereoPan(listener, source.x, source.z, { distance, level });
+  return { x: source.x, y: source.y, z: source.z, pan, level, gate: 1, attack: 0, release: 0, cutoff: wall.cutoff, wallGain: wall.gain };
 }
 
 /** Plays one voice of the test sound at a world position for a moment (it stays there while the listener turns and walks). */

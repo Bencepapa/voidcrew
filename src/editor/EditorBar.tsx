@@ -346,6 +346,8 @@ export interface SoundInfo {
   range: number;
   rolloff: number;
   active: boolean;
+  // the name the levers / buttons / plates address it by
+  id?: string;
   // its spot in its cell: across, up (wall heights), along; and its cell's floor-to-ceiling height
   pos: [number, number, number];
   roomHeight: number;

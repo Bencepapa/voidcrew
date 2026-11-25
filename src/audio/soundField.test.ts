@@ -119,10 +119,11 @@ assert.deepEqual(muffle(-1), muffle(0));
   near(behindness(east, 4, 0), 0, 1e-9);
   near(rearFilter(0).cutoff, 18000);
   near(rearFilter(0).gain, 1);
-  near(rearFilter(1).cutoff, 720, 1e-6);
-  near(rearFilter(1).gain, 0.5);
-  assert.ok(rearFilter(0.5).cutoff < 18000 && rearFilter(0.5).cutoff > 720);
-  assert.equal(rearFilter(3).gain, 0.5, "limited");
+  // (the default strength: about 4 kHz and -2.5 dB straight behind; the whole curve is tested in rear.test.ts)
+  near(rearFilter(1).cutoff, 4000, 1e-6);
+  near(rearFilter(1).gain, Math.pow(10, -2.5 / 20), 1e-9);
+  assert.ok(rearFilter(0.5).cutoff < 18000 && rearFilter(0.5).cutoff > 4000);
+  assert.equal(rearFilter(3).gain, rearFilter(1).gain, "limited");
   assert.equal(rearFilter(-1).cutoff, 18000);
 }
 

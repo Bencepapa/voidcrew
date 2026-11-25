@@ -4,6 +4,7 @@
 // the listener changes cells, a few times a second and when a door moves (`refresh`); what moves with every step (the
 // distances, the voices' places) every frame.
 import { pulseOn, resolveSound, waveKey, type SoundSpec, type ResolvedSound } from "../game/sounds";
+import { stereoPan } from "./stereo";
 import { MAX_SOURCES, planSources, voiceTargets, type Blocked, type Emitter, type Listener, type SourcePlan } from "./soundField";
 
 // what the backend plays: a looping wave (see ResolvedSound)
@@ -15,15 +16,25 @@ export interface VoiceState {
   x: number;
   y: number;
   z: number;
+  // the left / right balance, -1..1 (see stereo.ts): used unless the 3D (HRTF) panner is on, which works it out from x, y, z
+  pan: number;
   level: number;
   gate: number;
+  // seconds the gate takes to open / close (a pulse's attack and release)
+  attack: number;
+  release: number;
   cutoff: number;
   wallGain: number;
 }
 
+// how a voice is started: the doorway's voice fades in and out more slowly than the direct one
+export interface StartOptions {
+  portal?: boolean;
+}
+
 export interface SoundBackend<H = unknown> {
   // a new looping voice, silent until it is set; null if there is no sound to be had
-  start(wave: WaveSpec): H | null;
+  start(wave: WaveSpec, options?: StartOptions): H | null;
   set(voice: H, state: VoiceState): void;
   // fades out and ends the voice
   stop(voice: H): void;
@@ -170,12 +181,23 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
             voice = undefined;
           }
           if (!voice) {
-            const handle = backend.start(emitter.sound);
+            const handle = backend.start(emitter.sound, { portal: target.role === "portal" });
             if (handle === null) continue;
             voice = { handle, wave };
             voices.set(key, voice);
           }
-          backend.set(voice.handle, { x: target.x, y: target.y, z: target.z, level: target.level, gate, cutoff: target.cutoff, wallGain: target.wallGain });
+          backend.set(voice.handle, {
+            x: target.x,
+            y: target.y,
+            z: target.z,
+            pan: stereoPan(listener, target.x, target.z, { distance: target.distance, level: target.level, portal: target.role === "portal" }),
+            level: target.level,
+            gate,
+            attack: emitter.sound.pulse?.attack ?? 0,
+            release: emitter.sound.pulse?.release ?? 0,
+            cutoff: target.cutoff,
+            wallGain: target.wallGain,
+          });
         }
       }
       for (const key of [...voices.keys()]) if (!wanted.has(key)) stopVoice(key);
