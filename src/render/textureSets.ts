@@ -130,6 +130,27 @@ export const TEXTURE_SETS = {
     depth: `${import.meta.env.BASE_URL}textures/fantasytorch1/depth.png`,
     pixelArt: true,
   },
+  fantasygrass_mid: {
+    kind: "propFace", label: "Medium grass",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasygrass_mid/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasygrass_mid/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasygrass_mid/depth.png`,
+    pixelArt: true,
+  },
+  fantasygrass_tall: {
+    kind: "propFace", label: "Tall grass",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasygrass_tall/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasygrass_tall/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasygrass_tall/depth.png`,
+    pixelArt: true,
+  },
+  fantasywheat: {
+    kind: "propFace", label: "Wheat",
+    diffuse: `${import.meta.env.BASE_URL}textures/fantasywheat/diffuse.png`,
+    normal: `${import.meta.env.BASE_URL}textures/fantasywheat/normal.png`,
+    depth: `${import.meta.env.BASE_URL}textures/fantasywheat/depth.png`,
+    pixelArt: true,
+  },
   // one floor tile per cell: a grate with recessed slots
   floor1: {
     kind: "floor", label: "Grate floor",
