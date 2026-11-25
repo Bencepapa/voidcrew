@@ -140,18 +140,19 @@ export function playAt(source: ProbeSource): number {
 //  - rear dulling: a sound from behind has its high end shadowed by the ear, so a low-pass opens or closes with the angle
 //    (front / back cue that works on speakers too);
 //  - muffling (a wall between): two low-passes in a row and a drop in level, the way a wall takes the highs and keeps the rumble.
-interface Entry { rear: BiquadFilterNode; x: number; z: number }
+interface Entry { rear: BiquadFilterNode; level: GainNode; x: number; z: number }
 const entries = new Set<Entry>();
 let rearDull = true;
 export function setRearDull(on: boolean) { rearDull = on; applyRear(); }
 export const isRearDull = () => rearDull;
 
-// 0 straight ahead .. 1 straight behind, on the ground plane
+// 0 in front or at the side .. 1 straight behind, on the ground plane (only the rear half-plane counts: a sound at the
+// side is not dulled, one behind is, most when it is straight back)
 function behindness(x: number, z: number): number {
   const dx = x - listener.x, dz = z - listener.z;
   const length = Math.hypot(dx, dz);
   if (length < 0.3) return 0;
-  return (1 - (dx * listener.fx + dz * listener.fz) / length) / 2;
+  return Math.max(0, -(dx * listener.fx + dz * listener.fz) / length);
 }
 
 function applyRear() {
@@ -159,7 +160,9 @@ function applyRear() {
   if (!ctx) return;
   for (const entry of entries) {
     const behind = rearDull ? behindness(entry.x, entry.z) : 0;
-    entry.rear.frequency.setTargetAtTime(18000 * Math.pow(0.12, behind), ctx.currentTime, 0.05);
+    // straight behind: the highs cut down to about 700 Hz and the level halved (about -6 dB)
+    entry.rear.frequency.setTargetAtTime(18000 * Math.pow(0.04, behind), ctx.currentTime, 0.05);
+    entry.level.gain.setTargetAtTime(1 - 0.5 * behind, ctx.currentTime, 0.05);
   }
 }
 
@@ -176,9 +179,11 @@ function shape(howl: Howl, id: number, source: ProbeSource) {
       return filter;
     };
     const rear = lowpass(18000);
+    const rearLevel = ctx.createGain();
     sound._panner.disconnect();
     sound._panner.connect(rear);
-    let tail: AudioNode = rear;
+    rear.connect(rearLevel);
+    let tail: AudioNode = rearLevel;
     if (source.muffle) {
       const first = lowpass(source.muffle), second = lowpass(source.muffle), level = ctx.createGain();
       level.gain.value = 0.4; // (about -8 dB)
@@ -188,7 +193,7 @@ function shape(howl: Howl, id: number, source: ProbeSource) {
       tail = level;
     }
     tail.connect(sound._node);
-    const entry: Entry = { rear, x: source.x, z: source.z };
+    const entry: Entry = { rear, level: rearLevel, x: source.x, z: source.z };
     entries.add(entry);
     applyRear();
     howl.once("end", () => entries.delete(entry), id);
