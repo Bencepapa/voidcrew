@@ -149,6 +149,7 @@ export const editorShellHu: Record<keyof typeof editorShellEn, string> = {
   "editorShell.shared.title": "Megosztott pályák · {world}",
   "editorShell.shared.close": "Megosztott pályák bezárása",
   "editorShell.shared.newerVersion": "Ennek a pályának újabb változata van. Ments másolatot a módosításaid megőrzéséhez.",
+  "editorShell.shared.publishConflict": "Van újabb közzétett változat (r{theirs}) annál, amelyikből indultál (r{mine}). Közzéteszed a sajátodat új változatként? (A régi változat a tárban marad.)",
   "editorShell.shared.mapFileUnavailable": "A pályafájl nem érhető el",
   "editorShell.shared.mapVersionUnavailable": "A pálya verziója nem érhető el",
   "editorShell.shared.accessRequired": "Szerkesztői hozzáférés szükséges",

@@ -4,6 +4,7 @@ Ezeket a Pages-es buildben vagy a helyi szerveren kell kipróbálni; a kód- és
 Pipálható lista: húzd ki, ami rendben van; ami nem, azt írd le (melyik lépésnél, mit láttál, a böngésző konzolja).
 
 ## Supabase (valódi tár)
+- [ ] **Pálya közzétételi ütközése:** nyisd meg ugyanazt a változatot három szerkesztői munkamenetben, majd az elsőben tegyél közzé egy módosítást. A másodikban szerkessz és próbálj közzétenni: a kérdés mindkét revíziót mutatja. A Nem után a helyi szerkesztés és a korábbi figyelmeztetés látszik. Próbáld újra, és a kérdés nyitva tartása közben a harmadik munkamenetben tegyél közzé egy újabb változatot. A másodikban az Igen az akkor legfrissebb revízió után ment, a korábbi változatok a tárban maradnak.
 - [x] **Vendég-olvasás inkognitó ablakban:** `localhost:3000` → Network fül, szűrő a Supabase-projektre; 5–10 s után `GET …/void_map_heads?world=eq.fantasy` és `POST …/storage/v1/object/list/void-textures` **200**-zal (401 vagy üres lista = a `shared-public-read.sql` nem érvényesült).
 - [ ] **Törlés** (a törlési szabály a `supabase/shared-texture-folders.sql`-ben): egy teszt-textúra törlése az Assets-ben tényleg eltűnik a tárból (a futtatásról nincs megerősítés).
 - [x] **Közzététel és visszatöltés:** egy új textúra, egy matrica és egy állókép közzététele, oldalfrissítés után látszik, vendégként is.

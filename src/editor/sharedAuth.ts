@@ -257,7 +257,7 @@ async function restoreSession() {
 export async function sharedRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await authorizedFetch(path, init);
   if (!res.ok) {
-    if (res.status === 409) throw new Error(t("editorShell.shared.newerVersion"));
+    if (res.status === 409) throw new SharedHttpError(t("editorShell.shared.newerVersion"), res.status);
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.message || detail.msg || res.statusText);
   }

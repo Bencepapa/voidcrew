@@ -148,6 +148,7 @@ export const editorShellEn = {
   "editorShell.shared.title": "Shared maps · {world}",
   "editorShell.shared.close": "Close shared maps",
   "editorShell.shared.newerVersion": "This map has a newer version. Save a copy to keep your edits.",
+  "editorShell.shared.publishConflict": "A newer published revision (r{theirs}) exists than the one you started from (r{mine}). Publish yours on top? (The old revision stays in the store.)",
   "editorShell.shared.mapFileUnavailable": "Map file unavailable",
   "editorShell.shared.mapVersionUnavailable": "Map version unavailable",
   "editorShell.shared.accessRequired": "Editor access required",

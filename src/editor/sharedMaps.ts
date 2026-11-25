@@ -6,10 +6,42 @@ import type { MapFile } from "../game/mapFormat";
 import type { GameMap } from "../game/types";
 import type { WorldId } from "../game/worlds";
 import { createMap } from "./mapStore";
-import { sharedProject, sharedRequest } from "./sharedAuth";
+import { SharedHttpError, sharedProject, sharedRequest } from "./sharedAuth";
 import type { SharedMapHead } from "./sharedMapHeads";
+import { newerMapRevision, nextMapRevision } from "./sharedMapRevisions";
 
 const SEP = " – ";
+
+export async function publishSharedMap(
+  world: WorldId, id: string, title: string, body: MapFile, base: number,
+  confirmOverwrite?: (mine: number, theirs: number) => Promise<boolean>,
+): Promise<SharedMapHead> {
+  async function readHead() {
+    const rows = await sharedRequest<Pick<SharedMapHead, "revision">[]>(
+      "/rest/v1/void_map_heads?select=revision&world=eq." + world + "&id=eq." + encodeURIComponent(id),
+      { cache: "no-store" },
+    );
+    return rows[0]?.revision;
+  }
+
+  let revision = nextMapRevision(base);
+  for (;;) {
+    const head = { id, title, revision };
+    try {
+      await sharedRequest("/rest/v1/void_maps", {
+        method: "POST", body: JSON.stringify({ ...head, world, body }),
+      });
+      return head;
+    } catch (error) {
+      if (!(error instanceof SharedHttpError) || error.status !== 409 || !confirmOverwrite) throw error;
+      const theirs = newerMapRevision(revision - 1, await readHead());
+      if (theirs === undefined || !await confirmOverwrite(base, theirs)) throw error;
+      const current = await readHead();
+      if (current === undefined) throw error;
+      revision = nextMapRevision(theirs, current);
+    }
+  }
+}
 
 // a shared head's title is "Place – Name" (the head table has no place column)
 export function splitSharedTitle(title: string): { place?: string; name: string } {
