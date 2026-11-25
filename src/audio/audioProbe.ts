@@ -17,6 +17,7 @@ export function setListener(x: number, y: number, z: number, fx: number, fz: num
   try {
     Howler.pos(x, y, z);
     Howler.orientation(fx, 0, fz, 0, 1, 0);
+    if (entries.size) applyRear();
   } catch {
     /* no audio: nothing to move */
   }
@@ -48,6 +49,28 @@ function toneWav(frequency: number, seconds: number, harmonics = 6, decay = 4, r
   return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
 }
 
+// a pulsing, pink-ish noise burst ("shh-shh"): broadband, so a low-pass changes how it sounds (a plain tone cannot show that)
+function noiseWav(seconds: number, rate = 22050): string {
+  const count = Math.floor(seconds * rate);
+  const buffer = new ArrayBuffer(44 + count * 2);
+  const view = new DataView(buffer);
+  const text = (at: number, value: string) => { for (let i = 0; i < value.length; i++) view.setUint8(at + i, value.charCodeAt(i)); };
+  text(0, "RIFF"); view.setUint32(4, 36 + count * 2, true); text(8, "WAVE"); text(12, "fmt ");
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  text(36, "data"); view.setUint32(40, count * 2, true);
+  let slow = 0;
+  for (let i = 0; i < count; i++) {
+    const t = i / rate;
+    const white = Math.random() * 2 - 1;
+    slow = slow * 0.93 + white * 0.07; // (a one-pole low-pass of it: the low part of the noise)
+    const pulse = 0.35 + 0.65 * Math.pow(Math.max(0, Math.sin(2 * Math.PI * 2.5 * t)), 2);
+    const envelope = Math.min(1, t / 0.02, (seconds - t) / 0.05) * pulse;
+    view.setInt16(44 + i * 2, Math.round((white * 0.35 + slow * 2.2) * envelope * 0.8 * 32767), true);
+  }
+  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+}
+
 let limited = false;
 // the master goes through a compressor used as a limiter (20 sounds at once clipped without it)
 function ensureLimiter() {
@@ -67,6 +90,12 @@ function ensureLimiter() {
 }
 
 let beep: Howl | undefined;
+let noise: Howl | undefined;
+function theNoise(): Howl {
+  listenerSeen = true;
+  if (!noise) noise = new Howl({ src: [noiseWav(2)], format: ["wav"], volume: 1 });
+  return noise;
+}
 function theBeep(): Howl {
   listenerSeen = true;
   if (!beep) beep = new Howl({ src: [toneWav(440, 0.7, 10, 3)], format: ["wav"], volume: 1 });
@@ -78,6 +107,8 @@ export interface ProbeSource {
   x: number; y: number; z: number;
   /** a low-pass cutoff (Hz): the muffled sound of a house, 0: none */
   muffle?: number;
+  /** the noise test sound instead of the beep */
+  noise?: boolean;
   /** 0..1 (default 1) */
   volume?: number;
 }
@@ -91,7 +122,7 @@ const pannerOptions = () => ({ panningModel: hrtf ? ("HRTF" as const) : ("equalp
 
 /** Plays one instance of the test sound at a world position (it stays there while the listener turns and walks). */
 export function playAt(source: ProbeSource): number {
-  const howl = theBeep();
+  const howl = source.noise ? theNoise() : theBeep();
   ensureLimiter();
   Howler.pos(listener.x, listener.y, listener.z);
   Howler.orientation(listener.fx, 0, listener.fz, 0, 1, 0);
@@ -99,27 +130,72 @@ export function playAt(source: ProbeSource): number {
   howl.volume(source.volume ?? 1, id);
   howl.pos(source.x, source.y, source.z, id);
   howl.pannerAttr(pannerOptions(), id);
-  if (source.muffle) muffle(howl, id, source.muffle);
+  shape(howl, id, source);
   return id;
 }
 
-// Inserts a low-pass filter into one instance's chain (Howler keeps no hook for it: its chain is source -> panner ->
-// gain node -> master, so the filter goes between the panner and the gain). Part of what the probe checks: can the chain be reached without breaking on a Howler update?
-function muffle(howl: Howl, id: number, cutoff: number) {
-  try {
-    const sound = (howl as unknown as { _soundById(id: number): { _node: GainNode; _panner?: PannerNode } | null })._soundById(id);
-    if (!sound?._panner) return;
-    const filter = Howler.ctx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = cutoff;
-    sound._panner.disconnect();
-    sound._panner.connect(filter);
-    filter.connect(sound._node);
-  } catch (error) {
-    console.warn("[audio probe] muffle failed", error);
+// ---- shaping one instance's sound ----
+// Howler keeps no hook for effects: an instance's chain is source -> panner -> gain node -> master, so filters go between
+// the panner and the gain node (reaching `_panner` / `_node` is the fragile part; it is only done here).
+//  - rear dulling: a sound from behind has its high end shadowed by the ear, so a low-pass opens or closes with the angle
+//    (front / back cue that works on speakers too);
+//  - muffling (a wall between): two low-passes in a row and a drop in level, the way a wall takes the highs and keeps the rumble.
+interface Entry { rear: BiquadFilterNode; x: number; z: number }
+const entries = new Set<Entry>();
+let rearDull = true;
+export function setRearDull(on: boolean) { rearDull = on; applyRear(); }
+export const isRearDull = () => rearDull;
+
+// 0 straight ahead .. 1 straight behind, on the ground plane
+function behindness(x: number, z: number): number {
+  const dx = x - listener.x, dz = z - listener.z;
+  const length = Math.hypot(dx, dz);
+  if (length < 0.3) return 0;
+  return (1 - (dx * listener.fx + dz * listener.fz) / length) / 2;
+}
+
+function applyRear() {
+  const ctx = Howler.ctx as AudioContext | undefined;
+  if (!ctx) return;
+  for (const entry of entries) {
+    const behind = rearDull ? behindness(entry.x, entry.z) : 0;
+    entry.rear.frequency.setTargetAtTime(18000 * Math.pow(0.12, behind), ctx.currentTime, 0.05);
   }
 }
 
+function shape(howl: Howl, id: number, source: ProbeSource) {
+  try {
+    const sound = (howl as unknown as { _soundById(id: number): { _node: GainNode; _panner?: PannerNode } | null })._soundById(id);
+    if (!sound?._panner) return;
+    const ctx = Howler.ctx as AudioContext;
+    const lowpass = (cutoff: number) => {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.Q.value = 0.7;
+      filter.frequency.value = cutoff;
+      return filter;
+    };
+    const rear = lowpass(18000);
+    sound._panner.disconnect();
+    sound._panner.connect(rear);
+    let tail: AudioNode = rear;
+    if (source.muffle) {
+      const first = lowpass(source.muffle), second = lowpass(source.muffle), level = ctx.createGain();
+      level.gain.value = 0.4; // (about -8 dB)
+      tail.connect(first);
+      first.connect(second);
+      second.connect(level);
+      tail = level;
+    }
+    tail.connect(sound._node);
+    const entry: Entry = { rear, x: source.x, z: source.z };
+    entries.add(entry);
+    applyRear();
+    howl.once("end", () => entries.delete(entry), id);
+  } catch (error) {
+    console.warn("[audio probe] shaping failed", error);
+  }
+}
 /** Where the world is relative to the listener: `ahead` and `right` in cells. */
 export function relative(ahead: number, right: number, up = 0): ProbeSource {
   // the right-hand side of a forward vector (fx, fz) on the ground plane (x east, z south): (-fz, fx)
