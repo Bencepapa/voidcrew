@@ -89,6 +89,7 @@ import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import { doorLeafMotion, type DoorType } from "../game/doorTypes";
 import { onSharedDecalsChanged, onSharedImagesChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
 import { isSharedSkyId, skySource } from "../game/skyImage";
+import { setListener as setAudioListener } from "../audio/audioProbe";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
@@ -8582,6 +8583,8 @@ export function GameViewport({
       updatePartyCover(camX, cam.y * wallHeight, camZ, s.eyeHeight);
       if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ);
       else if (aimFrameRef.current) aimFrameRef.current = null;
+      // (the ears: where the party's eye is and which way it looks - see audio/audioProbe.ts)
+      setAudioListener(camX, eyeY, camZ, fwdX / fwdLen, fwdZ / fwdLen);
       updateLightPool(
         topdown.on ? { x: topdown.x, z: topdown.z } : { x: cam.x, z: cam.z },
         topdown.on

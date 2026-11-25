@@ -1,0 +1,36 @@
+import { useState } from "react";
+import { t } from "../i18n";
+import { playAt, playMany, playOrbit, probeStatus, relative, stopAllProbes, type ProbeStatus } from "../audio/audioProbe";
+
+// The Debug panel's "Hang (próba)" section: the Howler spike's buttons (see src/audio/audioProbe.ts). Each sound stays
+// where it was put in the world, so turning and walking should move it in the stereo field.
+const BUTTON = "text-[11px] border border-neutral-600 rounded-sm px-2 py-1 hover:bg-neutral-800 text-left";
+
+export function AudioProbeSection() {
+  const [status, setStatus] = useState<ProbeStatus | null>(null);
+  const refresh = () => setStatus(probeStatus());
+  const run = (action: () => void) => () => {
+    try {
+      action();
+    } catch (error) {
+      console.warn("[audio probe]", error);
+    }
+    refresh();
+  };
+  return (
+    <>
+      <p className="text-[10px] text-neutral-400">{t("debug.audioProbeHint")}</p>
+      <div className="flex flex-wrap gap-1">
+        <button type="button" className={BUTTON} onClick={run(() => playAt(relative(3, 0)))}>{t("debug.audioAhead")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playAt(relative(0, 3)))}>{t("debug.audioRight")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playAt(relative(0, -3)))}>{t("debug.audioLeft")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playAt(relative(-3, 0)))}>{t("debug.audioBehind")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playOrbit())}>{t("debug.audioOrbit")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), muffle: 500 }))}>{t("debug.audioMuffled")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playMany(20))}>{t("debug.audioMany")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => stopAllProbes())}>{t("debug.audioStop")}</button>
+      </div>
+      {status && <p className="text-[10px] text-neutral-300">{t("debug.audioStatus", { state: status.state, rate: status.sampleRate, active: status.active })}</p>}
+    </>
+  );
+}
