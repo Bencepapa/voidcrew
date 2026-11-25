@@ -19,6 +19,8 @@ import type { Direction, PropAnchor, Vec2 } from "./types";
 // hidden faces, which piece of a run carries the decoration) is worked out from its neighbours whenever it is
 // needed - so there is nothing to keep in step on an edit (unlike the roof, whose pieces are different props).
 //
+// An edge or mid piece may also be foliage (layers, an X; see fenceLayers.ts and the style's layers / cross /solid).
+//
 // This file is pure: no rendering, no map file. The renderer, the collision, the line of sight, the minimap
 // and the editor's edits all read it.
 
@@ -51,9 +53,27 @@ export interface FenceStyle {
   // Default: a block does, the others don't.
   opaque?: boolean;
   deco?: FenceDeco;
+  // Foliage (see fenceLayers.ts): an edge or mid piece repeated in `layers` parallel planes, `spacing` cells apart
+  // (edge: into the cell, mid: both ways round the middle), each nudged by up to `jitter`; a mid piece with `cross`
+  // is no fence line at all but two planes crossing in the cell's middle (north-south + east-west, or the diagonals).
+  layers?: number;
+  spacing?: number;
+  jitter?: number;
+  cross?: FenceCross;
+  // false: bodies walk through it (grass, wheat); every other piece stops bodies (default true)
+  solid?: boolean;
 }
 
+export type FenceCross = "axes" | "diagonal";
+export const FENCE_CROSSES: readonly FenceCross[] = ["axes", "diagonal"];
+
 export const FENCE_HEIGHT = 1;
+export const FENCE_LAYERS_MAX = 8;
+export const FENCE_SPACING = 0.15;
+export const FENCE_SPACING_MIN = 0.04;
+export const FENCE_SPACING_MAX = 0.5;
+export const FENCE_JITTER = 0.1;
+export const FENCE_JITTER_MAX = 0.5;
 export const FENCE_HEIGHT_MIN = 0.25;
 export const FENCE_HEIGHT_MAX = 3;
 export const FENCE_THICKNESS_MAX = 0.8;
@@ -83,6 +103,20 @@ export function cleanFenceStyle(raw: unknown): FenceStyle | undefined {
   const top = textureId(r.top);
   if (top) out.top = top;
   if (typeof r.opaque === "boolean") out.opaque = r.opaque;
+  const layers = num(r.layers);
+  if (layers !== undefined && Math.round(layers) > 1) out.layers = Math.round(clamp(layers, 1, FENCE_LAYERS_MAX));
+  const spacing = num(r.spacing);
+  if (spacing !== undefined) {
+    const v = round2(clamp(spacing, FENCE_SPACING_MIN, FENCE_SPACING_MAX));
+    if (v !== FENCE_SPACING) out.spacing = v;
+  }
+  const jitter = num(r.jitter);
+  if (jitter !== undefined) {
+    const v = round2(clamp(jitter, 0, FENCE_JITTER_MAX));
+    if (v !== FENCE_JITTER) out.jitter = v;
+  }
+  if (r.cross === "axes" || r.cross === "diagonal") out.cross = r.cross;
+  if (r.solid === false) out.solid = false;
   const d = r.deco;
   if (d && typeof d === "object") {
     const deco = d as Record<string, unknown>;
@@ -127,6 +161,15 @@ export interface FencePiece {
   height: number;
   thickness: number;
   opaque: boolean;
+  // foliage: the planes it repeats in, how far apart, how much each is nudged, and the X of a mid piece (see fenceLayers.ts)
+  layers: number;
+  spacing: number;
+  jitter: number;
+  cross?: FenceCross;
+  // whether it is drawn as foliage (more than one layer, or an X) rather than as the one fence line
+  foliage: boolean;
+  // whether bodies are stopped by it
+  solid: boolean;
 }
 
 const SIDES: readonly Direction[] = ["N", "E", "S", "W"];
@@ -137,6 +180,9 @@ export function fencePieceOf(p: FenceProp, index: number): FencePiece | null {
   if (!form) return null;
   const style = cleanFenceStyle(p.fence) ?? {};
   const turn = (((p.rotation ?? 0) % 180) + 180) % 180;
+  const layers = form === "block" ? 1 : style.layers ?? 1;
+  const cross = form === "mid" ? style.cross : undefined;
+  const foliage = layers > 1 || !!cross;
   return {
     index,
     form,
@@ -148,8 +194,15 @@ export function fencePieceOf(p: FenceProp, index: number): FencePiece | null {
     elevation: p.elevation ?? 0,
     style,
     height: style.height ?? FENCE_HEIGHT,
-    thickness: form === "block" ? 0 : style.thickness ?? 0,
+    // (foliage planes are single sheets: no gap between faces, no top, no decoration)
+    thickness: form === "block" || foliage ? 0 : style.thickness ?? 0,
     opaque: style.opaque ?? form === "block",
+    layers,
+    spacing: style.spacing ?? FENCE_SPACING,
+    jitter: style.jitter ?? FENCE_JITTER,
+    ...(cross ? { cross } : {}),
+    foliage,
+    solid: form === "block" || style.solid !== false,
   };
 }
 
@@ -258,12 +311,15 @@ function buildIndex(props: readonly FenceProp[]): FenceIndex {
       if (!idx.edges.has(id)) idx.edges.set(id, piece);
     }
   }
-  const add = (cells: Vec2[], box: FenceBox) => {
-    for (const c of cells) {
-      const key = cellKey(c.x, c.y);
-      const list = idx.boxes.get(key);
-      if (list) list.push(box);
-      else idx.boxes.set(key, [box]);
+  // (`solid` false: the box only counts for sight - bodies walk through foliage)
+  const add = (cells: Vec2[], box: FenceBox, solid = true) => {
+    if (solid) {
+      for (const c of cells) {
+        const key = cellKey(c.x, c.y);
+        const list = idx.boxes.get(key);
+        if (list) list.push(box);
+        else idx.boxes.set(key, [box]);
+      }
     }
     if (box.opaque) idx.opaque.push(box);
   };
@@ -273,13 +329,18 @@ function buildIndex(props: readonly FenceProp[]): FenceIndex {
     add([cell], { minX: piece.x - 0.5, maxX: piece.x + 0.5, minZ: piece.y - 0.5, maxZ: piece.y + 0.5, height: piece.elevation + piece.height, opaque: piece.opaque, cell });
   }
   for (const piece of idx.mids.values()) {
-    idx.closed.add(cellKey(piece.x, piece.y));
+    if (piece.solid) idx.closed.add(cellKey(piece.x, piece.y));
     const cell = { x: piece.x, y: piece.y };
+    if (piece.cross) {
+      // (an X is a bush filling its cell: the whole cell stops bodies - or sight - when it is solid - or opaque)
+      add([cell], { minX: piece.x - 0.5, maxX: piece.x + 0.5, minZ: piece.y - 0.5, maxZ: piece.y + 0.5, height: piece.elevation + piece.height, opaque: piece.opaque, cell }, piece.solid);
+      continue;
+    }
     const half = Math.max(FENCE_BODY_HALF, piece.thickness / 2);
     for (const seg of midSegments(midArms(idx, piece), piece.axis, piece.thickness)) {
       const wide = seg.axis === "x" ? seg.length / 2 : half;
       const deep = seg.axis === "x" ? half : seg.length / 2;
-      add([cell], { minX: piece.x + seg.cx - wide, maxX: piece.x + seg.cx + wide, minZ: piece.y + seg.cz - deep, maxZ: piece.y + seg.cz + deep, height: piece.elevation + piece.height, opaque: piece.opaque, cell });
+      add([cell], { minX: piece.x + seg.cx - wide, maxX: piece.x + seg.cx + wide, minZ: piece.y + seg.cz - deep, maxZ: piece.y + seg.cz + deep, height: piece.elevation + piece.height, opaque: piece.opaque, cell }, piece.solid);
     }
   }
   for (const [id, piece] of idx.edges) {
@@ -287,7 +348,7 @@ function buildIndex(props: readonly FenceProp[]): FenceIndex {
     const half = Math.max(FENCE_BODY_HALF, piece.thickness / 2);
     const wide = axis === "x" ? 0.5 : half;
     const deep = axis === "x" ? half : 0.5;
-    add(edgeCells(id), { minX: cx - wide, maxX: cx + wide, minZ: cz - deep, maxZ: cz + deep, height: piece.elevation + piece.height, opaque: piece.opaque, cell: { x: piece.x, y: piece.y } });
+    add(edgeCells(id), { minX: cx - wide, maxX: cx + wide, minZ: cz - deep, maxZ: cz + deep, height: piece.elevation + piece.height, opaque: piece.opaque, cell: { x: piece.x, y: piece.y } }, piece.solid);
   }
   return idx;
 }
@@ -300,7 +361,9 @@ export const hasFences = (idx: FenceIndex) => idx.pieces.length > 0;
 export function edgeFenceBetween(idx: FenceIndex, from: Vec2, to: Vec2): FencePiece | undefined {
   if (!idx.edges.size) return undefined;
   const id = edgeBetween(from, to);
-  return id ? idx.edges.get(id) : undefined;
+  const piece = id ? idx.edges.get(id) : undefined;
+  // (foliage on an edge - `solid` false - is stepped through)
+  return piece?.solid ? piece : undefined;
 }
 
 // Whether grid movement may not enter a cell (a block or a mid fence stands in it).
@@ -360,11 +423,11 @@ export function fenceBlocksSight(
 
 const ARM_ORDER: readonly Direction[] = ["N", "E", "S", "W"];
 
-// The sides a mid piece has a neighbour on: another mid piece or a block.
+// The sides a mid piece has a neighbour on: another mid piece or a block (an X is no part of a fence line).
 export function midArms(idx: FenceIndex, piece: Pick<FencePiece, "x" | "y">): Direction[] {
   return ARM_ORDER.filter((d) => {
     const key = cellKey(piece.x + VEC[d][0], piece.y + VEC[d][1]);
-    return idx.mids.has(key) || idx.blocks.has(key);
+    return (idx.mids.has(key) && !idx.mids.get(key)!.cross) || idx.blocks.has(key);
   });
 }
 
@@ -443,6 +506,22 @@ export interface FenceModelSpec {
   axis?: "x" | "z";
   // a post standing in the line (when this piece carries the decoration)
   post?: { texture?: string };
+  // foliage (an edge / mid piece with layers, or an X): see fenceLayers.ts. `seed` picks the variant of the
+  // jitter (a few per style, so pieces share models and still don't all look alike)
+  layers?: number;
+  spacing?: number;
+  jitter?: number;
+  cross?: FenceCross;
+  seed?: number;
+}
+
+// how many different drawings the jitter has: neighbouring cells pick among them by their position
+export const FENCE_VARIANTS = 8;
+export function fenceVariant(x: number, y: number): number {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) % FENCE_VARIANTS;
 }
 
 // how many pieces of its run come before this one (0: the first); -1 for a piece that isn't in a straight run
@@ -467,7 +546,7 @@ function runPosition(idx: FenceIndex, piece: FencePiece): number {
     for (let x = piece.x, y = piece.y; n < 4096; n++) {
       x += step[0];
       y += step[1];
-      if (!idx.mids.has(cellKey(x, y))) break;
+      if (!idx.mids.has(cellKey(x, y)) || idx.mids.get(cellKey(x, y))!.cross) break;
     }
     return n;
   }
@@ -477,7 +556,7 @@ function runPosition(idx: FenceIndex, piece: FencePiece): number {
 // whether this piece carries its run's decoration: the every-th piece counting from the west / north end
 export function fenceDecorated(idx: FenceIndex, piece: FencePiece): boolean {
   const deco = piece.style.deco;
-  if (!deco || piece.form === "block") return false;
+  if (!deco || piece.form === "block" || piece.foliage) return false;
   const n = runPosition(idx, piece);
   return n >= 0 && (n + 1) % deco.every === 0;
 }
@@ -492,8 +571,18 @@ export function fenceModelSpec(idx: FenceIndex, piece: FencePiece): FenceModelSp
   } else if (piece.form === "edge") {
     spec.side = piece.side;
   } else {
-    spec.arms = midArms(idx, piece);
+    spec.arms = piece.cross ? [] : midArms(idx, piece);
     spec.axis = piece.axis;
+  }
+  if (piece.foliage) {
+    // (no top and no decoration: a foliage plane is a single sheet)
+    delete spec.top;
+    spec.layers = piece.layers;
+    spec.spacing = piece.spacing;
+    spec.jitter = piece.jitter;
+    if (piece.cross) spec.cross = piece.cross;
+    spec.seed = fenceVariant(piece.x, piece.y);
+    return spec;
   }
   const deco = piece.style.deco;
   if (deco && fenceDecorated(idx, piece)) {
@@ -560,7 +649,11 @@ function post(x: number, z: number, w: number, h: number): FenceFace[] {
   return faces;
 }
 
+// whether a model is foliage: its planes come from foliagePlanes (fenceLayers.ts), not from fenceFaces
+export const isFoliageSpec = (spec: FenceModelSpec): boolean => spec.form !== "block" && ((spec.layers ?? 1) > 1 || !!spec.cross);
+
 export function fenceFaces(spec: FenceModelSpec): FenceFace[] {
+  if (isFoliageSpec(spec)) return [];
   const h = spec.height;
   if (spec.form === "block") {
     const faces: FenceFace[] = [];
@@ -608,34 +701,41 @@ export function fenceFloorMark(spec: FenceModelSpec): { x: number; z: number; sx
   return segments.map((s) => ({ x: s.cx, z: s.cz, sx: s.axis === "x" ? s.length : strip, sz: s.axis === "x" ? strip : s.length }));
 }
 
+// (`layers` above 1: a line drawn as that many parallel bands; "cross": the X of a mid piece, `diagonal` or along the axes)
 export type FenceMark =
   | { kind: "block"; x: number; y: number; opaque: boolean }
-  | { kind: "line"; x1: number; y1: number; x2: number; y2: number; form: "edge" | "mid"; opaque: boolean };
+  | { kind: "line"; x1: number; y1: number; x2: number; y2: number; form: "edge" | "mid"; opaque: boolean; layers: number }
+  | { kind: "cross"; x: number; y: number; diagonal: boolean; opaque: boolean; layers: number };
 
 // What to draw on a chart of the map, in grid units (cell centres on integers)
 export function fenceMarks(idx: FenceIndex): FenceMark[] {
   const marks: FenceMark[] = [];
   for (const piece of idx.blocks.values()) marks.push({ kind: "block", x: piece.x, y: piece.y, opaque: piece.opaque });
   for (const piece of idx.mids.values()) {
+    if (piece.cross) {
+      marks.push({ kind: "cross", x: piece.x, y: piece.y, diagonal: piece.cross === "diagonal", opaque: piece.opaque, layers: piece.layers });
+      continue;
+    }
     for (const seg of midSegments(midArms(idx, piece), piece.axis, 0)) {
       const wide = seg.axis === "x" ? seg.length / 2 : 0;
       const deep = seg.axis === "z" ? seg.length / 2 : 0;
-      marks.push({ kind: "line", form: "mid", opaque: piece.opaque, x1: piece.x + seg.cx - wide, y1: piece.y + seg.cz - deep, x2: piece.x + seg.cx + wide, y2: piece.y + seg.cz + deep });
+      marks.push({ kind: "line", form: "mid", opaque: piece.opaque, layers: piece.layers, x1: piece.x + seg.cx - wide, y1: piece.y + seg.cz - deep, x2: piece.x + seg.cx + wide, y2: piece.y + seg.cz + deep });
     }
   }
   for (const [id, piece] of idx.edges) {
     const { cx, cz, axis } = edgeLine(id);
-    marks.push({ kind: "line", form: "edge", opaque: piece.opaque, x1: cx - (axis === "x" ? 0.5 : 0), y1: cz - (axis === "z" ? 0.5 : 0), x2: cx + (axis === "x" ? 0.5 : 0), y2: cz + (axis === "z" ? 0.5 : 0) });
+    marks.push({ kind: "line", form: "edge", opaque: piece.opaque, layers: piece.layers, x1: cx - (axis === "x" ? 0.5 : 0), y1: cz - (axis === "z" ? 0.5 : 0), x2: cx + (axis === "x" ? 0.5 : 0), y2: cz + (axis === "z" ? 0.5 : 0) });
   }
   return marks;
 }
 
 // ---- problems (the editor's checks)
 
-export type FenceProblem = { kind: "doubleEdge" | "doubleCell" | "noSide"; x: number; y: number; side?: Direction };
+export type FenceProblem = { kind: "doubleEdge" | "doubleCell" | "noSide" | "layeredOpaque"; x: number; y: number; side?: Direction };
 
 // What is wrong with a props list's fences: two pieces on one edge, a block and a mid piece (or two of one
-// kind) in one cell, an edge piece without a side.
+// kind) in one cell, an edge piece without a side; layers that block sight (a stack of planes hides far more
+// than the one fence it looks like - a likely mistake, so a warning).
 export function fenceProblems(props: readonly FenceProp[] | undefined): FenceProblem[] {
   const out: FenceProblem[] = [];
   const edges = new Set<string>();
@@ -643,6 +743,7 @@ export function fenceProblems(props: readonly FenceProp[] | undefined): FencePro
   (props ?? []).forEach((p, i) => {
     const piece = fencePieceOf(p, i);
     if (!piece) return;
+    if (piece.layers > 1 && piece.opaque) out.push({ kind: "layeredOpaque", x: piece.x, y: piece.y });
     if (piece.form === "edge") {
       if (!isSide(p.at)) out.push({ kind: "noSide", x: piece.x, y: piece.y });
       const id = edgeId(piece.x, piece.y, piece.side);

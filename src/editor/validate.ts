@@ -12,7 +12,7 @@ import { getShopIds } from "../game/shopCatalog";
 import { simpleShopRefs, unknownShops } from "../game/simpleShop";
 import { unknownDoorTextures } from "../game/doorTextures";
 import { isTextureSetId } from "../render/textureSets";
-import { fenceProblems } from "../game/fences";
+import { fenceIndex, fenceProblems } from "../game/fences";
 import { operableProblems, type OperableKind } from "../game/operables";
 import { propLockProblems } from "../game/propLocks";
 import { soundProblems } from "../game/sounds";
@@ -60,7 +60,9 @@ export function validateMap(map: GameMap): Problem[] {
     }
     // A cell with a blocking prop (a barrel, a tree) is closed on purpose: not reported. The
     // cells that cannot be reached - the area behind it, say - are, a region a problem.
-    const closed = new Set((map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.blocks).map((p) => `${p.cell.x},${p.cell.y}`));
+    const closed = new Set((map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.blocks && PROP_TYPES[p.prop].kind !== "fence").map((p) => `${p.cell.x},${p.cell.y}`));
+    // (the fence pieces that close their cell: blocks, solid mid fences - not foliage)
+    for (const key of fenceIndex(map.props).closed) closed.add(key);
     const stray = (x: number, y: number) => open({ x, y }) && !reached.has(`${x},${y}`) && !closed.has(`${x},${y}`);
     const seen = new Set<string>();
     for (let y = 0; y < map.height; y++) {
@@ -97,7 +99,7 @@ export function validateMap(map: GameMap): Problem[] {
     for (const relation of ["with", "without"] as const) if (e[relation] && !ids.has(e[relation]!)) add("missingLink", e.cell, { id: e[relation]!, relation });
   }
   // fence pieces: one to an edge, one to a cell, an edge piece with a side
-  for (const p of fenceProblems(map.props)) add(p.kind === "doubleEdge" ? "fenceDoubleEdge" : p.kind === "doubleCell" ? "fenceDoubleCell" : "fenceNoSide", { x: p.x, y: p.y });
+  for (const p of fenceProblems(map.props)) add(p.kind === "doubleEdge" ? "fenceDoubleEdge" : p.kind === "doubleCell" ? "fenceDoubleCell" : p.kind === "layeredOpaque" ? "fenceLayeredOpaque" : "fenceNoSide", { x: p.x, y: p.y });
   // an NPC's dialogue must exist (library and entry passage)
   for (const a of map.actors ?? []) {
     if (!a.dialogue) continue;

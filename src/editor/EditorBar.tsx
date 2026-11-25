@@ -439,6 +439,8 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   fenceblock: "fence.help.block",
   fenceedge: "fence.help.edge",
   fencemid: "fence.help.mid",
+  fencelayer: "fence.help.layer",
+  fencecross: "fence.help.cross",
   smoke: "editorBar.clickAWallFloorOrAnythingSmoke",
   sound: "sound.help",
   exit: "link.exitHelp",
@@ -451,7 +453,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
 
 const TOOL_LABELS: Partial<Record<EditTool, Key>> = {
   event: "events.group",
-  ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", roofauto: "roofauto.group", fenceblock: "fence.block", fenceedge: "fence.edge", fencemid: "fence.mid", decal: "editorBar.decal",
+  ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", roofauto: "roofauto.group", fenceblock: "fence.block", fenceedge: "fence.edge", fencemid: "fence.mid", fencelayer: "fence.layered", fencecross: "fence.crossTool", decal: "editorBar.decal",
   robot: "editorBar.npc", item: "editorBar.item", smoke: "editorBar.particles", sound: "sound.tool", exit: "editorBar.exit", stairs: "link.stairsTool", start: "editorBar.start",
   restricted: "editorBar.restricted", wall: "editorBar.chanceWall", map: "editorBar.map",
 };

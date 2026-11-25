@@ -238,6 +238,14 @@ const turned = (clip: AreaClip) => rotateClip(clip);
   assert.deepEqual(prop({ prop: "fence_mid", at: "center" }), { prop: "fence_mid", x: 1, y: 0, at: "center", rotation: 90 });
   assert.deepEqual(prop({ prop: "fence_mid", at: "center", rotation: 90 }), { prop: "fence_mid", x: 1, y: 0, at: "center", rotation: 180 });
   assert.deepEqual(prop({ prop: "fence_block", at: "center" }), { prop: "fence_block", x: 1, y: 0, at: "center" });
+  // foliage (layers, an X, walkable) keeps its settings through a turn, a mirror and the clip's JSON
+  const layered = { layers: 3, spacing: 0.2, jitter: 0.3, solid: false };
+  assert.deepEqual(prop({ prop: "fence_edge", at: "N", fence: layered }), { prop: "fence_edge", x: 1, y: 0, at: "E", fence: layered });
+  assert.deepEqual(prop({ prop: "fence_edge", at: "N", fence: layered }, flipClip), { prop: "fence_edge", x: 2, y: 0, at: "N", fence: layered });
+  const x = { cross: "diagonal", layers: 2, solid: false };
+  assert.deepEqual(prop({ prop: "fence_mid", at: "center", fence: x }), { prop: "fence_mid", x: 1, y: 0, at: "center", rotation: 90, fence: x });
+  const clip = turned(one("props", { prop: "fence_mid", at: "center", fence: x }));
+  assert.deepEqual(parseClip(JSON.parse(JSON.stringify(clip)))!.props, clip.props, "a stored clip reads back the same");
 }
 
 // windows: the panels stay the same cells, in the same order for the turn, the other end first for a mirror

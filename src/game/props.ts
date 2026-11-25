@@ -1,6 +1,6 @@
 import type { GameMap, PropAnchor, PropSpec, Vec2 } from "./types";
 import { ROOF_SHAPES, roofShapeRise, type RoofPieceId, type RoofSegment, type RoofShape, type RoofSide } from "./roofPieces";
-import { fenceBoxes, fenceIndex, type FenceForm } from "./fences";
+import { fenceBoxes, fenceClosesCell, fenceIndex, type FenceForm } from "./fences";
 
 // 3D props standing in walkable cells (crates, beds, ...), textured like the
 // walls. They sit pushed against a side or a corner of their cell. Small
@@ -518,5 +518,7 @@ export function propBoxes(map: GameMap, cx: number, cy: number) {
 
 // whether a big prop closes the cell to grid movement
 export function propBlocks(map: GameMap, cell: Vec2): boolean {
-  return (map.props ?? []).some((p) => p.cell.x === cell.x && p.cell.y === cell.y && PROP_TYPES[p.prop]?.blocks);
+  // (a fence piece closes its cell when the fence index says so: a block, a solid mid fence - not foliage bodies walk through)
+  if (fenceClosesCell(fenceIndex(map.props), cell.x, cell.y)) return true;
+  return (map.props ?? []).some((p) => p.cell.x === cell.x && p.cell.y === cell.y && PROP_TYPES[p.prop]?.blocks && PROP_TYPES[p.prop].kind !== "fence");
 }

@@ -267,10 +267,37 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
         <rect x={m.x + 0.1} y={m.y + 0.1} width={0.8} height={0.8} fill="#d9a441" fillOpacity={m.opaque ? 0.95 : 0.55} stroke="#151515" strokeWidth={0.08} strokeDasharray={m.opaque ? undefined : "0.18 0.1"} />
         <path d={`M ${m.x + 0.2} ${m.y + 0.2} L ${m.x + 0.8} ${m.y + 0.8} M ${m.x + 0.8} ${m.y + 0.2} L ${m.x + 0.2} ${m.y + 0.8}`} stroke="#151515" strokeWidth={0.1} />
       </g>
+    ) : m.kind === "cross" ? (
+      // foliage: an X in the cell (magenta; one more dashed X behind it for each layer, up to three)
+      <g key={`fx${i}`} pointerEvents="none" fill="none" strokeLinecap="round" strokeDasharray={m.opaque ? undefined : "0.16 0.1"}>
+        {Array.from({ length: Math.min(3, m.layers) }, (_, k) => {
+          const o = (k - (Math.min(3, m.layers) - 1) / 2) * 0.16;
+          const d = m.diagonal
+            ? `M ${m.x + 0.15 + o} ${m.y + 0.15 - o} L ${m.x + 0.85 + o} ${m.y + 0.85 - o} M ${m.x + 0.85 + o} ${m.y + 0.15 + o} L ${m.x + 0.15 + o} ${m.y + 0.85 + o}`
+            : `M ${m.x + 0.1} ${m.y + 0.5 + o} L ${m.x + 0.9} ${m.y + 0.5 + o} M ${m.x + 0.5 + o} ${m.y + 0.1} L ${m.x + 0.5 + o} ${m.y + 0.9}`;
+          return (
+            <g key={k}>
+              <path d={d} stroke="#151515" strokeWidth={0.2} strokeDasharray="none" />
+              <path d={d} stroke="#ff7de0" strokeWidth={0.1} />
+            </g>
+          );
+        })}
+      </g>
     ) : (
       <g key={`fl${i}`} pointerEvents="none">
-        <line x1={m.x1 + 0.5} y1={m.y1 + 0.5} x2={m.x2 + 0.5} y2={m.y2 + 0.5} stroke="#151515" strokeWidth={0.26} strokeLinecap="butt" />
-        <line x1={m.x1 + 0.5} y1={m.y1 + 0.5} x2={m.x2 + 0.5} y2={m.y2 + 0.5} stroke={m.form === "edge" ? "#4fd1ff" : "#7dff9a"} strokeWidth={0.14} strokeLinecap="butt" strokeDasharray={m.opaque ? undefined : "0.2 0.12"} />
+        {/* (layered: that many parallel bands, up to three, lime; a plain fence is one band) */}
+        {Array.from({ length: Math.min(3, m.layers) }, (_, k) => {
+          const n = Math.min(3, m.layers);
+          const dx = m.y1 === m.y2 ? 0 : (k - (n - 1) / 2) * 0.2;
+          const dy = m.y1 === m.y2 ? (k - (n - 1) / 2) * 0.2 : 0;
+          const base = { x1: m.x1 + 0.5 + dx, y1: m.y1 + 0.5 + dy, x2: m.x2 + 0.5 + dx, y2: m.y2 + 0.5 + dy };
+          return (
+            <g key={k}>
+              <line {...base} stroke="#151515" strokeWidth={n > 1 ? 0.2 : 0.26} strokeLinecap="butt" />
+              <line {...base} stroke={n > 1 ? "#d4ff3f" : m.form === "edge" ? "#4fd1ff" : "#7dff9a"} strokeWidth={n > 1 ? 0.08 : 0.14} strokeLinecap="butt" strokeDasharray={m.opaque ? undefined : "0.2 0.12"} />
+            </g>
+          );
+        })}
       </g>
     ),
   );
@@ -567,7 +594,7 @@ function chartKey(map: GameMap): string {
       map.id,
       map.structureKey ?? "",
       // (a fence piece's marks follow its side and its turn)
-      map.props?.map((p) => `${p.prop}${at(p.cell)}${p.at}${p.offset?.join(",") ?? ""}${fenceFormOf(p.prop) ? `${p.rotation ?? ""}${p.fence?.opaque ?? ""}` : ""}`).join(";"),
+      map.props?.map((p) => `${p.prop}${at(p.cell)}${p.at}${p.offset?.join(",") ?? ""}${fenceFormOf(p.prop) ? `${p.rotation ?? ""}${p.fence?.opaque ?? ""}${p.fence?.layers ?? ""}${p.fence?.cross ?? ""}` : ""}`).join(";"),
       map.decals?.map((d) => `${at(d.cell)}${d.surface}`).join(";"),
       map.actors?.map((a) => `${at(a.cell)}${a.facing}`).join(";"),
       map.items?.map((i) => `${at(i.cell)}${i.offset?.join(",") ?? ""}`).join(";"),

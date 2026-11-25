@@ -1,11 +1,26 @@
 import { useContext, useState } from "react";
 import { t } from "../../i18n";
-import { FENCE_EVERY_MAX, FENCE_HEIGHT, FENCE_HEIGHT_MAX, FENCE_HEIGHT_MIN, FENCE_THICKNESS_MAX, type FenceForm, type FenceStyle } from "../../game/fences";
+import {
+  FENCE_EVERY_MAX,
+  FENCE_HEIGHT,
+  FENCE_HEIGHT_MAX,
+  FENCE_HEIGHT_MIN,
+  FENCE_JITTER,
+  FENCE_JITTER_MAX,
+  FENCE_LAYERS_MAX,
+  FENCE_SPACING,
+  FENCE_SPACING_MAX,
+  FENCE_SPACING_MIN,
+  FENCE_THICKNESS_MAX,
+  type FenceCross,
+  type FenceForm,
+  type FenceStyle,
+} from "../../game/fences";
 import type { Direction } from "../../game/types";
 import { textureSetsOfKind } from "../../render/textureSets";
 import type { EditorBarProps } from "../EditorBar";
 import { NumberField } from "../NumberField";
-import { fenceEditing } from "../fenceEdits";
+import { fenceEditing, fenceToolForm, type FenceBase, type FenceToolId } from "../fenceEdits";
 import { TexturePicker, textureOptions } from "../TexturePicker";
 import { useTextureVersion } from "../textureLibrary";
 import { BUTTON, CommitContext, KindChoice, idle } from "./parts";
@@ -22,8 +37,10 @@ export interface FenceToolState {
   side: "auto" | Direction;
   // the mid tool: how a piece with no neighbour lies (0: east-west, 90: north-south)
   rotation: 0 | 90;
+  // the layered fence tool: whether its layers stand on a cell's edge or through its middle
+  base: FenceBase;
 }
-export const FENCE_TOOL_DEFAULT: FenceToolState = { texture: "", style: {}, side: "auto", rotation: 0 };
+export const FENCE_TOOL_DEFAULT: FenceToolState = { texture: "", style: {}, side: "auto", rotation: 0, base: "edge" };
 
 // the texture sets a fence can wear: whatever has a picture of a wall, a prop or a door (a hedge, a forest strip, a gate)
 export function fenceTextureIds(): string[] {
@@ -53,6 +70,8 @@ function StyleFields({ form, texture, style, onTexture, onStyle }: {
     onStyle(Object.keys(next).length ? (next as FenceStyle) : undefined);
   };
   const defaultOpaque = form === "block";
+  // (foliage - layers, an X - is a single sheet: no thickness, top or decoration)
+  const foliage = form !== "block" && ((style.layers ?? 1) > 1 || (form === "mid" && !!style.cross));
   const kind = decorationOf(style);
   const deco = style.deco;
   const decoKind = (next: Decoration) => {
@@ -64,21 +83,47 @@ function StyleFields({ form, texture, style, onTexture, onStyle }: {
     <>
       <TexturePicker label={t("fence.texture")} value={texture} options={textureOptions(ids, [own])} onChange={onTexture} />
       <NumberField label={t("fence.height")} title={t("fence.heightHint")} value={style.height ?? FENCE_HEIGHT} min={FENCE_HEIGHT_MIN} max={FENCE_HEIGHT_MAX} step={0.05} defaultValue={FENCE_HEIGHT} slider onChange={(v) => set({ height: v === FENCE_HEIGHT ? undefined : v })} onCommit={commit} />
-      {form !== "block" && (
+      {form !== "block" && !foliage && (
         <NumberField label={t("fence.thickness")} title={t("fence.thicknessHint")} value={style.thickness ?? 0} min={0} max={FENCE_THICKNESS_MAX} step={0.02} defaultValue={0} slider onChange={(v) => set({ thickness: v > 0 ? v : undefined })} onCommit={commit} />
       )}
-      <TexturePicker
-        label={t("fence.top")}
-        title={t("fence.topHint")}
-        value={style.top ?? ""}
-        options={textureOptions(ids, [{ value: "", label: t(form === "block" ? "fence.topOwn" : "fence.topNone") }])}
-        onChange={(top) => set({ top: top || undefined })}
-      />
+      {!foliage && (
+        <TexturePicker
+          label={t("fence.top")}
+          title={t("fence.topHint")}
+          value={style.top ?? ""}
+          options={textureOptions(ids, [{ value: "", label: t(form === "block" ? "fence.topOwn" : "fence.topNone") }])}
+          onChange={(top) => set({ top: top || undefined })}
+        />
+      )}
       <label className="flex items-center gap-1" title={t("fence.opaqueHint")}>
         <input type="checkbox" checked={style.opaque ?? defaultOpaque} onChange={(e) => { set({ opaque: e.target.checked === defaultOpaque ? undefined : e.target.checked }); commit(); }} />
         {t("fence.opaque")}
       </label>
       {form !== "block" && (
+        <>
+          <NumberField label={t("fence.layers")} title={t("fence.layersHint")} value={style.layers ?? 1} min={1} max={FENCE_LAYERS_MAX} step={1} defaultValue={1} slider onChange={(v) => set({ layers: v > 1 ? Math.round(v) : undefined })} onCommit={commit} />
+          {(style.layers ?? 1) > 1 || style.cross ? (
+            <>
+              <NumberField label={t("fence.spacing")} title={t("fence.spacingHint")} value={style.spacing ?? FENCE_SPACING} min={FENCE_SPACING_MIN} max={FENCE_SPACING_MAX} step={0.01} defaultValue={FENCE_SPACING} slider onChange={(v) => set({ spacing: v })} onCommit={commit} />
+              <NumberField label={t("fence.jitter")} title={t("fence.jitterHint")} value={style.jitter ?? FENCE_JITTER} min={0} max={FENCE_JITTER_MAX} step={0.01} defaultValue={FENCE_JITTER} slider onChange={(v) => set({ jitter: v })} onCommit={commit} />
+            </>
+          ) : null}
+          {form === "mid" && (
+            <KindChoice
+              label={t("fence.cross")}
+              title={t("fence.crossHint")}
+              value={style.cross ?? "none"}
+              options={[{ value: "none", label: t("fence.crossNone") }, { value: "axes", label: t("fence.crossAxes") }, { value: "diagonal", label: t("fence.crossDiagonal") }]}
+              onChange={(v) => set({ cross: v === "none" ? undefined : (v as FenceCross) })}
+            />
+          )}
+          <label className="flex items-center gap-1" title={t("fence.solidHint")}>
+            <input type="checkbox" checked={style.solid !== false} onChange={(e) => { set({ solid: e.target.checked ? undefined : false }); commit(); }} />
+            {t("fence.solid")}
+          </label>
+        </>
+      )}
+      {form !== "block" && !foliage && (
         <>
           <KindChoice
             label={t("fence.deco")}
@@ -116,11 +161,21 @@ const sideLabel = (d: Direction) => t(`fence.side${d}`);
 
 // the panel of a fence tool in hand: the settings of the pieces its next stroke puts down
 export function FenceToolFields(p: EditorBarProps) {
-  const form: FenceForm = p.tool === "fenceblock" ? "block" : p.tool === "fenceedge" ? "edge" : "mid";
   const { fence, onFence } = p;
+  const form: FenceForm = fenceToolForm(p.tool as FenceToolId, fence.base);
+  const help = p.tool === "fencelayer" ? "fence.help.layer" : p.tool === "fencecross" ? "fence.help.cross" : (`fence.help.${form}` as const);
   return (
     <div className="flex min-w-0 flex-col gap-2 border-t border-neutral-700 p-2 [&_select]:min-w-0 [&_select]:max-w-full [&_select]:flex-1 [&_select]:border [&_select]:border-neutral-700 [&_select]:bg-neutral-800">
-      <p className="text-neutral-400">{t(`fence.help.${form}`)}</p>
+      <p className="text-neutral-400">{t(help)}</p>
+      {p.tool === "fencelayer" && (
+        <KindChoice
+          label={t("fence.base")}
+          title={t("fence.baseHint")}
+          value={fence.base}
+          options={[{ value: "edge", label: t("fence.baseEdge") }, { value: "mid", label: t("fence.baseMid") }]}
+          onChange={(base) => onFence({ base: base as FenceBase })}
+        />
+      )}
       {form === "edge" && (
         <KindChoice
           label={t("fence.side")}
@@ -130,7 +185,7 @@ export function FenceToolFields(p: EditorBarProps) {
           onChange={(side) => onFence({ side: side as FenceToolState["side"] })}
         />
       )}
-      {form === "mid" && (
+      {form === "mid" && !fence.style.cross && (
         <KindChoice
           label={t("fence.turn")}
           title={t("fence.turnHint")}
@@ -162,7 +217,7 @@ export function FencePieceFields(p: EditorBarProps) {
       {form === "edge" && (
         <KindChoice label={t("fence.side")} title={t("fence.sideHint")} value={info.side} options={SIDES.map((d) => ({ value: d, label: sideLabel(d) }))} onChange={(at) => p.onPropChange({ at: at as Direction })} />
       )}
-      {form === "mid" && (
+      {form === "mid" && !info.style.cross && (
         <KindChoice
           label={t("fence.turn")}
           title={t("fence.turnHint")}

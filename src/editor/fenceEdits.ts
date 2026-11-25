@@ -18,6 +18,44 @@ const NEIGHBOURS = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const;
 const formOf = (p: PropEntry) => fenceFormOf(p.prop);
 const edgeOf = (p: PropEntry) => (isSide(p.at) ? edgeId(p.x, p.y, p.at) : edgeId(p.x, p.y, "N"));
 
+// ---- the tools
+
+// The fence tools: the three forms, and two presets of foliage - the layered fence (an edge or a mid fence, the
+// panel's `base`, with layers) and the X fence (a mid fence with `cross`). They put down the same pieces as the
+// form tools (fence_edge / fence_mid) with foliage settings; nothing else tells the two kinds apart.
+export type FenceToolId = "fenceblock" | "fenceedge" | "fencemid" | "fencelayer" | "fencecross";
+export const FENCE_TOOL_IDS: readonly FenceToolId[] = ["fenceblock", "fenceedge", "fencemid", "fencelayer", "fencecross"];
+export const isFenceTool = (tool: string): tool is FenceToolId => (FENCE_TOOL_IDS as readonly string[]).includes(tool);
+export type FenceBase = "edge" | "mid";
+
+// the form of piece a tool puts down
+export function fenceToolForm(tool: FenceToolId, base: FenceBase): FenceForm {
+  return tool === "fenceblock" ? "block" : tool === "fenceedge" ? "edge" : tool === "fencemid" || tool === "fencecross" ? "mid" : base;
+}
+
+// the tool the viewport treats the tool in hand as (it highlights the edge nearest the pointer for an edge tool, and
+// knows the strokes tools by name: the foliage tools are those of the form they put down)
+export function fenceToolForViewport(tool: string, base: FenceBase): string {
+  return tool === "fencelayer" ? (base === "edge" ? "fenceedge" : "fencemid") : tool === "fencecross" ? "fencemid" : tool;
+}
+
+const FOLIAGE_KEYS = ["layers", "spacing", "jitter", "cross", "solid"] as const;
+// The settings a tool starts with when it is picked: the form tools drop the foliage settings (so a plain fence stays
+// plain), the foliage tools keep their own and, coming from a plain style, take their preset - walkable, and three layers
+// or an X.
+export function fenceToolStyle(tool: FenceToolId, style: FenceStyle): FenceStyle {
+  const plain = { ...style };
+  for (const key of FOLIAGE_KEYS) delete plain[key];
+  if (tool === "fenceblock" || tool === "fenceedge" || tool === "fencemid") return plain;
+  const foliage = (style.layers ?? 1) > 1 || !!style.cross;
+  const kept = foliage ? { ...style } : { ...style, solid: false as const };
+  if (tool === "fencelayer") {
+    delete kept.cross;
+    return { ...kept, layers: kept.layers && kept.layers > 1 ? kept.layers : 3 };
+  }
+  return { ...kept, cross: style.cross ?? "axes" };
+}
+
 // What the tool paints new pieces with: a texture set (undefined: the deck's walls), the settings (its own
 // piece's `fence`), a turn (a mid piece with no neighbour lies along x, or - 90 - along z).
 export interface FencePaint {

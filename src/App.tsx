@@ -98,7 +98,7 @@ import { doorTextureIds } from "./game/doorTextures";
 import { isTextureSetId } from "./render/textureSets";
 import { eraseRoof, eraseRoofGroup, paintRoof, roofFootprint, roofGroupFor, setRoofDetached } from "./editor/roofEdits";
 import type { RoofForm } from "./game/roofAutotile";
-import { eraseFence, fenceRun, paintFence, restyleFence } from "./editor/fenceEdits";
+import { eraseFence, fenceRun, fenceToolForm, fenceToolForViewport, fenceToolStyle, isFenceTool, paintFence, restyleFence } from "./editor/fenceEdits";
 import { FENCE_TOOL_DEFAULT, type FenceToolState } from "./editor/inspector/FenceFields";
 import { cleanFenceStyle, fenceFormOf, isSide, sideFromPoint, type FenceForm } from "./game/fences";
 import type { TextureSetId } from "./render/textureSets";
@@ -1064,9 +1064,10 @@ export default function App() {
   // The fence and block tools (see game/fences.ts, editor/fenceEdits.ts): a stroke puts a piece in each cell it
   // crosses - the edge tool on the side of the cell the stroke began on: the one nearest the first click, or the
   // one picked in the panel - and the right button takes them out. A stroke is one undo step.
-  const FENCE_TOOLS: Partial<Record<EditTool, FenceForm>> = { fenceblock: "block", fenceedge: "edge", fencemid: "mid" };
+  // (the layered fence tool puts down the form the panel's "stands on" names, the X fence tool middle fences)
+  const fenceToolFormOf = (tool: EditTool): FenceForm | undefined => (isFenceTool(tool) ? fenceToolForm(tool, fence.base) : undefined);
   const fencePaint = (target: EditTarget, stroke: { first: boolean; erase: boolean }) => {
-    const form = FENCE_TOOLS[editTool];
+    const form = fenceToolFormOf(editTool);
     // (a wall, or a step's face - that cell is the lower one beside it, not what is pointed at)
     if (!form || target.kind === "wall" || target.face) return;
     const file = mapFile(map.id);
@@ -1107,7 +1108,7 @@ export default function App() {
     const next = { ...fence, ...patch };
     setFence(next);
     const last = lastFenceStroke.current;
-    if (!last || FENCE_TOOLS[editTool] !== last.form || !("texture" in patch || "style" in patch || "rotation" in patch)) return;
+    if (!last || fenceToolFormOf(editTool) !== last.form || !("texture" in patch || "style" in patch || "rotation" in patch)) return;
     const paint = { texture: next.texture || undefined, style: next.style, rotation: next.rotation };
     const result = applyEdit(map.id, (f) => restyleFence(f, last.form, last.cells, paint, last.side), `fence stroke ${last.serial} restyle`);
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
@@ -1401,7 +1402,7 @@ export default function App() {
       // (the view's strokes reach the tool through onEditPaint; this is a click on the minimap)
       roofPaint(target, { first: true, erase: alt, shift, ctrl: false });
       return;
-    } else if (editTool === "fenceblock" || editTool === "fenceedge" || editTool === "fencemid") {
+    } else if (isFenceTool(editTool)) {
       // (the same: the view's strokes come through onEditPaint, this is a click on the minimap)
       fencePaint(target, { first: true, erase: alt });
       return;
@@ -2536,6 +2537,8 @@ export default function App() {
     setSelectedStairs(null);
     setSelectedChanceWall(null);
     setSelectedDoor(null);
+    // (a fence tool starts with the settings of its kind: plain, or the foliage preset)
+    if (isFenceTool(tool)) setFence((f) => ({ ...f, style: fenceToolStyle(tool, f.style) }));
     setEditTool(tool);
   };
   const editInteraction = (target: InteractionTarget, event?: Interaction, merge?: string) => {
@@ -2838,7 +2841,7 @@ export default function App() {
       editMode={editMode}
       hiddenLayers={hiddenLayers}
       lockedLayers={lockedLayers}
-      editTool={altHeld && editMode ? "select" : editTool}
+      editTool={altHeld && editMode ? "select" : (fenceToolForViewport(editTool, fence.base) as EditTool)}
       onEdit={onEdit}
       onEditPaint={(target, stroke) => (areaClip.pasting ? undefined : editTool === "roofauto" ? roofPaint(target, stroke) : fencePaint(target, stroke))}
       selectedEvent={editMode && eventTarget && interactionAt(map, eventTarget) ? eventTarget : null}

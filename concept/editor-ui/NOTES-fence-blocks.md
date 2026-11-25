@@ -147,6 +147,92 @@ Optional fields of a `props` entry (also `PropSpec`):
   either side of the passage - still apply to any door.) An edge fence stays a barrier around a door cell; take it out where
   the gate goes.
 
+## Foliage: layered and X fences (`feature/foliage`)
+
+Dense plants (a hedge, tall grass, wheat) drawn as ONE transparent plane look flat and vanish edge-on. Several planes
+side by side, or two crossing ones, read as a mass from every side - and because the planes are the same relief cutouts
+as every fence (transparent texels are real holes, no blending), the scene shows through the gaps of each. Two new tools
+in the *Fences and blocks* group, **Layered fence** (`fencelayer`) and **X fence** (`fencecross`), put down ordinary
+`fence_edge` / `fence_mid` pieces with these extra settings.
+
+**The model (why).** No new form and no new prop id: foliage is *style fields* on the existing edge / mid pieces
+(`layers` 1 is the plain fence). Old maps and the three form tools are untouched, the one-id-per-edge / one-piece-per-cell
+rules, undo, selection, area copy, `fenceRun` all apply as they were, and a layered edge is still *the* edge fence of
+its edge for the game. A new form (`fence_layered`, `fence_cross`) would have needed its own prop ids, `PropType`s, world
+lists, parse rules and a second set of problem / dedupe logic for nothing. The two tools are presets of the panel
+(`fenceToolStyle`): picking one starts the panel with walkable foliage (`layers` 3, or `cross: "axes"`); the form tools
+drop the foliage fields so a plain fence stays plain. The viewport treats the layered tool as the edge or mid tool
+(`fenceToolForViewport`: hover highlight, strokes), the X tool as the mid tool.
+
+**Stored format** (all optional, defaults left out, `cleanFenceStyle` pulls values into range):
+
+```json
+{ "prop": "fence_edge", "x": 4, "y": 2, "at": "N", "texture": "grass_patch_fall_01",
+  "fence": { "layers": 3, "spacing": 0.2, "jitter": 0.3, "solid": false } }
+{ "prop": "fence_mid", "x": 6, "y": 3, "texture": "grass_patch_fall_01",
+  "fence": { "cross": "diagonal", "layers": 2, "solid": false } }
+```
+
+| field | meaning | default |
+|---|---|---|
+| `layers` | 1..8 parallel planes (1: the plain fence) | 1 |
+| `spacing` | 0.04..0.5 cells between planes (shrunk if the stack would leave its cell: an edge stack spans at most 0.88, a mid stack 0.8) | 0.15 |
+| `jitter` | 0..0.5: how much each plane is nudged (see below); 0 is regular | 0.1 |
+| `cross` | mid pieces only: `"axes"` (north-south + east-west) or `"diagonal"`: two crossing planes in the cell's middle, whatever the neighbours; with `layers`, several X side by side | none |
+| `solid` | `false`: bodies walk through it (written only when false) | true |
+
+**What it works out** (`src/game/fenceLayers.ts`, pure; `foliagePlanes(spec)` lists the planes - middle, direction, yaw,
+length, `sx`/`sy` size, `flip`, texture `shift`):
+
+- edge: layer 0 exactly on the edge, the others `spacing` apart going into the cell the piece is stored in; mid: symmetric
+  about its line (each straight stretch, corners included - the stubs are not slid or shifted); X: each of the two
+  planes repeated the same way, perpendicular to itself.
+- jitter (`unitHash` of the piece's variant, layer and plane: deterministic): a slide along the plane (alternating
+  sides, up to `jitter` cells), a small nudge across (at most 0.06 and at most what the spacing leaves), a width and
+  height variation (up to `0.2 * jitter`), a reversed picture, and a cyclic texture shift (quarters; the plane is cut
+  in two relief panels, from the shift on and before it, so the picture goes round; use horizontally tileable
+  textures). Layer 0 is always the plain plane. No colour variation (the kit materials are shared: left out).
+- variants: the variant is `fenceVariant(x, y)`, 8 of them, so pieces of one style share 8 models (not one each) and
+  still do not repeat row after row.
+- A piece is *foliage* if `layers > 1` or it has `cross`: no thickness, top or decoration (single sheets), the panel
+  hides them. `fenceModelSpec` carries `layers / spacing / jitter / cross / seed`, so the viewport's model key changes with
+  them.
+
+**Walkability (a correction of the brief).** The existing transparent fences DO stop bodies (only `opaque` is about sight).
+Foliage is made walkable with the new `solid: false` (the tool presets set it; the checkbox is "Blocks movement"):
+no grid-closed cell (`fenceClosesCell`, `propBlocks`), no body box (`fenceBoxes`), no shut edge (`edgeFenceBetween`), and
+the validator's reachability counts the cell as open. `opaque` is independent and false by default, so sight passes; an
+opaque foliage piece still blocks `lineOfSight` (its box is kept for sight only). A *solid* X is a bush: the whole cell
+is closed / a whole-cell box. A solid layered piece stops bodies at its base line only (as the plain fence). An X is not
+an arm of a mid fence line (`midArms`, decoration runs).
+
+**Rendering** (`src/render/viewport/foliageMesh.ts`): the relief panels of all planes, both sides each (the fences' own
+front + mirrored back convention), are baked into ONE merged geometry per piece model (2 draw calls: the front faces and
+the step sides, whatever the layer count), with distant versions merged the same way under a `LOD`. The panels are the
+usual cached ones (`buildRelief` caches by shape). Memory: one merged geometry per distinct style x variant (8) per scene.
+A column-cut panel (`cols`, used by the shift and by the mid corners) now shares the whole panel's AO map like `rows` do
+(its second UV set runs over the whole panel; before, the last cut part's own map was assigned to the kit).
+
+**Z-fighting.** (a) Within a piece: planes never come nearer than `FOLIAGE_MIN_GAP` = 0.02 cells - `spacing >= 0.04` and
+the cross nudge is capped by `(spacing - 0.02) / 2` (a test checks every plane pair over layers 1..8, spacings, jitters
+and variants). (b) Across pieces: two layered edges / mids can only meet in one cell, where the kinds get fixed biases
+(edge layers beyond 0 +0.0053, mid / X +0.0031 cells), so equal spacings do not make coincident planes; two edge pieces on
+one edge are still the one-per-edge mistake (the first keeps it), and stacks stay inside their cell. (c) The fence
+panels are geometry cutouts (transparent texels are holes; in the smooth relief mode `alphaTest` 0.5), no blending, so
+draw order never matters. Per-layer `polygonOffset` was not used: separate materials per layer would break the single
+merged draw call, and the geometric separation does the job (checked in the running app on adjacent 2x2 X cells).
+
+**Editor.** The panel shows layers, spacing, jitter, X mode (mid pieces), "Blocks movement" for every non-block piece
+(layer fields hide thickness / top / decoration when the piece is foliage), and the layered tool's "stands on" (edge /
+middle). Floor marks: lime strips round each plane family (magenta for an X, diagonals turned). Minimap: layered
+fences are up to three parallel lime bands (dashed if see-through), an X is a magenta X (diagonal or axes, up to three
+offset copies for layers). Problems: *a layered fence blocks sight* (`layers > 1` and `opaque`).
+
+**Limits.** Colour tint per layer is left out. A solid layered piece's body box is its base line only. A cyclic shift of a
+non-tileable texture shows a seam. Dragging a spacing slider builds a model per value (kept until the scene is torn
+down). Layers of an edge piece go into the cell it is stored in (the one the click was in).
+
+**Manual test (hu):** a lista a `concept/verification-checklist.md`-ben (Növényzet: réteges és X kerítés).
 ## Not done / limits
 
 - No special corner geometry (edge fences meeting at a grid corner just end; a post prop or `deco.post` closes it);
