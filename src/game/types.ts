@@ -6,6 +6,7 @@ import type { FenceStyle } from "./fences";
 import type { OperableSpec } from "./operables";
 import type { PropLock } from "./propLocks";
 import type { SkyGradient } from "./skyGradient";
+import type { SoundSpec } from "./sounds";
 
 export type Direction = "N" | "E" | "S" | "W";
 
@@ -133,6 +134,8 @@ export interface GameMap {
   wallInteractions?: (Omit<WallInteractionTarget, "kind"> & { interaction: Interaction })[];
   weather?: Weather;
   smokes?: SmokeSpec[];
+  // generated sounds placed in cells (see sounds.ts), cleaned by parseMap; heard in the game, not in the editor
+  sounds?: SoundSpec[];
   actors?: ActorSpec[];
 }
 
