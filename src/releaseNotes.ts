@@ -15,13 +15,25 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
-    version: 1,
-    date: "2026-11-23",
+    version: 2,
+    date: "2026-11-25",
     items: [
       { title: "Hangelemek", text: "A térképre sípoló vagy zajos hangelem rakható (hullámforma, hangmagasság, hangerő, hatótáv, ismétlődés), amely a játékban 3D-ben szól: falon át tompítva, nyíláson át az ajtó felől érkezve, simán átúszó átmenetekkel, mindkét fülbe; a hangerő és a hátsó tompítás a Debug panelben állítható, a szerkesztőben hangszóró-jel mutatja, az impulzus felfutása és lecsengése állítható, és kar, gomb vagy nyomólap ki-be kapcsolhatja." },
       { title: "Színvilág (look)", text: "A pálya beállításaiban hangulat (hideg-misztikus, meleg-filmes, szürke-borús...) és haladó színcsúszkák egy színvilágba terelik a textúrákat; a look a pályával mentődik, és átmásolható másik pályára." },
       { title: "Tűz-, méreg- és előhívó csapdák", text: "A kar, gomb és nyomólap tűz- vagy mérgező füst-kibocsátót kapcsolhat be, NPC-ket idézhet meg, tárgyat vagy aranyat adhat; a tűz fajtája és színe állítható." },
       { title: "Zárható ládák és kulcsok", text: "Ládák, tárolók és karok is zárhatók kulccsal: a kulcs egy felvehető tárgy, a zár üzenete és a kulcs elhasználása állítható." },
+      { title: "Ajtó részletesség", text: "A Debug grafikai beállításai között külön állítható az ajtókeret és az ajtólap rácsának finomsága (az automatikus a falrészletesség, legfeljebb 32)." },
+      { title: "Látható cellák a minimapon", text: "A szerkesztő minimapján a Padló és Plafon mellett a Látható gomb kiemeli azokat a cellákat, amelyeket a motor a csapat helyéről láthatónak számol." },
+      { title: "Sötét fantasy hangulat mentése", text: "A Debug panelben hangolt sötét fantasy beállítások megmaradnak a böngészőben, és szövegként másolhatók, illetve beilleszthetők." },
+      { title: "Köd és fantasy alapértékek", text: "A távoli köd kezdete és teljes sűrűsége pályánként beállítható (Fény szakasz), a fantasy világ hangolt kamera- és fényalapértékekkel indul." },
+      { title: "Gyors fényelőszámítás", text: "Pálya betöltésekor és fény vagy tárgy szerkesztése után előbb egy durva, gyors bake mutatja a fényt, a pontos a háttérben számolódik ki; ha a fény bemenetei nem változtak (például fal textúra csere), a korábbi eredményt újrahasználja (Debug: gyors előszámítás, 0 = ki)." },
+      { title: "Tárgy eldobása", text: "A hátizsákból a nézetre húzva vagy a Drop gombbal eldobhatod a tárgyat a földre; nyomólapon fekve ajtót tarthat nyitva." },
+    ],
+  },
+  {
+    version: 1,
+    date: "2026-11-23",
+    items: [
       { title: "Gradiens égbolt", text: "Kültéri pályákhoz kép nélküli, színátmenetes égbolt választható a pálya beállításaiban." },
       { title: "Működtethető elemek", text: "Kar, gomb, nyomólap és csapda rakható le, amelyek ajtót nyitnak vagy a csapatot támadják; az ajtókhoz kulcs is megadható." },
       { title: "Felvétel, Play gomb és tesztelési segédletek", text: "A tárgyak kattintással vagy húzással (hátizsákra, kézre, karakterre) is felvehetők, a szerkesztő békés módban indul (ellenfelek és csapdák kikapcsolva), a Play gomb élesíti őket, és szerkesztés közben a csapat halála nem dob ki a pályáról." },
@@ -36,13 +48,7 @@ export const RELEASES: Release[] = [
       { title: "Kerítések és blokkok", text: "A Tető mellett új eszközök: blokk, kerítés a cella szélén és kerítés a közepén (átlátszó textúrával is, a mögötte lévő jelenet látszik), a textúrát pedig miniatűrös listából választhatod az Inspectorban." },
       { title: "Területek másolása", text: "A kijelölt terület minden eleme (falak, tárgyak, ajtók, tetők, kerítések) másolható, elforgatható és beilleszthető, akár másik pályába is." },
       { title: "Új tetőformák", text: "A tető eszközzel gúla (akár 1x1-es toronysüveg) és keskeny, hosszú házra való nyeregtető is építhető." },
-      { title: "Ajtó részletesség", text: "A Debug grafikai beállításai között külön állítható az ajtókeret és az ajtólap rácsának finomsága (az automatikus a falrészletesség, legfeljebb 32)." },
-      { title: "Látható cellák a minimapon", text: "A szerkesztő minimapján a Padló és Plafon mellett a Látható gomb kiemeli azokat a cellákat, amelyeket a motor a csapat helyéről láthatónak számol." },
-      { title: "Sötét fantasy hangulat mentése", text: "A Debug panelben hangolt sötét fantasy beállítások megmaradnak a böngészőben, és szövegként másolhatók, illetve beilleszthetők." },
-      { title: "Köd és fantasy alapértékek", text: "A távoli köd kezdete és teljes sűrűsége pályánként beállítható (Fény szakasz), a fantasy világ hangolt kamera- és fényalapértékekkel indul." },
-      { title: "Gyors fényelőszámítás", text: "Pálya betöltésekor és fény vagy tárgy szerkesztése után előbb egy durva, gyors bake mutatja a fényt, a pontos a háttérben számolódik ki; ha a fény bemenetei nem változtak (például fal textúra csere), a korábbi eredményt újrahasználja (Debug: gyors előszámítás, 0 = ki)." },
       { title: "Égbolt feltöltése", text: "Az Assets managerben 2:1 arányú panorámaképet tölthetsz fel égboltnak, és a pálya beállításaiban kiválaszthatod." },
-      { title: "Tárgy eldobása", text: "A hátizsákból a nézetre húzva vagy a Drop gombbal eldobhatod a tárgyat a földre; nyomólapon fekve ajtót tarthat nyitva." },
     ],
   },
 ];
