@@ -208,6 +208,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
   map.items?.forEach((a, i) => marker("item", i, a.cell, a.offset?.[0] ?? 0.2, a.offset?.[1] ?? 0.2));
   map.lights?.forEach((a, i) => marker("light", i, a, a.pos?.[0] ?? 0, a.pos?.[2] ?? 0));
   map.smokes?.forEach((a, i) => marker("smoke", i, a.cell, a.pos[0], a.pos[2]));
+  map.sounds?.forEach((a, i) => marker("sound", i, a, a.pos?.[0] ?? 0, a.pos?.[2] ?? 0));
   map.exits?.forEach((a, i) => marker("exit", i, a.cell));
   // (stairs wear the exits' marker - the same layer toggle)
   map.stairs?.forEach((a, i) => marker("exit", (map.exits?.length ?? 0) + i, a.cell));
@@ -526,6 +527,7 @@ function chartKey(map: GameMap): string {
       map.items?.map((i) => `${at(i.cell)}${i.offset?.join(",") ?? ""}`).join(";"),
       map.lights?.map((l) => `${l.x},${l.y}${l.pos?.join(",") ?? ""}`).join(";"),
       map.smokes?.map((m) => `${at(m.cell)}${m.pos.join(",")}`).join(";"),
+      map.sounds?.map((s) => `${s.x},${s.y}${s.pos?.join(",") ?? ""}`).join(";"),
       map.exits?.map((e) => at(e.cell)).join(";"),
       map.stairs?.map((s) => at(s.cell)).join(";"),
       map.chanceWalls?.map((w) => at(w.cell)).join(";"),

@@ -76,10 +76,11 @@ import type { MapDialogMode, MapDialogValues } from "./editor/MapDialog";
 import { MAPS, START_MAP } from "./game/map";
 import { WORLDS, assetInWorld, setActiveWorld } from "./game/worlds";
 import type { GameMap, Linked } from "./game/types";
-import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, updateExit, toggleExit, toggleStairs, updateStairs, toggleRestricted, addSmoke, removeSmoke, updateSmoke, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
+import { blankMap, resizeMap, addDecal, removeDecal, updateDecal, addLight, addProp, anchorAt, dig, fill, paintTexture, removeLight, removeProp, removePropIndex, updateProp, setHeight, toggleBridge, toggleDoor, toggleLadder, updateDoor, addActor, removeActor, updateActor, updateLight, addChanceWall, removeChanceWall, updateChanceWall, addItem, removeItem, updateItem, updateExit, toggleExit, toggleStairs, updateStairs, toggleRestricted, addSmoke, removeSmoke, updateSmoke, addSound, removeSound, updateSound, setStart, digCells, fillCells, rectCells } from "./editor/mapEdits";
 import { PROP_TYPES, flamePosition, isSharedPropId, propBlocks, propPlacement, propRetexturable } from "./game/props";
 import { MIN_HEADROOM } from "./game/heights";
-import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo } from "./editor/EditorBar";
+import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo, SoundInfo } from "./editor/EditorBar";
+import { newSound, resolveSound, type SoundSpec } from "./game/sounds";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
 import { ACTOR_TYPES, isFriendlySpec } from "./game/actors";
@@ -301,12 +302,15 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   // the Smoke tool's pick (its index in the map's smokes)
   const [selectedSmoke, setSelectedSmoke] = useState<number | null>(null);
+  // the Sound tool's pick (its index in the map's sounds), and whether its Listen button is on (see previewSound)
+  const [selectedSound, setSelectedSound] = useState<number | null>(null);
+  const [soundListening, setSoundListening] = useState(false);
   // The Select tool: a click picks the nearest object of any kind (see onEdit);
   // the Alt key held in any tool does the same until it is let go
   const [altHeld, setAltHeld] = useState(false);
   const selecting = editTool === "select" || altHeld;
   // one pick at a time: Select lets go of the other kinds, so the inspector and the keys follow the picked one
-  const selectOnly = (kind: "actor" | "item" | "prop" | "decal" | "light" | "smoke" | null, index: number | null = null) => {
+  const selectOnly = (kind: "actor" | "item" | "prop" | "decal" | "light" | "smoke" | "sound" | null, index: number | null = null) => {
     setEventTarget(null);
     setSelectedActor(kind === "actor" ? index : null);
     setSelectedItem(kind === "item" ? index : null);
@@ -314,6 +318,7 @@ export default function App() {
     setSelectedDecal(kind === "decal" ? index : null);
     setSelectedLight(kind === "light" ? index : null);
     setSelectedSmoke(kind === "smoke" ? index : null);
+    setSelectedSound(kind === "sound" ? index : null);
     setSelectedExit(null);
     setSelectedStairs(null);
     setSelectedChanceWall(null);
@@ -321,7 +326,7 @@ export default function App() {
   };
   // The tool the arrows, R, Delete and the wheel work by: the one in hand, or (Select, or a thing picked with Alt in a
   // placing tool) the kind that is selected
-  const pickedTools: [EditTool, number | null][] = [["robot", selectedActor], ["item", selectedItem], ["prop", selectedProp], ["decal", selectedDecal], ["light", selectedLight], ["smoke", selectedSmoke]];
+  const pickedTools: [EditTool, number | null][] = [["robot", selectedActor], ["item", selectedItem], ["prop", selectedProp], ["decal", selectedDecal], ["light", selectedLight], ["smoke", selectedSmoke], ["sound", selectedSound]];
   const ownPick = pickedTools.find(([tool]) => tool === editTool);
   const keyTool: EditTool = editTool === "select" || (ownPick && ownPick[1] === null) ? (pickedTools.find(([, index]) => index !== null)?.[0] ?? editTool) : editTool;
   // the deck variation played (see variation.ts): ?seed= in the URL, else
@@ -658,8 +663,9 @@ export default function App() {
   // The settings of the last thing of each kind that was set up (a slider moved, a colour picked): the next of
   // that kind is put in with them - a row of the same torch, many alike. Where a tool puts things in and nothing
   // is selected, the inspector shows and changes these (see placingKind).
-  const templates = useRef<Record<"smoke" | "light" | "prop" | "item" | "actor", Record<string, unknown>>>({ smoke: {}, light: {}, prop: {}, item: {}, actor: {} });
+  const templates = useRef<Record<"smoke" | "sound" | "light" | "prop" | "item" | "actor", Record<string, unknown>>>({ smoke: {}, sound: {}, light: {}, prop: {}, item: {}, actor: {} });
   const TEMPLATE_KEYS = {
+    sound: ["kind", "wave", "pitch", "noise", "volume", "pulse", "range", "rolloff", "active"],
     smoke: ["effect", "mistStyle", "sprite", "spread", "height", "density", "size", "color", "blow", "chance", "decorative", "opacity", "opacityDark", "lightColor", "lightIntensity", "lightReach", "active", "harm"],
     light: ["color", "intensity", "range", "effect", "bulb", "chance"],
     prop: ["texture", "scale", "chance"],
@@ -703,7 +709,7 @@ export default function App() {
     const step = `${drag.kind} drag ${drag.id}`;
     if (drag.first) dragGrab.current = null;
     // the copy, made on the first step: the end of its list
-    type DragList = "items" | "smokes" | "props" | "decals" | "lights" | "actors";
+    type DragList = "items" | "smokes" | "sounds" | "props" | "decals" | "lights" | "actors";
     let pendingCopy: DragList | undefined;
     let applied = false;
     const copyFirst = (list: DragList) => {
@@ -745,6 +751,16 @@ export default function App() {
       copyFirst("smokes");
       const spot = target.spot;
       if (spot) commit((f) => updateSmoke(f, index, { x: spot.cell.x, y: spot.cell.y, pos: spot.pos }));
+    } else if (drag.kind === "sound") {
+      // a sound emitter: where the pointer meets a floor, wall or whatever is there - in its cell, at the spot pointed at
+      // (the height it had is kept: the spot found says only where it is on the surface)
+      copyFirst("sounds");
+      const spec = mapFile(map.id)?.sounds?.[index];
+      const spot = target.spot;
+      if (spec && spot) {
+        const up = spec.pos?.[1] ?? 0.5;
+        commit((f) => updateSound(f, index, { x: spot.cell.x, y: spot.cell.y, pos: [spot.pos[0], up, spot.pos[2]] }));
+      }
     } else if (drag.kind === "prop") {
       copyFirst("props");
       const spec = mapFile(map.id)?.props?.[index];
@@ -875,7 +891,7 @@ export default function App() {
     if (!applied) return false;
     if (drag.first) {
       if (selecting) selectOnly(drag.kind, index);
-      else ({ item: setSelectedItem, smoke: setSelectedSmoke, prop: setSelectedProp, light: setSelectedLight, actor: setSelectedActor, decal: setSelectedDecal })[drag.kind](index);
+      else ({ item: setSelectedItem, smoke: setSelectedSmoke, sound: setSelectedSound, prop: setSelectedProp, light: setSelectedLight, actor: setSelectedActor, decal: setSelectedDecal })[drag.kind](index);
     }
     setEdits((n) => n + 1);
     return index;
@@ -1127,6 +1143,7 @@ export default function App() {
       else if (target.decal !== undefined) selectOnly("decal", target.decal);
       else if (target.light !== undefined) selectOnly("light", target.light);
       else if (target.smoke !== undefined) selectOnly("smoke", target.smoke);
+      else if (target.sound !== undefined) selectOnly("sound", target.sound);
       else {
         // (a gate or staircase marks a floor cell: a click on that cell picks it - its panel is the Exit or Stairs tool's)
         const cell = target.kind === "wall" ? undefined : target.cell;
@@ -1389,6 +1406,24 @@ export default function App() {
         const count = map.smokes?.length ?? 0;
         result = applyEdit(map.id, (file) => addSmoke(file, { ...(templates.current.smoke as object), x: at.x, y: at.y, pos }));
         setSelectedSmoke(count);
+      }
+    } else if (editTool === "sound") {
+      // a click on an emitter's marker picks it (the right button takes it out); on a floor or ceiling, it puts a new
+      // one in that cell, in the middle, at chest height (its spot in the cell is the inspector's to change)
+      const picked = target.sound;
+      if (picked !== undefined) {
+        if (!alt) {
+          setSelectedSound(picked);
+          return;
+        }
+        result = applyEdit(map.id, (file) => removeSound(file, picked));
+        setSelectedSound((sel) => (sel === null || sel === picked ? null : sel > picked ? sel - 1 : sel));
+      } else {
+        if (alt || target.kind === "wall") return;
+        const at = target.cell;
+        const count = map.sounds?.length ?? 0;
+        result = applyEdit(map.id, (file) => addSound(file, newSound(at.x, at.y, templates.current.sound)));
+        setSelectedSound(count);
       }
     } else if (editTool === "exit") {
       // a click on a floor puts a way off the ship there (or picks the one
@@ -1673,6 +1708,7 @@ export default function App() {
   // the deck)
   const openMap = (to: GameMap) => {
     setSelectedLight(null);
+    setSelectedSound(null);
     setSelectedProp(null);
     setSelectedDecal(null);
     enterMap(to);
@@ -1751,6 +1787,7 @@ export default function App() {
     if (edge === "N") shiftParty(0, shift);
     if (edge === "W") shiftParty(shift, 0);
     setSelectedLight(null);
+    setSelectedSound(null);
     setSelectedProp(null);
     setSelectedDecal(null);
     setEdits((n) => n + 1);
@@ -1990,6 +2027,80 @@ export default function App() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [editMode, keyTool]);
+
+  // The Sound tool: the selected sound emitter as the panel shows it, what a change does, and its keys. (Nothing selected
+  // and the tool in hand: the panel shows the settings of the next one - see `templates`.)
+  const selectedSoundSpec = selectedSound === null ? undefined : map.sounds?.[selectedSound];
+  const soundInfoOf = (spec: SoundSpec, listening: boolean): SoundInfo => {
+    const sound = resolveSound(spec);
+    return {
+      kind: sound.kind, wave: sound.wave, pitch: sound.pitch, noise: sound.noise, volume: sound.volume,
+      pulse: sound.pulse ?? spec.pulse, range: sound.range, rolloff: sound.rolloff, active: sound.active,
+      pos: sound.pos, roomHeight: ceilingHeight(map, spec.x, spec.y) - floorHeight(map, spec.x, spec.y), listening,
+    };
+  };
+  // the sound the Listen button plays: only while a sound is selected and the editor is open
+  const previewSound = editMode && soundListening ? selectedSound : null;
+  const selectedSoundInfo: SoundInfo | null = selectedSoundSpec ? soundInfoOf(selectedSoundSpec, previewSound !== null) : null;
+  // (a different sound picked, or none: it stops - the button is for the one it was pressed on)
+  useEffect(() => setSoundListening(false), [selectedSound, map.id, editMode]);
+  const changeSound = (patch: Parameters<typeof updateSound>[2], merge?: string) => {
+    if (selectedSound === null || !selectedSoundSpec) return;
+    remember("sound", patch);
+    const index = selectedSound;
+    const own = resolveSound(selectedSoundSpec).pos;
+    // (a `pos` patch with NaN parts keeps the emitter's own there, as a smoke emitter's does)
+    const fixed = patch.pos ? { ...patch, pos: patch.pos.map((v, i) => (Number.isNaN(v) ? own[i] : v)) as [number, number, number] } : patch;
+    const result = applyEdit(map.id, (file) => updateSound(file, index, fixed), merge && `sound ${index} ${merge}`);
+    if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+    else replaceMap(result.map);
+    setEdits((n) => n + 1);
+  };
+  const deleteSound = () => {
+    if (selectedSound === null) return;
+    const index = selectedSound;
+    const result = applyEdit(map.id, (file) => removeSound(file, index));
+    if (!("error" in result)) replaceMap(result.map);
+    setSelectedSound(null);
+    setEdits((n) => n + 1);
+  };
+  const soundKeys = useRef({ selectedSoundSpec, changeSound, deleteSound });
+  soundKeys.current = { selectedSoundSpec, changeSound, deleteSound };
+  useEffect(() => {
+    if (!editMode || keyTool !== "sound") return;
+    function onKey(e: KeyboardEvent) {
+      const { selectedSoundSpec: spec, changeSound: change, deleteSound: remove } = soundKeys.current;
+      if (!spec) return;
+      const stop = () => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      if (e.key === "Delete") {
+        stop();
+        remove();
+        return;
+      }
+      const step = e.shiftKey ? 0.2 : 0.05;
+      const ahead = DIR_VECTOR[facingRef.current];
+      const right = DIR_VECTOR[rightOf(facingRef.current)];
+      const move: Record<string, [number, number, number]> = {
+        ArrowLeft: [-right.x * step, 0, -right.y * step],
+        ArrowRight: [right.x * step, 0, right.y * step],
+        ArrowUp: [ahead.x * step, 0, ahead.y * step],
+        ArrowDown: [-ahead.x * step, 0, -ahead.y * step],
+        PageUp: [0, step, 0],
+        PageDown: [0, -step, 0],
+      };
+      const d = move[e.key];
+      if (!d) return;
+      stop();
+      const [x, y, z] = resolveSound(spec).pos;
+      const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)) * 100) / 100;
+      change({ pos: [clamp(x + d[0], -0.5, 0.5), clamp(y + d[1], 0, Math.max(0.05, ceilingHeight(map, spec.x, spec.y) - floorHeight(map, spec.x, spec.y) - 0.05)), clamp(z + d[2], -0.5, 0.5)] }, "pos");
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editMode, keyTool, map]);
 
   // the Exit tool's pick (its cell)
   const [selectedExit, setSelectedExit] = useState<Vec2 | null>(null);
@@ -2390,6 +2501,7 @@ export default function App() {
     setSelectedLight(null);
     setSelectedActor(null);
     setSelectedSmoke(null);
+    setSelectedSound(null);
     setSelectedExit(null);
     setSelectedStairs(null);
     setSelectedChanceWall(null);
@@ -2504,7 +2616,7 @@ export default function App() {
   // Step 2 bridge: observe the existing independent selections without changing
   // their owners. Only a newly selected value wins; clearing it shows Map settings.
   const inspectorPicks = {prop:selectedProp, decal:selectedDecal, item:selectedItem,
-    light:selectedLight, actor:selectedActor, smoke:selectedSmoke, exit:selectedExit, stairs:selectedStairs,
+    light:selectedLight, actor:selectedActor, smoke:selectedSmoke, sound:selectedSound, exit:selectedExit, stairs:selectedStairs,
     chanceWall:selectedChanceWall, door:selectedDoor};
   const inspectorSelection = useRef<{map:string; picks:typeof inspectorPicks; kind:InspectedKind|null}>({map:map.id,picks:inspectorPicks,kind:null});
   const previousInspector = inspectorSelection.current;
@@ -2522,12 +2634,14 @@ export default function App() {
     item:selectedItem===null?undefined:map.items?.[selectedItem]?.cell,
     light:selectedLight===null?undefined:map.lights?.[selectedLight],
     actor:selectedActor===null?undefined:map.actors?.[selectedActor]?.cell,
-    smoke:selectedSmokeSpec?.cell, exit:selectedExit??undefined, stairs:selectedStairs??undefined,
+    smoke:selectedSmokeSpec?.cell, sound:selectedSoundSpec ? { x: selectedSoundSpec.x, y: selectedSoundSpec.y } : undefined, exit:selectedExit??undefined, stairs:selectedStairs??undefined,
     chanceWall:selectedChanceWall===null?undefined:map.chanceWalls?.[selectedChanceWall]?.cell,
     door:selectedDoor??undefined};
   // Where a tool puts things in and nothing is selected, the inspector shows the settings the next one gets (a kind
   // of fog or fire, a light's colour...): changing them changes the template, the click puts the thing in.
-  const placingKind: "smoke" | "light" | null = editMode && !inspectedKind ? (editTool === "smoke" ? "smoke" : editTool === "light" ? "light" : null) : null;
+  const placingKind: "smoke" | "sound" | "light" | null = editMode && !inspectedKind ? (editTool === "smoke" ? "smoke" : editTool === "sound" ? "sound" : editTool === "light" ? "light" : null) : null;
+  // (the next sound's settings: what a new one gets from the template)
+  const soundTemplateInfo: SoundInfo = soundInfoOf(newSound(0, 0, templates.current.sound), false);
   const smokeTemplate = templates.current.smoke as Partial<NonNullable<GameMap["smokes"]>[number]>;
   const smokeTemplateInfo: SmokeInfo = {
     effect: smokeTemplate.effect,
@@ -2702,6 +2816,8 @@ export default function App() {
       selectedProp={selectedPropInfo ? selectedProp : null}
       selectedItem={selectedItemInfo ? selectedItem : null}
       selectedSmoke={selectedSmokeInfo ? selectedSmoke : null}
+      selectedSound={selectedSoundInfo ? selectedSound : null}
+      previewSound={previewSound}
       selectedDecal={selectedDecalInfo ? selectedDecal : null}
       selectedDoor={selectedDoorInfo ? selectedDoor : null}
       selectedLink={selectedExitSpec ? selectedExit : selectedStairsSpec ? selectedStairs : null}
@@ -2926,6 +3042,22 @@ export default function App() {
           }
           onSmokeDelete={deleteSmoke}
           onSmokeDeselect={() => setSelectedSmoke(null)}
+          sound={placingKind === "sound" ? soundTemplateInfo : selectedSoundInfo}
+          onSoundChange={
+            placingKind === "sound"
+              ? (patch) => {
+                  remember("sound", patch);
+                  setTemplateTick((n) => n + 1);
+                }
+              : (patch, merge) => changeSound(patch, Object.keys(patch).join() + (merge ?? ""))
+          }
+          onAssetSound={(patch) => {
+            remember("sound", patch);
+            setTemplateTick((n) => n + 1);
+          }}
+          onSoundListen={setSoundListening}
+          onSoundDelete={deleteSound}
+          onSoundDeselect={() => setSelectedSound(null)}
           exit={selectedExitInfo}
           onExitChange={(patch, merge) => {
             if (!selectedExit) return;
@@ -3047,6 +3179,7 @@ export default function App() {
                   case "npc":setEditTool("robot");setSelectedActor(index);break;
                   case "item":setEditTool("item");setSelectedItem(index);break;
                   case "smoke":setEditTool("smoke");setSelectedSmoke(index);break;
+                  case "sound":setEditTool("sound");setSelectedSound(index);break;
                   case "light":setEditTool("light");setSelectedLight(index);break;
                   case "decal":setEditTool("decal");setSelectedDecal(index);break;
                 }

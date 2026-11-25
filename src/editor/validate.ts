@@ -15,6 +15,7 @@ import { isTextureSetId } from "../render/textureSets";
 import { fenceProblems } from "../game/fences";
 import { operableProblems, type OperableKind } from "../game/operables";
 import { propLockProblems } from "../game/propLocks";
+import { soundProblems } from "../game/sounds";
 import { cleanSkyGradient } from "../game/skyGradient";
 import { isSharedSkyId } from "../game/skyImage";
 import { sharedImage } from "../render/sharedImages";
@@ -141,15 +142,17 @@ export function validateMap(map: GameMap): Problem[] {
   }
   // the locks of chests, levers and buttons: a key, one that something on the map gives (see propLocks.ts)
   for (const p of propLockProblems(map)) add(p.code, p.cell, p.params);
+  // sound emitters: one that makes no sound, reaches nowhere, or pulses with a zero time
+  for (const p of soundProblems(map.sounds)) add(p.code, p.cell, { index: p.index + 1 });
   // a door's own leaf / frame texture must be a texture set (a shared one counts once it's loaded)
   for (const u of unknownDoorTextures(map.doors, isTextureSetId)) add("unknownDoorTexture", u.cell, { id: u.id, field: t(`editorBar.door${u.field === "leafTexture" ? "Leaf" : "Frame"}Texture`) });
   return [...out, ...placementProblems(placedMap(map), c => !open(c))];
 }
 import type { MapFile } from "../game/mapFormat";
 
-type PlacedKind = "prop" | "npc" | "item" | "light" | "smoke" | "exit" | "stairs" | "ladder" | "bridge" | "door" | "chanceWall" | "decal" | "restricted" | "start" | "patrol";
+type PlacedKind = "prop" | "npc" | "item" | "light" | "smoke" | "sound" | "exit" | "stairs" | "ladder" | "bridge" | "door" | "chanceWall" | "decal" | "restricted" | "start" | "patrol";
 type Placed = { kind: PlacedKind; index: number; cell: Vec2; point?: Vec2; reach?: { x: number; z: number }; data: Record<string, unknown>; field: string };
-const fields = { props: "prop", actors: "npc", items: "item", lights: "light", smokes: "smoke", exits: "exit", stairs: "stairs", ladders: "ladder", bridges: "bridge", doors: "door", chanceWalls: "chanceWall", decals: "decal", restricted: "restricted" } as const;
+const fields = { props: "prop", actors: "npc", items: "item", lights: "light", smokes: "smoke", sounds: "sound", exits: "exit", stairs: "stairs", ladders: "ladder", bridges: "bridge", doors: "door", chanceWalls: "chanceWall", decals: "decal", restricted: "restricted" } as const;
 const gameplay = new Set<PlacedKind>(["npc", "item", "exit", "stairs", "ladder", "bridge", "door", "start", "patrol"]);
 
 function placedFile(file: MapFile): Placed[] {
@@ -241,6 +244,8 @@ function duplicateGroups(records: Placed[]): Placed[][] {
       : p.kind === "decal" ? [d.decal,d.surface,d.px,d.py,d.rotation ?? 0,d.scale ?? 1]
       : p.kind === "item" ? [d.item,itemSpot(d.offset as [number,number] | undefined,p.index),d.elevation ?? 0]
       : p.kind === "light" || p.kind === "smoke" ? [d.pos ?? null]
+      // (a beep and a hiss in one spot are two sounds; the same one twice is one too many)
+      : p.kind === "sound" ? [d.pos ?? null, d.kind, d.wave ?? null, d.pitch ?? null, d.noise ?? null]
       : p.kind === "ladder" ? [d.wall] : p.kind === "bridge" ? [d.height,d.axis] : [];
     const key = canonical([p.kind,p.cell.x,p.cell.y,detail]);
     groups.set(key, [...(groups.get(key) ?? []),p]);

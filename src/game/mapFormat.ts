@@ -18,6 +18,7 @@ import { cleanSkyGradient, type SkyGradient } from "./skyGradient";
 import { worldOfMap } from "./worlds";
 import { parsePickupMode } from "./pickupMode";
 import type { RenderLook } from "./renderLook";
+import { readSounds, type SoundSpec } from "./sounds";
 
 // Map files (src/maps/*.json): a character grid for the cells plus optional
 // per-cell layers, each its own character grid with a legend. Characters
@@ -202,6 +203,8 @@ export interface MapFile {
   ladders?: { x: number; y: number; wall: Direction }[];
   bridges?: { x: number; y: number; height: number; axis: "NS" | "EW" }[];
   lights?: MapLight[];
+  // generated sounds in cells (see SoundSpec); read and cleaned by parseMap
+  sounds?: SoundSpec[];
   // x, y: the (leftmost) cell; wall: the wall it's in; width: panels
   // glow: false - no starlight glowing in through it
   windows?: { x: number; y: number; wall: Direction; width?: number; glow?: boolean }[];
@@ -290,6 +293,12 @@ function checkHeight(value: number, what: string) {
   if (Math.abs(value / HEIGHT_STEP - Math.round(value / HEIGHT_STEP)) > 1e-6) {
     throw new Error(`${what} ${value} isn't a multiple of ${HEIGHT_STEP}`);
   }
+}
+
+// the map's sounds that are sounds (see readSound) and in the map; none: left out of the map altogether
+function soundsIn(raw: unknown, cells: CellType[][]): SoundSpec[] | undefined {
+  const sounds = readSounds(raw).filter((s) => cells[s.y]?.[s.x] !== undefined);
+  return sounds.length ? sounds : undefined;
 }
 
 export function parseMap(id: string, file: MapFile): GameMap {
@@ -420,6 +429,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     ladders,
     bridges,
     lights: (file.lights ?? []).map((l) => ({ ...l })),
+    sounds: soundsIn(file.sounds, cells),
     structureKey: JSON.stringify({
       ...file,
       // the cleaned sky spec: a bad colour must not rebuild the scene differently
@@ -428,6 +438,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
       lightGridDensity: undefined,
       lightGridAmbient: undefined,
       smokes: undefined,
+      // (a sound is heard, not built: the audio system takes a change in place)
+      sounds: undefined,
       weather: undefined,
       actors: undefined,
       terminals: undefined,

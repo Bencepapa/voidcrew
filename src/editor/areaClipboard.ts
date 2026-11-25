@@ -28,7 +28,7 @@ export type LayerName = (typeof LAYER_NAMES)[number];
 export type LayerValue = string | number | null;
 
 // the lists of things placed in cells, each entry with its cell in `x`, `y`
-export const LOCAL_LISTS = ["doors", "props", "items", "smokes", "lights", "actors", "decals", "ladders", "bridges", "windows", "faceTextures", "chanceWalls", "wallInteractions"] as const;
+export const LOCAL_LISTS = ["doors", "props", "items", "smokes", "sounds", "lights", "actors", "decals", "ladders", "bridges", "windows", "faceTextures", "chanceWalls", "wallInteractions"] as const;
 export type LocalList = (typeof LOCAL_LISTS)[number];
 
 export const CLIP_VERSION = 1;
@@ -141,6 +141,7 @@ export function collectArea(file: MapFile, rect: Rect, options: CollectOptions =
   put("props", here(file.props).map(shift));
   put("items", here(file.items).map(shift));
   put("smokes", here(file.smokes).map(shift));
+  put("sounds", here(file.sounds).map(shift));
   put("lights", here(file.lights).map(shift));
   put("chanceWalls", here(file.chanceWalls).map(shift));
   put("faceTextures", here(file.faceTextures).map(shift));
@@ -367,6 +368,15 @@ function transformClip(clip: AreaClip, tx: Tx): AreaClip {
     const [px, pz] = tx.vec(s.pos[0], s.pos[2]);
     next.pos = [px, s.pos[1], pz];
     if (s.blow) next.blow = { ...s.blow, yaw: degrees(tx.heading(s.blow.yaw)) };
+    return next;
+  });
+  // (the spot in the cell turns with the cell; a sound without one stays in the middle)
+  map("sounds", (s: Entry<"sounds">) => {
+    const next = at(s);
+    if (s.pos) {
+      const [px, pz] = tx.vec(s.pos[0], s.pos[2]);
+      next.pos = [px, s.pos[1], pz];
+    }
     return next;
   });
   map("lights", (l: Entry<"lights">) => {
