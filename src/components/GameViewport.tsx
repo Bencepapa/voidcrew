@@ -199,6 +199,9 @@ export interface ViewportSettings extends PostProcessSettings {
   // the player's graphics choices (see render/graphics.ts)
   particleQuality: number;
   wallDetail: number;
+  // the door parts' own detail (cells a side, the frame and leaf, which have holes): 0 follows the wall detail; set, it is
+  // taken as it is (more than the wall detail too: a few doors are cheap next to the walls)
+  doorDetail: number;
   pixelRatioCap: number;
   particleEvery: number;
   viewDistanceCap: number;
@@ -408,6 +411,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   fogColor: "#000000",
   fogStart: 0,
   fogEnd: 0,
+  doorDetail: 0,
   roughness: 0.55,
   metalness: 0.45,
   normalStrength: 1,
@@ -3385,6 +3389,8 @@ export function GameViewport({
         // the wall relief mode, with the holes' quads left out
         hybrid?: boolean;
         smoothCells?: number;
+        // the cell count is taken as it is (not capped by the wall detail): a door's own detail setting
+        exactCells?: boolean;
         outwardRelief?: boolean;
         // side edges left for corner joins (ReliefOptions.joinEdges), and
         // the corners they land on (ReliefOptions.edgeModes)
@@ -3408,6 +3414,7 @@ export function GameViewport({
           settings.reliefMode,
           kit.smooth ? "smooth" : "",
           settings.wallDetail,
+    settings.doorDetail,
           settings.aoRadius,
         ].join("|");
       const cached = (shape: Shape): Promise<ReturnType<typeof createReliefWallGeometry> | null> => {
@@ -3459,7 +3466,7 @@ export function GameViewport({
             minIsland: settings.reliefMinIsland,
             smooth: shape.hybrid || kit.smooth || settings.reliefMode === "smooth",
             smoothHoles: shape.hybrid,
-            smoothCells: Math.min(settings.wallDetail, shape.smoothCells ?? (shape.hybrid && !grid.solid ? 32 : Infinity)),
+            smoothCells: shape.exactCells && shape.smoothCells ? shape.smoothCells : Math.min(settings.wallDetail, shape.smoothCells ?? (shape.hybrid && !grid.solid ? 32 : Infinity)),
             outwardRelief: shape.outwardRelief,
             smoothLod,
             aoRadius: settings.aoRadius,
@@ -3844,7 +3851,7 @@ export function GameViewport({
     // a distant version like the walls (a grid LOD_FACTOR times coarser
     // still) - the opening stays crisp: a coarser cell is a hole when most
     // of it is. (64: the highest wall detail setting)
-    const doorCoarse = Math.max(1, Math.round(64 / settings.wallDetail));
+    const doorCoarse = Math.max(1, Math.round(64 / (settings.doorDetail > 0 ? settings.doorDetail : settings.wallDetail)));
     const doorFarCoarse = doorCoarse * LOD_FACTOR;
     // a door part: its mesh, or the near/far pair when it has a far version
     const doorPart = (geo: THREE.BufferGeometry, far: THREE.BufferGeometry | null, mat: THREE.Material[]) => {
@@ -3881,7 +3888,7 @@ export function GameViewport({
     // setting, and a still coarser one far) or hybrid
     const doorShape = <S extends object>(shape: S, far: boolean) =>
       hybrid
-        ? { ...shape, hybrid: true, ...(far ? { lodOnly: true, smoothLod: hybridFarLod } : {}) }
+        ? { ...shape, hybrid: true, ...(settings.doorDetail > 0 ? { smoothCells: settings.doorDetail, exactCells: true } : {}), ...(far ? { lodOnly: true, smoothLod: hybridFarLod } : {}) }
         : { ...shape, coarse: far ? doorFarCoarse : doorCoarse, ...(far ? { lodOnly: true } : {}) };
     if (doorCells.length) {
       track(async () => {
@@ -9066,6 +9073,7 @@ export function GameViewport({
     settings.reliefMinIsland,
     settings.reliefMode,
     settings.wallDetail,
+    settings.doorDetail,
     settings.lodScale,
     settings.pixelRatioCap,
     settings.antialias,

@@ -530,6 +530,16 @@ export function DebugPanel({
             </select>,
           )}
           {select(
+            t("debug.doorDetail"),
+            <select value={settings.doorDetail} onChange={(e) => set("doorDetail", Number(e.target.value))} className={SELECT} title={t("debug.doorDetailHint")}>
+              <option value={0}>{t("debug.doorDetailAuto")}</option>
+              <option value={16}>16</option>
+              <option value={32}>32</option>
+              <option value={64}>64</option>
+              <option value={96}>96</option>
+            </select>,
+          )}
+          {select(
             t("debug.resolutionDevicePixelsPerPixel"),
             <select value={settings.pixelRatioCap} onChange={(e) => set("pixelRatioCap", Number(e.target.value))} className={SELECT}>
               <option value={0.5}>{t("debug.05xBlurryLightest")}</option>
