@@ -13,7 +13,7 @@ export async function load(url, context, nextLoad) {
   return result;
 }`), import.meta.url);
 const { edgeId } = await import("../game/fences");
-const { eraseFence, fenceEditing, fenceIndexAt, fencePieceEdited, fenceRun, paintFence, reevaluateFences, restyleFence } = await import("./fenceEdits");
+const { eraseFence, fenceEditing, fenceIndexAt, fencePieceEdited, fenceRun, fenceToolForm, fenceToolForViewport, fenceToolStyle, isFenceTool, paintFence, reevaluateFences, restyleFence } = await import("./fenceEdits");
 const { updateProp } = await import("./mapEdits");
 
 // a 12x9 map, walls round the edge
@@ -250,4 +250,49 @@ const forms = (file: MapFile) => (file.props ?? []).map((p) => `${p.prop.replace
   assert.equal(edgeId(3, 3, "N"), "H3,3");
 }
 
+// ---- the foliage tools: layered fence and X fence are presets of the fence pieces
+{
+  assert.ok(isFenceTool("fencelayer") && isFenceTool("fencecross") && isFenceTool("fenceblock"));
+  assert.ok(!isFenceTool("prop") && !isFenceTool("roofauto"));
+  assert.equal(fenceToolForm("fenceblock", "edge"), "block");
+  assert.equal(fenceToolForm("fenceedge", "mid"), "edge");
+  assert.equal(fenceToolForm("fencemid", "edge"), "mid");
+  assert.equal(fenceToolForm("fencelayer", "edge"), "edge", "the layered tool stands where the panel says");
+  assert.equal(fenceToolForm("fencelayer", "mid"), "mid");
+  assert.equal(fenceToolForm("fencecross", "edge"), "mid", "an X is a middle piece");
+  assert.equal(fenceToolForViewport("fencelayer", "edge"), "fenceedge", "the view treats them as the form they put down");
+  assert.equal(fenceToolForViewport("fencelayer", "mid"), "fencemid");
+  assert.equal(fenceToolForViewport("fencecross", "edge"), "fencemid");
+  assert.equal(fenceToolForViewport("select", "edge"), "select");
+  // the presets: walkable foliage, three layers or an X; kept when the style already is foliage; dropped by the form tools
+  assert.deepEqual(fenceToolStyle("fencelayer", {}), { layers: 3, solid: false });
+  assert.deepEqual(fenceToolStyle("fencecross", {}), { cross: "axes", solid: false });
+  assert.deepEqual(fenceToolStyle("fencelayer", { opaque: true, height: 2 }), { opaque: true, height: 2, layers: 3, solid: false });
+  assert.deepEqual(fenceToolStyle("fencelayer", { layers: 5, jitter: 0.3, solid: false }), { layers: 5, jitter: 0.3, solid: false });
+  assert.deepEqual(fenceToolStyle("fencecross", { cross: "diagonal", layers: 2, solid: false }), { cross: "diagonal", layers: 2, solid: false });
+  assert.deepEqual(fenceToolStyle("fencelayer", { cross: "axes", solid: false }), { layers: 3, solid: false }, "from an X: the layers, not the X");
+  assert.deepEqual(fenceToolStyle("fencelayer", { layers: 4, solid: true as never }), { layers: 4, solid: true as never }, "a user who made it solid keeps it");
+  assert.deepEqual(fenceToolStyle("fenceedge", { layers: 3, spacing: 0.2, jitter: 0, cross: "axes", solid: false, height: 2 }), { height: 2 }, "a plain tool stays plain");
+  assert.deepEqual(fenceToolStyle("fencemid", {}), {});
+
+  // painting them: the pieces are ordinary fence_edge / fence_mid with the foliage settings (nothing else marks them)
+  const file = mapOf();
+  const layered = fenceToolStyle("fencelayer", {});
+  paintFence(file, "edge", row(2, 4, 3), { texture: "fantasybokor1", style: layered }, "N");
+  paintFence(file, "mid", row(2, 4, 6), { style: fenceToolStyle("fencecross", {}) });
+  assert.deepEqual(file.props!.map((p) => p.prop), ["fence_edge", "fence_edge", "fence_edge", "fence_mid", "fence_mid", "fence_mid"]);
+  assert.deepEqual(file.props![0].fence, { layers: 3, solid: false });
+  assert.deepEqual(file.props![3].fence, { cross: "axes", solid: false });
+  assert.equal(file.props![3].rotation, undefined);
+  // a stroke can be restyled and erased like any other
+  restyleFence(file, "mid", row(2, 4, 6), { style: { cross: "diagonal", layers: 2, solid: false } });
+  assert.deepEqual(file.props![4].fence, { cross: "diagonal", layers: 2, solid: false });
+  eraseFence(file, "edge", row(2, 4, 3), "N");
+  assert.equal(file.props!.length, 3);
+  // an edit by hand of a piece's foliage fields is made safe, and reaches the run of pieces that looked the same
+  fenceEditing.spread = true;
+  const next: Record<string, unknown> = { ...file.props![0] };
+  fencePieceEdited(file, 0, file.props![0], next, { fence: { layers: 99, spacing: 0.01, jitter: 7 } });
+  assert.deepEqual(next.fence, { layers: 8, spacing: 0.04, jitter: 0.5 });
+}
 console.log("fenceEdits.test.ts: ok");

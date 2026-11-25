@@ -19,6 +19,7 @@ import { MapFields } from "./inspector/MapFields";
 import { EventFields } from "./inspector/EventFields";
 import { RoofFields } from "./inspector/RoofFields";
 import { FenceToolFields } from "./inspector/FenceFields";
+import { isFenceTool } from "./fenceEdits";
 import { PROP_TYPES } from "../game/props";
 import { ACTOR_TYPES } from "../game/actors";
 import { isSharedActorId } from "../game/actorSheets";
@@ -59,7 +60,7 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
  const thumbnail=kind==="item"&&type&&ITEM_TYPES[type]?pickupTexture(type).diffuse:kind==="decal"&&type?`${import.meta.env.BASE_URL}decals/${type}/diffuse.png`:texture?(TEXTURE_SETS[texture as keyof typeof TEXTURE_SETS]?.diffuse ?? `${import.meta.env.BASE_URL}textures/${texture}/diffuse.png`):undefined;
  const kindName=kind?editorToolLabel(kind==="actor"?"robot":kind==="chanceWall"?"wall":kind):"";
  const roofing=p.tool==="roofauto" && !(kind && selected);
- const fencing=(p.tool==="fenceblock" || p.tool==="fenceedge" || p.tool==="fencemid") && !(kind && selected);
+ const fencing=isFenceTool(p.tool) && !(kind && selected);
  const heading=roofing?t("roofauto.group"):fencing?editorToolLabel(p.tool):p.tool==="event"?t(`events.${p.selectedEvent?.kind ?? p.eventKind}`):kind&&selected?(p.inspected?.placing?t("inspector.next",{kind:kindName}):kindName):t("inspector.mapSettings");
  const panel=<aside aria-label={t("editorShell.properties")} style={neutralStyle} className="voidcrew-editor-controls min-w-0 bg-neutral-900 text-[11px] text-neutral-300" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>{if(e.target instanceof HTMLInputElement && e.target.type==="range")e.target.blur();if(e.currentTarget.contains(e.target as Node))e.stopPropagation();}} onChange={e=>{if(e.target instanceof HTMLElement && !isTextEntry(e.target) && !(e.target instanceof HTMLInputElement && ["color","range"].includes(e.target.type)))e.target.blur();}} onClick={e=>{(e.target as HTMLElement).closest("button")?.blur();}} onKeyUp={e=>{if(e.key==="Enter" && e.target instanceof HTMLElement && !isTextEntry(e.target))e.target.blur();}} onWheel={e=>e.stopPropagation()}>
   <style>{".theme-fantasy .voidcrew-editor-controls .border { box-shadow: none; }"}</style>

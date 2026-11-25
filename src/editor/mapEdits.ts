@@ -36,6 +36,8 @@ export type EditTool =
   | "fenceblock"
   | "fenceedge"
   | "fencemid"
+  | "fencelayer"
+  | "fencecross"
   | "decal"
   | "robot"
   | "item"

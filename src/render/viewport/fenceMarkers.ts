@@ -1,5 +1,10 @@
 import * as THREE from "three";
-import { fenceFloorMark, type FenceModelSpec } from "../../game/fences";
+import { foliageFloorMark } from "../../game/fenceLayers";
+import { fenceFloorMark, isFoliageSpec, type FenceModelSpec } from "../../game/fences";
+
+// the kinds of floor mark: the three forms, and the foliage pieces (layered, an X)
+type MarkKind = "block" | "edge" | "mid" | "layered" | "cross";
+const MARK_COLORS: Record<MarkKind, number> = { block: 0xffb347, edge: 0x4fd1ff, mid: 0x7dff9a, layered: 0xd4ff3f, cross: 0xff7de0 };
 
 interface FenceMarkersContext {
   geometries: THREE.BufferGeometry[];
@@ -29,10 +34,10 @@ export function createFenceMarkers({ geometries, reliefDepth, editModeRef }: Fen
     return tex;
   })();
   const fenceMarkMats = Object.fromEntries(
-    (["block", "edge", "mid"] as const).map((form) => [
+    (Object.keys(MARK_COLORS) as MarkKind[]).map((form) => [
       form,
       new THREE.MeshBasicMaterial({
-        color: form === "block" ? 0xffb347 : form === "edge" ? 0x4fd1ff : 0x7dff9a,
+        color: MARK_COLORS[form],
         map: fenceMarkTexture,
         transparent: true,
         opacity: 0.7,
@@ -43,7 +48,7 @@ export function createFenceMarkers({ geometries, reliefDepth, editModeRef }: Fen
         polygonOffsetUnits: -2,
       }),
     ]),
-  ) as Record<"block" | "edge" | "mid", THREE.MeshBasicMaterial>;
+  ) as Record<MarkKind, THREE.MeshBasicMaterial>;
   // The floor marks of the pieces built (by prop index), and the piece each belongs to: in the scene only
   // while editing (a hidden mesh would still be hit by the shots' rays)
   const fenceMarkers = new Map<number, { marker: THREE.Object3D; owner: THREE.Object3D }>();
@@ -58,11 +63,14 @@ export function createFenceMarkers({ geometries, reliefDepth, editModeRef }: Fen
   function buildFenceMarker(spec: FenceModelSpec) {
     const marker = new THREE.Group();
     marker.name = "fenceMarker";
-    for (const r of fenceFloorMark(spec)) {
+    const foliage = isFoliageSpec(spec);
+    const kind: MarkKind = spec.cross ? "cross" : foliage ? "layered" : spec.form;
+    for (const r of foliage ? foliageFloorMark(spec) : fenceFloorMark(spec).map((m) => ({ ...m, yaw: 0 }))) {
       const geo = new THREE.PlaneGeometry(r.sx, r.sz);
       geometries.push(geo);
-      const mark = new THREE.Mesh(geo, fenceMarkMats[spec.form]);
-      mark.rotation.x = -Math.PI / 2;
+      const mark = new THREE.Mesh(geo, fenceMarkMats[kind]);
+      // (lying flat, then turned about the vertical - for a diagonal; a direct child of the marker, which the picking looks for)
+      mark.rotation.set(-Math.PI / 2, r.yaw, 0, "YXZ");
       mark.position.set(r.x, reliefDepth + 0.01, r.z);
       marker.add(mark);
     }

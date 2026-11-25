@@ -93,6 +93,7 @@ Approximate line ranges. Search for the named functions as the file moves.
 - `editorMarkers.ts` - Sound signs and range rings, and exit and stair plates.
 - `eventMarkers.ts` - Event sprites and prop lock markers.
 - `fenceMarkers.ts` - Fence floor marks and their attachment during editing.
+- `foliageMesh.ts` - Layered / X fence (foliage) pieces: the planes' relief panels merged into one model with merged distant versions.
 - `loot.ts` - Item sprite and loot spill settings.
 - `editor.ts` - Edit indicators and tool mappings.
 - `poses.ts` - Jump and ladder poses, interpolation and easing.

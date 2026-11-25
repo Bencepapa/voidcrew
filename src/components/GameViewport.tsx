@@ -52,6 +52,7 @@ import {
   fenceFormOf,
   fenceIndex,
   fenceModelSpec,
+  isFoliageSpec,
   sideFromPoint,
   type FenceModelSpec,
 } from "../game/fences";
@@ -267,6 +268,7 @@ import { createItemsLoot } from "../render/viewport/itemsLoot";
 import { createEditorMarkers, SOUND_ICON_SIZE } from "../render/viewport/editorMarkers";
 import { createEventMarkers } from "../render/viewport/eventMarkers";
 import { createFenceMarkers } from "../render/viewport/fenceMarkers";
+import { buildFoliage } from "../render/viewport/foliageMesh";
 import { turnClockwise } from "../render/viewport/pixels";
 import type {
   ReliefStats,
@@ -1859,8 +1861,9 @@ export function GameViewport({
             edgeProfile,
           });
           tick(shape.lodOnly ? "relief geometry (far versions)" : "relief geometry", reliefFrom);
-          // a partial panel or a far version uses its full panel's AO map
-          if (shape.rows || shape.lodOnly) made.aoMap.dispose();
+          // a partial panel or a far version uses its full panel's AO map (a part cut by columns too: its
+          // second UV set runs over the whole panel - see reliefMesh)
+          if (shape.rows || shape.cols || shape.lodOnly) made.aoMap.dispose();
           return made;
         })();
         cache.reliefs.set(key, built);
@@ -1871,7 +1874,7 @@ export function GameViewport({
       const relief = await built;
       if (disposed || !relief) return null;
       if (!shape.lodOnly) reliefSources.set(relief.geometry, { kit, shape });
-      if (shape.rows || shape.lodOnly) return relief;
+      if (shape.rows || shape.cols || shape.lodOnly) return relief;
       for (const mat of kitMaterials(kit)) {
         mat.aoMap = relief.aoMap;
         mat.aoMapIntensity = settingsRef.current.aoIntensity;
@@ -2553,6 +2556,18 @@ export function GameViewport({
         return kit;
       };
       const relief = propReliefAmount(propReliefDepth, PROP_TYPES.fence_edge, hybrid);
+      // foliage (layers, an X): the planes' panels merged into one model (see render/viewport/foliageMesh.ts)
+      if (isFoliageSpec(spec)) {
+        const foliage = await buildFoliage(
+          { wallHeight, relief, coarse: PROP_COARSE, panel: buildPropRelief, far: farReliefLevels, geometries },
+          kitOf(sets.main),
+          spec,
+        );
+        if (!foliage) return null;
+        template.add(foliage);
+        template.add(fences.buildFenceMarker(spec));
+        return template;
+      }
       for (const f of fenceFaces(spec)) {
         const kit = kitOf(sets[f.tex]);
         if (f.kind === "cap") {

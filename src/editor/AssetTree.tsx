@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { AlignJustify, ArrowUpFromLine, AudioWaveform, Ban, BrickWall, Cone, Dices, Fence, Eye, EyeOff, Flag, Footprints, House, Image, Library, Lock, LockOpen, LogOut, MessageSquare, Minus, Pyramid, Store, Tent, Triangle, Volume2, Warehouse } from "lucide-react";
+import { AlignJustify, ArrowUpFromLine, AudioWaveform, Ban, BrickWall, Cone, Dices, Fence, Eye, EyeOff, Flag, Footprints, House, Image, Layers, Library, Lock, LockOpen, LogOut, MessageSquare, Minus, Pyramid, Sprout, Store, Tent, Triangle, Volume2, Warehouse } from "lucide-react";
 import { NOISE_COLORS, SOUND_WAVES } from "../game/sounds";
 import { ROOF_FORMS, type RoofForm } from "../game/roofAutotile";
 import { hasKey, t, type Key } from "../i18n";
@@ -86,9 +86,10 @@ export function AssetTree(p: EditorBarProps) {
     id: `roof:${form}`, search: t("roofauto.formHint"), active: p.roofForm === form, pick: () => choose("roofauto", () => p.onRoofForm(form)),
   }));
   // the fence and block tools, beside the roof's: a block, a fence on a cell's edge, a fence through its middle
-  const fenceTools: [EditTool, "block" | "edge" | "mid", ReactNode][] = [["fenceblock", "block", <BrickWall size={28}/>], ["fenceedge", "edge", <Fence size={28}/>], ["fencemid", "mid", <Minus size={28}/>]];
+  // then the foliage presets: layered planes (an edge or middle fence), and the X of two crossing planes
+  const fenceTools: [EditTool, "block" | "edge" | "mid" | "layered" | "cross", ReactNode][] = [["fenceblock", "block", <BrickWall size={28}/>], ["fenceedge", "edge", <Fence size={28}/>], ["fencemid", "mid", <Minus size={28}/>], ["fencelayer", "layered", <Layers size={28}/>], ["fencecross", "cross", <Sprout size={28}/>]];
   const fences: Entry[] = fenceTools.map(([tool, form, icon]) => ({
-    ...toolEntry(tool, t(`fence.${form}`), icon),
+    ...toolEntry(tool, t(`fence.${form === "cross" ? "crossTool" : form}`), icon),
     id: `fence:${form}`, search: t(`fence.hint.${form}`),
   }));
   const groups: {id:string; label:string; entries:Entry[]; bare?:boolean}[] = [
