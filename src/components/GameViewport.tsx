@@ -45,7 +45,6 @@ import { BRIDGE_THICKNESS, BRIDGE_WIDTH, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
-import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type EdgeSegment } from "../render/reliefMesh";
 import { buildRoofGeometry } from "../render/roofMesh";
 import {
   fenceFaces,
@@ -56,7 +55,7 @@ import {
   sideFromPoint,
   type FenceModelSpec,
 } from "../game/fences";
-import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
+import type { JoinedStrips } from "../render/cornerJoins";
 import { generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
@@ -85,18 +84,15 @@ import { weaponAccuracy } from "../game/combat";
 import type { ShotResult, Weapon } from "../game/combat";
 import { cellKey, visibleCells } from "../game/visibility";
 import type { PropFace, PropPart, PropType, PropView } from "../game/props";
-import { doorCellKey } from "../game/useGameState";
 import { forwardOf } from "../game/freeMovement";
 import { WALL_ROTATION, surfaceFrame, surfaceKey } from "../render/surfaces";
 import { DecalLibrary, fetchDecalManifest } from "../render/decals";
-import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
 import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
 import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
 import { mapUsesTexture, wantSharedUrl } from "../editor/textureLibrary";
 import { onSharedPropsChanged } from "../editor/sharedProps";
 import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
-import { doorLeafMotion, type DoorType } from "../game/doorTypes";
 import {
   onSharedDecalsChanged,
   onSharedPickupsChanged,
@@ -112,38 +108,22 @@ export { DEFAULT_SETTINGS } from "../render/viewport/settings";
 
 import type { ViewportSettings } from "../render/viewport/settings";
 import {
-  createBeveledWallGeometry,
   LIGHT_PANEL_INTENSITY,
   DEFAULT_FLOOR,
-  type PanelVariant,
-  variantRows,
-  variantHeight,
-  wallPanels,
   createBandPlane,
-  type WallSlot,
   type WallKit,
   kitMaterials,
   wallVariantRoll,
   FLOOR_BASE_DEPTH,
-  LOD_DISTANCE,
-  LOD_FACTOR,
-  SMOOTH_LODS,
-  SMOOTH_LOD_MIN_CELLS,
-  CORNER_JOINS,
-  type FarLevel,
 } from "../render/viewport/walls";
 import {
   TEXTURE_CHANGED_EVENT,
   EDIT_SETTLE_MS,
   ORIGIN_NDC,
   CULL_MAX_SIZE,
-  DOOR_FRAME_SET,
   WINDOW_SET,
-  WINDOW_DEPTH,
   NO_LAYERS,
   PROP_COARSE,
-  GLASS_TINT,
-  GLASS_SHEEN,
   TOUCH_REACH,
   CAMERA_WATCH_LIGHT,
   CAMERA_ALARM_LIGHT,
@@ -157,9 +137,6 @@ import {
   DOOR_NUMBER_GAP,
   LABEL_PAINT,
   LABEL_PAINT_DARK,
-  DOOR_FRAME_HALF_DEPTH,
-  DOOR_PANEL_HALF_DEPTH,
-  DOOR_PANEL_OVERLAP,
   DOOR_OPEN_MS,
   TRIM_PAINT_URL,
   TRIM_HAZARD_URL,
@@ -279,6 +256,15 @@ import type {
   EditTarget,
   GameViewportProps,
 } from "../render/viewport/contracts";
+import { createBaseGeometry } from "../render/viewport/baseGeometry";
+import { createStructuralSurfaces } from "../render/viewport/structuralSurfaces";
+import { createWallBacking, type BackingPanel } from "../render/viewport/wallBacking";
+import { createReliefGeometry } from "../render/viewport/reliefGeometry";
+import { createStructuralWalls } from "../render/viewport/structuralWalls";
+import { createStructuralTiles } from "../render/viewport/structuralTiles";
+import { createStructuralDoors, type DoorCell } from "../render/viewport/structuralDoors";
+import { createStructuralProps } from "../render/viewport/structuralProps";
+import { retextured } from "../render/viewport/propRetexture";
 import { LoadingScreen } from "../render/viewport/LoadingScreen";
 
 export type { TextureSetId, WallProfileId, GeometryViewId, ViewportSettings } from "../render/viewport/settings";
@@ -1150,10 +1136,7 @@ export function GameViewport({
       if (!kit) kits.set(set, kit = createWallKit(set, false));
       return kit;
     };
-    const doorCells: {
-      x: number; z: number; spec: DoorSpec; key: string; frameKit: WallKit; leafKit: WallKit;
-      motion: Pick<DoorType, "motion" | "hinge" | "swingTo" | "angle">;
-    }[] = [];
+    const doorCells: DoorCell[] = [];
     // materials made beside the kits' (labeled door panels, see-through
     // bridge decks), kept in step with the material settings like theirs
     const ownMaterials: THREE.MeshStandardMaterial[] = [];
@@ -1290,7 +1273,7 @@ export function GameViewport({
     // panels that would show what's behind the wall (the next room, the floor)
     const backingPositions: number[] = [];
     // (the wall kit each belongs to: a texture with holes in it gets none, so what's behind shows)
-    const backingPanels: { x: number; z: number; y: number; rotY: number; width: number; height: number; floorTop: boolean; deep?: boolean; kit: WallKit }[] = [];
+    const backingPanels: BackingPanel[] = [];
     const backingMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, vertexColors: true });
     backingMat.visible = settings.wallBacking;
     let backingColorSerial = 0;
@@ -1303,26 +1286,7 @@ export function GameViewport({
       isDisposed: () => disposed,
     });
 
-    const WALL_SUBDIVISIONS = 10;
-    // relief geometry needs the height map's pixels, so it's built once the
-    // image has loaded; flat/beveled walls are ready immediately
-    const geometries: THREE.BufferGeometry[] = [];
-    let wallGeo: THREE.BufferGeometry | null = null;
-    if (settings.wallProfile === "flat") {
-      wallGeo = new THREE.PlaneGeometry(1, wallHeight, WALL_SUBDIVISIONS * 3, WALL_SUBDIVISIONS * 3);
-    } else if (settings.wallProfile === "convex" || settings.wallProfile === "concave") {
-      wallGeo = createBeveledWallGeometry(
-        1,
-        wallHeight,
-        settings.bevelFraction,
-        settings.bevelAngleDeg,
-        settings.wallProfile === "convex" ? 1 : -1,
-        WALL_SUBDIVISIONS,
-      );
-    }
-    if (wallGeo) geometries.push(wallGeo);
-    const floorGeo = new THREE.PlaneGeometry(1, 1);
-    geometries.push(floorGeo);
+    const { geometries, wallGeo, floorGeo } = createBaseGeometry({ settings, wallHeight });
 
     const group = new THREE.Group();
     scene.add(group);
@@ -1362,753 +1326,39 @@ export function GameViewport({
 
     let reliefStats: ReliefStats | null = null;
 
-    // A wall panel, floor or ceiling tile faces one open cell - the one in
-    // front of it (a floor's or ceiling's own). Every sight line to its face
-    // ends in that cell, so it's culled with that cell (see applySight) -
-    // not with the wall cell behind it, whose other faces can be in view
-    // while this one is around a corner. And it's one-sided, backed by
-    // solid stuff: while the eye is behind its plane, none of it can show
-    // (see cullFacing).
-    const facingSurfaces: THREE.Object3D[] = [];
-    function markSurface(obj: THREE.Object3D) {
-      const n = new THREE.Vector3(0, 0, 1).applyQuaternion(obj.quaternion);
-      obj.userData.cullCell = cellKey(Math.round(obj.position.x + n.x * 0.5), Math.round(obj.position.z + n.z * 0.5));
-      // (and the cell behind its plane - see applyStructure)
-      obj.userData.backCell = cellKey(Math.round(obj.position.x - n.x * 0.5), Math.round(obj.position.z - n.z * 0.5));
-      obj.userData.facing = { n, d: n.dot(obj.position) };
-      facingSurfaces.push(obj);
-    }
-
-    // A surface: its mesh - or, given distant low-detail geometries (see
-    // LOD_FACTOR, SMOOTH_LODS), a level-of-detail set that switches to them
-    // with distance - placed like the slot; decals go on the detailed one.
-    function placeSurface(
-      slot: WallSlot,
-      geo: THREE.BufferGeometry,
-      far: FarLevel[],
-      mat: THREE.Material | THREE.Material[],
-      orient: (obj: THREE.Object3D) => void,
-    ) {
-      const mesh = new THREE.Mesh(geo, mat);
-      let obj: THREE.Object3D = mesh;
-      if (far.length) {
-        const lod = new THREE.LOD();
-        lod.addLevel(mesh, 0);
-        for (const level of far) lod.addLevel(new THREE.Mesh(level.geometry, mat), level.distance);
-        obj = lod;
-      }
-      obj.position.set(slot.x, slot.y, slot.z);
-      orient(obj);
-      group.add(obj);
-      obj.updateMatrixWorld(true);
-      markSurface(obj);
-      decals.registerSurface(slot.key, mesh);
-      obj.userData.eventPart = slot.part;
-      return obj;
-    }
-
-    function placeWalls(
-      geo: THREE.BufferGeometry,
-      far: FarLevel[],
-      mat: THREE.Material | THREE.Material[],
-      slots: WallSlot[],
-    ) {
-      for (const slot of slots) {
-        placeSurface(slot, geo, far, mat, (o) => (o.rotation.y = slot.rotY));
-        if (settings.wallProfile !== "relief") continue;
-        const height = variantHeight(slot.variant ?? "full") * wallHeight;
-        const bottom = -height / 2;
-        const nx = Math.sin(slot.rotY), nz = Math.cos(slot.rotY);
-        const cellX = Math.round(slot.x + nx * 0.5);
-        const cellZ = Math.round(slot.z + nz * 0.5);
-        // Only the panel touching the floor, never internal stacked seams.
-        if (Math.abs(slot.y + bottom - floorHeight(map, cellX, cellZ) * wallHeight) > 1e-5) continue;
-        const positions = geo.getAttribute("position"), uv = geo.getAttribute("uv");
-        const index = geo.index;
-        const out: number[] = [], tex: number[] = [];
-        // Follow the actual detailed edge, including its recessed mortar.
-        // The other edge overlaps the floor below its deepest relief. This
-        // closes the opening with wall texture instead of a black blocker.
-        const emit = (id: number, lower: boolean) => {
-          out.push(positions.getX(id), lower ? bottom - floorDepth - 0.02 : bottom, lower ? floorDepth + 0.02 : positions.getZ(id));
-          const rows = variantRows(slot.variant ?? "full");
-          const vScale = rows ? rows[1] - rows[0] : 1;
-          tex.push(uv.getX(id), uv.getY(id) - (lower ? ((floorDepth + 0.02) / height) * vScale : 0));
-        };
-        const frontGroups = geo.groups.length ? geo.groups.filter((g) => !g.materialIndex) : [{ start: 0, count: index?.count ?? positions.count }];
-        const seen = new Set<string>();
-        for (const g of frontGroups) for (let i = g.start; i < g.start + g.count; i += 3) {
-          const ids = [0, 1, 2].map((k) => index ? index.getX(i + k) : i + k);
-          for (let e = 0; e < 3; e++) {
-            let a = ids[e], b = ids[(e + 1) % 3];
-            if (Math.abs(positions.getY(a) - bottom) > 1e-5 || Math.abs(positions.getY(b) - bottom) > 1e-5) continue;
-            if (positions.getX(a) > positions.getX(b)) [a, b] = [b, a];
-            if (positions.getX(b) - positions.getX(a) < 1e-8) continue;
-            const key = `${positions.getX(a)},${positions.getZ(a)}|${positions.getX(b)},${positions.getZ(b)}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            emit(a, false); emit(a, true); emit(b, true);
-            emit(a, false); emit(b, true); emit(b, false);
-          }
-        }
-        if (!out.length) continue;
-        const apron = new THREE.BufferGeometry();
-        apron.setAttribute("position", new THREE.Float32BufferAttribute(out, 3));
-        apron.setAttribute("uv", new THREE.Float32BufferAttribute(tex, 2));
-        apron.setAttribute("uv1", new THREE.Float32BufferAttribute(tex, 2));
-        apron.computeVertexNormals();
-        geometries.push(apron);
-        const skirt = new THREE.Mesh(apron, Array.isArray(mat) ? mat[0] : mat);
-        skirt.position.set(slot.x, slot.y, slot.z);
-        skirt.rotation.y = slot.rotY;
-        group.add(skirt);
-        skirt.updateMatrixWorld(true);
-        markSurface(skirt);
-        skirt.userData.eventSurface = slot.key;
-        skirt.userData.eventPart = slot.part;
-      }
-    }
-
-    // wall-style geometry (facing +Z) laid flat, facing up
-    function placeFloors(
-      geo: THREE.BufferGeometry,
-      far: FarLevel[],
-      mat: THREE.Material | THREE.Material[],
-      slots: WallSlot[],
-    ) {
-      for (const slot of slots) placeSurface(slot, geo, far, mat, (o) => (o.rotation.x = -Math.PI / 2));
-    }
-
-    // ... and turned to face down from the ceiling; lit slots get the kit's
-    // glowing front material (swapped when the lights change: ceilingTiles)
-    const ceilingTiles: { cell: string; obj: THREE.Object3D; kit: WallKit; relief: boolean }[] = [];
-    // a lamp of another color than the deck's glows in its own
-    const coloredLitMats = new Map<WallKit, Map<number, THREE.MeshStandardMaterial>>();
-    const litMatIn = (kit: WallKit, color: number | undefined) => {
-      if (!kit.litMat || color === undefined || color === deckLampColor) return kit.litMat;
-      let byColor = coloredLitMats.get(kit);
-      if (!byColor) coloredLitMats.set(kit, (byColor = new Map()));
-      let mat = byColor.get(color);
-      if (!mat) {
-        mat = kit.litMat.clone();
-        mat.emissive.setHex(color);
-        useLightGrid(mat, lightGrid);
-        byColor.set(color, mat);
-        ownMaterials.push(mat);
-      }
-      return mat;
-    };
-    const ceilingMaterial = (kit: WallKit, relief: boolean, lit: boolean, color?: number, cell?: string) => {
-      let front = (lit && litMatIn(kit, color)) || kit.wallMat;
-      const effect = cell === undefined ? undefined : effectCells.get(cell);
-      if (lit && effect !== undefined && front !== kit.wallMat) {
-        // an unsteady lamp's panel: its own copy, dimmed with it each frame
-        const key = `${cell}|${kitId(kit)}`;
-        let panel = effectPanels.get(key);
-        if (!panel || panel.light !== effect) {
-          const mat = (front as THREE.MeshStandardMaterial).clone();
-          useLightGrid(mat, lightGrid);
-          ownMaterials.push(mat);
-          panel = { mat, base: mat.emissiveIntensity, light: effect };
-          effectPanels.set(key, panel);
-        }
-        front = panel.mat;
-      }
-      return relief ? [front, kit.sideMat] : front;
-    };
-    // (kits told apart for effectPanels)
-    const kitIds = new Map<WallKit, number>();
-    const kitId = (kit: WallKit) => {
-      if (!kitIds.has(kit)) kitIds.set(kit, kitIds.size);
-      return kitIds.get(kit)!;
-    };
-    function placeCeilings(geo: THREE.BufferGeometry, far: FarLevel[], kit: WallKit, relief: boolean) {
-      for (const slot of kit.slots) {
-        const color = litColors.get(`${slot.x},${slot.z}`);
-        const cell = `${slot.x},${slot.z}`;
-        const obj = placeSurface(slot, geo, far, ceilingMaterial(kit, relief, !!slot.lit, color, cell), (o) => (o.rotation.x = Math.PI / 2));
-        ceilingTiles.push({ cell: `${slot.x},${slot.z}`, obj, kit, relief });
-      }
-    }
-
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
-        if (cellAt(map, x, y) === "wall") continue;
-        const floor = floorHeight(map, x, y);
-        const ceiling = ceilingHeight(map, x, y);
-
-        const floorKit = floorKitAt(x, y);
-        if (floorKit) {
-          floorKit.slots.push({ x, z: y, y: floor * wallHeight, rotY: 0, key: surfaceKey({ x, y }, "floor") });
-        } else {
-          const mesh = new THREE.Mesh(floorGeo, floorMat);
-          mesh.rotation.x = -Math.PI / 2;
-          mesh.position.set(x, floor * wallHeight, y);
-          group.add(mesh);
-          markSurface(mesh);
-          decals.registerSurface(surfaceKey({ x, y }, "floor"), mesh);
-        }
-
-        const ceilingId = map.ceilingTextureAt?.(x, y) ?? map.textures?.ceiling;
-        const ceilingKit = ceilingId === "sky" ? null : ceilingKitAt(x, y);
-        if (ceilingId === "sky") {
-          const pane = new THREE.Mesh(floorGeo, sky.skySurface());
-          pane.userData.skyCeiling = true;
-          pane.rotation.x = Math.PI / 2;
-          pane.position.set(x, ceiling * wallHeight, y);
-          group.add(pane);
-          markSurface(pane);
-        } else if (ceilingKit) {
-          ceilingKit.slots.push({
-            x,
-            z: y,
-            y: ceiling * wallHeight,
-            rotY: 0,
-            lit: litCells.has(`${x},${y}`),
-            key: surfaceKey({ x, y }, "ceiling"),
-          });
-        } else {
-          const mesh = new THREE.Mesh(floorGeo, ceilMat);
-          mesh.rotation.x = Math.PI / 2;
-          mesh.position.set(x, ceiling * wallHeight, y);
-          group.add(mesh);
-          markSurface(mesh);
-          decals.registerSurface(surfaceKey({ x, y }, "ceiling"), mesh);
-        }
-
-        // The walls around the cell: wherever the cell's open span (floor to
-        // ceiling) isn't matched by its neighbor's. A solid neighbor walls
-        // off all of it; an open one with a higher floor leaves a step face
-        // (riser) below its floor, one with a lower ceiling a strip (header)
-        // above it.
-        const wallOverride = map.wallTextureAt?.(x, y);
-        (Object.keys(DIR_VECTOR) as Direction[]).forEach((d) => {
-          const v = DIR_VECTOR[d];
-          const nx = x + v.x;
-          const ny = y + v.y;
-          const spans = wallFaceSpans(map, { x, y }, d);
-          if (!spans.length) return;
-
-          const face = { x: x + v.x * 0.5, z: y + v.y * 0.5, rotY: WALL_ROTATION[d], key: surfaceKey({ x, y }, d) };
-          // (a step face or header can have a set of its own - see
-          // GameMap.faceTextureAt; a face against a wall cell can't)
-          const faceOverride = cellAt(map, nx, ny) !== "wall" ? map.faceTextureAt?.(x, y, d) : undefined;
-          const faceSet: string = isTextureSetId(faceOverride)
-            ? faceOverride
-            : isTextureSetId(wallOverride)
-            ? wallOverride
-            : accentKit && wallVariantRoll(face.x, face.z) < settings.accentRatio
-              ? accentSet
-              : primarySet;
-          if (faceSet === "sky") {
-            // an opening onto the sky
-            for (const span of spans) {
-              const geo = new THREE.PlaneGeometry(1, (span.top - span.bottom) * wallHeight);
-              geometries.push(geo);
-              const pane = new THREE.Mesh(geo, sky.skySurface());
-              pane.position.set(face.x, ((span.bottom + span.top) / 2) * wallHeight, face.z);
-              pane.rotation.y = face.rotY;
-              group.add(pane);
-            }
-            return;
-          }
-          const kit = wallKitFor(faceSet as TextureSetId);
-          if (settings.wallProfile === "relief") {
-            for (const span of spans) {
-              // No backing behind the side face of a raised floor (a riser): behind it is
-              // the raised block, and a black plane there only shows through the seams.
-              if (span.part === "riser") continue;
-              backingPanels.push({
-                ...face, width: 1,
-                y: ((span.bottom + span.top) / 2) * wallHeight,
-                height: (span.top - span.bottom) * wallHeight,
-                floorTop: cellAt(map, nx, ny) !== "wall" && span.top === floorHeight(map, nx, ny),
-                deep: windowFaces.has(face.key),
-                // (a texture with holes - a grate, a fence, an arch - never gets one: see buildBacking)
-                kit,
-              });
-            }
-          }
-          for (const span of spans) {
-            for (const panel of wallPanels(span.bottom, span.top, span.part === "header" ? "top" : "bottom")) {
-              const y = (panel.bottom + variantHeight(panel.variant) / 2) * wallHeight;
-              // a window takes the first whole panel above the floor
-              const windowSet = panel.bottom === floor && panel.variant === "full" ? windowFaces.get(face.key) : undefined;
-              (windowSet ? windowKitFor(windowSet) : kit).slots.push({ ...face, y, variant: panel.variant, part: span.part });
-            }
-          }
-        });
-
-        if (cellAt(map, x, y) === "door") {
-          const spec = doorAt(map, x, y);
-          const type = doorPreview ?? doorType(spec.type);
-          // (the door's own textures first, then its type's, then the deck's / the default; an unknown
-          // own one - a shared texture not loaded yet - falls through, and the scene is rebuilt once it is)
-          const frameSet = isTextureSetId(spec.frameTexture) ? spec.frameTexture : type?.frame ?? map.textures?.doorFrame;
-          const frameKit = doorKitFor(frameKits, isTextureSetId(frameSet) ? frameSet : DOOR_FRAME_SET);
-          const leafOwn = isTextureSetId(spec.leafTexture) ? spec.leafTexture : type?.leaf;
-          const leafKit = doorKitFor(panelKits, isTextureSetId(leafOwn) ? leafOwn : panelSetFor(spec.kind));
-          const motion = type ?? { motion: spec.kind === "lift" ? "slide" : "rise", hinge: "left", swingTo: "front", angle: 90 };
-          doorCells.push({ x, z: y, spec, key: doorCellKey({ x, y }), frameKit, leafKit, motion });
-        }
-      }
-    }
-    const kits = [...wallKits.values()];
-    // standing water mirrors the open sky, when there is one
-    decals.setWaterSky(sky.getTexture());
-    // (the black backing itself is built once the height maps are loaded: see buildBacking below)
-    const buildBacking = async () => {
-    if (!backingPanels.length) return;
-    // A wall texture with holes in it (an arch, a grate, a fence: transparent in its height map) gets no
-    // backing - a black plane behind it would fill the holes in; what's behind shows through them instead.
-    // (opaque ones keep theirs, against the slivers between their panels)
-    const holes = new Map<WallKit, boolean>();
-    for (const kit of new Set(backingPanels.map((p) => p.kit))) {
-      let gridPromise = cache.grids.get(kit.depthUrl);
-      if (!gridPromise) {
-        gridPromise = loadWithRetry(kit.depthUrl, 4);
-        cache.grids.set(kit.depthUrl, gridPromise);
-      }
-      // (a map that won't load: kept as opaque, the relief build reports it)
-      holes.set(kit, await gridPromise.then((grid) => !!grid.solid, () => false));
-    }
-    if (disposed) return;
-    const panels = backingPanels.filter((p) => !holes.get(p.kit));
-    // Split at every change in wall height before finding corners. A tall
-    // wall can have a straight neighbor below a step and a corner above it.
-    // Insetting whole panels leaves holes at every straight seam.
-    const backingCuts = [...new Set(panels.flatMap((p) => [p.y - p.height / 2, p.y + p.height / 2]))].sort((a, b) => a - b);
-    const backingBands = panels.flatMap((panel) => {
-      const bottom = panel.y - panel.height / 2;
-      const top = panel.y + panel.height / 2;
-      const cuts = backingCuts.filter((y) => y >= bottom - 1e-6 && y <= top + 1e-6);
-      const color = backingColor();
-      return cuts.slice(1).map((y, i) => ({ ...panel, y: (cuts[i] + y) / 2, height: y - cuts[i], bottom, top, color }));
+    const {
+      facingSurfaces, markSurface, placeWalls, placeFloors, ceilingTiles, ceilingMaterial, placeCeilings, kits,
+    } = createStructuralSurfaces({
+      settings, doorPreview, map,
+      group, lightGrid, wallHeight, primarySet, accentSet, accentKit, wallKits, wallKitFor, floorKitAt,
+      ceilingKitAt, floorDepth, get litCells() { return litCells; }, get litColors() { return litColors; },
+      get effectCells() { return effectCells; }, effectPanels, deckLampColor, windowFaces, windowKitFor,
+      panelSetFor, frameKits, panelKits, doorKitFor, doorCells, ownMaterials, floorMat, ceilMat,
+      backingPanels, sky, decals, geometries, floorGeo,
     });
-    const backingModes = edgeModes(backingBands);
-    backingBands.forEach((panel, i) => {
-      const back = panel.deep ? Math.max(reliefDepth, WINDOW_DEPTH) + 0.02 : reliefDepth + 0.02;
-      const nx = Math.sin(panel.rotY), nz = Math.cos(panel.rotY);
-      const tx = Math.cos(panel.rotY), tz = -Math.sin(panel.rotY);
-      const cx = panel.x - nx * back, cz = panel.z - nz * back;
-      const left = -panel.width / 2 + Math.max(0, backingModes[i][0]) * back;
-      const right = panel.width / 2 - Math.max(0, backingModes[i][1]) * back;
-      // Cover the recess of the lower floor instead of stopping above it.
-      // A riser's top stays below the upper floor's deepest recess; an
-      // ordinary wall still reaches its ceiling. Internal bands meet flush.
-      const y0 = panel.y - panel.height / 2 - (Math.abs(panel.y - panel.height / 2 - panel.bottom) < 1e-6 ? floorDepth + 0.02 : 0);
-      const y1 = Math.min(panel.y + panel.height / 2, panel.top - (panel.floorTop ? floorDepth + 0.02 : 0));
-      if (right <= left || y1 <= y0) return;
-      const lx = cx + tx * left, lz = cz + tz * left;
-      const rx = cx + tx * right, rz = cz + tz * right;
-      backingPositions.push(
-        lx, y0, lz, rx, y0, rz, rx, y1, rz,
-        lx, y0, lz, rx, y1, rz, lx, y1, lz,
-      );
-      const color = panel.color;
-      for (let v = 0; v < 6; v++) backingColors.push(color.r, color.g, color.b);
-    });
-    if (backingPositions.length) {
-      const backingGeo = new THREE.BufferGeometry();
-      backingGeo.setAttribute("position", new THREE.Float32BufferAttribute(backingPositions, 3));
-      backingGeo.setAttribute("color", new THREE.Float32BufferAttribute(backingColors, 3));
-      geometries.push(backingGeo);
-      backingObject = new THREE.Mesh(backingGeo, backingMat);
-      group.add(backingObject);
-    }
-    };
-
     // floor glow fixtures, lifted above the floor relief once it's built
     const floorStrips: THREE.Mesh[] = [];
 
-    // a height map caught mid-save by an image editor (hot reload) or
-    // fetched while the dev server restarts fails to decode - retry briefly
-    const loadWithRetry = async (url: string, attempts: number): Promise<Awaited<ReturnType<typeof loadHeightGrid>>> => {
-      try {
-        return await loadHeightGrid(url);
-      } catch (err) {
-        if (attempts <= 1 || disposed) throw err;
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        return loadWithRetry(url, attempts - 1);
-      }
-    };
+    const { buildRelief, lodScale, farReliefLevels, addPropLods, loadWithRetry } = createReliefGeometry({
+      settings,
+      settingsRef, get disposed() { return disposed; }, tick, cache, reliefDepth, decals,
+    });
 
-    // height maps by URL, each loaded once per scene
-    const coarseGrids = new Map<string, Awaited<ReturnType<typeof loadWithRetry>>>();
+    const { buildBacking } = createWallBacking({
+      get disposed() { return disposed; }, cache, group, reliefDepth, floorDepth, backingPositions,
+      backingPanels, backingMat, backingColor, backingColors, geometries,
+      get backingObject() { return backingObject; }, set backingObject(value) { backingObject = value; },
+      loadWithRetry,
+    });
+
     track(buildBacking()).catch((err) => console.error("Wall backing build failed:", err));
 
-    // what each detailed relief panel was built from - for the props' distant
-    // versions (see addPropLods)
-    const reliefSources = new WeakMap<THREE.BufferGeometry, { kit: WallKit; shape: Parameters<typeof buildRelief>[1] }>();
-
-    // builds a kit's relief geometry from its depth map and hooks up its AO
-    // (a partial panel - `rows` - shares the whole panel's); resolves to null
-    // if the scene was torn down meanwhile
-    async function buildRelief(
-      kit: WallKit,
-      shape: {
-        width?: number;
-        height: number;
-        flushEdges: boolean;
-        holeBackZ?: number;
-        rows?: [number, number];
-        cols?: [number, number];
-        holeLevels?: number;
-        // relief depth (default: the settings')
-        depth?: number;
-        // a low-detail version: from a grid this many times coarser (see
-        // LOD_FACTOR), without its own AO map (the full panel's is used)
-        coarse?: number;
-        // a second version of a surface whose full one set the AO map
-        lodOnly?: boolean;
-        // a smooth relief's distant version: this many times fewer cells each
-        // way (see SMOOTH_LODS) - the grid isn't made coarser for it then
-        smoothLod?: number;
-        // a cutout's hybrid build: smooth whatever
-        // the wall relief mode, with the holes' quads left out
-        hybrid?: boolean;
-        smoothCells?: number;
-        // the cell count is taken as it is (not capped by the wall detail): a door's own detail setting
-        exactCells?: boolean;
-        outwardRelief?: boolean;
-        // side edges left for corner joins (ReliefOptions.joinEdges), and
-        // the corners they land on (ReliefOptions.edgeModes)
-        joinEdges?: number;
-        floorEdges?: boolean;
-        flushRows?: boolean;
-        edgeModes?: [number, number];
-      },
-    ) {
-      type Shape = typeof shape;
-      // built once for the same depth map, shape and relief settings (see
-      // SceneCache)
-      const keyOf = (s: Shape) =>
-        [
-          kit.depthUrl,
-          JSON.stringify(s),
-          reliefDepth,
-          textureTuning(kit.id)?.relief ?? 1,
-          settings.reliefLevels,
-          settings.reliefMinIsland,
-          settings.reliefMode,
-          kit.smooth ? "smooth" : "",
-          settings.wallDetail,
-    settings.doorDetail,
-          settings.aoRadius,
-        ].join("|");
-      const cached = (shape: Shape): Promise<ReturnType<typeof createReliefWallGeometry> | null> => {
-        const key = keyOf(shape);
-        let built = cache.reliefs.get(key);
-        if (built) return built;
-        built = (async () => {
-          let gridPromise = cache.grids.get(kit.depthUrl);
-          if (!gridPromise) {
-            gridPromise = loadWithRetry(kit.depthUrl, 4);
-            cache.grids.set(kit.depthUrl, gridPromise);
-          }
-          const gridFrom = performance.now();
-          let grid = await gridPromise;
-          tick("height map load (wait)", gridFrom);
-          // (a map with holes or cut-out levels is never built smooth - see
-          // ReliefOptions.smooth - so its distant version gets the coarser grid)
-          const smooth = shape.hybrid || ((kit.smooth || settings.reliefMode === "smooth") && !grid.solid && !shape.holeLevels);
-          const smoothLod = smooth ? shape.smoothLod : undefined;
-          let edgeProfile: EdgeSegment[] | undefined;
-          if (shape.coarse && shape.coarse > 1 && !smoothLod) {
-            const coarseKey = `${kit.depthUrl}|${shape.coarse}`;
-            let coarse = coarseGrids.get(coarseKey);
-            if (!coarse) {
-              const coarseFrom = performance.now();
-              coarse = downsampleHeightGrid(grid, shape.coarse);
-              tick("coarse height grids", coarseFrom);
-              coarseGrids.set(coarseKey, coarse);
-            }
-            grid = coarse;
-            // a stepped distant version with joined edges ends on its
-            // detailed version's edge profile (its own levels differ), so the
-            // join strips fit both
-            if (shape.joinEdges) {
-              const detailed = { ...shape };
-              delete detailed.coarse;
-              delete detailed.lodOnly;
-              delete detailed.smoothLod;
-              edgeProfile = (await cached(detailed))?.edge;
-            }
-          }
-          const reliefFrom = performance.now();
-          const made = createReliefWallGeometry(grid, {
-            wallWidth: shape.width ?? 1,
-            wallHeight: shape.height,
-            // (the texture's own relief tuning on top)
-            depth: (shape.depth ?? reliefDepth) * (textureTuning(kit.id)?.relief ?? 1),
-            levels: settings.reliefLevels,
-            minIsland: settings.reliefMinIsland,
-            smooth: shape.hybrid || kit.smooth || settings.reliefMode === "smooth",
-            smoothHoles: shape.hybrid,
-            smoothCells: shape.exactCells && shape.smoothCells ? shape.smoothCells : Math.min(settings.wallDetail, shape.smoothCells ?? (shape.hybrid && !grid.solid ? 32 : Infinity)),
-            outwardRelief: shape.outwardRelief,
-            smoothLod,
-            aoRadius: settings.aoRadius,
-            flushEdges: shape.flushEdges,
-            holeBackZ: shape.holeBackZ,
-            rows: shape.rows,
-            cols: shape.cols,
-            holeLevels: shape.holeLevels,
-            joinEdges: shape.joinEdges,
-            floorEdges: shape.floorEdges,
-            flushRows: shape.flushRows,
-            edgeModes: shape.edgeModes,
-            edgeProfile,
-          });
-          tick(shape.lodOnly ? "relief geometry (far versions)" : "relief geometry", reliefFrom);
-          // a partial panel or a far version uses its full panel's AO map (a part cut by columns too: its
-          // second UV set runs over the whole panel - see reliefMesh)
-          if (shape.rows || shape.cols || shape.lodOnly) made.aoMap.dispose();
-          return made;
-        })();
-        cache.reliefs.set(key, built);
-        built.catch(() => cache.reliefs.delete(key));
-        return built;
-      };
-      const built = cached(shape);
-      const relief = await built;
-      if (disposed || !relief) return null;
-      if (!shape.lodOnly) reliefSources.set(relief.geometry, { kit, shape });
-      if (shape.rows || shape.cols || shape.lodOnly) return relief;
-      for (const mat of kitMaterials(kit)) {
-        mat.aoMap = relief.aoMap;
-        mat.aoMapIntensity = settingsRef.current.aoIntensity;
-        mat.needsUpdate = true;
-      }
-      return relief;
-    }
-
-    // how much farther than usual the distant versions take over (see
-    // Graphics.lodScale; 0: never)
-    const lodScale = settings.lodScale;
-    // A surface's distant versions (after its full one, whose AO map they
-    // use): a stepped relief's from a grid LOD_FACTOR times coarser, a
-    // smooth one's with fewer cells (SMOOTH_LODS - no more levels than the
-    // wall detail setting leaves room for above SMOOTH_LOD_MIN_CELLS).
-    // Their distances are the graphics setting's lodScale times the usual
-    // ones (0: no distant versions at all - nothing built for them either).
-    async function farReliefLevels(kit: WallKit, shape: Parameters<typeof buildRelief>[1]): Promise<FarLevel[]> {
-      if (!lodScale) return [];
-      const levels: { distance: number; smoothLod?: number }[] = [];
-      if (settings.reliefMode === "smooth") {
-        const cells = Math.min(settings.wallDetail, shape.smoothCells ?? Infinity);
-        const most = Math.max(1, Math.floor(cells / SMOOTH_LOD_MIN_CELLS));
-        let last = 1;
-        for (const { distance, divisor } of SMOOTH_LODS) {
-          const d = Math.min(divisor, most);
-          if (d > last) levels.push({ distance: distance * lodScale, smoothLod: d });
-          last = Math.max(last, d);
-        }
-      } else {
-        levels.push({ distance: LOD_DISTANCE * lodScale });
-      }
-      const out: FarLevel[] = [];
-      let previous: THREE.BufferGeometry | null = null;
-      for (const level of levels) {
-        const relief = await buildRelief(kit, { ...shape, coarse: LOD_FACTOR, lodOnly: true, smoothLod: level.smoothLod });
-        if (!relief) return [];
-        // (a kit that can't be smooth gets the coarse grid at every level:
-        // the same mesh - the first one does)
-        if (previous && relief.triangles >= previous.index!.count / 3) continue;
-        out.push({ geometry: relief.geometry, distance: level.distance });
-        previous = relief.geometry;
-        // decals painted on the detailed surface would sink into this one
-        // where it bridges hollows: they're pulled over it from its distance
-        decals.setFarPull([{ distance: level.distance, rise: relief.lodRise ?? 0 }]);
-      }
-      return out;
-    }
-
-    // A prop's relief faces get distant versions like the walls (a pillar or
-    // a crate is as finely built as a wall, several faces of it): each face
-    // becomes a level-of-detail set in the face's place, the same transform,
-    // the same materials (cloned with the prop, see LOD.copy).
-    async function addPropLods(root: THREE.Object3D) {
-      const faces: THREE.Mesh[] = [];
-      root.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (mesh.isMesh && reliefSources.has(mesh.geometry)) faces.push(mesh);
-      });
-      for (const mesh of faces) {
-        const source = reliefSources.get(mesh.geometry)!;
-        const far = await farReliefLevels(source.kit, source.shape);
-        const parent = mesh.parent;
-        if (!far.length || !parent) continue;
-        const lod = new THREE.LOD();
-        lod.position.copy(mesh.position);
-        lod.quaternion.copy(mesh.quaternion);
-        lod.scale.copy(mesh.scale);
-        // (in the face's place among its siblings: a box's lid is its last)
-        const index = parent.children.indexOf(mesh);
-        parent.remove(mesh);
-        mesh.position.set(0, 0, 0);
-        mesh.quaternion.identity();
-        mesh.scale.set(1, 1, 1);
-        lod.addLevel(mesh, 0);
-        for (const level of far) lod.addLevel(new THREE.Mesh(level.geometry, mesh.material), level.distance);
-        parent.add(lod);
-        parent.children.splice(parent.children.length - 1, 1);
-        parent.children.splice(index, 0, lod);
-      }
-    }
-
-    // Wall panels' side edges: joined to their neighbors' (CORNER_JOINS) -
-    // a stepped relief's profile a step every this many cells (its distant
-    // version's grid is LOD_FACTOR times coarser, so both end on the same
-    // line) - or eased flush the old way.
-    const joinWalls =
-      CORNER_JOINS && !(import.meta.env.DEV && (window as { __voidcrewNoJoins?: boolean }).__voidcrewNoJoins);
-    const joinEdgeCells = (() => {
-      if (settings.reliefMode !== "smooth") return LOD_FACTOR;
-      const most = Math.max(1, Math.floor(settings.wallDetail / SMOOTH_LOD_MIN_CELLS));
-      return SMOOTH_LODS.reduce((d, level) => Math.max(d, Math.min(level.divisor, most)), 1);
-    })();
-    // (`modes`: the corners its edges were picked to land on - see edgeModes)
-    const wallShape = (height: number, rows: [number, number] | undefined, modes: [number, number] = [0, 0]) =>
-      joinWalls
-        ? { height, flushEdges: false, joinEdges: joinEdgeCells, rows, ...(modes[0] || modes[1] ? { edgeModes: modes } : {}) }
-        : { height, flushEdges: true, rows };
-    // each kit's panel edge profiles per variant, for the joins
-    const wallEdges = new Map<WallKit, Map<PanelVariant, EdgeSegment[]>>();
-
-    // a kit's wall panel geometry per variant (and corner modes), built once
-    const wallGeometries = new Map<WallKit, Map<string, Promise<THREE.BufferGeometry | null>>>();
-    function wallGeometry(kit: WallKit, variant: PanelVariant, modes: [number, number] = [0, 0]): Promise<THREE.BufferGeometry | null> {
-      let byVariant = wallGeometries.get(kit);
-      if (!byVariant) {
-        byVariant = new Map();
-        wallGeometries.set(kit, byVariant);
-      }
-      let geo = byVariant.get(`${variant}|${modes}`);
-      if (!geo) {
-        const rows = variantRows(variant);
-        const height = variantHeight(variant) * wallHeight;
-        if (wallGeo) {
-          // flat/beveled walls: partial panels are flat bands
-          const band = rows ? createBandPlane(height, rows) : wallGeo;
-          if (rows) geometries.push(band);
-          geo = Promise.resolve(band);
-        } else {
-          const keepEdge = (relief: Awaited<ReturnType<typeof buildRelief>>) => {
-            if (relief?.edge) {
-              if (!wallEdges.has(kit)) wallEdges.set(kit, new Map());
-              wallEdges.get(kit)!.set(variant, relief.edge);
-            }
-            return relief;
-          };
-          if (!rows) {
-            geo = buildRelief(kit, wallShape(height, undefined, modes)).then((relief) => {
-              if (!keepEdge(relief)) return null;
-              if (kit === primaryKit && !modes[0] && !modes[1]) {
-                reliefStats = { trianglesPerWall: relief!.triangles, levelCount: relief!.levelCount, baked: relief!.baked };
-              }
-              return relief!.geometry;
-            });
-          } else {
-            // after the whole panel, whose AO map the band borrows
-            geo = wallGeometry(kit, "full")
-              .then((full) => (full ? buildRelief(kit, wallShape(height, rows, modes)) : null))
-              .then((relief) => keepEdge(relief)?.geometry ?? null);
-          }
-        }
-        byVariant.set(`${variant}|${modes}`, geo);
-      }
-      return geo;
-    }
-    // ... and its distant, low-detail relief (none for flat walls)
-    const farWallGeometries = new Map<WallKit, Map<string, Promise<FarLevel[]>>>();
-    function farWallGeometry(kit: WallKit, variant: PanelVariant, modes: [number, number] = [0, 0]): Promise<FarLevel[]> {
-      if (wallGeo) return Promise.resolve([]);
-      let byVariant = farWallGeometries.get(kit);
-      if (!byVariant) {
-        byVariant = new Map();
-        farWallGeometries.set(kit, byVariant);
-      }
-      let geo = byVariant.get(`${variant}|${modes}`);
-      if (!geo) {
-        const rows = variantRows(variant);
-        const height = variantHeight(variant) * wallHeight;
-        geo = farReliefLevels(kit, wallShape(height, rows, modes));
-        byVariant.set(`${variant}|${modes}`, geo);
-      }
-      return geo;
-    }
-
-    const joinPanels: JoinPanel[] = [];
-    const wallsPlaced: Promise<unknown>[] = [];
-    const joinedStrips: JoinedStrips[] = [];
-    // Every wall panel's corner modes, from where the panels stand alone (so
-    // each corner's two faces are built to meet on their mitre)
-    const panelModes = new Map<WallSlot, [number, number]>();
-    if (joinWalls && !wallGeo) {
-      const all = kits.flatMap((kit) => kit.slots);
-      const modes = edgeModes(all.map((slot) => ({ ...slot, width: 1, height: variantHeight(slot.variant ?? "full") * wallHeight })));
-      all.forEach((slot, i) => panelModes.set(slot, modes[i]));
-    }
-    for (const kit of kits) {
-      const byForm = new Map<string, { variant: PanelVariant; modes: [number, number]; slots: WallSlot[] }>();
-      for (const slot of kit.slots) {
-        const variant = slot.variant ?? "full";
-        const modes = panelModes.get(slot) ?? [0, 0];
-        const key = `${variant}|${modes}`;
-        if (!byForm.has(key)) byForm.set(key, { variant, modes, slots: [] });
-        byForm.get(key)!.slots.push(slot);
-      }
-      for (const { variant, modes, slots } of byForm.values()) {
-        const placed = track(
-          Promise.all([wallGeometry(kit, variant, modes), wallGeometry(kit, variant, modes).then(() => farWallGeometry(kit, variant, modes))]),
-        )
-          .then(([geo, far]) => {
-            if (!geo) return;
-            placeWalls(geo, far, wallGeo ? kit.wallMat : [kit.wallMat, kit.sideMat], slots);
-            const edge = wallEdges.get(kit)?.get(variant);
-            if (!edge) return;
-            for (const slot of slots) {
-              joinPanels.push({
-                x: slot.x,
-                z: slot.z,
-                y: slot.y,
-                rotY: slot.rotY,
-                width: 1,
-                edge,
-                modes,
-                material: kit.wallMat,
-              });
-            }
-          })
-          .catch((err) => console.error("Wall build failed:", err));
-        wallsPlaced.push(placed);
-      }
-    }
-    // Once every wall panel is up: the strips joining their side edges
-    // (cornerJoins.ts), one merged mesh per material. A meeting point's strip
-    // is drawn while any of the (up to four) cells round it is in sight (see
-    // applySight) - not with its panels' facing: it turns round a corner,
-    // seen from either side.
-    if (joinWalls && !wallGeo) {
-      track(Promise.all(wallsPlaced))
-        .then(() => {
-          if (disposed) return;
-          const joins = buildCornerJoins(joinPanels);
-          let triangles = 0;
-          for (const strips of mergeCornerJoins(joins)) {
-            strips.mesh.userData.joinStrips = strips;
-            joinedStrips.push(strips);
-            geometries.push(strips.mesh.geometry);
-            group.add(strips.mesh);
-            triangles += strips.triangles;
-          }
-          // (drawn from the next sight pass on)
-          culledCount = -1;
-          if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewJoins: { points: joins.length, triangles } });
-        })
-        .catch((err) => console.error("Corner joins failed:", err));
-    }
+    const { joinEdgeCells, wallGeometry, joinedStrips } = createStructuralWalls({
+      settings, doorPreview,
+      get disposed() { return disposed; }, group, track, wallHeight, primaryKit, geometries, wallGeo,
+      set reliefStats(value: ReliefStats | null) { reliefStats = value; }, placeWalls, kits, buildRelief, farReliefLevels,
+      set culledCount(value: number) { culledCount = value; },
+    });
 
     // every kit, for per-frame material updates and disposal (the props'
     // made as they're built, after this)
@@ -2122,421 +1372,23 @@ export function GameViewport({
     ];
     const allKits = () => [...deckKits, ...propKits.values()];
 
-    // Windows are always relief too: the frame panel with its opening cut
-    // out, the opening's jambs reaching WINDOW_DEPTH back into the wall, and
-    // the glass at the back of that recess. Through the glass: the starfield,
-    // looked up by view direction, so it's infinitely far away from any
-    // angle; the wired glass pattern darkens it, and an additive sheen
-    // catches the lights' highlights.
-    const wiredGlass = createWiredGlass();
-    const spaceMat = new THREE.MeshBasicMaterial({
-      envMap: getStarfield(),
-      refractionRatio: 1,
-      map: wiredGlass,
-      color: GLASS_TINT,
-      // stars are light sources: no fog on them
-      fog: false,
+    const { wiredGlass, spaceMat, sheenMat } = createStructuralTiles({
+      group, track, isRelief, wallHeight, floorKits, ceilingKits, floorDepth, windowSet, windowKits, decals,
+      geometries, floorGeo, markSurface, placeFloors, placeCeilings, floorStrips, buildRelief,
+      farReliefLevels,
     });
-    const sheenMat = new THREE.MeshStandardMaterial({
-      color: 0x000000,
-      roughness: 0.3,
-      metalness: 0,
-      transparent: true,
-      // added on top, scaled down: a hint of glass, not a glare
-      opacity: GLASS_SHEEN,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
+
+    const { hybrid, buildPropRelief } = createStructuralDoors({
+      settings,
+      doorPanelsRef, openDoorsRef, get disposed() { return disposed; }, group, track, wallHeight,
+      reliefDepth, frameKits, panelKits, doorCells, floorY, buildRelief, lodScale, labeledPanelMaterial,
+      get doorGroups() { return doorGroups; },
     });
-    for (const [setId, windowKit] of windowKits) {
-      // a wide window's pieces continue each other: no flush edge margins
-      // (they'd flatten the mullions on the seams)
-      track(buildRelief(windowKit, { height: wallHeight, flushEdges: setId === windowSet, holeBackZ: -WINDOW_DEPTH }))
-        .then((frame) => {
-          if (!frame) return;
-          const hole = frame.holeBounds ?? { minX: -0.3, maxX: 0.3, minY: -0.13 * wallHeight, maxY: 0.22 * wallHeight };
-          const w = hole.maxX - hole.minX;
-          const h = hole.maxY - hole.minY;
-          const glassGeo = new THREE.PlaneGeometry(w, h);
-          // wire tiles at the walls' texel density
-          const uv = glassGeo.getAttribute("uv");
-          for (let i = 0; i < uv.count; i++) {
-            uv.setXY(i, (uv.getX(i) * w * TRIM_TEXELS) / WIRE_TILE, (uv.getY(i) * h * TRIM_TEXELS) / WIRE_TILE);
-          }
-          geometries.push(glassGeo);
-          for (const slot of windowKit.slots) {
-            const mesh = new THREE.Mesh(frame.geometry, [windowKit.wallMat, windowKit.sideMat]);
-            mesh.position.set(slot.x, slot.y, slot.z);
-            mesh.rotation.y = slot.rotY;
-            for (const [mat, z] of [
-              [spaceMat, -WINDOW_DEPTH + 0.01],
-              [sheenMat, -WINDOW_DEPTH + 0.012],
-            ] as const) {
-              const glass = new THREE.Mesh(glassGeo, mat);
-              glass.position.set((hole.minX + hole.maxX) / 2, (hole.minY + hole.maxY) / 2, z);
-              mesh.add(glass);
-            }
-            group.add(mesh);
-            markSurface(mesh);
-            decals.registerSurface(slot.key, mesh);
-            mesh.userData.eventPart = slot.part;
-          }
-        })
-        .catch((err) => console.error("Window build failed:", err));
-    }
 
-    for (const ceilingKit of ceilingKits.values()) {
-      if (isRelief) {
-        track(
-          buildRelief(ceilingKit, { height: 1, flushEdges: false }).then(async (relief) => [
-            relief,
-            relief ? await farReliefLevels(ceilingKit, { height: 1, flushEdges: false }) : [],
-          ] as const),
-        )
-          .then(([relief, far]) => relief && placeCeilings(relief.geometry, far, ceilingKit, true))
-          .catch((err) => console.error("Relief ceiling build failed:", err));
-      } else {
-        placeCeilings(floorGeo, [], ceilingKit, false);
-      }
-    }
-
-    let floorTop = 0;
-    for (const floorKit of floorKits.values()) {
-      if (isRelief) {
-        track(
-          buildRelief(floorKit, { height: 1, flushEdges: false, floorEdges: true, depth: floorDepth }).then(async (relief) => [
-            relief,
-            relief ? await farReliefLevels(floorKit, { height: 1, flushEdges: false, floorEdges: true, depth: floorDepth }) : [],
-          ] as const),
-        )
-          .then(([relief, far]) => {
-            if (!relief) return;
-            placeFloors(relief.geometry, far, [floorKit.wallMat, floorKit.sideMat], floorKit.slots);
-            // keep the strips above the highest floor relief
-            floorTop = Math.max(floorTop, relief.maxZ);
-            for (const strip of floorStrips) strip.position.y = strip.userData.floorY + floorTop + 0.003;
-          })
-          .catch((err) => console.error("Relief floor build failed:", err));
-      } else {
-        placeFloors(floorGeo, [], floorKit.wallMat, floorKit.slots);
-      }
-    }
-
-    // Doors are always relief (a frame needs its cut-out opening), whatever
-    // the wall type. The frame is built first: the panel is sized to fit its
-    // opening.
-    // A frame (and often a panel) has holes, so it's built stepped from the
-    // full height grid whatever the smooth wall detail - a door cost as much
-    // as several walls at any graphics setting. Its grid is made coarser
-    // with the setting instead (none at the highest: 64 cells), and it gets
-    // a distant version like the walls (a grid LOD_FACTOR times coarser
-    // still) - the opening stays crisp: a coarser cell is a hole when most
-    // of it is. (64: the highest wall detail setting)
-    const doorCoarse = Math.max(1, Math.round(64 / (settings.doorDetail > 0 ? settings.doorDetail : settings.wallDetail)));
-    const doorFarCoarse = doorCoarse * LOD_FACTOR;
-    // a door part: its mesh, or the near/far pair when it has a far version
-    const doorPart = (geo: THREE.BufferGeometry, far: THREE.BufferGeometry | null, mat: THREE.Material[]) => {
-      const mesh = new THREE.Mesh(geo, mat);
-      if (!far) return mesh;
-      const lod = new THREE.LOD();
-      lod.addLevel(mesh, 0);
-      lod.addLevel(new THREE.Mesh(far, mat), LOD_DISTANCE * lodScale);
-      return lod;
-    };
-    // The hybrid experiment (the map's relief mode: smooth): doors and frames as
-    // smooth meshes with the holes' quads left out and the pixel edge cut by
-    // the diffuse's alpha - the same mesh builder for near and far, the far
-    // one with fewer cells (never below 8).
-    const hybrid = settings.reliefMode === "smooth";
-    const hybridFarLod = Math.max(1, Math.min(LOD_FACTOR, Math.floor(settings.wallDetail / 8)));
-    // (the door kits are the doors' own: no wall shares their materials)
-    const cutout = (mat: THREE.Material) => {
-      mat.alphaTest = 0.5;
-      mat.needsUpdate = true;
-    };
-    // Prop and item kits are separate from the walls. A smooth cutout
-    // keeps the original silhouette, even on a small relief grid.
-    function buildPropRelief(kit: WallKit, shape: Parameters<typeof buildRelief>[1], cells = 32) {
-      if (!hybrid) return buildRelief(kit, shape);
-      if (!kit.wallMat.alphaTest) cutout(kit.wallMat);
-      return buildRelief(kit, { ...shape, coarse: undefined, hybrid: true, smoothCells: cells });
-    }
-    if (hybrid) {
-      for (const kit of frameKits.values()) cutout(kit.wallMat);
-      for (const kit of panelKits.values()) cutout(kit.wallMat);
-    }
-    // a door part's relief shape: stepped (a grid made coarser with the graphics
-    // setting, and a still coarser one far) or hybrid
-    const doorShape = <S extends object>(shape: S, far: boolean) =>
-      hybrid
-        ? { ...shape, hybrid: true, ...(settings.doorDetail > 0 ? { smoothCells: settings.doorDetail, exactCells: true } : {}), ...(far ? { lodOnly: true, smoothLod: hybridFarLod } : {}) }
-        : { ...shape, coarse: far ? doorFarCoarse : doorCoarse, ...(far ? { lodOnly: true } : {}) };
-    if (doorCells.length) {
-      track(async () => {
-        const frameShape = {
-          height: wallHeight,
-          flushEdges: false,
-          // the opening's jambs reach back to the center plane, where they
-          // meet the other half's
-          holeBackZ: -DOOR_FRAME_HALF_DEPTH,
-        };
-        const withFar = lodScale && !(hybrid && hybridFarLod <= 1);
-        const frames = new Map<WallKit, {
-          near: THREE.BufferGeometry; far: THREE.BufferGeometry | null;
-          width: number; height: number; centerX: number;
-        }>();
-        for (const kit of frameKits.values()) {
-          const frame = await buildRelief(kit, doorShape(frameShape, false));
-          if (!frame || disposed) continue;
-          const far = withFar ? await buildRelief(kit, doorShape(frameShape, true)) : null;
-          const hole = frame.holeBounds ?? { minX: -0.35, maxX: 0.35, maxY: wallHeight * 0.3 };
-          frames.set(kit, {
-            near: frame.geometry, far: far?.geometry ?? null,
-            width: hole.maxX - hole.minX + 2 * DOOR_PANEL_OVERLAP,
-            height: wallHeight / 2 + hole.maxY + DOOR_PANEL_OVERLAP,
-            centerX: (hole.minX + hole.maxX) / 2,
-          });
-        }
-        // Keep the leaf clear of the floor relief when shut.
-        const panelLift = reliefDepth / 2 + 0.005;
-        const panelGeos = new Map<WallKit, Map<WallKit, { near: THREE.BufferGeometry; far: THREE.BufferGeometry | null }>>();
-
-        for (const cell of doorCells) {
-          if (disposed) return;
-          const { spec, frameKit, leafKit } = cell;
-          const frame = frames.get(frameKit);
-          if (!frame) continue;
-          let leaves = panelGeos.get(frameKit);
-          if (!leaves) panelGeos.set(frameKit, leaves = new Map());
-          let leaf = leaves.get(leafKit);
-          if (!leaf) {
-            const shape = { width: frame.width, height: Math.max(0.01, frame.height - panelLift), flushEdges: false };
-            const near = await buildRelief(leafKit, doorShape(shape, false));
-            if (!near || disposed) continue;
-            const far = withFar ? await buildRelief(leafKit, doorShape(shape, true)) : null;
-            leaf = { near: near.geometry, far: far?.geometry ?? null };
-            leaves.set(leafKit, leaf);
-          }
-          if (disposed) return;
-          const front = spec.label || spec.kind === "lift" ? await labeledPanelMaterial(spec, leafKit) : leafKit.wallMat;
-          if (disposed) return;
-          const door = new THREE.Group();
-          door.position.set(cell.x, floorY(cell.x, cell.z), cell.z);
-          // local +Z = the side the door faces; moved that way to where it
-          // stands in its cell (see DoorSpec.offset)
-          door.rotation.y = FACING_ROTATION[spec.facing];
-          door.translateZ(spec.offset ?? 0);
-          // the map editor picks it by this
-          door.userData.doorCell = { x: cell.x, y: cell.z };
-          doorGroups.set(cell.key, door);
-
-          // two halves back to back, each facing out of one side
-          for (const side of [1, -1]) {
-            const frameHalf = doorPart(frame.near, frame.far, [frameKit.wallMat, frameKit.sideMat]);
-            frameHalf.position.set(0, wallHeight / 2, side * DOOR_FRAME_HALF_DEPTH);
-            frameHalf.rotation.y = side === 1 ? 0 : Math.PI;
-            door.add(frameHalf);
-          }
-
-          const motion = doorLeafMotion(cell.motion, frame.width, frame.height, frame.centerX);
-          const slider = new THREE.Group();
-          for (const side of [1, -1]) {
-            const panelHalf = doorPart(leaf.near, leaf.far, [front, leafKit.sideMat]);
-            panelHalf.position.set(frame.centerX - motion.closedX, (frame.height + panelLift) / 2, side * DOOR_PANEL_HALF_DEPTH);
-            panelHalf.rotation.y = side === 1 ? 0 : Math.PI;
-            slider.add(panelHalf);
-          }
-          const closedPos = new THREE.Vector3(motion.closedX, 0, 0);
-          const openPos = new THREE.Vector3(motion.openX, motion.openY, 0);
-          const open = openDoorsRef.current.has(cell.key);
-          slider.position.copy(open ? openPos : closedPos);
-          slider.rotation.y = open ? motion.openYaw : 0;
-          slider.userData = { open, openPos, closedPos, openYaw: motion.openYaw };
-          door.add(slider);
-
-          group.add(door);
-          doorPanelsRef.current.set(cell.key, slider);
-        }
-      }).catch((err) => console.error("Door build failed:", err));
-    }
-
-    // Props are relief, whatever the wall type. A box prop: four side faces
-    // and a top, each a relief panel facing out. A views prop: box parts
-    // whose faces are cut out of its orthographic views' reliefs (see
-    // props.ts) - a face shows the part of the view it covers. Reliefs
-    // aren't flushed at the edges, so a raised rim leaves a small notch
-    // along an edge - it reads as a worn edge. One template per prop type,
-    // cloned per instance (sharing geometry and materials).
-    // a cabin prop's glass: faintly tinted, see-through, catching the lights
-    const cabinGlass = new THREE.MeshStandardMaterial({
-      color: 0xd8ecff,
-      transparent: true,
-      opacity: 0.22,
-      roughness: 0.08,
-      metalness: 0.2,
-      depthWrite: false,
-      side: THREE.DoubleSide,
+    const { cabinGlass, buildPillar, buildChamfer } = createStructuralProps({
+      wallHeight, wallKitFor, propReliefDepth, sharedPropKitFor, ownMaterials, backingMat, backingColor,
+      geometries, buildRelief, joinEdgeCells, wallGeometry, hybrid,
     });
-    ownMaterials.push(cabinGlass);
-
-    // A pillar `h` tall (world units): its foot, shaft and head as relief
-    // blocks cut from its texture (as a wall of the same height would show
-    // it), the 45 degree slopes between them flat.
-    async function buildPillar(type: Extract<PropType, { kind: "pillar" }>, h: number, cellSet: string): Promise<THREE.Group | null> {
-      // (in a deck texture - its own, the wall's around it - it's the deck's: it
-      // takes the ship's livery like the walls)
-      const setId = type.texture ?? cellSet;
-      const kit = isTextureSetId(setId) ? wallKitFor(setId) : sharedPropKitFor(setId);
-      const relief = propReliefAmount(propReliefDepth, type, hybrid);
-      const foot = type.size[0];
-      const shaft = type.shaft;
-      const slope = (foot - shaft) / 2;
-      const flare = Math.min(type.flare, Math.max(0, h / 2 - slope - 0.05));
-      const group = new THREE.Group();
-      // The texture covers one wall height, as on a wall, and repeats up a taller
-      // pillar instead of stretching over it: a block is cut into pieces at
-      // every wall height.
-      const tile = wallHeight;
-      // the whole panel first: it gives the kit its AO map
-      if (!(await buildRelief(kit, { width: 1, height: tile, flushEdges: false, depth: relief, coarse: PROP_COARSE }))) return null;
-      const block = async (w: number, y0: number, y1: number) => {
-        for (let s0 = y0; s0 < y1 - 1e-6; ) {
-          const k = Math.floor(s0 / tile + 1e-6);
-          const s1 = Math.min(y1, (k + 1) * tile);
-          // (its four faces meet at outer corners: built to land on the
-          // mitre - see ReliefOptions.edgeModes - the copies of one face meet
-          // vertex on vertex all the way round, no core showing between them)
-          const cut = await buildRelief(kit, {
-            width: w,
-            height: s1 - s0,
-            flushRows: true,
-            flushEdges: false,
-            depth: relief,
-            coarse: PROP_COARSE,
-            cols: [0.5 - w / 2, 0.5 + w / 2],
-            rows: [1 - (s1 - k * tile) / tile, 1 - (s0 - k * tile) / tile],
-            ...(CORNER_JOINS ? { joinEdges: joinEdgeCells, edgeModes: [1, 1] as [number, number] } : {}),
-          });
-          if (!cut) return false;
-          for (let i = 0; i < 4; i++) {
-            const a = (i * Math.PI) / 2;
-            const mesh = new THREE.Mesh(cut.geometry, [kit.wallMat, kit.sideMat]);
-            mesh.position.set((Math.sin(a) * w) / 2, (s0 + s1) / 2, (Math.cos(a) * w) / 2);
-            mesh.rotation.y = a;
-            group.add(mesh);
-          }
-          s0 = s1;
-        }
-        return true;
-      };
-      const ok =
-        (await block(foot, 0, flare)) &&
-        (await block(shaft, flare + slope, h - flare - slope)) &&
-        (await block(foot, h - flare, h));
-      if (!ok) return null;
-      // the slopes: a band of four quads each, from `w0` wide at `y0` to
-      // `w1` at `y1`, mapped as the wall texture would be there
-      const positions: number[] = [];
-      const uvs: number[] = [];
-      const band = (w0: number, y0: number, w1: number, y1: number) => {
-        // (v continues from the tile the band's middle is in)
-        const mid = (y0 + y1) / 2;
-        const vOf = (y: number) => (mid / tile) % 1 + (y - mid) / tile;
-        for (let i = 0; i < 4; i++) {
-          const a = (i * Math.PI) / 2;
-          const s = Math.sin(a);
-          const c = Math.cos(a);
-          // (u across the face, its half width, y) to the pillar's space
-          const at = (u: number, half: number, y: number) => [c * u + s * half, y, -s * u + c * half];
-          const corners = [
-            [...at(-w0 / 2, w0 / 2, y0), 0.5 - w0 / 2, vOf(y0)],
-            [...at(w0 / 2, w0 / 2, y0), 0.5 + w0 / 2, vOf(y0)],
-            [...at(w1 / 2, w1 / 2, y1), 0.5 + w1 / 2, vOf(y1)],
-            [...at(-w1 / 2, w1 / 2, y1), 0.5 - w1 / 2, vOf(y1)],
-          ];
-          for (const k of [0, 1, 2, 0, 2, 3]) {
-            positions.push(corners[k][0], corners[k][1], corners[k][2]);
-            uvs.push(corners[k][3], corners[k][4]);
-          }
-        }
-      };
-      band(foot, flare, shaft, flare + slope);
-      band(shaft, h - flare - slope, foot, h - flare);
-      const slopes = new THREE.BufferGeometry();
-      slopes.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-      slopes.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-      slopes.setAttribute("uv1", new THREE.Float32BufferAttribute(uvs, 2));
-      slopes.computeVertexNormals();
-      geometries.push(slopes);
-      group.add(new THREE.Mesh(slopes, kit.wallMat));
-      // A solid black core inside, a little under the relief: the pillar is made
-      // of separate faces and slopes, and without a core the joins between them
-      // show what's behind it (the sky, the next room).
-      const inset = 2 * (relief + 0.012);
-      const coreMat = backingMat;
-      const core = (w: number, y0: number, y1: number) => {
-        const geo = new THREE.BoxGeometry(Math.max(0.02, w - inset), y1 - y0, Math.max(0.02, w - inset));
-        const colors: number[] = [];
-        for (let face = 0; face < 6; face++) {
-          const color = backingColor();
-          for (let v = 0; v < 4; v++) colors.push(color.r, color.g, color.b);
-        }
-        geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-        geometries.push(geo);
-        const mesh = new THREE.Mesh(geo, coreMat);
-        mesh.position.set(0, (y0 + y1) / 2, 0);
-        group.add(mesh);
-      };
-      // (the foot's width only where the foot is: over the slopes the pillar
-      // narrows, and a wider core would stick out of them)
-      core(foot, 0, flare);
-      core(shaft, flare, h - flare);
-      core(foot, h - flare, h);
-      // a fixed-height pillar (a pedestal) gets a stone top to stand things on
-      if (type.height) {
-        const top = new THREE.PlaneGeometry(foot, foot);
-        const uv = top.getAttribute("uv") as THREE.BufferAttribute;
-        // (the middle of the texture, stretched over it)
-        for (let i = 0; i < uv.count; i++) uv.setXY(i, 0.3 + uv.getX(i) * 0.4, 0.3 + uv.getY(i) * 0.4);
-        top.setAttribute("uv1", uv.clone());
-        geometries.push(top);
-        const cap = new THREE.Mesh(top, kit.wallMat);
-        cap.rotation.x = -Math.PI / 2;
-        cap.position.y = h + 0.001;
-        group.add(cap);
-      }
-      return group;
-    }
-
-    // A chamfer `h` tall (world units) in `kit`'s texture: one relief panel,
-    // cut from the middle of a wall panel as wide.
-    async function buildChamfer(type: Extract<PropType, { kind: "chamfer" }>, kit: WallKit, h: number): Promise<THREE.Group | null> {
-      const w = type.size[0];
-      // after the walls' whole panel, whose AO map it borrows
-      if (!(await wallGeometry(kit, "full"))) return null;
-      const panel = await buildRelief(kit, { width: w, height: h, flushEdges: true, cols: [0.5 - w / 2, 0.5 + w / 2], rows: [0, 1] });
-      if (!panel) return null;
-      const group = new THREE.Group();
-      const mesh = new THREE.Mesh(panel.geometry, [kit.wallMat, kit.sideMat]);
-      mesh.position.y = h / 2;
-      group.add(mesh);
-      return group;
-    }
-
-    // a prop type wearing another texture set (see PropSpec.texture)
-    function retextured(type: PropType, texture: string | undefined): PropType {
-      if (!texture) return type;
-      switch (type.kind) {
-        case "box":
-          return { ...type, side: texture, top: isTextureSetId(`${texture}_top`) ? `${texture}_top` : texture };
-        case "pillar":
-        case "roof":
-        case "panel":
-        case "cross":
-          return { ...type, texture };
-        default:
-          return type;
-      }
-    }
 
     // ---- fences and blocks (see game/fences.ts) ----
     // Their floor marks while editing: a hatched square for a block, strips for the fences (amber, cyan, green)
@@ -2973,7 +1825,7 @@ export function GameViewport({
         return piece ? `fence|${JSON.stringify(fenceModelSpec(fences, piece))}` : `${spec.prop}|`;
       }
       const texture = spec.texture ?? "";
-      const type = retextured(PROP_TYPES[spec.prop], texture || undefined);
+      const type = retextured(PROP_TYPES[spec.prop], texture || undefined, isTextureSetId);
       if (type.kind !== "pillar" && type.kind !== "chamfer") return `${spec.prop}|${texture}`;
       const h = propHeight(m, spec) * wallHeight;
       // its own texture, else the wall texture painted in its cell or beside it, else the deck's
@@ -2996,7 +1848,7 @@ export function GameViewport({
         return fenceMade;
       }
       const [name, texture, h, setId] = key.split("|");
-      const type = retextured(PROP_TYPES[name], texture || undefined);
+      const type = retextured(PROP_TYPES[name], texture || undefined, isTextureSetId);
       const build =
         type.kind === "pillar"
           ? buildPillar(type, Number(h), setId)
