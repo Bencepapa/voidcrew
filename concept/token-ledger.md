@@ -17,6 +17,7 @@ Cél: lássuk, melyik munka mennyibe kerül, javul-e a fogyasztás a `GameViewpo
 | 11-25 | Nézet szétszedése, 1. lépés | Codex | (alap) | (alap) | n/a | n/a | n/a | kész | token nem mentve |
 | 11-25 | Nézet szétszedése, 2. lépés | Codex | (alap) | (alap) | n/a | n/a | n/a | kész | token nem mentve |
 | 11-25 | Nézet szétszedése, 3. lépés | Codex | (alap) | (alap) | 105 716 | n/a | n/a | kész | |
+| 11-25 | Fű és búza textúrák (3 készlet, generátor) | Codex | (alap) | (alap) | 74 847 | n/a | n/a | kész | seamless, tesztelt |
 
 ## Mérési terv (kicsi, hogy maga a mérés ne legyen drága)
 
