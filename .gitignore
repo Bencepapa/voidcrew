@@ -20,3 +20,5 @@ concept/editor-ui/out/
 
 # Handover notes for the coding assistants: local working notes, not part of the repo
 *handover*.md
+
+scripts/.smoke-out/
