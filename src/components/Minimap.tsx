@@ -12,9 +12,10 @@ import { PROP_TYPES } from "../game/props";
 import { operableLinks, operableSources } from "../game/operables";
 import { fenceFormOf, fenceIndex, fenceMarks } from "../game/fences";
 import { useSightCells } from "../render/sightStore";
+import { SPEAKER_PATH, WAVES_PATH } from "../render/soundGlyph";
 
 // the operable props' links by what they work: doors amber, wall traps red, emitters orange, NPCs purple, items green
-const LINK_COLORS: Record<string, string> = { door: "#fbbf24", trap: "#ff5a3c", emitter: "#ff9a3c", spawn: "#c084fc", item: "#4ade80" };
+const LINK_COLORS: Record<string, string> = { door: "#fbbf24", trap: "#ff5a3c", emitter: "#ff9a3c", sound: "#2dd4bf", spawn: "#c084fc", item: "#4ade80" };
 
 interface MinimapProps {
   map: GameMap;
@@ -200,7 +201,10 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
     markers.push(<g key={`${category}-${index}`} transform={`translate(${cell.x + 0.5 + dx} ${cell.y + 0.5 + dy})`} pointerEvents={edit.onMarker ? "auto" : "none"} onClick={e => activate(e, false)} onContextMenu={e => activate(e, true)}>
       <circle r={0.27} fill="transparent" />
       <g fill={color} stroke="#151515" strokeWidth={0.045}>
-        {category === "prop" ? <rect x={-0.14} y={-0.14} width={0.28} height={0.28} /> : category === "decal" ? <path d="M -0.15 0 L 0.15 0" stroke={color} strokeWidth={0.1} /> : category === "item" || category === "exit" || category === "chanceWall" ? <path d="M 0 -0.19 L 0.17 0 L 0 0.19 L -0.17 0 Z" /> : <circle r={0.13} />}
+        {category === "sound" ? <g transform="scale(0.2)" strokeWidth={0.22}>
+          <path d={SPEAKER_PATH} />
+          <path d={WAVES_PATH} fill="none" stroke={color} strokeWidth={0.2} strokeLinecap="round" />
+        </g> : category === "prop" ? <rect x={-0.14} y={-0.14} width={0.28} height={0.28} /> : category === "decal" ? <path d="M -0.15 0 L 0.15 0" stroke={color} strokeWidth={0.1} /> : category === "item" || category === "exit" || category === "chanceWall" ? <path d="M 0 -0.19 L 0.17 0 L 0 0.19 L -0.17 0 Z" /> : <circle r={0.13} />}
         {facing && <path transform={`rotate(${FACING_DEGREES[facing]})`} d="M 0 0 L 0 -0.3" stroke={color} strokeWidth={0.08} />}
       </g>
     </g>);

@@ -1,5 +1,6 @@
 import { emitterOn, readAddress, resolveAddress, smokeKeys, type Address, type Area } from "./emitters";
 import { DIR_VECTOR } from "./movement";
+import { soundEntries, soundKeys, soundOn } from "./soundOperables";
 import type { Direction, Vec2 } from "./types";
 
 // Operable props: things the party pulls, presses or steps on, and the things they work.
@@ -34,6 +35,9 @@ export type OperableTarget =
   // (not to be confused with a wall trap, `OperableKind` "emitter": that fires a shot). The default action is "on"; as the
   // source goes off (a lever pushed back, a plate left) the inverse follows, unless the source latches.
   | ({ kind: "emitter"; action?: EmitterAction } & Address)
+  // the sound emitter(s) addressed (a cell + `index`, an `id`, or an `area`) switched on / off / toggled, the same way (see
+  // soundOperables.ts): the sound system plays or silences them; the map is not edited
+  | ({ kind: "sound"; action?: EmitterAction } & Address)
   // the dormant NPC(s) addressed (ActorSpec.dormant) appear, once, as the source goes on
   | ({ kind: "spawn" } & Address)
   // the dormant item(s) addressed (MapItem.dormant) appear, once, as the source goes on
@@ -42,8 +46,8 @@ export type OperableTarget =
   | { kind: "reward"; credits?: number; items?: RewardItem[]; once?: boolean };
 
 // a target that points at a place (not a reward)
-export type AddressedTarget = Extract<OperableTarget, { kind: "emitter" | "spawn" | "item" }>;
-export const isAddressed = (t: OperableTarget): t is AddressedTarget => t.kind === "emitter" || t.kind === "spawn" || t.kind === "item";
+export type AddressedTarget = Extract<OperableTarget, { kind: "emitter" | "sound" | "spawn" | "item" }>;
+export const isAddressed = (t: OperableTarget): t is AddressedTarget => t.kind === "emitter" || t.kind === "sound" || t.kind === "spawn" || t.kind === "item";
 
 export interface OperableSpec {
   // (decals only: a prop's kind is its type's)
@@ -94,10 +98,10 @@ const num = (v: unknown, min: number, max: number): number | undefined =>
 export function readTarget(raw: unknown): OperableTarget | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const r = raw as Record<string, unknown>;
-  if (r.kind === "emitter" || r.kind === "spawn" || r.kind === "item") {
+  if (r.kind === "emitter" || r.kind === "sound" || r.kind === "spawn" || r.kind === "item") {
     const address = readAddress(r);
     if (!address) return undefined;
-    const action = r.kind === "emitter" && (r.action === "off" || r.action === "toggle") ? r.action : undefined;
+    const action = (r.kind === "emitter" || r.kind === "sound") && (r.action === "off" || r.action === "toggle") ? r.action : undefined;
     return { kind: r.kind, ...address, ...(action ? { action } : {}) } as OperableTarget;
   }
   if (r.kind === "reward") {
@@ -156,6 +160,8 @@ export interface OperableMap {
   decals?: DecalLike[];
   // what the new targets address (see OperableTarget): smoke emitters, NPCs and loose items
   smokes?: { cell: Vec2; id?: string; active?: boolean }[];
+  // (the sound emitters sit in a cell by x, y: see soundOperables.ts soundEntries)
+  sounds?: { x: number; y: number; id?: string; active?: boolean }[];
   actors?: { cell: Vec2; id?: string; dormant?: boolean }[];
   items?: { cell: Vec2; id?: string; dormant?: boolean }[];
 }
@@ -313,9 +319,11 @@ export type OperableEffect =
   // the story flag a source raises (or lowers)
   | { type: "flag"; flag: string; value: boolean }
   // a target that cannot do it (no such door...), for the log
-  | { type: "blocked"; source: string; reason: "noDoor" | "noTrap" | "cooling" | "noEmitter" | "noSpawn" | "noItem" }
+  | { type: "blocked"; source: string; reason: "noDoor" | "noTrap" | "cooling" | "noEmitter" | "noSound" | "noSpawn" | "noItem" }
   // smoke / fire emitters (by key) switched on or off (only the ones that really changed)
   | { type: "emitters"; source: string; keys: string[]; on: boolean }
+  // sound emitters (by key, see soundOperables.ts) switched on or off (only the ones that really changed)
+  | { type: "sounds"; source: string; keys: string[]; on: boolean }
   // dormant NPCs (indices in the map's actors) come into the world
   | { type: "spawn"; source: string; actors: number[] }
   // dormant items (indices in the map's items) appear
@@ -354,6 +362,8 @@ function work(map: OperableMap, sources: OperableSource[], source: OperableSourc
       effects.push({ type: "door", cell, action: action === "toggle" ? (ctx.doorOpen(cell) ? "close" : "open") : action, force: target.force === true, source: source.key });
     } else if (target.kind === "emitter") {
       switchEmitters(map, source, target, active, s, effects);
+    } else if (target.kind === "sound") {
+      switchSounds(map, source, target, active, s, effects);
     } else if (!active) {
       // (what follows happens as a source goes on: a shot, a spawn, a reveal, a reward are not undone when it goes off)
     } else if (target.kind === "trap") {
@@ -409,6 +419,30 @@ function switchEmitters(map: OperableMap, source: OperableSource, target: Extrac
   }
   if (turnedOn.length) effects.push({ type: "emitters", source: source.key, keys: turnedOn, on: true });
   if (turnedOff.length) effects.push({ type: "emitters", source: source.key, keys: turnedOff, on: false });
+}
+
+// The same for the sound emitters a target addresses (the state keeps them in `emit` under "sound:" keys).
+function switchSounds(map: OperableMap, source: OperableSource, target: Extract<OperableTarget, { kind: "sound" }>, active: boolean, s: OperableState, effects: OperableEffect[]) {
+  const entries = soundEntries(map.sounds);
+  const found = resolveAddress(entries, target);
+  if (!found.length) {
+    effects.push({ type: "blocked", source: source.key, reason: "noSound" });
+    return;
+  }
+  const keys = soundKeys(map.sounds);
+  const base = target.action ?? "on";
+  const action = active ? base : inverseEmit(base);
+  const turnedOn: string[] = [];
+  const turnedOff: string[] = [];
+  for (const i of found) {
+    const now = soundOn(entries[i], keys[i], s.emit);
+    const want = action === "toggle" ? !now : action === "on";
+    if (want === now) continue;
+    s.emit[keys[i]] = want;
+    (want ? turnedOn : turnedOff).push(keys[i]);
+  }
+  if (turnedOn.length) effects.push({ type: "sounds", source: source.key, keys: turnedOn, on: true });
+  if (turnedOff.length) effects.push({ type: "sounds", source: source.key, keys: turnedOff, on: false });
 }
 
 function fire(map: OperableMap, trap: OperableSource, ctx: OperableContext, s: OperableState, effects: OperableEffect[], by: string) {
@@ -546,7 +580,8 @@ export function pickVictim<T extends { hp: number }>(crew: readonly T[], roll: n
 export interface OperableProblem {
   code:
     | "operableNoTarget" | "operableDoorMissing" | "operableTrapMissing" | "operableFacesWall" | "operableUnused"
-    | "operableEmitterMissing" | "operableSpawnMissing" | "operableItemMissing" | "operableInactiveUnused" | "operableDormantUnused";
+    | "operableEmitterMissing" | "operableSpawnMissing" | "operableItemMissing" | "operableInactiveUnused" | "operableDormantUnused"
+    | "operableSoundMissing" | "operableSoundInactiveUnused";
   cell: Vec2;
   params?: Record<string, string | number>;
 }
@@ -562,7 +597,7 @@ export function operableProblems(map: OperableMap): OperableProblem[] {
   const sources = operableSources(map);
   const out: OperableProblem[] = [];
   const targeted = new Set<string>();
-  const wakers = { emitter: new Set<number>(), actor: new Set<number>(), item: new Set<number>() };
+  const wakers = { emitter: new Set<number>(), sound: new Set<number>(), actor: new Set<number>(), item: new Set<number>() };
   for (const source of sources) {
     if (source.kind !== "emitter" && !(source.spec.targets?.length)) out.push({ code: "operableNoTarget", cell: source.cell, params: { kind: source.kind } });
     for (const target of source.spec.targets ?? []) {
@@ -576,6 +611,10 @@ export function operableProblems(map: OperableMap): OperableProblem[] {
         const found = resolveAddress(map.smokes, target);
         if (!found.length) out.push({ code: "operableEmitterMissing", cell: source.cell, params: { at: describeAddress(target) } });
         for (const i of found) wakers.emitter.add(i);
+      } else if (target.kind === "sound") {
+        const found = resolveAddress(soundEntries(map.sounds), target);
+        if (!found.length) out.push({ code: "operableSoundMissing", cell: source.cell, params: { at: describeAddress(target) } });
+        for (const i of found) wakers.sound.add(i);
       } else if (target.kind === "spawn") {
         const found = resolveAddress(map.actors, target, (a) => a.dormant === true);
         if (!found.length) out.push({ code: "operableSpawnMissing", cell: source.cell, params: { at: describeAddress(target) } });
@@ -590,6 +629,9 @@ export function operableProblems(map: OperableMap): OperableProblem[] {
   // what waits for a switch that nothing works: an inactive emitter, a dormant NPC or item
   (map.smokes ?? []).forEach((s, i) => {
     if (s.active === false && !wakers.emitter.has(i)) out.push({ code: "operableInactiveUnused", cell: s.cell });
+  });
+  (map.sounds ?? []).forEach((s, i) => {
+    if (s.active === false && !wakers.sound.has(i)) out.push({ code: "operableSoundInactiveUnused", cell: { x: s.x, y: s.y } });
   });
   (map.actors ?? []).forEach((a, i) => {
     if (a.dormant && !wakers.actor.has(i)) out.push({ code: "operableDormantUnused", cell: a.cell, params: { what: "npc" } });
@@ -637,6 +679,8 @@ export function targetCells(map: OperableMap, t: OperableTarget): Vec2[] {
       return [{ x: t.x, y: t.y }];
     case "emitter":
       return resolveAddress(map.smokes, t).map((i) => map.smokes![i].cell);
+    case "sound":
+      return resolveAddress(soundEntries(map.sounds), t).map((i) => ({ x: map.sounds![i].x, y: map.sounds![i].y }));
     case "spawn":
       return resolveAddress(map.actors, t, (a) => a.dormant === true).map((i) => map.actors![i].cell);
     case "item":

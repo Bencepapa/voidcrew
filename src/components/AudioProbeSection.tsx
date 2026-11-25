@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { t } from "../i18n";
 import { playAt, playMany, playOrbit, probeStatus, relative, stopAllProbes, type ProbeStatus } from "../audio/audioProbe";
-import { isHrtf, isRearDull, setHrtf, setRearDull } from "../audio/engine";
+import { isHrtf, setHrtf } from "../audio/engine";
 
 // The Debug panel's "Sound (probe)" section: test voices put at places round the listener (see src/audio/audioProbe.ts).
 // Each stays where it was put in the world, so turning and walking should move it in the stereo field.
@@ -10,7 +10,6 @@ const BUTTON = "text-[11px] border border-neutral-600 rounded-sm px-2 py-1 hover
 export function AudioProbeSection() {
   const [status, setStatus] = useState<ProbeStatus | null>(null);
   const [hrtf, setHrtfState] = useState(isHrtf());
-  const [rear, setRearState] = useState(isRearDull());
   const refresh = () => setStatus(probeStatus());
   const run = (action: () => void) => () => {
     try {
@@ -36,10 +35,6 @@ export function AudioProbeSection() {
         <button type="button" className={BUTTON} onClick={run(() => playMany(20))}>{t("debug.audioMany")}</button>
         <button type="button" className={BUTTON} onClick={run(() => stopAllProbes())}>{t("debug.audioStop")}</button>
       </div>
-      <label className="flex items-center gap-2 text-[11px] cursor-pointer">
-        <input type="checkbox" checked={rear} onChange={(e) => { setRearDull(e.target.checked); setRearState(e.target.checked); }} />
-        {t("debug.audioRearDull")}
-      </label>
       <label className="flex items-center gap-2 text-[11px] cursor-pointer">
         <input type="checkbox" checked={hrtf} onChange={(e) => { setHrtf(e.target.checked); setHrtfState(e.target.checked); }} />
         {t("debug.audioHrtf")}

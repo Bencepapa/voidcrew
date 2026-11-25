@@ -168,12 +168,9 @@ export function behindness(listener: Point & { fx: number; fz: number }, x: numb
   return Math.max(0, -(dx * listener.fx + dz * listener.fz) / length);
 }
 
-// What the ear's shadow does to a sound `behind` (0..1) the listener: the highs cut (a low-pass from 18 kHz down to
-// about 700 Hz straight behind) and the level cut to half there (-6 dB) - a front / back cue that works on speakers too.
-export function rearFilter(behind: number): { cutoff: number; gain: number } {
-  const b = Math.max(0, Math.min(1, behind));
-  return { cutoff: 18000 * Math.pow(0.04, b), gain: 1 - 0.5 * b };
-}
+// What the ear's shadow does to a sound `behind` (0..1) the listener (the highs and a little level, by the Debug panel's
+// strength): see rear.ts.
+export { rearFilter } from "./rear";
 
 // ---- who sounds, and how
 
@@ -247,6 +244,8 @@ export interface VoiceTarget {
   z: number;
   // 0..1
   level: number;
+  // how far it seems to be (cells): the straight distance, or - for the doorway's voice - the length of the way round
+  distance: number;
   // the low-pass after the walls, and the level they leave
   cutoff: number;
   wallGain: number;
@@ -262,7 +261,7 @@ export function voiceTargets(listener: Spot, emitter: Emitter, plan: SourcePlan)
   const out: VoiceTarget[] = [];
   const wall = muffle(plan.walls);
   const direct = sound.volume * attenuation(straight, sound.range, sound.rolloff);
-  if (direct > 0) out.push({ role: "direct", x: emitter.x, y: emitter.y, z: emitter.z, level: direct, cutoff: wall.cutoff, wallGain: wall.gain });
+  if (direct > 0) out.push({ role: "direct", x: emitter.x, y: emitter.y, z: emitter.z, level: direct, distance: straight, cutoff: wall.cutoff, wallGain: wall.gain });
   if (plan.portal) {
     // (the way's length: to the next cell, then on - never less than the straight distance)
     const way = Math.max(straight, Math.hypot(plan.portal.via.x - listener.x, plan.portal.via.y - listener.z) + plan.portal.after);
@@ -274,6 +273,7 @@ export function voiceTargets(listener: Spot, emitter: Emitter, plan: SourcePlan)
         y: listener.y,
         z: listener.z + plan.portal.dir.z * PORTAL_DISTANCE,
         level,
+        distance: way,
         cutoff: MUFFLE_CUTOFFS[0],
         wallGain: 1,
       });

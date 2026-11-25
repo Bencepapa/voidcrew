@@ -3,7 +3,7 @@ import { t } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
 import { NumberField } from "../NumberField";
 import { CommitContext, KindChoice, Section, BUTTON, idle, active } from "./parts";
-import { NOISE_COLORS, SOUND_KINDS, SOUND_LIMITS, SOUND_WAVES, type NoiseColor, type SoundKind, type SoundWave } from "../../game/sounds";
+import { NOISE_COLORS, SOUND_KINDS, SOUND_LIMITS, SOUND_WAVES, changePulse, type NoiseColor, type SoundKind, type SoundWave } from "../../game/sounds";
 
 // a pitch is felt in octaves: the slider runs along the logarithm of the frequency
 const { min: PITCH_MIN, max: PITCH_MAX } = SOUND_LIMITS.pitch;
@@ -75,14 +75,22 @@ export function SoundFields(p: EditorBarProps & { placing?: boolean }) {
         />
         {s.pulse && (
           <>
-            {num(t("sound.on"), s.pulse.on, 0.05, 10, 0.05, (on) => change({ pulse: { on, off: s.pulse!.off } }))}
-            {num(t("sound.off"), s.pulse.off, 0.05, 10, 0.05, (off) => change({ pulse: { on: s.pulse!.on, off } }))}
+            {num(t("sound.on"), s.pulse.on, 0.05, 10, 0.05, (on) => change({ pulse: changePulse(s.pulse!, { on }) }))}
+            {num(t("sound.off"), s.pulse.off, 0.05, 10, 0.05, (off) => change({ pulse: changePulse(s.pulse!, { off }) }))}
+            {num(t("sound.attack"), s.pulse.attack ?? SOUND_LIMITS.edge.default, SOUND_LIMITS.edge.min, SOUND_LIMITS.edge.max, 0.01, (attack) => change({ pulse: changePulse(s.pulse!, { attack }) }), { title: t("sound.attackHint"), unit: "s", defaultValue: SOUND_LIMITS.edge.default })}
+            {num(t("sound.release"), s.pulse.release ?? SOUND_LIMITS.edge.default, SOUND_LIMITS.edge.min, SOUND_LIMITS.edge.max, 0.01, (release) => change({ pulse: changePulse(s.pulse!, { release }) }), { title: t("sound.releaseHint"), unit: "s", defaultValue: SOUND_LIMITS.edge.default })}
           </>
         )}
         <label className="flex items-center gap-1" title={t("sound.activeHint")}>
           <input type="checkbox" checked={s.active} onChange={(e) => change({ active: e.target.checked ? undefined : false })} />
           {t("sound.active")}
         </label>
+        {!p.placing && (
+          <label className="flex items-center gap-1" title={t("sound.idHint")}>
+            {t("sound.id")}
+            <input type="text" value={s.id ?? ""} placeholder="-" onChange={(e) => change({ id: e.target.value.trim() || undefined })} className="min-w-0 flex-1 bg-neutral-800 border border-neutral-700 px-1" />
+          </label>
+        )}
         {!p.placing && (
           <button
             type="button"

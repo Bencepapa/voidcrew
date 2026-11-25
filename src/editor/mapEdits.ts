@@ -663,6 +663,8 @@ export function updateSound(file: MapFile, index: number, patch: Partial<SoundEn
 
 export function removeSound(file: MapFile, index: number): MapFile {
   if (!file.sounds?.[index]) return file;
+  // (the levers that named it by its place in its cell are fixed first)
+  fixTargetsBeforeRemove(file, "sound", index);
   file.sounds.splice(index, 1);
   if (!file.sounds.length) delete file.sounds;
   return file;

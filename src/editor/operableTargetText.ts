@@ -16,6 +16,7 @@ export function describeTarget(target: OperableTarget): string {
     case "door": return t("operable.target.door", { x: target.x, y: target.y });
     case "trap": return t("operable.target.trap", { x: target.x, y: target.y, side: target.side ? ` ${target.side}` : "" });
     case "emitter": return t("operable.target.emitter", { at: placeOf(target) });
+    case "sound": return t("operable.target.sound", { at: placeOf(target) });
     case "spawn": return t("operable.target.spawn", { at: placeOf(target) });
     case "item": return t("operable.target.item", { at: placeOf(target) });
     case "reward": {

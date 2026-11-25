@@ -8,6 +8,7 @@ import type { SpriteEmitter } from "../render/spriteCloud";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { prepareRaycastsGradually } from "../render/bvh";
+import { makeSoundIcon } from "../render/soundIcon";
 import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
 import { effectiveViewDistance } from "../render/graphics";
@@ -114,6 +115,7 @@ import {
   sharedImage,
 } from "../render/sharedImages";
 import { gameSound } from "../audio/gameSound";
+import { soundsOn } from "../game/soundOperables";
 import { publishSight } from "../render/sightStore";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
@@ -314,6 +316,10 @@ export type {
   EditTarget,
   ViewportStats,
 } from "../render/viewport/contracts";
+
+// a sound emitter's sign in the editor: its size (world units), and the camera distance from which it grows to stay readable
+const SOUND_ICON_SIZE = 0.28;
+const SOUND_ICON_FAR = 7;
 
 export function GameViewport({
   doorPreview,
@@ -674,8 +680,11 @@ export function GameViewport({
       },
       floorHeight: (x, y) => floorHeight(map, x, y),
       wallHeight: soundWallHeight,
+      // (a lever, button or plate can switch a sound on or off: see game/soundOperables.ts)
+      isOn: soundsOn(map),
     });
   }, [map, soundWallHeight, doorPreview]);
+  useEffect(() => (doorPreview ? undefined : emitterView.subscribe(() => gameSound.invalidate())), [doorPreview]);
   useEffect(() => {
     if (!doorPreview) gameSound.invalidate();
   }, [openDoors, doorPreview]);
@@ -3464,10 +3473,13 @@ export function GameViewport({
 
     // ---- sound emitters (see sounds.ts): a marker at each for the editor to pick it by, shown only while editing
     // (nothing of them is built into the deck: they are heard, see audio/soundSystem.ts) ----
-    const soundMarkers = new Map<number, THREE.Mesh>();
-    const soundMarkerGeo = new THREE.SphereGeometry(0.05, 12, 8);
+    // (the sign of a sound: a loudspeaker with sound waves on a plane that faces the camera - see render/soundIcon.ts; the
+    // plane is what a click picks, the group round it holds the range ring)
+    const soundMarkers = new Map<number, THREE.Group>();
+    const soundMarkerGeo = new THREE.PlaneGeometry(1, 1);
     geometries.push(soundMarkerGeo);
-    const soundMarkerMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf });
+    const soundIconTexture = makeSoundIcon();
+    const soundMarkerMat = new THREE.MeshBasicMaterial({ map: soundIconTexture, alphaTest: 0.35, side: THREE.DoubleSide, fog: false });
     // the range, as a ring on the floor under the selected one
     const soundRingMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.55, depthTest: false, side: THREE.DoubleSide, fog: false });
     const clearSoundMarkers = () => {
@@ -3482,12 +3494,17 @@ export function GameViewport({
     const buildSoundMarkers = (m: GameMap) => {
       clearSoundMarkers();
       (m.sounds ?? []).forEach((spec, index) => {
-        const marker = new THREE.Mesh(soundMarkerGeo, soundMarkerMat);
+        const marker = new THREE.Group();
         const floor = floorY(spec.x, spec.y);
         marker.position.set(spec.x + (spec.pos?.[0] ?? 0), (floorHeight(m, spec.x, spec.y) + (spec.pos?.[1] ?? 0.5)) * wallHeight, spec.y + (spec.pos?.[2] ?? 0));
         marker.userData.soundIndex = index;
         marker.userData.item = true;
         marker.visible = false;
+        const icon = new THREE.Mesh(soundMarkerGeo, soundMarkerMat);
+        icon.scale.setScalar(SOUND_ICON_SIZE);
+        icon.userData.soundIndex = index;
+        icon.userData.soundIcon = true;
+        marker.add(icon);
         const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.01, spec.range - 0.06), spec.range, 96), soundRingMat);
         ring.rotation.x = -Math.PI / 2;
         ring.position.y = floor - marker.position.y + 0.04;
@@ -6219,7 +6236,7 @@ export function GameViewport({
       }
       // the Sound tool: a sound emitter's marker pointed at
       // (as near as the nearest thing: a marker behind a wall is not the one a click is meant for)
-      if (editToolRef.current === "sound" || selecting) {
+      if (editToolRef.current === "sound" || selecting || operableLink.active()) {
         const at = hits.find((h) => h.object.userData.soundIndex !== undefined && h.distance <= hit.distance + 0.25);
         const spec = at && latestMapRef.current.sounds?.[at.object.userData.soundIndex as number];
         if (at && spec) return { kind: "floor", cell: { x: spec.x, y: spec.y }, sound: at.object.userData.soundIndex as number };
@@ -6450,7 +6467,7 @@ export function GameViewport({
       if (soundMarker) {
         // (not frameObject: the range ring under it is part of the marker, and would be framed too)
         selectBox.position.copy(soundMarker.position);
-        selectBox.scale.setScalar(0.16);
+        selectBox.scale.setScalar(SOUND_ICON_SIZE * 1.15);
         selectBox.visible = true;
         return;
       }
@@ -6604,7 +6621,7 @@ export function GameViewport({
         const marker = soundMarkers.get(target.sound!);
         if (marker) {
           editBox.position.copy(marker.position);
-          editBox.scale.setScalar(0.14);
+          editBox.scale.setScalar(SOUND_ICON_SIZE * 1.1);
         }
       } else if (mode === "decal") {
         selectBounds.makeEmpty();
@@ -7164,9 +7181,18 @@ export function GameViewport({
       }
       for (const marker of soundMarkers.values()) {
         marker.visible = editModeRef.current && !hiddenLayersRef.current.has("sound");
-        // (the range shows while its emitter is the one selected)
+        if (!marker.visible) continue;
+        // (the range shows while its emitter is the one selected; the sign faces the camera, and grows with the distance
+        // so it stays readable from the top-down view)
         const picked = marker.userData.soundIndex === selectedSoundRef.current;
-        for (const child of marker.children) if (child.userData.soundRing) child.visible = picked;
+        const grow = Math.max(1, camera.position.distanceTo(marker.position) / SOUND_ICON_FAR);
+        for (const child of marker.children) {
+          if (child.userData.soundRing) child.visible = picked;
+          else if (child.userData.soundIcon) {
+            child.quaternion.copy(camera.quaternion);
+            child.scale.setScalar(SOUND_ICON_SIZE * grow);
+          }
+        }
       }
       syncFenceMarkers();
       // the exits' plates throb
@@ -7431,6 +7457,7 @@ export function GameViewport({
       smokeMarkerMat.dispose();
       clearSoundMarkers();
       soundMarkerMat.dispose();
+      soundIconTexture.dispose();
       soundRingMat.dispose();
       fogRingMat.dispose();
       fogHeightMat.dispose();

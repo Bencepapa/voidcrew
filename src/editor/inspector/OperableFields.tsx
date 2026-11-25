@@ -121,7 +121,7 @@ export function OperableFields({ info, onChange }: {
             {t("operable.force")}
           </label>
         </>}
-        {target.kind === "emitter" && <KindChoice value={target.action ?? "on"} options={(["on", "off", "toggle"] as const).map((a) => ({ value: a, label: t(`operable.emitterAction.${a}`) }))}
+        {(target.kind === "emitter" || target.kind === "sound") && <KindChoice value={target.action ?? "on"} options={(["on", "off", "toggle"] as const).map((a) => ({ value: a, label: t(`operable.emitterAction.${a}`) }))}
           onChange={(action) => setTarget(i, { ...target, action: action === "on" ? undefined : (action as "off" | "toggle") })}/>}
         {target.kind === "reward" && <RewardFields target={target} onChange={(next) => setTarget(i, next)} commit={commit}/>}
         <button type="button" className={`${BUTTON} ${idle}`} onClick={() => patch({ targets: targets.filter((_, j) => j !== i) })}>{t("operable.removeTarget")}</button>
@@ -133,7 +133,7 @@ export function OperableFields({ info, onChange }: {
       <button type="button" className={`${BUTTON} ${idle}`} onClick={() => patch({ targets: [...targets, newReward()] })}>{t("operable.reward.add")}</button>
       {area && <div className="flex flex-wrap items-center gap-1 border-t border-neutral-800 pt-1" title={t("operable.area.title")}>
         <span className="text-neutral-300">{t("operable.area.selected", { from: `${area.x0},${area.y0}`, to: `${area.x1},${area.y1}` })}</span>
-        {(["emitter", "spawn", "item"] as const).map((kind) => (
+        {(["emitter", "sound", "spawn", "item"] as const).map((kind) => (
           <button key={kind} type="button" className={`${BUTTON} ${idle}`} onClick={() => patch({ targets: [...targets, areaTarget(kind, area)] })}>{t(`operable.area.add.${kind}`)}</button>
         ))}
       </div>}
