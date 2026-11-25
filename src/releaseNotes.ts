@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 1,
     date: "2026-11-23",
     items: [
+      { title: "Hangelemek", text: "A térképre sípoló vagy zajos hangelem rakható (hullámforma, hangmagasság, hangerő, hatótáv, ismétlődés), amely a játékban 3D-ben szól: falon át tompítva, nyíláson át az ajtó felől érkezve; a hangerő a Debug panelben állítható." },
       { title: "Tűz-, méreg- és előhívó csapdák", text: "A kar, gomb és nyomólap tűz- vagy mérgező füst-kibocsátót kapcsolhat be, NPC-ket idézhet meg, tárgyat vagy aranyat adhat; a tűz fajtája és színe állítható." },
       { title: "Zárható ládák és kulcsok", text: "Ládák, tárolók és karok is zárhatók kulccsal: a kulcs egy felvehető tárgy, a zár üzenete és a kulcs elhasználása állítható." },
       { title: "Gradiens égbolt", text: "Kültéri pályákhoz kép nélküli, színátmenetes égbolt választható a pálya beállításaiban." },
