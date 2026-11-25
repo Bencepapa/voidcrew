@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 3,
     date: "2026-11-25",
     items: [
+      { title: "Pálya közzététele újabb változat fölé", text: "Ütközéskor jóváhagyhatod a saját pályád közzétételét a legfrissebb változat után, a korábbi változatok megőrzésével." },
       { title: "Fű és búza a kerítéseken", text: "A fantasy kerítésekhez közepes fű, magas fű és búza választható, áttetsző hézagokkal és folytonosan illeszkedő szélekkel." },
       { title: "Növényzet: réteges és X kerítés", text: "A Kerítések csoportban a Réteges kerítés (a szélen vagy a közepén több párhuzamos síkban) és az X kerítés (két keresztező sík a cella közepén) sűrű, minden oldalról kitöltött sövényt, magas füvet és búzát ad; a rétegek száma, távolsága és eltolása állítható, alapból járható és átlátszó." },
       { title: "Hangminták", text: "A térképre valódi hangmintákból (madarak, tűzropogás, kandalló, goblin, kalapács) hangelem rakható (hangerő, sebesség, hatótáv, az egyszeri hangoknál ismétlődés szünettel; a régi sípoló és zajos hangelemek is működnek), amely a játékban 3D-ben szól: falon át tompítva, nyíláson át az ajtó felől érkezve, simán átúszó átmenetekkel, mindkét fülbe; a hangerő és a hátsó tompítás a Debug panelben állítható, a szerkesztőben hangszóró-jel mutatja, az impulzus felfutása és lecsengése állítható, és kar, gomb vagy nyomólap ki-be kapcsolhatja." },

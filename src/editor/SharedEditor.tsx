@@ -3,13 +3,13 @@ import { hasUnsavedEdits, mapFile, markSaved } from "./mapStore";
 import { t } from "../i18n";
 import type { GameMap } from "../game/types";
 import { bundledMaps } from "../game/sharedBuiltins";
-import { SharedLoginForm, sharedButton as button, sharedRequest, useSharedAuth } from "./sharedAuth";
+import { SharedLoginForm, sharedButton as button, useSharedAuth } from "./sharedAuth";
 import { loadSharedTextures } from "./sharedTextures";
 import { loadSharedImages } from "./sharedImages";
 import { loadOnce } from "./loadGate";
 import { autoLoadShared } from "./autoSharedPrefs";
 import { refreshSharedMapHeads, type SharedMapHead } from "./sharedMapHeads";
-import { loadSharedMap, rememberSharedOrigin, sharedOrigin, splitSharedTitle } from "./sharedMaps";
+import { loadSharedMap, publishSharedMap, rememberSharedOrigin, sharedOrigin, splitSharedTitle } from "./sharedMaps";
 import { openAssetManager } from "./AssetManager";
 import { registerMap } from "./textureLibrary";
 
@@ -28,6 +28,9 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
   const [busy, setBusy] = useState(false);
   // the newest shared version, offered while the open map has unsaved edits
   const [ask, setAsk] = useState<SharedMapHead | null>(null);
+  const [publishConflict, setPublishConflict] = useState<{
+    mine: number; theirs: number; resolve: (confirmed: boolean) => void;
+  } | null>(null);
   const origin = (id: string) => sharedOrigin(map.world, id);
   const remember = (id: string, head: SharedMapHead) => rememberSharedOrigin(map.world, id, head);
   async function run(fn: () => Promise<unknown>) {
@@ -54,8 +57,10 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     if (!body) throw new Error(t("editorShell.shared.mapFileUnavailable"));
     const previous = copy ? undefined : origin(map.id);
     // (the title is "Place – Name": the place travels with it in the head list, the body has it too)
-    const head = { id: previous?.id ?? (copy ? "copy-" + crypto.randomUUID() : map.id), title: map.hasPlace ? `${map.place}${SEP}${map.name}` : map.name, revision: (previous?.revision ?? 0) + 1 };
-    await sharedRequest("/rest/v1/void_maps", {method: "POST", body: JSON.stringify({...head, world: map.world, body})});
+    const id = previous?.id ?? (copy ? "copy-" + crypto.randomUUID() : map.id);
+    const title = map.hasPlace ? `${map.place}${SEP}${map.name}` : map.name;
+    const head = await publishSharedMap(map.world, id, title, body, previous?.revision ?? 0,
+      copy ? undefined : (mine, theirs) => new Promise(resolve => setPublishConflict({ mine, theirs, resolve })));
     remember(map.id, head);
     if (!copy) markSaved(map.id);
     await refresh(); setMessage(t("editorShell.shared.savedVersion", { n: head.revision }));
@@ -106,5 +111,10 @@ export function SharedEditor({map, openMap, changed}: {map: GameMap; openMap: (m
     {ask && <ConfirmDialog title={t("editorShell.shared.title", { world: map.world })} message={t("editorShell.shared.confirmOpenLatest")} yes={t("dialog.yes")} no={t("dialog.no")}
       onYes={() => { const h = ask; setAsk(null); void run(() => load(h)); }}
       onNo={() => { setAsk(null); setMessage(t("editorShell.shared.localEditsKept")); }} />}
+    {publishConflict && <ConfirmDialog title={t("editorShell.shared.title", { world: map.world })}
+      message={t("editorShell.shared.publishConflict", { mine: publishConflict.mine, theirs: publishConflict.theirs })}
+      yes={t("dialog.yes")} no={t("dialog.no")}
+      onYes={() => { setPublishConflict(null); publishConflict.resolve(true); }}
+      onNo={() => { setPublishConflict(null); publishConflict.resolve(false); }} />}
   </>;
 }
