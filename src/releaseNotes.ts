@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 1,
     date: "2026-11-23",
     items: [
+      { title: "Tűz-, méreg- és előhívó csapdák", text: "A kar, gomb és nyomólap tűz- vagy mérgező füst-kibocsátót kapcsolhat be, NPC-ket idézhet meg, tárgyat vagy aranyat adhat; a tűz fajtája és színe állítható." },
       { title: "Gradiens égbolt", text: "Kültéri pályákhoz kép nélküli, színátmenetes égbolt választható a pálya beállításaiban." },
       { title: "Működtethető elemek", text: "Kar, gomb, nyomólap és csapda rakható le, amelyek ajtót nyitnak vagy a csapatot támadják; az ajtókhoz kulcs is megadható." },
       { title: "Felvétel, Play gomb és tesztelési segédletek", text: "A tárgyak kattintással vagy húzással (hátizsákra, kézre, karakterre) is felvehetők, a szerkesztő békés módban indul (ellenfelek és csapdák kikapcsolva), a Play gomb élesíti őket, és szerkesztés közben a csapat halála nem dob ki a pályáról." },

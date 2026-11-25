@@ -241,3 +241,111 @@ Készíts egy próbapályát (szerkesztő mód, Prop eszköz):
 8. **Mentés / újratöltés / Undo**: a célok megmaradnak; Ctrl+Z visszavonja az összekötést; a kar törlése után a mutató
    hiba nélkül marad (a célok lógó hivatkozás csak a Problems-ben látszik, ha az ajtót törlöd).
 9. **Pálya újratöltése**: a lift / kapu után visszatérve a kar újra alaphelyzetben van (kivéve a `story.` jelzős kar).
+
+## 8. Fire, poison and spawn traps (feature/fire-trap-effects)
+
+### Data format (all additive; a map without any of it parses exactly as before)
+
+```jsonc
+// a smoke / fire emitter that is OFF until a switch turns it on; the fire's kind and colour are the usual smoke fields
+{ "x": 6, "y": 3, "pos": [0, 0.5, 0], "effect": "fire", "color": "#4dff6a", "lightColor": "#5dff7a", "active": false }
+// poison smoke: green smoke that hurts whoever stands within `reach` steps (default 1, max 3), `damage` every `every` s (default 1)
+{ "x": 3, "y": 2, "pos": [0, 0.4, 0], "effect": "smoke", "color": "#6fd23c", "density": 1.5, "active": false,
+  "harm": { "damage": 2, "every": 1, "reach": 1, "label": "chokes on the poison smoke" } }
+// a flame jet out of the west wall of (1,2): fire blown east, decorative (its own cell does not burn), the harm reaches 2 cells
+{ "x": 1, "y": 2, "pos": [-0.45, 0.5, 0], "effect": "fire", "decorative": true, "size": 0.8, "active": false,
+  "blow": { "speed": 2.5, "yaw": 90, "pitch": 0 }, "harm": { "damage": 4, "every": 1, "reach": 2, "label": "is scorched by the flames" } }
+// an NPC / an item that is not in the world until something triggers it
+{ "actor": "goblin1", "x": 6, "y": 1, "dormant": true }
+{ "item": "medkit", "x": 7, "y": 1, "dormant": true }
+
+// sources (lever / button / plate / trap cell / a painted decal with `operable`) list any mix of these targets:
+{ "kind": "emitter", "x": 6, "y": 3 }                                        // every emitter in that cell: on (the default action)
+{ "kind": "emitter", "x": 2, "y": 3, "index": 1, "action": "toggle" }        // the 2nd one in the cell (0 = first), on / off / toggle
+{ "kind": "emitter", "id": "gas" }                                           // by the emitter's Linked id
+{ "kind": "emitter", "area": { "x0": 1, "y0": 1, "x1": 5, "y1": 4 } }        // all emitters in a block of cells ("a fire on every tile")
+{ "kind": "spawn", "x": 6, "y": 1 }          // the dormant NPC(s) at that start cell ("index", "id", "area" work the same)
+{ "kind": "item",  "x": 7, "y": 1 }          // the dormant item(s) there
+{ "kind": "reward", "credits": 50, "items": [{ "item": "medkit", "qty": 2 }], "once": false }   // straight into the party
+```
+
+### Semantics
+
+- **Switching.** As the source goes on (a lever pulled, a plate stepped on, a trap cell stepped on) the emitter does its `action`
+  (default `on`); as it goes off (lever pushed back, plate left, momentary button sprung back) the inverse follows - unless the
+  source latches (`hold: false`) or is a trap cell (never goes back). Only emitters that really change are reported.
+  State (`OperableState.emit`) resets with the deck, like the levers; a source with a `story.` flag comes back on and its emitters
+  with it (`restoreFromFlags`).
+- **Emitter addresses** are matched in the *played* map (a variation can drop emitters): by `id`, else by `area`, else by cell,
+  `index` = the n-th emitter in that cell in file order. Runtime key `x,y` / `x,y#2`.
+- **Spawn** brings each dormant NPC in once (the deck's visit); pushing a lever back does not remove it. It appears at its start
+  cell (`actorFromSpec`, id = its index in the map's actors, so a killed spawn stays a wreck), on guard; the ship's robot stance
+  does not apply (a trap's guard is awake), only the actor's own `wake`. A friendly NPC spawns as it is. An enemy spawned in
+  wander mode is held by the existing `holdEnemies`.
+- **Item reveal**: the dormant item is counted as "looted" (hidden, not pickable) until revealed; the reveal is kept for the run.
+- **Reward**: pays when the source goes on; once only by default (`once: false` pays each time; a source's own `once` also
+  limits it). Paid rewards are remembered with the run flag `reward.<map>.<source>#<n>`, so re-entering the deck does not pay
+  twice. Credits through `meta.setCredits`, items through `addToHaul` (overflow is told as for any pickup).
+- **Harm** (`harmTick`): the party standing in a cell within `reach` steps (over open floor; walls and shut doors stop the smoke)
+  of an emitter that is ON is hurt at once on entering, then every `every` s (leaving and returning does not reset the count)
+  through the same `hurt` path as the wall traps (random standing crewmate, log line "<name> <label>.", red flash). Nothing
+  happens while `trapsActive()` is false (wander mode), while the game clock is paused, or in the editor. A fire still burns its
+  own cell as before, but only while its emitter is on.
+- **Viewport**: while the deck is being played an emitter that is off is not built (no particles, no fire light); switching
+  rebuilds the particle systems only when the set of shown emitters really changed. The editor always shows all of them.
+
+### Editor
+
+- **Emitter panel** (Smoke tool or Select): section **Fire / Smoke type** (presets: Fire, Blue fire, Green fire, Smoke, Steam,
+  Poison smoke, Flame jet from the wall - a preset sets / clears kind, colour, light, blow, density, size, harm, decorative, so
+  nothing of the last one stays; the jet blows away from the wall the emitter sits against, `jetYawFor`), and section **Trap**
+  ("On from the start" = `active`, "Hurts the crew in its smoke" = `harm` with damage / every / reach / log line). The existing
+  fire, light and blow fields stay in their sections.
+- **NPC / item panel**: "Appears when triggered" (`dormant`). A dormant NPC is drawn faded (`ActorState.ghost`) in the editor.
+- **Operable block** of a source: the targets list shows one-line descriptions (door / wall trap / emitter / spawn NPC / reveal
+  item / reward), the emitter target has a Switch on / off / toggle choice, a target that addresses nothing is amber. **Link a
+  target**: click a door, a wall trap, an emitter marker, a dormant NPC or a dormant item in the 3D view. **Area**: drag a block
+  in the zoomed minimap (wide screens), then the buttons "all emitters / dormant NPCs / dormant items in it" appear in the
+  source's panel. **Add a reward**: credits, items (select + quantity), "Pays only once".
+- **Problems** (warnings): a target that addresses nothing (emitter / spawn / item, with where), an emitter that is off from the
+  start and nothing switches on, a dormant NPC / item nothing triggers. Minimap: dashed links from the source to each addressed
+  emitter / NPC / item (orange / purple / green).
+- **Undo / delete**: every edit is an `applyEdit` step. Removing an emitter / NPC / item fixes the targets that named it by its
+  place in its cell (`index`): the one that pointed at it is dropped, later ones move up (`fixTargetsBeforeRemove`); targets by
+  cell alone, id or area stay and show up as problems if nothing is left. Moving something does not rewrite targets (addresses
+  are explicit): they show up as problems. Copy / paste of an area keeps the absolute addresses (as for doors).
+
+### Not done / reduced
+
+- **Ceiling-lowering and chasm traps**: saved for later (not started).
+- No fade in / out of a switched emitter: it appears / disappears (the particle systems are rebuilt); a pop-in animation for a
+  revealed item and a puff for a spawned NPC are not drawn (log lines only).
+- No hover highlight of a target in the 3D view and no 3D floor marks from a source to its emitters / NPCs / items (the minimap
+  lines and the amber "addresses nothing" row are the feedback); dormant items have no marker in the editor view.
+- Poison / fire smoke hurts the crew only; actors are not hurt by `harm` (the own-cell fire still burns them as before).
+- Harm uses a step distance over open cells, not the smoke's real particles.
+- Not run in a browser: the look of coloured fire, the link-mode clicks, the faded NPC and the rebuild on switching were not seen.
+
+### Tests
+
+`npx tsx src/game/emitters.test.ts` (harm cadence, reach, presets, jet direction, store), `src/game/trapTargets.test.ts` (target
+parsing, on / off / toggle / area / id, plates, trap cells, once, spawn, reveal, reward, problems, links),
+`src/game/trapMap.test.ts` (map round trips, dormant NPCs, link clicks, edits keeping targets right) and `npx tsc --noEmit`.
+
+### Kézi teszt (magyarul)
+
+1. **Lángcsóva nyomólappal**: tegyél egy Nyomólapot a folyosóra, a folyosó falához egy tűz-kibocsátót (Füst eszköz), nyomd meg a
+   „Lángcsóva a falból” gombot (Tűz / füst fajtája), vedd le az „Induláskor bekapcsolva” pipát. Jelöld ki a nyomólapot →
+   „Cél összekötése” → kattints a kibocsátó jelölőjére. Szerkesztőből kilépve (Play bekapcsolva): ráállva a lángcsóva kigyullad,
+   a csapat sebződik („…megperzselődik a lángoktól”); lelépve elalszik. Play nélkül (barangoló mód) a lángok látszanak, de nem sebeznek.
+2. **Zöld mérgező szoba karral**: a szobába egy-két kibocsátó, „Mérgező füst”, induláskor kikapcsolva; a bejárat mellé Kar,
+   célja a kibocsátók (vagy kijelölt blokk → „minden kibocsátó benne”). Kar lehúzva: zöld füst, másodpercenként sebzés a szobában;
+   visszatolva: elfogy.
+3. **Kar, ami ellenséget idéz**: egy NPC „Kiváltásra jelenik meg” (szerkesztőben halvány); kar célja az NPC. Játékban a kar
+   meghúzásakor megjelenik, és támad (barangoló módban megjelenik, de áll).
+4. **Kar, ami aranyat fizet**: kar → „Jutalom hozzáadása”, 50 kredit (+ tárgy). Meghúzva a napló „Találsz 50 kreditet.”, a kredit
+   nő; újra meghúzva nem fizet többet (a „Csak egyszer fizet” kikapcsolva: minden bekapcsoláskor).
+5. **Terület**: nagyított minitérképen húzz blokkot a szoba fölé, a kar paneljén „minden kibocsátó benne” → a szoba összes
+   kibocsátója egyszerre kapcsol.
+6. **Problems / törlés**: egy cél, amihez nincs kibocsátó, és egy kapcsolatlan „kiváltásra megjelenő” NPC figyelmeztetést ad; egy kibocsátó
+   törlése után a rá mutató célok javulnak / figyelmeztetnek; Ctrl+Z visszahozza.
