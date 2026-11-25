@@ -1,4 +1,4 @@
-// Release notes (Hungarian only). Newest entry first. Adding an entry IS the version bump: the app's version is the
+﻿// Release notes (Hungarian only). Newest entry first. Adding an entry IS the version bump: the app's version is the
 // highest `version` here, and a user who last saw a lower one gets the newer entries once (see components/ReleaseNotes).
 // To release: add a new object on top with `version` = previous + 1, one line title and one sentence per item.
 
@@ -15,13 +15,20 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
-    version: 2,
+    version: 3,
     date: "2026-11-25",
     items: [
       { title: "Fű és búza a kerítéseken", text: "A fantasy kerítésekhez közepes fű, magas fű és búza választható, áttetsző hézagokkal és folytonosan illeszkedő szélekkel." },
       { title: "Növényzet: réteges és X kerítés", text: "A Kerítések csoportban a Réteges kerítés (a szélen vagy a közepén több párhuzamos síkban) és az X kerítés (két keresztező sík a cella közepén) sűrű, minden oldalról kitöltött sövényt, magas füvet és búzát ad; a rétegek száma, távolsága és eltolása állítható, alapból járható és átlátszó." },
+      { title: "Hangminták", text: "A térképre valódi hangmintákból (madarak, tűzropogás, kandalló, goblin, kalapács) hangelem rakható (hangerő, sebesség, hatótáv, az egyszeri hangoknál ismétlődés szünettel; a régi sípoló és zajos hangelemek is működnek), amely a játékban 3D-ben szól: falon át tompítva, nyíláson át az ajtó felől érkezve, simán átúszó átmenetekkel, mindkét fülbe; a hangerő és a hátsó tompítás a Debug panelben állítható, a szerkesztőben hangszóró-jel mutatja, az impulzus felfutása és lecsengése állítható, és kar, gomb vagy nyomólap ki-be kapcsolhatja." },
+    ],
+  },
+  {
+    version: 2,
+    date: "2026-11-25",
+    items: [
       { title: "Hangzónák és visszhang", text: "A minitérképen Shift+kattintással kijelölt termekhez (szobák, folyosók, termek) hangzóna adható előbeállítással (folyosó, szoba, terem, barlang, szabadtér) és csúszkákkal (visszhang, lecsengés, puhaság, szigetelés): a játék ezek szerint ad a hangoknak teremhangzást, a zónák között átúszva, a vastag falú zónák pedig jobban tompítják a falon át érkező hangot; zóna nélkül a terem méretéből automatikus visszhang jár, a Debug panelben a Visszhang csúszka és kapcsoló állítja." },
-      { title: "Hangelemek", text: "A térképre valódi hangmintákból (madarak, tűzropogás, kandalló, goblin, kalapács) hangelem rakható (hangerő, sebesség, hatótáv, az egyszeri hangoknál ismétlődés szünettel; a régi sípoló és zajos hangelemek is működnek), amely a játékban 3D-ben szól: falon át tompítva, nyíláson át az ajtó felől érkezve, simán átúszó átmenetekkel, mindkét fülbe; a hangerő és a hátsó tompítás a Debug panelben állítható, a szerkesztőben hangszóró-jel mutatja, az impulzus felfutása és lecsengése állítható, és kar, gomb vagy nyomólap ki-be kapcsolhatja." },
+      { title: "Hangelemek", text: "A térképre sípoló vagy zajos hangelem rakható (hullámforma, hangmagasság, hangerő, hatótáv, ismétlődés), amely a játékban 3D-ben szól: falon át tompítva, nyíláson át az ajtó felől érkezve, simán átúszó átmenetekkel, mindkét fülbe; a hangerő és a hátsó tompítás a Debug panelben állítható, a szerkesztőben hangszóró-jel mutatja, az impulzus felfutása és lecsengése állítható, és kar, gomb vagy nyomólap ki-be kapcsolhatja." },
       { title: "Színvilág (look)", text: "A pálya beállításaiban hangulat (hideg-misztikus, meleg-filmes, szürke-borús...) és haladó színcsúszkák egy színvilágba terelik a textúrákat; a look a pályával mentődik, és átmásolható másik pályára." },
       { title: "Tűz-, méreg- és előhívó csapdák", text: "A kar, gomb és nyomólap tűz- vagy mérgező füst-kibocsátót kapcsolhat be, NPC-ket idézhet meg, tárgyat vagy aranyat adhat; a tűz fajtája és színe állítható." },
       { title: "Zárható ládák és kulcsok", text: "Ládák, tárolók és karok is zárhatók kulccsal: a kulcs egy felvehető tárgy, a zár üzenete és a kulcs elhasználása állítható." },
