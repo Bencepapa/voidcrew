@@ -7,6 +7,7 @@ import { parseRoofGroup, roofGroupId } from "../game/roofAutotile";
 import { clearCells, setLayerCell, type Rect } from "./mapEdits";
 import { floorHeightIn, isFloorIn, reevaluateRoofs } from "./roofEdits";
 import { reevaluateFences } from "./fenceEdits";
+import { cellsOfRuns, readZone, runsOfCells, type AcousticZone } from "../game/acousticZones";
 
 // The area clipboard (see docs/szerkeszto-masolas-beillesztes.md): everything inside a rectangle of a map - its
 // cells (walls, floors, heights, textures) and what stands in them - copied, turned or mirrored, and pasted
@@ -46,6 +47,9 @@ export type AreaClip = {
   layers: Partial<Record<LayerName, LayerValue[]>>;
   // restricted cells
   restricted?: [number, number][];
+  // the sound zones' cells inside the area, each with the zone's settings (cells relative to the corner, as runs); pasted
+  // as zones of their own, whatever map they go into
+  zones?: AcousticZone[];
   // the size in pixels of each decal's picture (turning a floor decal needs it)
   decalSizes?: Record<string, [number, number]>;
   // what was left out when copying, by kind
@@ -177,6 +181,19 @@ export function collectArea(file: MapFile, rect: Rect, options: CollectOptions =
   const restricted = (file.restricted ?? []).filter(([x, y]) => inside(x, y));
   if (restricted.length) clip.restricted = restricted.map(([x, y]) => [x - x0, y - y0]);
 
+  // the part of each sound zone that is inside (a zone with none of its cells in the area is not copied)
+  const zones: AcousticZone[] = [];
+  for (const zone of file.acoustics ?? []) {
+    const cells = cellsOfRuns(zone.cells)
+      .filter(([x, y]) => inside(x, y))
+      .map(([x, y]): [number, number] => [x - x0, y - y0]);
+    if (!cells.length) continue;
+    const copy = structuredClone(zone);
+    delete copy.lost;
+    zones.push({ ...copy, cells: runsOfCells(cells) });
+  }
+  if (zones.length) clip.zones = zones;
+
   if (options.decalSize && clip.decals?.length) {
     const sizes: Record<string, [number, number]> = {};
     for (const d of clip.decals) {
@@ -197,7 +214,7 @@ function windowCells(win: { x: number; y: number; wall: Direction; width?: numbe
 // how many things the clip holds (not counting the cells themselves)
 export function clipThings(clip: AreaClip): number {
   const lists = listsOf(clip);
-  return LOCAL_LISTS.reduce((sum, key) => sum + (lists[key]?.length ?? 0), 0) + (clip.restricted?.length ?? 0);
+  return LOCAL_LISTS.reduce((sum, key) => sum + (lists[key]?.length ?? 0), 0) + (clip.restricted?.length ?? 0) + (clip.zones?.length ?? 0);
 }
 
 // how many things were left out when copying
@@ -409,6 +426,7 @@ function transformClip(clip: AreaClip, tx: Tx): AreaClip {
   map("wallInteractions", (w: Entry<"wallInteractions">) => ({ ...at(w), side: tx.dir(w.side) }));
 
   if (clip.restricted) out.restricted = clip.restricted.map(([x, y]) => tx.cell(x, y));
+  if (clip.zones) out.zones = clip.zones.map((zone) => ({ ...structuredClone(zone), cells: runsOfCells(cellsOfRuns(zone.cells).map(([x, y]) => tx.cell(x, y))) }));
   if (clip.decalSizes) out.decalSizes = structuredClone(clip.decalSizes);
   return out;
 }
@@ -581,6 +599,16 @@ export function pasteArea(file: MapFile, clip: AreaClip, at: Vec2): PasteReport 
     (file.restricted ?? (file.restricted = [])).push([at.x + rx, at.y + ry]);
     report.things++;
   }
+  // sound zones: each one's cells become a new zone of the map (a name is no id: it may repeat); the area's old zone cells
+  // went with clearCells above
+  for (const zone of clip.zones ?? []) {
+    const cells = cellsOfRuns(zone.cells)
+      .map(([x, y]): [number, number] => [at.x + x, at.y + y])
+      .filter(([x, y]) => live.has(`${x},${y}`));
+    if (!cells.length) continue;
+    (file.acoustics ?? (file.acoustics = [])).push({ ...structuredClone(zone), cells: runsOfCells(cells) });
+    report.things++;
+  }
 
   report.dropped = dropUnstable(file);
   reevaluateRoofs(file);
@@ -662,6 +690,11 @@ export function parseClip(raw: unknown): AreaClip | null {
   if (Array.isArray(r.restricted)) {
     const cells = r.restricted.filter((c): c is [number, number] => Array.isArray(c) && isInt(c[0]) && isInt(c[1]) && c[0] >= 0 && c[0] < w && c[1] >= 0 && c[1] < h).map((c): [number, number] => [c[0], c[1]]);
     if (cells.length) clip.restricted = cells;
+  }
+  if (Array.isArray(r.zones)) {
+    const zones = r.zones.map((z) => readZone(z, (x, y) => x >= 0 && x < w && y >= 0 && y < h)).filter((z) => z.cells.length);
+    for (const z of zones) delete z.lost;
+    if (zones.length) clip.zones = zones;
   }
   if (typeof r.decalSizes === "object" && r.decalSizes !== null) {
     const sizes: Record<string, [number, number]> = {};

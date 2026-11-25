@@ -16,6 +16,7 @@ import { textureSetsOfKind } from "../../render/textureSets";
 import { TexturePicker, textureOptions } from "../TexturePicker";
 import { SkyFields } from "./SkyFields";
 import { LookFields } from "./LookFields";
+import { AcousticsFields } from "./AcousticsFields";
 
 import { WeatherFields } from "../WeatherFields";
 import { MapRenderSettings } from "../../components/MapRenderSettings";
@@ -108,6 +109,9 @@ return <>
 <SkyFields value={p.mapLook.textures} onChange={(textures) => p.onMapLook({textures}, "sky")} />
 <OptionalNumber label={t("editorBar.relief")} title={t("editorBar.howDeepTheWallsReliefIsRebuilds")} value={p.mapLook.reliefDepth} min={0.01} max={0.12} step={0.01} defaultValue={0.04} onChange={v=>p.onMapLook({reliefDepth:v})}/>
 <LookFields value={p.mapLook.look} onChange={(look, merge) => p.onMapLook({ look }, merge)} viewOff={p.renderSettings.postLookOff} onViewOff={(postLookOff) => p.onRenderSettings({ ...p.renderSettings, postLookOff })} />
+</Section>
+<Section kind="map" section="acoustics" openWhen={p.acoustics.pickCount > 0}>
+<AcousticsFields panel={p.acoustics}/>
 </Section>
 <MapRenderSettings settings={p.renderSettings} onChange={p.onRenderSettings} mapId={p.mapId} mapHasRender={p.mapHasRender} onSaveRender={p.onSaveRender} onClearRender={p.onClearRender}/>
 </>;

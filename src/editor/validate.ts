@@ -16,6 +16,7 @@ import { fenceProblems } from "../game/fences";
 import { operableProblems, type OperableKind } from "../game/operables";
 import { propLockProblems } from "../game/propLocks";
 import { soundProblems } from "../game/sounds";
+import { zoneProblems } from "../game/acousticZones";
 import { cleanSkyGradient } from "../game/skyGradient";
 import { isSharedSkyId } from "../game/skyImage";
 import { sharedImage } from "../render/sharedImages";
@@ -144,6 +145,8 @@ export function validateMap(map: GameMap): Problem[] {
   for (const p of propLockProblems(map)) add(p.code, p.cell, p.params);
   // sound emitters: one that makes no sound, reaches nowhere, or pulses with a zero time
   for (const p of soundProblems(map.sounds)) add(p.code, p.cell, { index: p.index + 1 });
+  // sound zones: one with no cells, or with cells that are walls or off the map
+  for (const p of zoneProblems(map.acoustics)) add(p.code, p.cell, { index: p.index + 1, ...(p.count !== undefined ? { count: p.count } : {}) });
   // a door's own leaf / frame texture must be a texture set (a shared one counts once it's loaded)
   for (const u of unknownDoorTextures(map.doors, isTextureSetId)) add("unknownDoorTexture", u.cell, { id: u.id, field: t(`editorBar.door${u.field === "leafTexture" ? "Leaf" : "Frame"}Texture`) });
   return [...out, ...placementProblems(placedMap(map), c => !open(c))];

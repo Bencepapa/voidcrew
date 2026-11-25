@@ -5,6 +5,7 @@ import { ceilingHeight, doorAt, floorHeight, windowPanels } from "../game/map";
 import { MIN_HEADROOM } from "../game/heights";
 import type { Direction, GameMap, Vec2 } from "../game/types";
 import type { Rect } from "../editor/mapEdits";
+import type { MinimapZones } from "../editor/acousticsPanel";
 
 import { TEXTURE_SETS, isTextureSetId } from "../render/textureSets";
 import { CATEGORY_COLORS, type Category } from "../editor/categoryColors";
@@ -53,6 +54,9 @@ interface MinimapProps {
     // reported through onHover (null: it left the map)
     paste?: { w: number; h: number; at: Vec2; layout: string[] } | null;
     onHover?: (cell: Vec2 | null) => void;
+    // the sound zones (see editor/useAcousticsEditor): their cells tinted, the picked cells lit, and Shift+click on a room
+    // picks it (Ctrl+Shift adds one, Alt+Shift takes one off)
+    zones?: MinimapZones;
   };
 }
 
@@ -85,6 +89,8 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
   const [textures, setTextures] = useState(false);
   // the cells the engine counts as seen from the party, shown on the editing minimap (a button next to Floor / Ceiling)
   const [showSight, setShowSight] = useState(false);
+  // the sound zones' tint (the picked cells show whatever this is)
+  const [showZones, setShowZones] = useState(true);
   const sightCells = useSightCells();
   const textured = !!edit?.zoomed && textures;
   const patterns = new Map<string, string>();
@@ -315,11 +321,16 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
       const cell = cellOf(e);
       if (!cell) return;
       e.preventDefault();
+      // Shift+click: a room for a sound zone (Ctrl adds, Alt takes off) - not an edit of the cell
+      if (!alt && e.shiftKey && edit.zones) {
+        edit.zones.onPick(cell, e.ctrlKey || e.metaKey ? "add" : e.altKey ? "remove" : "replace");
+        return;
+      }
       edit.onCell(cell, alt);
     };
     const blockOf = (a: Vec2, b: Vec2): Rect => ({ x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) });
     const dragStart = (e: React.PointerEvent<SVGSVGElement>) => {
-      if (!edit.onSelect || e.button !== 0) return;
+      if (!edit.onSelect || e.button !== 0 || e.shiftKey) return;
       const from = cellOf(e);
       if (!from) return;
       dragRef.current = { from, moved: false };
@@ -355,6 +366,18 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
         <rect key={`op${s.key}`} x={s.cell.x + 0.12} y={s.cell.y + 0.12} width={0.76} height={0.76} fill="none" stroke={s.kind === "plate" ? "#3fd0ff" : "#ff4d4d"} strokeWidth={0.09} pointerEvents="none" />
       )),
     ];
+    // the sound zones: a tint over each one's cells (the selected one stronger), and the picked cells lit pink; one rect a run
+    const zoneLayer = edit.zones ? (
+      <g pointerEvents="none">
+        {showZones &&
+          edit.zones.zones.flatMap((zone, i) =>
+            zone.cells.map(([y, x0, x1]) => <rect key={`z${i},${y},${x0}`} x={x0} y={y} width={x1 - x0 + 1} height={1} fill={zone.color} fillOpacity={zone.selected ? 0.55 : 0.22} />),
+          )}
+        {edit.zones.pick.map(([y, x0, x1]) => (
+          <rect key={`k${y},${x0}`} x={x0} y={y} width={x1 - x0 + 1} height={1} fill="rgba(236, 72, 153, 0.55)" stroke="rgba(255, 255, 255, 0.7)" strokeWidth={0.05} />
+        ))}
+      </g>
+    ) : null;
     return (
       <div className={`border border-green-800 bg-black/60 p-2 flex flex-col gap-1 ${edit.zoomed ? "h-full min-h-0" : ""}`} onPointerDown={(e) => e.stopPropagation()}>
         <div className="text-[10px] font-mono text-neutral-300">
@@ -363,7 +386,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
             {edit.surface === "floor" ? t("minimap.floorUpper") : t("minimap.ceilingUpper")}
           </span>
         </div>
-        <div className="flex items-center gap-1 text-[10px] font-mono">
+        <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono">
           {(["floor", "ceiling"] as const).map((s) => (
             <button
               key={s}
@@ -376,6 +399,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
             </button>
           ))}
           <button type="button" aria-pressed={showSight} onClick={() => setShowSight((v) => !v)} className={`border rounded-sm px-2 py-0.5 ${showSight ? "border-cyan-400 bg-cyan-400/20 text-cyan-200" : "border-neutral-600 text-neutral-300 hover:bg-neutral-800"}`} title={t("minimap.sightHint")}>{showSight ? t("minimap.sightCount", { n: sightCells.size }) : t("minimap.sight")}</button>
+          {edit.zones && <button type="button" aria-pressed={showZones} onClick={() => setShowZones((v) => !v)} className={`border rounded-sm px-2 py-0.5 ${showZones ? "border-violet-400 bg-violet-400/20 text-violet-200" : "border-neutral-600 text-neutral-300 hover:bg-neutral-800"}`} title={t("minimap.zonesHint")}>{t("minimap.zones")}</button>}
           {edit.zoomed && <button type="button" aria-pressed={textures} onClick={() => setTextures(v => !v)} className={`border rounded-sm px-2 py-0.5 ${textures ? "border-amber-400 bg-amber-400/20 text-amber-200" : "border-neutral-600 text-neutral-200"}`}>{t("minimap.textures")}</button>}
           <span className="text-neutral-500 ml-auto">{edit.selection ? t("minimap.selectionSize", { w: edit.selection.x1 - edit.selection.x0 + 1, h: edit.selection.y1 - edit.selection.y0 + 1, width: W, height: H }) : t("minimap.mapSize", { width: W, height: H })}</span>
           {edit.onZoom && (
@@ -423,6 +447,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
             const wall = map.cells[y]?.[x] === "wall";
             return <rect key={`s${key}`} x={x} y={y} width={1} height={1} fill={wall ? "rgba(251, 146, 60, 0.5)" : "rgba(34, 211, 238, 0.4)"} stroke="rgba(255, 255, 255, 0.35)" strokeWidth={0.04} pointerEvents="none" />;
           })}
+          {zoneLayer}
           {bridges}
           {ladders}
           {windows}
@@ -553,6 +578,8 @@ function chartKey(map: GameMap): string {
       map.stairs?.map((s) => at(s.cell)).join(";"),
       map.chanceWalls?.map((w) => at(w.cell)).join(";"),
       map.restricted?.map(at).join(";"),
+      // (the sound zones' cells)
+      map.acoustics?.map((z) => z.cells.map((r) => r.join(".")).join(",")).join(";"),
       // (the operable props' links)
       operableLinks(map).map((l) => `${at(l.from)}>${at(l.to)}${l.kind}`).join(";"),
     ].join("|");
@@ -576,6 +603,7 @@ function sameChart(a: MinimapProps, b: MinimapProps): boolean {
     if (e.verb !== f.verb || e.surface !== f.surface || e.zoomed !== f.zoomed || rectKey(e.selection) !== rectKey(f.selection) || pasteKey(e.paste) !== pasteKey(f.paste)) return false;
     if ([...(e.hiddenCategories ?? [])].sort().join() !== [...(f.hiddenCategories ?? [])].sort().join()) return false;
     if (!!e.onMarker !== !!f.onMarker || !!e.onSelect !== !!f.onSelect || !!e.onZoom !== !!f.onZoom) return false;
+    if (e.zones?.key !== f.zones?.key) return false;
   }
   return true;
 }

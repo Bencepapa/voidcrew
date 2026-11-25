@@ -181,7 +181,6 @@ const reverbGain = () => masterSend(settings.reverbAmount, settings.reverbOn);
 export const currentRoom = (): Place | null => room;
 export const wetLevel = (): number => bus?.level() ?? 0;
 export const echoImpulse = () => bus?.current() ?? null;
-
 // ---- the sounds: one Howl for each wave, made once (the sample buffer is generated once, never a file)
 
 const howls = new Map<string, Howl>();

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useId, type ReactNode, type CSSProperties } from "react";
+import { createContext, useContext, useEffect, useState, useId, type ReactNode, type CSSProperties } from "react";
 import type { Lock } from "../../game/story";
 import type { Linked } from "../../game/types";
 import { t } from "../../i18n";
@@ -8,9 +8,11 @@ export const idle = "border-neutral-600 bg-neutral-800 text-neutral-200 hover:bg
 export const active = "border-amber-400 bg-amber-400/20 text-amber-200";
 // Completing a number gesture advances the callback's undo merge key.
 export const CommitContext = createContext<() => void>(() => {});
-export function Section({kind, section, children}: {kind: string; section: "transform" | "look" | "logic" | "advanced" | "light" | "fireType" | "trap"; children: ReactNode}) {
+export function Section({kind, section, children, openWhen}: {kind: string; section: "transform" | "look" | "logic" | "advanced" | "light" | "fireType" | "trap" | "acoustics"; children: ReactNode; openWhen?: boolean}) {
  const key = "voidcrew-inspector:" + kind + ":" + section;
  const [open, setOpen] = useState(() => { try { const saved = localStorage.getItem(key); return saved === "true"; } catch { return false; } });
+ // (a section that has something to say opens itself: the sound zones' one when cells are picked on the minimap)
+ useEffect(() => { if (openWhen) setOpen(true); }, [openWhen]);
  return <details open={open} onToggle={e => { const next=e.currentTarget.open; setOpen(next); try { localStorage.setItem(key,String(next)); } catch { /* storage unavailable */ } }} className="border-t border-neutral-700">
  <summary className="cursor-pointer select-none px-2 py-2 text-neutral-200 hover:bg-neutral-800">{t(`inspector.${section}`)}</summary>
  <div className="flex min-w-0 flex-col gap-2 px-2 pb-3 [&_label]:flex [&_label]:min-w-0 [&_label]:flex-wrap [&_label]:items-center [&_label]:gap-1 [&_select]:min-w-0 [&_select]:max-w-full [&_select]:flex-1 [&_select]:bg-neutral-800 [&_select]:border [&_select]:border-neutral-700 [&_input[type=text]]:min-w-0 [&_input[type=text]]:flex-1">{children}</div>

@@ -74,14 +74,14 @@ export function createReverbBus(ctx: BaseAudioContext, destination: AudioNode): 
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   const fade = (param: AudioParam, from: number, to: number, t: number) => {
-    // (equal power: the two gains' squares add up to one all the way)
-    const curve = new Float32Array(33);
-    for (let i = 0; i < curve.length; i++) {
-      const u = i / (curve.length - 1);
-      curve[i] = from + (to - from) * (to > from ? Math.sin((u * Math.PI) / 2) : 1 - Math.cos((u * Math.PI) / 2));
-    }
+    // (equal power: the two gains' squares add up to one all the way - a quarter sine / cosine in short straight steps)
+    const steps = 16;
     param.cancelScheduledValues(t);
-    param.setValueCurveAtTime(curve, t, CROSSFADE);
+    param.setValueAtTime(from, t);
+    for (let i = 1; i <= steps; i++) {
+      const u = i / steps;
+      param.linearRampToValueAtTime(from + (to - from) * (to > from ? Math.sin((u * Math.PI) / 2) : 1 - Math.cos((u * Math.PI) / 2)), t + CROSSFADE * u);
+    }
   };
 
   const switchTo = (params: { decay: number; softness: number; key: string }) => {
@@ -135,6 +135,5 @@ export function createReverbBus(ctx: BaseAudioContext, destination: AudioNode): 
       for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
       return Math.sqrt(sum / samples.length);
     },
-    current: () => (playing ? { decay: playing.decay, softness: playing.softness } : null),
-  };
+    current: () => (playing ? { decay: playing.decay, softness: playing.softness } : null),  };
 }

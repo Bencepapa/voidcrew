@@ -2,6 +2,7 @@ import type { SmokeHarm, SmokeSpec, Weather } from "../game/types";
 import type { NoiseColor, SoundKind, SoundPulse, SoundSpec, SoundWave } from "../game/sounds";
 import type { MapFile } from "../game/mapFormat";
 import type { LookSpec } from "../game/look";
+import type { AcousticsPanel } from "./acousticsPanel";
 import { t, type Key } from "../i18n";
 // The map editor's props and info types, the tool labels and the tool help
 // line. The old top bar is gone: tools live in the floating strip (FloatToolbar)
@@ -130,6 +131,8 @@ export interface EditorBarProps {
   // viewer's default)
   mapLook: MapLook;
   onMapLook: (patch: MapLook, merge?: string) => void;
+  // the map's sound zones: the picked cells, the zone list and what the panel does with them (see useAcousticsEditor)
+  acoustics: AcousticsPanel;
   // the render values saved with the map (see renderLook.ts): the viewer's
   // current ones, their changes, and writing them into or clearing them from
   // the map

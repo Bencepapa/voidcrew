@@ -134,7 +134,7 @@ If it changes, either mend `wire` / `unwire` or replace the engine with raw Web 
 ## Not done (on purpose)
 
 - Sound files / an asset manager for them (uploading, a library); only the two built-in kinds.
-- Room acoustics: reverb zones, a different tone in a big hall.
+- Room acoustics (reverb zones, a different tone in a big hall): done later, see `NOTES-sound-zones.md`.
 - Event sounds: UI clicks, footsteps, doors, shots; NPC voices.
 - Occlusion by props, floors and ceilings: only the grid's walls and shut doors count (a high ledge or a pit does not
   muffle; the vertical distance is in the distance, nothing else).
