@@ -1,3 +1,9 @@
+import { createLightFixtures, createMapLightState } from "../render/viewport/lightFixtures";
+import { createLightPool } from "../render/viewport/lightPool";
+import { createActorRendering } from "../render/viewport/actorRendering";
+import { createInteractionRaycasts } from "../render/viewport/interactionRaycasts";
+import { createCombatAiming } from "../render/viewport/combatAiming";
+import { drawnChain, seeThrough, isItemObject } from "../render/viewport/raycastObjects";
 import { isTextEntry } from "../keyboardFocus";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
@@ -7,25 +13,11 @@ import { effectiveViewDistance } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, isSharedPickupId } from "../game/items";
-import {
-  actorInteraction,
-  interactionAt,
-  operableInteraction,
-  sameInteractionCell,
-  touchAt,
-  type ClickEvent,
-  type InteractionTarget,
-  type WallInteractionTarget,
-} from "../game/interactions";
-import { wallFaceSpans, type WallFacePart } from "../game/mapGeometry";
-import { lightLevel } from "../game/lightEffects";
+import type { InteractionTarget } from "../game/interactions";
 import {
   propCastsBakedShadow,
   createLightGridUniforms,
-  createLightReach,
   disposeLightGrid,
-  POOL_DECAY,
-  POOL_DECAY_TAG,
   useLightGrid,
 } from "../render/lightGrid";
 import {
@@ -56,14 +48,13 @@ import {
   type FenceModelSpec,
 } from "../game/fences";
 import type { JoinedStrips } from "../render/cornerJoins";
-import { generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
+import { lampColor, ownCeilingLight } from "../game/lights";
 import { WORLDS } from "../game/worlds";
-import type { LightSpec } from "../game/lights";
 import { buildOperableModel, setOperablePose } from "../render/operableModel";
 import { operableView } from "../game/operableStore";
 import { emitterView } from "../game/emitterStore";
 import { operableLink } from "../editor/operableLink";
-import { hasClickables, sourceKeys } from "../game/operables";
+import { sourceKeys } from "../game/operables";
 import {
   PROP_TYPES,
   propPlacement,
@@ -71,17 +62,11 @@ import {
   propReliefAmount,
   propReliefCells,
 } from "../game/props";
-import { ACTOR_TYPES, BODY_PARTS, actorHeight, critAt } from "../game/actors";
-import { actorOffsets } from "../render/actorOffsets";
-import { actorSheetFiles } from "../render/actorSheetFiles";
-import { actorView } from "../game/actorSheets";
+import { actorHeight } from "../game/actors";
 import { onSharedActorsChanged } from "../editor/sharedActors";
 import { onTextureTuningSaved, textureTuning } from "../render/textureTuning";
 import { buildEditPreview, changedCells } from "../render/editPreview";
-import type { BodyPart } from "../game/actors";
 import { gameClock } from "../game/clock";
-import { weaponAccuracy } from "../game/combat";
-import type { ShotResult, Weapon } from "../game/combat";
 import { cellKey, visibleCells } from "../game/visibility";
 import type { PropFace, PropPart, PropType, PropView } from "../game/props";
 import { forwardOf } from "../game/freeMovement";
@@ -125,8 +110,6 @@ import {
   NO_LAYERS,
   PROP_COARSE,
   TOUCH_REACH,
-  CAMERA_WATCH_LIGHT,
-  CAMERA_ALARM_LIGHT,
   LIGHT_SPOT_GAP,
   SURFACE_PIXELS,
   SURFACE_GLOW,
@@ -153,17 +136,9 @@ import {
 import { type SceneCache, clearSceneCache, renderedSpecs } from "../render/viewport/sceneCache";
 import { fogRange } from "../render/viewport/fog";
 import {
-  LIGHT_POOL_SIZE,
-  LIGHT_FADE_SPAN,
   SIGHT_POINTS,
-  LIGHT_BEHIND_PENALTY,
-  LIGHT_BEHIND_SLACK,
-  LIGHT_KEEP_BIAS,
-  LIGHT_SLOT_FADE,
   FIRE_LIGHT_INTENSITY,
-  FIRE_LIGHT_RANGE,
   FIRE_LIGHT_LIFT,
-  fireFlicker,
 } from "../render/viewport/lighting";
 import {
   TOPDOWN_FOV,
@@ -205,27 +180,6 @@ import {
   EDIT_LIGHT_REMOVE_COLOR,
 } from "../render/viewport/editor";
 import { addDirectLightOcclusion } from "../render/viewport/materials";
-import {
-  PARTY_COVER_REFRESH_MS,
-  PARTY_BODY_HEIGHTS,
-  PARTY_BODY_HALF_WIDTH,
-  CHANCE_GRID,
-  ACTOR_FLASH_MS,
-  ACTOR_FADE_MS,
-  ACTOR_SHOOT_POSE_MS,
-  ACTOR_DIE_FRAME_MS,
-  ACTOR_SHOOT_FRAME_MS,
-  ACTOR_HIT_POSE_MS,
-  AIM_CHANCE_REFRESH_MS,
-  AIM_CHANCE_PARTS_PER_FRAME,
-  TRACER_MS,
-  PARTY_FLASH_COLOR,
-  ACTOR_FLASH,
-  GLOW_COLORS,
-  MAX_CRIT_ZONES,
-  type PartHighlight,
-  highlightMaterial,
-} from "../render/viewport/actors";
 import { createPostPipeline } from "../render/viewport/postPipeline";
 import { createBakeRuntime } from "../render/viewport/bakeRuntime";
 import { createSkySurface } from "../render/viewport/skySurface";
@@ -249,7 +203,6 @@ import { buildFoliage } from "../render/viewport/foliageMesh";
 import { turnClockwise } from "../render/viewport/pixels";
 import type {
   ReliefStats,
-  AimTarget,
   AimFrame,
   AimFocus,
   EditDragKind,
@@ -272,8 +225,8 @@ export { FLOOR_BASE_DEPTH } from "../render/viewport/walls";
 export { fogRange } from "../render/viewport/fog";
 export type {
   ReliefStats,
-  AimTarget,
   AimFrame,
+  AimTarget,
   AimFocus,
   EditDragKind,
   EditDrag,
@@ -989,15 +942,7 @@ export function GameViewport({
       }
       return kit;
     }
-    // cells with a ceiling light: their ceiling tile's light panel glows
-    // (the sky's light, when there is one, under the open ceilings)
-    const skyLightOf = (s: ViewportSettings) => ({
-      color: parseColor(s.skyLightColor) ?? 0xa8bcff,
-      intensity: s.skyLightIntensity,
-      azimuth: s.skyLightAzimuth,
-      elevation: s.skyLightElevation,
-    });
-    let mapLights = generateLights(map, skyLightOf(settings));
+    const mapLightState = createMapLightState(map, settings);
     // the walls' relief depth: the map's own, else the settings'
     const reliefDepth = map.reliefDepth ?? settings.reliefDepth;
     // the floors have a relief depth of their own (0: the Asset Manager's own baseline, so a texture's tuned depth is
@@ -1013,27 +958,12 @@ export function GameViewport({
     const bakeRuntime = createBakeRuntime({
       map, settingsRef, latestMapRef, rebakeRef, lightGrid, wallHeight, track, tick,
       getLiveMap: () => liveMap,
-      getMapLights: () => mapLights,
+      getMapLights: () => mapLightState.mapLights,
       isDisposed: () => disposed,
     });
     bakeRuntime.start(settings);
     bakeRuntime.bindRebake();
-    const ceilingLightCells = (lights: LightSpec[]) =>
-      new Set(lights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`));
-    let litCells = ceilingLightCells(mapLights);
-    // the color of each lit cell's ceiling lamp
-    const ceilingLightColors = (lights: LightSpec[]) =>
-      new Map(lights.filter((l) => l.kind === "ceiling").map((l) => [`${Math.round(l.x)},${Math.round(l.z)}`, l.color]));
-    let litColors = ceilingLightColors(mapLights);
-    // the unsteady ceiling lamps (see lightEffects.ts) by cell: their index
-    // in mapLights - their panels glow with their light
-    const effectLampCells = (lights: LightSpec[]) =>
-      new Map<string, number>(lights.flatMap((l, i) => (l.kind === "ceiling" && l.effect ? [[`${Math.round(l.x)},${Math.round(l.z)}`, i] as [string, number]] : [])));
-    let effectCells = effectLampCells(mapLights);
-    // each such panel's own copy of its glowing material, and its glow
-    const effectPanels = new Map<string, { mat: THREE.MeshStandardMaterial; base: number; light: number }>();
-    // the unsteady lights' levels this frame (by index in mapLights)
-    const effectLevels = new Map<number, number>();
+    const { effectPanels } = mapLightState;
     const deckLampColor = lampColor(map);
 
     // window panels (see the wall loop), by their wall's surface key
@@ -1331,8 +1261,8 @@ export function GameViewport({
     } = createStructuralSurfaces({
       settings, doorPreview, map,
       group, lightGrid, wallHeight, primarySet, accentSet, accentKit, wallKits, wallKitFor, floorKitAt,
-      ceilingKitAt, floorDepth, get litCells() { return litCells; }, get litColors() { return litColors; },
-      get effectCells() { return effectCells; }, effectPanels, deckLampColor, windowFaces, windowKitFor,
+      ceilingKitAt, floorDepth, get litCells() { return mapLightState.litCells; }, get litColors() { return mapLightState.litColors; },
+      get effectCells() { return mapLightState.effectCells; }, effectPanels, deckLampColor, windowFaces, windowKitFor,
       panelSetFor, frameKits, panelKits, doorKitFor, doorCells, ownMaterials, floorMat, ceilMat,
       backingPanels, sky, decals, geometries, floorGeo,
     });
@@ -2352,112 +2282,17 @@ export function GameViewport({
         .catch((err) => console.error("Bridge build failed:", err));
     }
 
-    // --- map lights: small glowing fixtures + the shared point-light pool ---
-    const ceilingFixtureGeo = new THREE.PlaneGeometry(0.26, 0.26);
-    const floorFixtureGeo = new THREE.PlaneGeometry(0.3, 0.05);
-    const bulbGeo = new THREE.SphereGeometry(0.022, 10, 8);
-    geometries.push(bulbGeo);
-    geometries.push(ceilingFixtureGeo, floorFixtureGeo);
-    const fixtureMats = new Map<number, THREE.MeshBasicMaterial>();
-    const fixtureMat = (color: number) => {
-      let mat = fixtureMats.get(color);
-      if (!mat) {
-        mat = new THREE.MeshBasicMaterial({ color });
-        fixtureMats.set(color, mat);
-      }
-      return mat;
-    };
-
-    // (placed again when the lights change - see applyLights)
-    const fixtures: THREE.Object3D[] = [];
-    function placeFixtures() {
-      for (const obj of fixtures) group.remove(obj);
-      fixtures.length = 0;
-      floorStrips.length = 0;
-      for (const light of mapLights) {
-        if (light.kind === "ceiling") {
-          // a textured ceiling brings its own glowing light panel
-          if (ceilingKitAt(Math.round(light.x), Math.round(light.z))?.litMat) continue;
-          // (no lamp panel on an open ceiling: it's the sky there)
-          if (isSkyCeiling(map, Math.round(light.x), Math.round(light.z))) continue;
-          const panel = new THREE.Mesh(ceilingFixtureGeo, fixtureMat(light.color));
-          panel.rotation.x = Math.PI / 2;
-          panel.position.set(light.x, ceilingY(Math.round(light.x), Math.round(light.z)) - 0.002, light.z);
-          if (light.source !== undefined) panel.userData.mapLight = light.source;
-          group.add(panel);
-          fixtures.push(panel);
-        } else if (light.kind === "point") {
-          // a free-standing light: a glowing bulb (the editor picks it by it)
-          const bulb = new THREE.Mesh(bulbGeo, fixtureMat(light.color));
-          bulb.position.set(light.x, light.y * wallHeight, light.z);
-          if (light.source !== undefined) bulb.userData.mapLight = light.source;
-          bulb.userData.bulb = light.bulb ? "always" : "editor";
-          group.add(bulb);
-          fixtures.push(bulb);
-        }
-        // floor and wall glows have no fixture - the light itself reads as
-        // a lit patch
-      }
-    }
-    placeFixtures();
-
-    // (the graphics setting's size, at most LIGHT_POOL_SIZE - fixed for the
-    // build: a new size is a new shader for every lit material, so it comes
-    // with a rebuild rather than mid-game)
-    const poolSize = Math.max(1, Math.min(LIGHT_POOL_SIZE, Math.round(settings.lightPool) || LIGHT_POOL_SIZE));
-    const lightPool = Array.from({ length: poolSize }, (_, slot) => {
-      // (its decay tags it as this slot's - see POOL_DECAY_TAG)
-      const light = new THREE.PointLight(0xffffff, 0, 1, POOL_DECAY + (slot + 1) * POOL_DECAY_TAG);
-      scene.add(light);
-      // the source it serves (see poolSources), and how faded in; the reach
-      // its bits in the reach texture were set for
-      return { light, key: null as string | null, level: 0, reach: null as string | null };
+    const lightFixtures = createLightFixtures({
+      map, group, wallHeight, geometries, floorStrips, ceilingKitAt, ceilingY, lights: mapLightState, ceilingTiles, ceilingMaterial,
     });
-    // The pool's lights don't shine through walls: each lights only the
-    // cells it can see (see lightGrid.ts, LightGridUniforms.reach) - worked
-    // out once per light, place and set of open doors
-    lightGrid.reach.value.dispose();
-    lightGrid.reach.value = createLightReach(map.width, map.height);
-    lightGrid.reachOn.value = 1;
-    const reachCache = new Map<string, string[]>();
-    const reachOf = (id: string, l: { x: number; z: number; range: number }, doors: ReadonlySet<string>) => {
-      let cells = reachCache.get(id);
-      if (!cells) {
-        // (flashes come and go, each a source of its own: let it not grow)
-        if (reachCache.size > 256) reachCache.clear();
-        cells = [...visibleCells(liveMap, l.x, l.z, Math.ceil(l.range), (k) => doors.has(k))];
-        reachCache.set(id, cells);
-      }
-      return cells;
-    };
-    // the slots' bits redone whenever a slot's light (or its reach) changes
-    function updateLightReach(sources: Map<string, { x: number; z: number; range: number }>) {
-      // dev: __voidcrewNoReach = true in the console lets them through walls again, to compare
-      lightGrid.reachOn.value = import.meta.env.DEV && (window as { __voidcrewNoReach?: boolean }).__voidcrewNoReach ? 0 : 1;
-      const doors = openDoorsRef.current;
-      const doorsKey = [...doors].sort().join(";");
-      let changed = false;
-      const ids = lightPool.map((slot) => {
-        const l = slot.key ? sources.get(slot.key) : undefined;
-        const id = l ? `${slot.key}|${Math.round(l.x * 100)},${Math.round(l.z * 100)},${l.range}|${doorsKey}` : null;
-        if (id !== slot.reach) changed = true;
-        return id;
-      });
-      if (!changed) return;
-      const tex = lightGrid.reach.value;
-      const bits = tex.image.data as Uint8Array;
-      bits.fill(0);
-      lightPool.forEach((slot, k) => {
-        slot.reach = ids[k];
-        const l = slot.key ? sources.get(slot.key) : undefined;
-        if (!l || !ids[k]) return;
-        for (const key of reachOf(ids[k]!, l, doors)) {
-          const [x, y] = key.split(",").map(Number);
-          if (x >= 0 && y >= 0 && x < map.width && y < map.height) bits[y * map.width + x] |= 1 << k;
-        }
-      });
-      tex.needsUpdate = true;
-    }
+    const { addFlash, updateLightPool } = createLightPool({
+      map, scene, settings, settingsRef, lightGrid, wallHeight, lights: mapLightState, getLiveMap: () => liveMap, openDoorsRef,
+      getActorMeshes: () => actorMeshes, smokeFire, actorsRef,
+      refreshSight: (party, range) => {
+        applySight(updateSight(party, range));
+        return sight.cells;
+      },
+    });
     // the cells seen from the party's cell, redone when it changes cell or
     // a door opens or shuts
     // The cells seen from the party's cell (see visibility.ts) - from its
@@ -2661,31 +2496,9 @@ export function GameViewport({
       // the decals with their surfaces, just decided (see DecalLibrary.cull)
       decals.cull(camera);
     }
-    let lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
     // bumped whenever objects are swapped in place (see objectsAlong)
     let sceneVersion = 0;
 
-    // The editor changed only the deck's lights: the ceiling tiles' glowing
-    // panels, the fixtures and the light pool follow, the rest stays built.
-    // A pool slot keeps its light if the new set still has it.
-    function applyLights(next: GameMap) {
-      sceneVersion++;
-      mapLights = generateLights(next, skyLightOf(settingsRef.current));
-      litCells = ceilingLightCells(mapLights);
-      litColors = ceilingLightColors(mapLights);
-      effectCells = effectLampCells(mapLights);
-      for (const [key, panel] of effectPanels) if (effectCells.get(key.split("|")[0]) !== panel.light) effectPanels.delete(key);
-      lightCells = mapLights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
-      for (const tile of ceilingTiles) {
-        const material = ceilingMaterial(tile.kit, tile.relief, litCells.has(tile.cell), litColors.get(tile.cell), tile.cell);
-        tile.obj.traverse((o) => {
-          if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = material;
-        });
-      }
-      placeFixtures();
-      // the new fixtures get culled with the rest on the next frame
-      culledCount = -1;
-    }
     // A new version of the map with the same structure (see structureKey):
     // what differs in it is redone in place. Its robots need nothing here -
     // the scene draws them from the game's state.
@@ -2783,7 +2596,12 @@ export function GameViewport({
         applyStructure(next);
       }
       const lightsChanged = lightsOf(next) !== lightsOf(applied);
-      if (lightsChanged) applyLights(next);
+      if (lightsChanged) {
+        sceneVersion++;
+        lightFixtures.applyLights(next, settingsRef.current);
+        // the new fixtures get culled with the rest on the next frame
+        culledCount = -1;
+      }
       if (smokeFire.updateSmokeSpecs(next, applied)) sceneVersion++;
       // (the sounds' markers only: the sounds themselves are the audio system's)
       if (JSON.stringify(next.sounds) !== JSON.stringify(applied.sounds)) buildSoundMarkers(next);
@@ -2806,1070 +2624,24 @@ export function GameViewport({
       applied = next;
     };
     const applyChanges = applyLightsRef.current;
-    const litNear = (key: string, cells: Set<string>) => {
-      if (cells.has(key)) return true;
-      const [x, y] = key.split(",").map(Number);
-      return cells.has(cellKey(x + 1, y)) || cells.has(cellKey(x - 1, y)) || cells.has(cellKey(x, y + 1)) || cells.has(cellKey(x, y - 1));
-    };
-
-    // What the pool of real lights serves: in baked mode (see lightGrid.ts)
-    // only the flashes - a shot, a spark; else the map's lights too. Each by
-    // a key that stays the same while it does (a light edited elsewhere keeps
-    // its slot).
-    interface PoolSource {
-      key: string;
-      x: number;
-      y: number;
-      z: number;
-      color: number;
-      intensity: number;
-      range: number;
-      // the cell it lights (a map light counts only near the cells in sight)
-      cell?: string;
-      flash?: boolean;
-    }
-    function poolSources(baked: boolean, now: number): PoolSource[] {
-      const list: PoolSource[] = [];
-      for (let i = flashes.length - 1; i >= 0; i--) {
-        const f = flashes[i];
-        const t = (now - f.start) / f.duration;
-        if (t >= 1) {
-          flashes.splice(i, 1);
-          continue;
-        }
-        list.push({ key: `flash ${f.id}`, x: f.x, y: f.y, z: f.z, color: f.color, intensity: f.intensity * (1 - t), range: f.range, flash: true });
-      }
-      // a camera's light on the crew: a steady yellow while it watches, a
-      // pulsing red while it raises the alarm (just below its lens)
-      for (const actor of actorsRef.current) {
-        const type = ACTOR_TYPES[actor.type];
-        const entry = actorMeshes.get(actor.id);
-        if (!type.watcher || actor.diedAt !== null || actor.dormant || !entry?.mesh.visible) continue;
-        if (!actor.hostile && !actor.watching) continue;
-        const alarm = actor.hostile;
-        const p = entry.mesh.position;
-        list.push({
-          key: `camera ${actor.id}`,
-          x: p.x,
-          y: p.y - 0.08,
-          z: p.z,
-          color: alarm ? CAMERA_ALARM_LIGHT : CAMERA_WATCH_LIGHT,
-          intensity: alarm ? 1.6 + 1.3 * Math.sin(now / 160) : 1.5,
-          range: alarm ? 3 : 2.2,
-          cell: cellKey(actor.cell.x, actor.cell.y),
-        });
-      }
-      // the fires' flickering glow
-      let fireIndex = 0;
-      smokeFire.fireEmitters.forEach((e, i) => {
-        const flickerIndex = fireIndex++;
-        if (e.lightIntensity === 0) return;
-        list.push({
-          key: `fire ${i}`,
-          x: e.x,
-          y: e.y + FIRE_LIGHT_LIFT * wallHeight,
-          z: e.z,
-          color: e.lightColor,
-          intensity: FIRE_LIGHT_INTENSITY * e.lightIntensity * Math.sqrt(e.size * e.density) * fireFlicker(now, flickerIndex),
-          range: FIRE_LIGHT_RANGE * e.lightReach * Math.sqrt(e.size),
-          cell: e.cell,
-        });
-      });
-      // the map's lights (baked: only the unsteady ones), at their level now
-      effectLevels.clear();
-      mapLights.forEach((l, i) => {
-        if (baked && !l.effect) return;
-        const level = l.effect ? lightLevel(l.effect, l.source * 7.13 + i, now / 1000) : 1;
-        if (l.effect) effectLevels.set(i, level);
-        list.push({
-          key: `${l.kind} ${l.x} ${l.y} ${l.z}`,
-          x: l.x,
-          y: l.y * wallHeight,
-          z: l.z,
-          color: l.color,
-          intensity: l.intensity * level,
-          range: l.range,
-          cell: lightCells[i],
-        });
-      });
-      // their panels with them
-      for (const panel of effectPanels.values()) panel.mat.emissiveIntensity = panel.base * Math.min(1.3, effectLevels.get(panel.light) ?? 1);
-      return list;
-    }
-    // a short burst of light (world position; ms), e.g. a muzzle flash
-    const flashes: { id: number; x: number; y: number; z: number; color: number; intensity: number; range: number; start: number; duration: number }[] = [];
-    let flashIds = 0;
-    function addFlash(at: THREE.Vector3, color: number, intensity: number, range: number, duration: number) {
-      flashes.push({ id: flashIds++, x: at.x, y: at.y, z: at.z, color, intensity, range, start: gameClock.now(), duration });
-    }
-
-    function updateLightPool(
-      party: { x: number; z: number },
-      cam: { x: number; y: number; z: number; fwdX: number; fwdZ: number },
-      intensityScale: number,
-      dt: number,
-    ) {
-      const range = effectiveViewDistance(settingsRef.current);
-      const fadeEnd = range;
-      const fadeStart = range - LIGHT_FADE_SPAN;
-      applySight(updateSight(party, range));
-
-      const sources = poolSources(lightGrid.scale.value > 0, gameClock.now());
-      const score = (l: PoolSource) => {
-        const dx = l.x - cam.x;
-        const dz = l.z - cam.z;
-        const dist = Math.hypot(dx, l.y - cam.y, dz);
-        const along = dx * cam.fwdX + dz * cam.fwdZ;
-        const ahead = along / (Math.hypot(dx, dz) || 1);
-        // a flash first, whatever the rest
-        const rank = l.flash ? -1 : dist + LIGHT_BEHIND_PENALTY * Math.max(0, -ahead) * dist;
-        // (a light whose whole reach lies behind the eye lights nothing in
-        // view: its slot goes to one ahead instead - a lit hall down the
-        // corridor - with a little slack for the view tilting up or down)
-        const behind = along < -(l.range + LIGHT_BEHIND_SLACK);
-        return { dist, rank, behind };
-      };
-      const current = new Set(lightPool.map((slot) => slot.key));
-      const ranked = sources
-        .map((l) => ({ l, ...score(l) }))
-        .filter((c) => c.dist < fadeEnd && !c.behind && (!c.l.cell || litNear(c.l.cell, sight.cells)))
-        .map((c) => ({ ...c, rank: current.has(c.l.key) && !c.l.flash ? c.rank * LIGHT_KEEP_BIAS : c.rank }))
-        .sort((a, b) => a.rank - b.rank)
-        .slice(0, poolSize);
-      const wanted = new Map(ranked.map((c) => [c.l.key, c]));
-
-      // slots keep their source while it's wanted; freed slots fade out
-      // before taking a new one (a flash takes one at once)
-      const unassigned = ranked.filter((c) => !lightPool.some((slot) => slot.key === c.l.key));
-      for (const slot of lightPool) {
-        const keep = wanted.get(slot.key ?? "");
-        if (!keep && unassigned.length && (slot.level <= 0 || unassigned[0].l.flash)) {
-          slot.key = unassigned.shift()!.l.key;
-          if (wanted.get(slot.key)?.l.flash) slot.level = 1;
-        }
-        const target = wanted.get(slot.key ?? "");
-        slot.level = Math.min(1, Math.max(0, slot.level + (target ? 1 : -1) * LIGHT_SLOT_FADE * dt));
-        if (!target) {
-          if (slot.level <= 0) slot.key = null;
-          slot.light.intensity = slot.level > 0 ? slot.light.intensity * 0.9 : 0;
-          continue;
-        }
-        const l = target.l;
-        slot.light.color.setHex(l.color);
-        slot.light.position.set(l.x, l.y, l.z);
-        slot.light.distance = l.range;
-        const scale = l.flash ? 1 : intensityScale;
-        slot.light.intensity = l.intensity * scale * slot.level * (1 - smoothstep(fadeStart, fadeEnd, target.dist));
-      }
-      // (a slot fading out keeps the reach of the light it last had)
-      const placed = new Map<string, PoolSource>(sources.map((l) => [l.key, l]));
-      for (const slot of lightPool) {
-        if (slot.key && !placed.has(slot.key)) {
-          const p = slot.light.position;
-          placed.set(slot.key, { key: slot.key, x: p.x, y: p.y, z: p.z, color: 0, intensity: 0, range: slot.light.distance });
-        }
-      }
-      updateLightReach(placed);
-    }
-
-    // Actors are Doom-style sprites: an upright quad turned to face the
-    // camera, showing the sheet cell for its pose (standing, or the walk
-    // cycle while stepping) and for the angle it's seen from - front, 45,
-    // 90 and 135 degrees round to its left, or back; seen from its right,
-    // the left views mirrored. The sheet's normal map lights it like the
-    // walls, so a passing lamp shades it.
-    const actorMaterials = new Map<string, THREE.MeshStandardMaterial>();
-    // each actor's quad, its own copy of its type's material (for the hit
-    // flash and the death fade) and the sheet cell it shows
-    interface ActorEntry {
-      // the actor type it was made for (another one with its id: made anew)
-      type: string;
-      mesh: THREE.Mesh;
-      material: THREE.MeshStandardMaterial;
-      // its soft shadow under it (on the ceiling for one hung up there)
-      shadow: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
-      // the part highlight's uniforms (see highlightMaterial)
-      highlight: PartHighlight;
-      uvKey: string;
-      col: number;
-      row: number;
-      mirror: boolean;
-      // when it last fired (to flash each new shot)
-      lastAttack: number;
-      // the height its quad is made at (it's made anew when the type's size changes)
-      h: number;
-    }
-    const actorMeshes = new Map<number, ActorEntry>();
-    const flashAt = new THREE.Vector3();
-    // Each actor type's glow map (see ActorType.glow): its sheet's bright
-    // red pixels within the glowing weak spots of each cell, in their own
-    // color, black elsewhere. Made once its sheet has loaded.
-    // Its sheet's own emissive.png if there's one (npm run actors:emissive
-    // writes it; it can be painted by hand) - else worked out here.
-    const glowMaps = new Map<string, THREE.Texture | null>();
-    const glowMissing = new Set<string>();
-    const glowLoader = new THREE.TextureLoader();
-    const glowMapOf = (typeName: string): THREE.Texture | null => {
-      if (glowMaps.has(typeName)) return glowMaps.get(typeName)!;
-      const type = ACTOR_TYPES[typeName];
-      if (!type.glow) return null;
-      if (!glowMissing.has(typeName)) {
-        const baked = glowLoader.load(`${import.meta.env.BASE_URL}actors/${type.sheet}/emissive.png${bust}`, undefined, undefined, () => {
-          // no such file: made from the sheet instead (below)
-          baked.dispose();
-          glowMissing.add(typeName);
-          glowMaps.delete(typeName);
-        });
-        baked.colorSpace = THREE.SRGBColorSpace;
-        baked.magFilter = THREE.NearestFilter;
-        glowMaps.set(typeName, baked);
-        return baked;
-      }
-      const image = actorMaterial(typeName).map?.image as HTMLImageElement | undefined;
-      if (!image?.width) return null;
-      const canvas = document.createElement("canvas");
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(image, 0, 0);
-      const src = ctx.getImageData(0, 0, image.width, image.height);
-      const out = ctx.createImageData(image.width, image.height);
-      const cw = image.width / type.cols;
-      const ch = image.height / type.rows;
-      // where it glows, per sheet column: its glowing weak spots' zones and
-      // its own - or, with neither, the whole cell
-      const glow = type.glow;
-      const glowing = type.crits.filter((c) => glow.crits?.includes(c.label));
-      const zonesOf = (col: number): [number, number, number, number][] => {
-        const zones = [...glowing.flatMap((c) => c.zones[col] ?? []), ...(glow.zones?.[col] ?? [])];
-        return glow.crits || glow.zones ? zones : [[0, 0, 1, 1]];
-      };
-      const shines = GLOW_COLORS[glow.color ?? "red"];
-      for (let row = 0; row < type.rows; row++) {
-        for (let col = 0; col < type.cols; col++) {
-          {
-            for (const [x0, y0, x1, y1] of zonesOf(col)) {
-              // a little past the zone: its glow's edge
-              const px0 = Math.max(0, Math.floor((col + x0 - 0.02) * cw));
-              const px1 = Math.min(image.width, Math.ceil((col + x1 + 0.02) * cw));
-              const py0 = Math.max(0, Math.floor((row + y0 - 0.02) * ch));
-              const py1 = Math.min(image.height, Math.ceil((row + y1 + 0.02) * ch));
-              for (let y = py0; y < py1; y++) {
-                for (let x = px0; x < px1; x++) {
-                  const i = (y * image.width + x) * 4;
-                  const [r, g, b, a] = [src.data[i], src.data[i + 1], src.data[i + 2], src.data[i + 3]];
-                  if (a < 128 || !shines(r, g, b)) continue;
-                  out.data[i] = r;
-                  out.data[i + 1] = g;
-                  out.data[i + 2] = b;
-                  out.data[i + 3] = 255;
-                }
-              }
-            }
-          }
-        }
-      }
-      ctx.putImageData(out, 0, 0);
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.magFilter = THREE.NearestFilter;
-      glowMaps.set(typeName, tex);
-      return tex;
-    };
-    // The actors' normal maps are the biggest files of a deck (1-3 MB each): the scene does not wait
-    // for them. They load on their own (outside the loading manager) and are put on the actors'
-    // materials - the one of the type and its clones, one for each actor in the scene - when they
-    // arrive; till then the actors are lit flat.
-    const actorNormals = new Map<string, { texture: THREE.Texture; materials: Set<THREE.MeshStandardMaterial> }>();
-    const actorMaterial = (typeName: string) => {
-      let mat = actorMaterials.get(typeName);
-      if (!mat) {
-        const type = ACTOR_TYPES[typeName];
-        const files = actorSheetFiles(type);
-        const diffuse = kitTexture(busted(files.diffuse));
-        const normalUrl = files.normal && busted(files.normal);
-        let normalMap = normalUrl ? cache.textures.get(normalUrl) : undefined;
-        const materials = new Set<THREE.MeshStandardMaterial>();
-        if (normalUrl && !normalMap) {
-          // (the texture is there at once, its image comes later; the request itself waits for the scene to be shown)
-          const texture = new THREE.Texture();
-          normalMap = texture;
-          cache.textures.set(normalUrl, texture);
-          const start = () => {
-            new THREE.ImageLoader().load(normalUrl, (image) => {
-              if (disposed) return;
-              texture.image = image;
-              texture.needsUpdate = true;
-              for (const m of materials) {
-                m.normalMap = texture;
-                m.needsUpdate = true;
-              }
-            });
-          };
-          if (ready) start();
-          else afterReady.push(start);
-        }
-        if (normalMap) {
-          actorNormals.set(typeName, { texture: normalMap, materials });
-          normalMap.magFilter = THREE.NearestFilter;
-        }
-        diffuse.colorSpace = THREE.SRGBColorSpace;
-        diffuse.magFilter = THREE.NearestFilter;
-        // (already in, from an earlier build of the scene: on at once)
-        mat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap: normalMap?.image ? normalMap : null, alphaTest: 0.5, roughness: 0.6, metalness: 0.35 });
-        materials.add(mat);
-        // (its sheet's own normal strength - set in the actor editor)
-        const normal = actorOffsets(type.sheet)?.normal ?? 1;
-        mat.normalScale.set(normal, normal);
-        markSprite(mat, normal, normalMap);
-        actorMaterials.set(typeName, mat);
-      }
-      return mat;
-    };
-    for (const name of new Set((map.actors ?? []).map(a => a.actor))) if (ACTOR_TYPES[name]) actorMaterial(name);
-    // the actors' soft shadows: a dark blot fading out to its rim
-    const shadowTexture = (() => {
-      const size = 64;
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = size;
-      const ctx = canvas.getContext("2d")!;
-      const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-      g.addColorStop(0, "rgba(0,0,0,1)");
-      g.addColorStop(0.55, "rgba(0,0,0,0.85)");
-      g.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, size, size);
-      return new THREE.CanvasTexture(canvas);
-    })();
-    const shadowGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    const ACTOR_SHADOW = 0.9;
-
-    function removeActorMesh(id: number) {
-      const entry = actorMeshes.get(id);
-      if (!entry) return;
-      group.remove(entry.mesh);
-      group.remove(entry.shadow);
-      entry.mesh.geometry.dispose();
-      entry.material.dispose();
-      entry.shadow.material.dispose();
-      actorMeshes.delete(id);
-    }
-
-
-    function updateActors(camX: number, camZ: number) {
-      const now = gameClock.now();
-      const current = actorsRef.current;
-      smokeBodies.length = 0;
-      for (const id of [...actorMeshes.keys()]) {
-        if (!current.some((a) => a.id === id)) removeActorMesh(id);
-      }
-      for (const actor of current) {
-        const type = ACTOR_TYPES[actor.type];
-        const h = actorHeight(actor.type) * wallHeight;
-        let entry = actorMeshes.get(actor.id);
-        if (entry && entry.type !== actor.type) {
-          removeActorMesh(actor.id);
-          entry = undefined;
-        }
-        if (!entry) {
-          const material = actorMaterial(actor.type).clone();
-          // (its type's normal map, if it is not in yet, is put on it too when it comes)
-          const late = actorNormals.get(actor.type);
-          if (late) late.materials.add(material);
-          const highlight = highlightMaterial(material);
-          useLightGrid(material, lightGrid);
-          const mesh = new THREE.Mesh(new THREE.PlaneGeometry(h * type.cellAspect, h), material);
-          mesh.userData.actor = true;
-          mesh.userData.actorId = actor.id;
-          const shadow = new THREE.Mesh(
-            shadowGeo,
-            new THREE.MeshBasicMaterial({
-              map: shadowTexture,
-              transparent: true,
-              depthWrite: false,
-              polygonOffset: true,
-              polygonOffsetFactor: -4,
-              polygonOffsetUnits: -4,
-            }),
-          );
-          // (nothing to aim at or hide behind)
-          shadow.raycast = () => {};
-          entry = { type: actor.type, mesh, material, shadow, highlight, uvKey: "", col: 0, row: 0, mirror: false, lastAttack: actor.lastAttack, h };
-          actorMeshes.set(actor.id, entry);
-          group.add(mesh, shadow);
-        } else if (Math.abs(entry.h - h) > 1e-6) {
-          // (its type's size was changed in the Asset Manager: the quad follows, and the hit tests with it)
-          entry.mesh.geometry.dispose();
-          entry.mesh.geometry = new THREE.PlaneGeometry(h * type.cellAspect, h);
-          entry.h = h;
-          entry.uvKey = "";
-        }
-        const t = Math.min(1, Math.max(0, (now - actor.moveStart) / actor.moveMs));
-        const x = lerp(actor.from.x, actor.cell.x, t);
-        const z = lerp(actor.from.y, actor.cell.y, t);
-        const y = lerp(actor.fromY, actor.y, t) * wallHeight;
-        const mesh = entry.mesh;
-        // dead: it falls (its sheet's dying rows) and its wreck stays - or,
-        // without them, it fades out
-        const sinceDeath = actor.diedAt !== null ? now - actor.diedAt : -1;
-        const falls = type.dieRows !== undefined && type.wreckRow !== undefined;
-        const dead = sinceDeath >= 0 && !falls ? sinceDeath / ACTOR_FADE_MS : 0;
-        if (dead < 1) smokeBodies.push({ x, z, bottom: y, top: y + h });
-        mesh.visible =
-          dead < 1 &&
-          !actor.inVentUntil &&
-          (sight.cells.has(cellKey(actor.cell.x, actor.cell.y)) || sight.cells.has(cellKey(actor.from.x, actor.from.y)));
-        // a crawler keeps to the ceiling (upside down) - but on the crew in
-        // its cell it drops to the floor; dead, it falls
-        const partyCell = { x: Math.round(liveRef.current.x), y: Math.round(liveRef.current.z) };
-        const onCeiling =
-          !!type.crawler && actor.diedAt === null && !(actor.hostile && actor.cell.x === partyCell.x && actor.cell.y === partyCell.y);
-        // hit: a red flash; dead: it fades out
-        const flash = Math.max(0, 1 - (now - actor.hitAt) / ACTOR_FLASH_MS);
-        entry.material.emissive.setRGB(flash * 0.9, flash * 0.12, flash * 0.05);
-        // (a dormant NPC - one that appears when triggered - is shown faded while editing)
-        entry.material.transparent = dead > 0 || !!actor.ghost;
-        entry.material.opacity = (1 - Math.min(1, dead)) * (actor.ghost ? 0.4 : 1);
-        const yaw = Math.atan2(camX - x, camZ - z);
-        mesh.rotation.y = yaw;
-
-        // the angle it's seen from: 0 in front, + round to its left
-        // (a fixture with the crew in its eye looks right at it)
-        const look = actor.lookAt && (actor.lookAt.x !== actor.cell.x || actor.lookAt.y !== actor.cell.y) ? actor.lookAt : null;
-        const lookLen = look ? Math.hypot(look.x - actor.cell.x, look.y - actor.cell.y) : 1;
-        const f = look ? { x: (look.x - actor.cell.x) / lookLen, y: (look.y - actor.cell.y) / lookLen } : DIR_VECTOR[actor.facing];
-        const cx = camX - x;
-        const cz = camZ - z;
-        const angle = Math.atan2(cx * f.y - cz * f.x, cx * f.x + cz * f.y);
-        const { col, mirror } = actorView(type, angle);
-        // (one that leaps: pushing off, in the air, landing)
-        const hopRow = (k: number) => (k < 0.2 ? type.hop!.takeoffRow : k < 0.85 ? type.hop!.airRow : type.idleRow);
-        let row = t < 1 ? (type.hop ? hopRow(t) : type.walkRows[Math.floor(t * type.walkRows.length) % type.walkRows.length]) : type.idleRow;
-        if (sinceDeath >= 0 && falls) {
-          const frame = Math.floor(sinceDeath / ACTOR_DIE_FRAME_MS);
-          row = frame < type.dieRows!.length ? type.dieRows![frame] : type.wreckRow!;
-        } else if (actor.playingDead && type.wreckRow !== undefined) {
-          // lying still as if dead
-          row = type.wreckRow;
-        } else if (type.hitRow !== undefined && now - actor.hitAt < ACTOR_HIT_POSE_MS) {
-          row = type.hitRow;
-        } else if (type.shootRows && now - actor.lastAttack < ACTOR_SHOOT_POSE_MS) {
-          // (its firing rows in turn: the chaingun spinning)
-          row = type.shootRows[Math.floor(now / ACTOR_SHOOT_FRAME_MS) % type.shootRows.length];
-        } else if (type.watcher && actor.diedAt === null) {
-          // a camera's light: red raising the alarm, amber watching the crew
-          row = actor.hostile ? type.watcher.alarmRow : actor.watching ? type.watcher.watchRow : type.idleRow;
-        } else if (type.shootRow !== undefined && now - actor.lastAttack < ACTOR_SHOOT_POSE_MS) {
-          row = type.shootRow;
-        }
-        // a new shot: its muzzle flash, at its chest - or a hung turret's
-        // barrels (a camera only calls it in: no flash)
-        if (actor.lastAttack !== entry.lastAttack) {
-          if (actor.lastAttack > entry.lastAttack && !type.watcher && !type.melee) {
-            flashAt.set(x, type.ceiling ? ceilingY(actor.cell.x, actor.cell.y) - h * 0.75 : y + h * 0.55, z);
-            addFlash(flashAt, ACTOR_FLASH.color, ACTOR_FLASH.intensity, ACTOR_FLASH.range, ACTOR_FLASH.duration);
-          }
-          entry.lastAttack = actor.lastAttack;
-        }
-        entry.col = col;
-        entry.row = row;
-        entry.mirror = mirror;
-        // the picked part's pixels light up (see highlightMaterial)
-        const focus = aimFocusRef.current;
-        const lit = aimingRef.current && focus?.target === actor.id && focus.part ? focus.part : null;
-        entry.highlight.part.value = lit ? BODY_PARTS.indexOf(lit) : -1;
-        entry.highlight.outline.value = settingsRef.current.enemyScanner && actor.diedAt === null && !actor.friendly ? 1 : 0;
-        // its optics and vents glow - flickering while stunned, out once dead
-        const glowMap = type.glow ? glowMapOf(actor.type) : null;
-        if (glowMap && entry.highlight.glowMap.value !== glowMap) entry.highlight.glowMap.value = glowMap;
-        const stunned = now < actor.stunnedUntil;
-        entry.highlight.glow.value =
-          !glowMap || actor.diedAt !== null ? 0 : (type.glow?.intensity ?? 0) * (stunned ? (Math.random() < 0.5 ? 0.15 : 0.8) : 1);
-        const sheetImage = entry.material.map?.image as HTMLImageElement | undefined;
-        if (sheetImage?.width) entry.highlight.texel.value.set(1 / sheetImage.width, 1 / sheetImage.height);
-        if (lit) {
-          BODY_PARTS.forEach((part, i) => {
-            const [x0, y0, x1, y1] = type.parts[part].zone;
-            entry!.highlight.zones.value[i].set(
-              (col + x0) / type.cols,
-              1 - (row + y0) / type.rows,
-              (col + x1) / type.cols,
-              1 - (row + y1) / type.rows,
-            );
-          });
-          let n = 0;
-          for (const crit of type.crits) {
-            for (const [x0, y0, x1, y1] of crit.zones[col] ?? []) {
-              if (n >= MAX_CRIT_ZONES) break;
-              entry.highlight.crits.value[n].set(
-                (col + x0) / type.cols,
-                1 - (row + y0) / type.rows,
-                (col + x1) / type.cols,
-                1 - (row + y1) / type.rows,
-              );
-              entry.highlight.critParts.value[n++] = BODY_PARTS.indexOf(crit.part);
-            }
-          }
-          entry.highlight.critCount.value = n;
-          const image = entry.material.map?.image as HTMLImageElement | undefined;
-          if (image?.width) entry.highlight.texel.value.set(1 / image.width, 1 / image.height);
-        }
-
-        // the frame's placement fix (see actorOffsets), mirrored with it
-        const fix = actorOffsets(type.sheet);
-        const [dx, dy] = fix?.offsets[row * type.cols + col] ?? [0, 0];
-        const px = fix ? h / fix.cell[1] : 0;
-        const shift = (mirror ? -dx : dx) * px;
-        // (hung from the ceiling: its top against it - a crawler there too;
-        // one that leaps arcs up (on the ceiling: down) on its way)
-        const arc = type.hop && t < 1 && actor.diedAt === null ? Math.sin(Math.PI * t) * type.hop.height * wallHeight : 0;
-        const centerY =
-          type.ceiling || onCeiling ? ceilingY(actor.cell.x, actor.cell.y) - h / 2 - arc : y + h / 2 + arc;
-        mesh.position.set(x + Math.cos(yaw) * shift, centerY - dy * px, z - Math.sin(yaw) * shift);
-        // its shadow: on the floor under it - or on the ceiling over one up
-        // there; smaller and fainter the further it leaps off; a wreck's
-        // wider, flatter
-        const up = type.ceiling || onCeiling;
-        const shadow = entry.shadow;
-        shadow.visible = mesh.visible;
-        const lift = 1 - Math.min(0.7, arc / wallHeight / 0.5);
-        const spread = Math.min(0.9, h * type.cellAspect * (up ? 0.6 : 0.55)) * (actor.diedAt !== null || actor.playingDead ? 1.25 : 1);
-        shadow.scale.set(spread * lift, 1, spread * lift);
-        shadow.rotation.x = up ? Math.PI : 0;
-        // (over the floor's relief, like the exit marker)
-        shadow.position.set(x, up ? ceilingY(actor.cell.x, actor.cell.y) - reliefDepth - 0.006 : y + reliefDepth + 0.006, z);
-        shadow.material.opacity = ACTOR_SHADOW * lift * (1 - Math.min(1, dead));
-
-        const uvKey = `${col},${row},${mirror},${onCeiling}`;
-        if (uvKey === entry.uvKey) continue;
-        entry.uvKey = uvKey;
-        let u0 = col / type.cols;
-        let u1 = (col + 1) / type.cols;
-        if (mirror) [u0, u1] = [u1, u0];
-        let v0 = 1 - (row + 1) / type.rows;
-        let v1 = 1 - row / type.rows;
-        // (upside down on the ceiling)
-        if (onCeiling) [v0, v1] = [v1, v0];
-        const uv = mesh.geometry.getAttribute("uv") as THREE.BufferAttribute;
-        uv.setXY(0, u0, v1);
-        uv.setXY(1, u1, v1);
-        uv.setXY(2, u0, v0);
-        uv.setXY(3, u1, v0);
-        uv.needsUpdate = true;
-      }
-    }
-
-    // --- Aiming (see combat.ts): while a crewmate aims, each frame lists
-    // the enemies in reach with their body parts' screen rectangles and hit
-    // chances for the aiming overlay, which shoots through `shoot` ---------
-    const aimRaycaster = new THREE.Raycaster();
-    const aimNdc = new THREE.Vector2();
-    const aimVec = new THREE.Vector3();
-    const aimDir = new THREE.Vector3();
-    // each part's hit chance (by "actor:part") and when it was worked out
-    const chanceCache = new Map<string, number>();
-    const chanceAt = new Map<string, number>();
-
-    // What a ray between two points can meet: the objects culled with the
-    // cells along it and around (see cellOf), plus the ones never culled
-    // and the actors (they move). Testing only those - not the whole deck's
-    // hundreds of meshes - is what keeps aiming smooth.
-    let rayCells: Map<string, THREE.Object3D[]> | null = null;
-    const rayAlways: THREE.Object3D[] = [];
-    let rayCellsAt = "";
-    function objectsAlong(from: THREE.Vector3, to: THREE.Vector3): THREE.Object3D[] {
-      const version = `${group.children.length}|${sceneVersion}`;
-      if (!rayCells || rayCellsAt !== version) {
-        rayCells = new Map();
-        rayAlways.length = 0;
-        rayCellsAt = version;
-        for (const obj of group.children) {
-          const key = obj.userData.actor ? null : cellOf(obj);
-          if (key === null) rayAlways.push(obj);
-          else {
-            const list = rayCells.get(key);
-            if (list) list.push(obj);
-            else rayCells.set(key, [obj]);
-          }
-        }
-      }
-      const out = [...rayAlways];
-      const seen = new Set<string>();
-      const steps = Math.ceil(Math.hypot(to.x - from.x, to.z - from.z) / 0.25) + 1;
-      for (let i = 0; i <= steps; i++) {
-        const cx = Math.round(from.x + ((to.x - from.x) * i) / steps);
-        const cz = Math.round(from.z + ((to.z - from.z) * i) / steps);
-        for (let dz = -1; dz <= 1; dz++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const key = cellKey(cx + dx, cz + dz);
-            if (seen.has(key)) continue;
-            seen.add(key);
-            const list = rayCells.get(key);
-            if (list) out.push(...list);
-          }
-        }
-      }
-      return out;
-    }
-    // each actor type's sheet alpha, to let shots through its transparent
-    // pixels
-    const sheetAlpha = new Map<string, { data: Uint8ClampedArray; width: number; height: number } | null>();
-    function alphaAt(typeName: string, u: number, v: number): number {
-      if (!sheetAlpha.has(typeName)) {
-        const image = actorMaterial(typeName).map?.image as HTMLImageElement | undefined;
-        if (!image?.width) return 255;
-        const canvas = document.createElement("canvas");
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(image, 0, 0);
-        sheetAlpha.set(typeName, { data: ctx.getImageData(0, 0, image.width, image.height).data, width: image.width, height: image.height });
-      }
-      const sheet = sheetAlpha.get(typeName);
-      if (!sheet) return 255;
-      const x = Math.min(sheet.width - 1, Math.max(0, Math.floor(u * sheet.width)));
-      const y = Math.min(sheet.height - 1, Math.max(0, Math.floor((1 - v) * sheet.height)));
-      return sheet.data[(y * sheet.width + x) * 4 + 3];
-    }
-    const drawnChain = (obj: THREE.Object3D | null) => {
-      for (let o = obj; o; o = o.parent) if (!o.visible) return false;
-      return true;
-    };
-    const interactionRay = new THREE.Raycaster();
-    const centerAim = new THREE.Vector2();
-    const interactionReach = 1.8;
-    const interactionAlpha = new WeakMap<THREE.Texture, ImageData | null>();
-    const hitUv = new THREE.Vector2();
-    function visibleTexel(hit: THREE.Intersection) {
-      const material = (hit.object as THREE.Mesh).material;
-      const face = Array.isArray(material) ? material[hit.face?.materialIndex ?? 0] : material;
-      const map = (face as THREE.MeshBasicMaterial | undefined)?.map;
-      if (!map || !face || !hit.uv || face.alphaTest === 0) return true;
-      if (!interactionAlpha.has(map)) {
-        const image = map.image as CanvasImageSource & { width: number; height: number };
-        let pixels: ImageData | null = null;
-        if (image?.width && image?.height) {
-          const canvas = document.createElement("canvas");
-          canvas.width = image.width;
-          canvas.height = image.height;
-          const ctx = canvas.getContext("2d");
-          try {
-            ctx?.drawImage(image, 0, 0);
-            pixels = ctx?.getImageData(0, 0, image.width, image.height) ?? null;
-          } catch {
-            // Keep geometry picking for textures without readable CPU pixels.
-          }
-        }
-        interactionAlpha.set(map, pixels);
-      }
-      const pixels = interactionAlpha.get(map);
-      if (!pixels) return true;
-      const { x, y } = map.transformUv(hitUv.copy(hit.uv));
-      const column = THREE.MathUtils.clamp(Math.floor(x * pixels.width), 0, pixels.width - 1);
-      const row = THREE.MathUtils.clamp(Math.floor(y * pixels.height), 0, pixels.height - 1);
-      return pixels.data[(row * pixels.width + column) * 4 + 3] >= face.alphaTest * 255;
-    }
-    const interactable = (object: THREE.Object3D): InteractionTarget | undefined => {
-      for (let o: THREE.Object3D | null = object; o && o !== group; o = o.parent) {
-        const data = o.userData;
-        if (typeof data.decalIndex === "number") return { kind: "decal", index: data.decalIndex };
-        if (typeof data.propIndex === "number") return { kind: "prop", index: data.propIndex };
-        if (typeof data.itemIndex === "number") return { kind: "item", index: data.itemIndex };
-        if (data.actor === true && typeof data.actorId === "number") return { kind: "actor", index: data.actorId };
-        if (data.doorCell) return { kind: "door", cell: data.doorCell as Vec2 };
-        if (typeof data.eventSurface === "string") {
-          const [x, y, side] = data.eventSurface.split(",");
-          if (side === "N" || side === "E" || side === "S" || side === "W") {
-            const part = data.eventPart ?? (o.parent instanceof THREE.LOD ? o.parent.userData.eventPart : undefined);
-            return { kind: "wall", cell: { x: Number(x), y: Number(y) }, side, part };
-          }
-        }
-      }
-    };
-    function findInteractionHit(ndc: THREE.Vector2, editing: boolean): { target: InteractionTarget | null; distance: number } | null {
-      const m = latestMapRef.current;
-      if (!editing && !m.wallInteractions?.length &&
-          !m.doors?.some(d => d.interaction) && !m.decals?.some(d => d.interaction) &&
-          !m.props?.some(p => p.interaction) && !m.items?.some(i => i.interaction) && !m.actors?.some(a => a.dialogue || a.shop) && !hasClickables(m)) return null;
-      interactionRay.far = editing ? (topdown.on ? TOPDOWN_REACH : EDIT_REACH) : interactionReach;
-      interactionRay.setFromCamera(ndc, camera);
-      let solidDistance = Infinity;
-      let solidTarget: InteractionTarget | null = null;
-      for (const hit of interactionRay.intersectObjects(group.children, true)) {
-        if (hit.distance > solidDistance + 0.03) break;
-        if (!drawnChain(hit.object)) continue;
-        const layer = objectLayer(hit.object);
-        if (editing && layer && lockedLayersRef.current.has(layer)) continue;
-        if (layer === "light" || layer === "smoke") continue;
-        let target = interactable(hit.object);
-        if (target?.kind === "actor") {
-          // (an actor: only a friendly one to talk to, only where its sprite is solid, never in the editor)
-          const id = target.index;
-          const actor = actorsRef.current.find(a => a.id === id);
-          if (editing || !actor || actor.diedAt !== null) target = undefined;
-          else if (hit.uv && alphaAt(actor.type, hit.uv.x, hit.uv.y) < 128) continue;
-        } else if (target && !visibleTexel(hit)) continue;
-        if (target?.kind === "decal") {
-          if (editing || touchAt(m, target)) return { target, distance: hit.distance };
-          continue;
-        }
-        if (seeThrough(hit.object) && target?.kind !== "item") continue;
-        if (solidDistance !== Infinity) continue;
-        solidDistance = hit.distance;
-        solidTarget = target ?? null;
-      }
-      return solidDistance < Infinity ? { target: solidTarget, distance: solidDistance } : null;
-    }
-    type UseCandidate = { event: ClickEvent; ndc: THREE.Vector2; distance: number; mount?: WallInteractionTarget };
-    function activateInteraction(ndc: THREE.Vector2, source: "use" | "pointer", candidate?: UseCandidate) {
-      const { onInteraction, interactionOpen } = interactionCallbacks.current;
-      if (editModeRef.current || interactionOpen || !onInteraction) return false;
-      const hit = findInteractionHit(ndc, false);
-      const target = hit?.target;
-      const event = target && touchAt(latestMapRef.current, target);
-      if (event && (source === "pointer" || !event.clickOnly) && (!candidate || event === candidate.event)) {
-        return onInteraction(event);
-      }
-      // A ray to the center can miss a narrow or openwork wall prop.
-      // Accept its mounting face, or an unobstructed ray up to the prop.
-      const mount = candidate?.mount;
-      if (!candidate || !mount) return false;
-      const mountedOnHit = target?.kind === "wall" && target.side === mount.side && sameInteractionCell(target.cell, mount.cell);
-      const clearToProp = !hit || hit.distance > candidate.distance + 0.02;
-      return (mountedOnHit || clearToProp) && onInteraction(candidate.event);
-    }
-    function interactionWallCenter(m: GameMap, cell: Vec2, side: Direction, part?: WallFacePart) {
-      const span = wallFaceSpans(m, cell, side).find(span => span.part === part);
-      if (!span) return undefined;
-      const v = DIR_VECTOR[side];
-      return new THREE.Vector3(cell.x + v.x * 0.5, (span.bottom + span.top) / 2 * wallHeight, cell.y + v.y * 0.5);
-    }
-    function useInteraction() {
-      if (activateInteraction(centerAim, "use")) return true;
-      if (editModeRef.current || interactionCallbacks.current.interactionOpen) return false;
-      // Check nearby targets within 55 degrees of the player's facing.
-      // The world-space angle keeps Use independent of the screen's FOV.
-      const m = latestMapRef.current;
-      const candidates: UseCandidate[] = [];
-      const forward = camera.getWorldDirection(new THREE.Vector3());
-      forward.y = 0;
-      forward.normalize();
-      const useSlope = Math.tan(THREE.MathUtils.degToRad(55));
-      const bounds = new THREE.Box3();
-      const center = new THREE.Vector3();
-      const size = new THREE.Vector3();
-      const right = new THREE.Vector3(-forward.z, 0, forward.x);
-      function consider(event: ClickEvent | undefined, point: THREE.Vector3, mount?: WallInteractionTarget) {
-        if (!event || event.clickOnly) return;
-        const relative = point.clone().sub(camera.position);
-        const distance = relative.length();
-        const ahead = forward.dot(relative);
-        const sideways = Math.abs(forward.x * relative.z - forward.z * relative.x);
-        if (distance > interactionReach || ahead <= 0 || sideways > ahead * useSlope) return;
-        const projected = point.clone().project(camera);
-        candidates.push({ event, ndc: new THREE.Vector2(projected.x, projected.y), distance, mount });
-      }
-      m.props?.forEach((spec, index) => {
-        // (a lever or button is touched the same way)
-        const interaction = spec.interaction ?? operableInteraction(spec, "prop", index);
-        const object = interaction && propObjects.get(index);
-        if (!object || !drawnChain(object)) return;
-        bounds.setFromObject(object);
-        bounds.getCenter(center);
-        const anchor = spec.at[0];
-        const side = anchor === "N" || anchor === "E" || anchor === "S" || anchor === "W" ? anchor : undefined;
-        const mount: WallInteractionTarget | undefined = PROP_TYPES[spec.prop].wall && side
-          ? { kind: "wall", cell: spec.cell, side }
-          : undefined;
-        consider(interaction, center, mount);
-        bounds.getSize(size);
-        const quarterWidth = (Math.abs(right.x) * size.x + Math.abs(right.z) * size.z) / 4;
-        consider(interaction, center.clone().addScaledVector(right, quarterWidth));
-        consider(interaction, center.clone().addScaledVector(right, -quarterWidth));
-        consider(interaction, new THREE.Vector3(center.x, center.y + size.y / 4, center.z));
-        consider(interaction, new THREE.Vector3(center.x, center.y - size.y / 4, center.z));
-      });
-      m.items?.forEach(({ interaction }, index) => {
-        const object = interaction && looseItems.get(index)?.obj;
-        if (object && drawnChain(object)) consider(interaction, bounds.setFromObject(object).getCenter(center));
-      });
-      // a friendly NPC to talk to: its sprite's middle, and a little above and below it
-      for (const actor of actorsRef.current) {
-        const entry = actorMeshes.get(actor.id);
-        const event = actor.friendly && actor.diedAt === null && entry?.mesh.visible ? actorInteraction(m.actors?.[actor.id], actor.id) : undefined;
-        if (!event || !entry) continue;
-        bounds.setFromObject(entry.mesh);
-        bounds.getCenter(center);
-        bounds.getSize(size);
-        consider(event, center);
-        consider(event, new THREE.Vector3(center.x, center.y + size.y / 4, center.z));
-        consider(event, new THREE.Vector3(center.x, center.y - size.y / 4, center.z));
-      }
-      m.decals?.forEach((spec, index) => {
-        const interaction = spec.interaction ?? operableInteraction(spec, "decal", index);
-        const point = interaction && decals.center(index);
-        if (point) consider(interaction, point);
-      });
-      for (const { cell, side, part, interaction } of m.wallInteractions ?? []) {
-        if (!part || interaction.clickOnly) continue;
-        const point = interactionWallCenter(m, cell, side, part);
-        if (point) consider(interaction, point);
-      }
-      candidates.sort((a, b) => Math.abs(a.ndc.x) - Math.abs(b.ndc.x) || a.distance - b.distance);
-      return candidates.some(candidate => activateInteraction(candidate.ndc, "use", candidate));
-    }
+    const actorRendering = createActorRendering({
+      map, group, wallHeight, reliefDepth, lightGrid, smokeBodies, bust, busted, kitTexture,
+      textures: cache.textures, markSprite, ceilingY, getSightCells: () => sight.cells,
+      isDisposed: () => disposed, isReady: () => ready, afterReady, liveRef, aimFocusRef, aimingRef,
+      settingsRef, actorsRef, addFlash,
+    });
+    const { actorMeshes, updateActors, alphaAt } = actorRendering;
+    const { findInteractionHit, activateInteraction, useInteraction, pickEventMarker, interactionWallCenter } = createInteractionRaycasts({
+      group, camera, topdown, latestMapRef, lockedLayersRef, editModeRef, interactionCallbacks,
+      objectLayer: (obj) => objectLayer(obj), propObjects, looseItems, decals, getEventMarkers: () => eventMarkers,
+      wallHeight, actorsRef, actorMeshes, alphaAt,
+    });
     if (interactionUseRef) interactionUseRef.current = useInteraction;
-    const markerRay = new THREE.Raycaster();
-    function pickEventMarker(ndc: THREE.Vector2): InteractionTarget | null {
-      if (!eventMarkers.visible || !eventMarkers.children.length) return null;
-      markerRay.far = topdown.on ? TOPDOWN_REACH : EDIT_REACH;
-      markerRay.setFromCamera(ndc, camera);
-      const hit = markerRay.intersectObjects(eventMarkers.children, false)[0];
-      if (!hit) return null;
-      const target = hit.object.userData.interactionTarget as InteractionTarget;
-      const surface = findInteractionHit(ndc, true);
-      if (surface && surface.distance + 0.03 < hit.distance) return null;
-      return interactionAt(latestMapRef.current, target) ? target : null;
-    }
-    const seeThrough = (obj: THREE.Object3D) => {
-      const mat = (obj as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
-      const first = Array.isArray(mat) ? mat[0] : mat;
-      return !!first && first.transparent && !first.depthWrite;
-    };
-    const isItemObject = (obj: THREE.Object3D) => {
-      for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (o.userData.itemIndex !== undefined) return true;
-      return false;
-    };
-    const isProp = (obj: THREE.Object3D) => {
-      for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (o.userData.prop) return true;
-      return false;
-    };
-    // the body part at a spot of a sheet cell (fractions from its top left)
-    function partAt(typeName: string, u: number, v: number): BodyPart {
-      const parts = ACTOR_TYPES[typeName].parts;
-      for (const part of ["head", "torso", "legs", "armL", "armR"] as BodyPart[]) {
-        const [x0, y0, x1, y1] = parts[part].zone;
-        if (u >= x0 && u <= x1 && v >= y0 && v <= y1) return part;
-      }
-      let best: BodyPart = "torso";
-      let bestDist = Infinity;
-      for (const part of BODY_PARTS) {
-        const [x0, y0, x1, y1] = parts[part].zone;
-        const d = Math.hypot((x0 + x1) / 2 - u, (y0 + y1) / 2 - v);
-        if (d < bestDist) [best, bestDist] = [part, d];
-      }
-      return best;
-    }
-    // what a shot at a spot of an actor's sheet cell hits: a weak spot's
-    // part, or the part there
-    function hitPart(typeName: string, col: number, u: number, v: number): { part: BodyPart; crit?: string } {
-      const crit = critAt(ACTOR_TYPES[typeName], col, u, v);
-      return crit ? { part: crit.part, crit: crit.label } : { part: partAt(typeName, u, v) };
-    }
-    // a point of an actor's quad, from a spot of its sheet cell
-    function actorPoint(entry: ActorEntry, typeName: string, u: number, v: number, out: THREE.Vector3) {
-      const type = ACTOR_TYPES[typeName];
-      const h = actorHeight(typeName) * wallHeight;
-      const w = h * type.cellAspect;
-      return out.set((entry.mirror ? 0.5 - u : u - 0.5) * w, (0.5 - v) * h, 0).applyMatrix4(entry.mesh.matrixWorld);
-    }
-    // how much of a spot on an actor the camera sees past everything else
-    function unoccluded(target: THREE.Vector3, self: THREE.Object3D): boolean {
-      aimDir.copy(target).sub(camera.position);
-      const dist = aimDir.length();
-      aimRaycaster.set(camera.position, aimDir.normalize());
-      aimRaycaster.far = dist - 0.03;
-      for (const hit of aimRaycaster.intersectObjects(objectsAlong(camera.position, target), true)) {
-        if (hit.object === self || !drawnChain(hit.object) || seeThrough(hit.object)) continue;
-        if (hit.object.userData.actorId !== undefined) {
-          const other = actorMeshes.get(hit.object.userData.actorId as number);
-          const actor = actorsRef.current.find((a) => a.id === hit.object.userData.actorId);
-          if (!other || !actor || !hit.uv || alphaAt(actor.type, hit.uv.x, hit.uv.y) < 128) continue;
-        }
-        return false;
-      }
-      return true;
-    }
-    function updateAimFrame(weapon: Weapon, camX: number, camZ: number) {
-      const cw = container!.clientWidth || 1;
-      const ch = container!.clientHeight || 1;
-      const startedAt = performance.now();
-      // chances go stale and are worked out again a few parts a frame, not
-      // all at once (a new part's straight away)
-      let budget = AIM_CHANCE_PARTS_PER_FRAME;
-      const sway = (weapon.sway ?? 0.03) * ch * aimZoom;
-      const targets: AimTarget[] = [];
-      for (const actor of actorsRef.current) {
-        const entry = actorMeshes.get(actor.id);
-        if (actor.diedAt !== null || actor.friendly || !entry?.mesh.visible) continue;
-        const distance = Math.hypot(entry.mesh.position.x - camX, entry.mesh.position.z - camZ);
-        if (distance > (weapon.range ?? 1) + 0.5) continue;
-        entry.mesh.updateMatrixWorld();
-        const type = ACTOR_TYPES[actor.type];
-        const parts: AimTarget["parts"] = [];
-        for (const part of BODY_PARTS) {
-          const [u0, v0, u1, v1] = type.parts[part].zone;
-          let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
-          let behind = false;
-          for (const [u, v] of [
-            [u0, v0],
-            [u1, v0],
-            [u0, v1],
-            [u1, v1],
-          ]) {
-            actorPoint(entry, actor.type, u, v, aimVec).project(camera);
-            if (aimVec.z > 1) behind = true;
-            const sx = ((aimVec.x + 1) / 2) * cw;
-            const sy = ((1 - aimVec.y) / 2) * ch;
-            [x0, y0, x1, y1] = [Math.min(x0, sx), Math.min(y0, sy), Math.max(x1, sx), Math.max(y1, sy)];
-          }
-          if (behind) continue;
-          const key = `${actor.id}:${part}`;
-          const stale = !chanceCache.has(key) || (budget > 0 && startedAt - (chanceAt.get(key) ?? 0) > AIM_CHANCE_REFRESH_MS);
-          if (stale) {
-            if (chanceCache.has(key)) budget--;
-            chanceAt.set(key, startedAt);
-            // A grid of spots over the part's zone: those on the part itself
-            // (the sprite's solid pixels there, not another part's) give its
-            // real size; those of them in plain view, its cover.
-            let solid = 0;
-            let seen = 0;
-            for (let i = 0; i < CHANCE_GRID; i++) {
-              for (let j = 0; j < CHANCE_GRID; j++) {
-                const u = u0 + ((u1 - u0) * (i + 0.5)) / CHANCE_GRID;
-                const v = v0 + ((v1 - v0) * (j + 0.5)) / CHANCE_GRID;
-                const su = (entry.col + u) / type.cols;
-                const sv = 1 - (entry.row + v) / type.rows;
-                if (alphaAt(actor.type, su, sv) < 128 || hitPart(actor.type, entry.col, u, v).part !== part) continue;
-                solid++;
-                if (unoccluded(actorPoint(entry, actor.type, u, v, aimVec), entry.mesh)) seen++;
-              }
-            }
-            // a part smaller than the weapon's sway is harder to land on
-            const area = (x1 - x0) * (y1 - y0) * (solid / (CHANCE_GRID * CHANCE_GRID));
-            const size = Math.min(1, Math.sqrt(area / (Math.PI * sway * sway)));
-            const cover = solid ? seen / solid : 0;
-            chanceCache.set(key, Math.min(0.97, cover * weaponAccuracy(weapon, distance) * size));
-          }
-          parts.push({ part, label: type.parts[part].label, rect: [x0, y0, x1, y1], chance: chanceCache.get(key)! });
-        }
-        // the two arms: named by the side of the screen they're on
-        actorPoint(entry, actor.type, 0.5, 0.5, aimVec).project(camera);
-        const midX = ((aimVec.x + 1) / 2) * cw;
-        for (const p of parts) {
-          if (p.part === "armL" || p.part === "armR") {
-            p.label = `${(p.rect[0] + p.rect[2]) / 2 < midX ? "LEFT" : "RIGHT"} ${p.label}`;
-          }
-        }
-        if (parts.length) targets.push({ id: actor.id, name: type.name, distance, parts });
-      }
-      targets.sort((a, b) => a.distance - b.distance);
-      aimFrameRef.current = { targets, width: cw, height: ch, zoom: aimZoom, shoot };
-      // dev: how long this frame's aiming took (ms), for checking it stays smooth
-      if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewAimCost: performance.now() - startedAt });
-    }
-
-    // The party's cover against each hostile actor near enough to shoot:
-    // rays from its middle to points on the party's body (a column of
-    // heights, a little to either side) - the share that gets through.
-    let coverAt = 0;
-    const coverFrom = new THREE.Vector3();
-    const coverTo = new THREE.Vector3();
-    function updatePartyCover(camX: number, floorY: number, camZ: number, eye: number) {
-      if (!partyCoverRef || performance.now() - coverAt < PARTY_COVER_REFRESH_MS) return;
-      coverAt = performance.now();
-      const cover = partyCoverRef.current;
-      cover.clear();
-      for (const actor of actorsRef.current) {
-        const entry = actorMeshes.get(actor.id);
-        const type = ACTOR_TYPES[actor.type];
-        if (!entry || actor.diedAt !== null || !actor.hostile) continue;
-        coverFrom.copy(entry.mesh.position);
-        const dx = camX - coverFrom.x;
-        const dz = camZ - coverFrom.z;
-        const len = Math.hypot(dx, dz);
-        if (len > type.attackRange + 1.5 || len < 1e-3) continue;
-        // sideways, across the line of fire
-        const sx = -dz / len;
-        const sz = dx / len;
-        let open = 0;
-        let total = 0;
-        for (const h of PARTY_BODY_HEIGHTS) {
-          for (const side of [-PARTY_BODY_HALF_WIDTH, PARTY_BODY_HALF_WIDTH]) {
-            total++;
-            coverTo.set(camX + sx * side, floorY + eye * h, camZ + sz * side);
-            aimDir.copy(coverTo).sub(coverFrom);
-            const dist = aimDir.length();
-            aimRaycaster.set(coverFrom, aimDir.normalize());
-            aimRaycaster.far = dist;
-            const blocked = aimRaycaster
-              .intersectObjects(objectsAlong(coverFrom, coverTo), true)
-              .some((hit) => hit.object.userData.actorId === undefined && drawnChain(hit.object) && !seeThrough(hit.object));
-            if (!blocked) open++;
-          }
-        }
-        cover.set(actor.id, open / total);
-      }
-      if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewPartyCover: Object.fromEntries(cover) });
-    }
-
-    // a shot through a point of the view: the first thing it meets there
-    // (an actor only where its sprite isn't transparent)
-    function shoot(sx: number, sy: number): ShotResult {
-      const cw = container!.clientWidth || 1;
-      const ch = container!.clientHeight || 1;
-      aimNdc.set((sx / cw) * 2 - 1, -((sy / ch) * 2 - 1));
-      aimRaycaster.setFromCamera(aimNdc, camera);
-      aimRaycaster.far = 40;
-      for (const hit of aimRaycaster.intersectObjects(group.children, true)) {
-        if (!drawnChain(hit.object) || seeThrough(hit.object)) continue;
-        const id = hit.object.userData.actorId as number | undefined;
-        if (id !== undefined) {
-          const actor = actorsRef.current.find((a) => a.id === id);
-          const entry = actorMeshes.get(id);
-          // (a friendly one is no target: a shot goes through it)
-          if (!actor || !entry || actor.diedAt !== null || actor.friendly || !hit.uv) continue;
-          if (alphaAt(actor.type, hit.uv.x, hit.uv.y) < 128) continue;
-          const type = ACTOR_TYPES[actor.type];
-          const u = hit.uv.x * type.cols - entry.col;
-          const v = (1 - hit.uv.y) * type.rows - entry.row;
-          addTracer(hit.point);
-          return { kind: "actor", actor: id, ...hitPart(actor.type, entry.col, u, v) };
-        }
-        addTracer(hit.point);
-        return { kind: "miss", hit: isProp(hit.object) ? "prop" : "wall" };
-      }
-      addTracer(aimRaycaster.ray.at(8, aimVec).clone());
-      return { kind: "miss", hit: "nothing" };
-    }
-
-    // a shot's trace: a bright line from below the camera to where it hit,
-    // fading out
-    const tracers: { line: THREE.Line; born: number }[] = [];
-    function addTracer(to: THREE.Vector3) {
-      const from = new THREE.Vector3(0.12, -0.16, -0.3).applyMatrix4(camera.matrixWorld);
-      // the party's muzzle flash
-      addFlash(from, PARTY_FLASH_COLOR, 2.5, 2.8, 90);
-      const geo = new THREE.BufferGeometry().setFromPoints([from, to.clone()]);
-      const mat = new THREE.LineBasicMaterial({ color: 0xffe2a0, transparent: true });
-      const line = new THREE.Line(geo, mat);
-      scene.add(line);
-      tracers.push({ line, born: gameClock.now() });
-    }
-    function updateTracers() {
-      for (let i = tracers.length - 1; i >= 0; i--) {
-        const { line, born } = tracers[i];
-        const k = (gameClock.now() - born) / TRACER_MS;
-        if (k < 1) {
-          (line.material as THREE.LineBasicMaterial).opacity = 1 - k;
-          continue;
-        }
-        scene.remove(line);
-        line.geometry.dispose();
-        (line.material as THREE.Material).dispose();
-        tracers.splice(i, 1);
-      }
-    }
+    const combatAiming = createCombatAiming({
+      container, scene, group, camera, wallHeight, doorPreview: !!doorPreview, aimFrameRef, partyCoverRef,
+      cellOf, getSceneVersion: () => sceneVersion, actorsRef, actorMeshes, alphaAt, addFlash,
+    });
+    const { updateAimFrame, updatePartyCover, updateTracers } = combatAiming;
 
     function resize() {
       const w = container!.clientWidth || 1;
@@ -3974,7 +2746,7 @@ export function GameViewport({
         return spec && obj && !PROP_TYPES[spec.prop]?.wall ? [obj.position.x, obj.position.z, obj.position.y] : null;
       }
       if (kind === "light") {
-        const l = mapLights.find((m) => m.source === index);
+        const l = mapLightState.mapLights.find((m) => m.source === index);
         if (!l) return null;
         const cx = Math.round(l.x);
         const cz = Math.round(l.z);
@@ -4774,7 +3546,7 @@ export function GameViewport({
         return;
       }
       const selected = editModeRef.current ? selectedLightRef.current : null;
-      const l = selected === null ? undefined : mapLights.find((m) => m.source === selected);
+      const l = selected === null ? undefined : mapLightState.mapLights.find((m) => m.source === selected);
       selectBox.visible = !!l;
       if (!l) return;
       if (l.kind === "point") {
@@ -4859,7 +3631,7 @@ export function GameViewport({
             color = EDIT_LIGHT_ADD_COLOR;
           } else if (target.kind !== "wall") {
             mode = "plate";
-            const lit = litCells.has(`${target.cell.x},${target.cell.y}`);
+            const lit = mapLightState.litCells.has(`${target.cell.x},${target.cell.y}`);
             color = lit ? EDIT_LIGHT_REMOVE_COLOR : EDIT_LIGHT_ADD_COLOR;
           }
         } else if (target.kind === "wall") {
@@ -4924,7 +3696,7 @@ export function GameViewport({
           editBox.scale.set(selectSize.x + 0.02, selectSize.y + 0.02, selectSize.z + 0.02);
         }
       } else if (mode === "bulb") {
-        const l = mapLights.find((m) => m.source === target.light);
+        const l = mapLightState.mapLights.find((m) => m.source === target.light);
         if (l) editBox.position.set(l.x, l.y * wallHeight, l.z);
         editBox.scale.setScalar(0.1);
       } else if (mode === "face") {
@@ -4997,7 +3769,7 @@ export function GameViewport({
         waterLightsAt = now;
         const eye = camera.position;
         const lights = [
-          ...mapLights
+          ...mapLightState.mapLights
             .filter((l) => l.kind !== "window")
             .map((l) => ({ x: l.x, y: l.y * wallHeight, z: l.z, color: l.color, intensity: l.intensity })),
           ...[...smokeFire.fireEmitters.values()].filter(e => e.lightIntensity > 0).map(e => ({
@@ -5346,7 +4118,7 @@ export function GameViewport({
       camera.updateMatrixWorld();
       updateEditHighlight();
       updatePartyCover(camX, cam.y * wallHeight, camZ, s.eyeHeight);
-      if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ);
+      if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ, aimZoom);
       else if (aimFrameRef.current) aimFrameRef.current = null;
       // (the ears: where the party's eye is and which way it looks - see audio/soundSystem.ts)
       // (in the editor's top-down view it is the spot looked at: the camera floats high above the map)
@@ -5366,11 +4138,7 @@ export function GameViewport({
         dt,
       );
       cullFacing();
-      // free-standing lights' bulbs: shown while editing (to pick them),
-      // in the game only where the light asks for it
-      for (const obj of fixtures) {
-        obj.visible = !(editModeRef.current && hiddenLayersRef.current.has("light")) && (obj.userData.bulb !== "editor" || editModeRef.current);
-      }
+      lightFixtures.updateVisibility(editModeRef.current, hiddenLayersRef.current.has("light"));
 
       const liftDoor = ride ? liftDoorOf(map, { x: Math.round(cam.x), y: Math.round(cam.z) }) : undefined;
       if (ride && liftDoor) {
@@ -5552,13 +4320,8 @@ export function GameViewport({
       if (propWiresRef.current === refreshPropWires) propWiresRef.current = null;
       for (const prop of propObjects.values()) prop.getObjectByName("propEditWires")?.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
       for (const mat of Object.values(wireMats)) mat.dispose();
-      for (const id of [...actorMeshes.keys()]) removeActorMesh(id);
-      for (const { line } of tracers) {
-        line.geometry.dispose();
-        (line.material as THREE.Material).dispose();
-      }
-      for (const mat of actorMaterials.values()) mat.dispose();
-      for (const tex of glowMaps.values()) tex?.dispose();
+      actorRendering.dispose();
+      combatAiming.dispose();
       floorMat.dispose();
       spaceMat.dispose();
       sheenMat.dispose();
@@ -5567,7 +4330,7 @@ export function GameViewport({
       hazardMat.dispose();
       bridgeMat.dispose();
       ceilMat.dispose();
-      for (const mat of fixtureMats.values()) mat.dispose();
+      lightFixtures.dispose();
       (selectBox.material as THREE.Material).dispose();
       stopSharedDecals();
       sky.stopWaiting();
