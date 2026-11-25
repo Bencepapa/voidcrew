@@ -59,14 +59,14 @@ Approximate line ranges. Search for the named functions as the file moves.
 
 | Lines | Subsystem and anchors |
 | --- | --- |
-| 296–679 | `GameViewport` props, refs, subscriptions and selection of the settled scene map. |
-| 680–1309 | Main scene effect, renderer, textures/materials and subsystem setup. See `createWallKit`, `createBakeRuntime`, `createPostPipeline`, `createSkySurface` and `applyMaterialViews`. |
-| 1310–2537 | Structural geometry and model helpers. See `placeWalls`, `placeFloors`, `placeCeilings`, `buildBacking` and `wallGeometry`. |
-| 2538–3493 | Props, operables, particle and marker factory setup, items and trim. See `buildProps`, `applyProps`, `createSmokeFire`, `createEditorMarkers` and `createItemsLoot`. |
-| 3494–4291 | Light fixtures, top-down mode, visibility, edit previews and live scene updates. See `setTopdown`, `applySight`, `applyLights`, `applyStructure` and `updateLightPool`. |
-| 4292–5006 | Actor rendering, interaction raycasts and combat aiming. See `updateActors`, `findInteractionHit`, `updateAimFrame` and `shoot`. |
-| 5007–6119 | Resize, pointer and drag handlers, top-down controls, picking and selection. See `resize`, `onPress`, `onRelease`, `editTargetAt` and `updateSelectionBox`. |
-| 6120–6776 | Per-frame camera and rendering, animation loop and effect cleanup. See `renderFrame` and `animate`. |
+| 285–665 | `GameViewport` props, refs, subscriptions and selection of the settled scene map. |
+| 666–1288 | Main scene effect, renderer, textures/materials and subsystem setup. See `createWallKit`, `createBakeRuntime`, `createPostPipeline`, `createSkySurface` and `applyMaterialViews`. |
+| 1289–1392 | Structural geometry factory setup. See `createStructuralSurfaces`, `createWallBacking`, `createReliefGeometry`, `createStructuralWalls`, `createStructuralTiles`, `createStructuralDoors` and `createStructuralProps`. |
+| 1393–2355 | Props, operables, particle and marker factory setup, items and trim. See `buildProps`, `applyProps`, `createSmokeFire`, `createEditorMarkers` and `createItemsLoot`. |
+| 2356–2980 | Light fixtures, top-down mode, visibility, edit previews and live scene updates. See `setTopdown`, `applySight`, `applyLights`, `applyStructure` and `updateLightPool`. |
+| 2981–3873 | Actor rendering, interaction raycasts and combat aiming. See `updateActors`, `findInteractionHit`, `updateAimFrame` and `shoot`. |
+| 3874–4964 | Resize, pointer and drag handlers, top-down controls, picking and selection. See `resize`, `onPress`, `onRelease`, `editTargetAt` and `updateSelectionBox`. |
+| 4965–5643 | Per-frame camera and rendering, animation loop and effect cleanup. See `renderFrame` and `animate`. |
 
 ## `src/render/viewport/`
 
@@ -74,6 +74,15 @@ Approximate line ranges. Search for the named functions as the file moves.
 - `contracts.ts` - Component props, aiming and editing contracts, and render stats.
 - `constants.ts` - Shared viewport constants for scene geometry, textures and interactions.
 - `walls.ts` - Wall and floor kits, panel geometry and relief LOD.
+- `baseGeometry.ts` - Shared flat and beveled wall and floor geometry.
+- `structuralSurfaces.ts` - Cell surface slots, wall/floor/ceiling placement and ceiling materials.
+- `wallBacking.ts` - Opaque backing mesh behind relief wall faces.
+- `reliefGeometry.ts` - Height grid loading, relief geometry caching and distant variants.
+- `structuralWalls.ts` - Wall geometry variants, placement scheduling and corner joins.
+- `structuralTiles.ts` - Windows, ceilings and floors, including async relief builds.
+- `structuralDoors.ts` - Door frames and leaves, plus the cutout relief builder used by props.
+- `structuralProps.ts` - Cabin glass, pillar and chamfer builders.
+- `propRetexture.ts` - Pure property overrides for retextured props.
 - `sceneCache.ts` - Bake cache, scene resource cleanup and rendered-spec comparison.
 - `fog.ts` - Fog range and the guarded three.js shader-chunk patch.
 - `lighting.ts` - Light pool, sight samples and fire flicker.
