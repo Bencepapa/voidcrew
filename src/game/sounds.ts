@@ -52,7 +52,7 @@ export interface SoundSpec {
 export const SOUND_LIMITS = {
   pitch: { min: 55, max: 2000, default: 440 },
   volume: { min: 0, max: 1, default: 0.6 },
-  range: { min: 0.25, max: 100, default: 12 },
+  range: { min: 0.25, max: 32, default: 4 },
   rolloff: { min: 0.5, max: 3, default: 1 },
   pulse: { min: 0, max: 60 },
   // a pulse's attack and release (seconds)

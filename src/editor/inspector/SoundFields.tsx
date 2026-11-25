@@ -62,7 +62,7 @@ export function SoundFields(p: EditorBarProps & { placing?: boolean }) {
           />
         )}
         {num(t("sound.volumeField"), s.volume, 0, 1, 0.05, (volume) => change({ volume }), { defaultValue: SOUND_LIMITS.volume.default })}
-        {num(t("sound.range"), s.range, 1, 60, 0.5, (range) => change({ range }), { title: t("sound.rangeHint"), defaultValue: SOUND_LIMITS.range.default })}
+        {num(t("sound.range"), s.range, 1, SOUND_LIMITS.range.max, 0.5, (range) => change({ range }), { title: t("sound.rangeHint"), defaultValue: SOUND_LIMITS.range.default })}
         {num(t("sound.rolloff"), s.rolloff, SOUND_LIMITS.rolloff.min, SOUND_LIMITS.rolloff.max, 0.1, (rolloff) => change({ rolloff: rolloff === 1 ? undefined : rolloff }), { title: t("sound.rolloffHint"), defaultValue: SOUND_LIMITS.rolloff.default })}
         <KindChoice
           label={t("sound.repeat")}

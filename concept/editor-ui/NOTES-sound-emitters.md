@@ -10,7 +10,7 @@ There is no sound file anywhere: the wave is made from a few numbers. Branch `fe
 
 ```json
 { "x": 9, "y": 1, "pos": [0, 0.5, 0], "kind": "tone", "wave": "saw", "pitch": 440, "volume": 0.6,
-  "pulse": { "on": 0.3, "off": 0.7 }, "range": 12, "rolloff": 1, "active": true }
+  "pulse": { "on": 0.3, "off": 0.7 }, "range": 4, "rolloff": 1, "active": true }
 ```
 
 | field | meaning |
@@ -23,7 +23,7 @@ There is no sound file anywhere: the wave is made from a few numbers. Branch `fe
 | `noise` | noise: `white` (default) / `pink` / `brown` |
 | `volume` | 0..1 (default 0.6) |
 | `pulse` | none: a loop that never stops; `{on, off}` seconds: bursts (an `off` of 0 is no pulse); optional `attack` / `release` (seconds, 0..1, default 0.02): how long a burst takes to swell in / die away - the gate is smoothed, not a switch (only written when not the default) |
-| `range` | cells, 0.25..100 (default 12): not heard at all from this far; it fades out over the last quarter |
+| `range` | cells, 0.25..32 (default 4): not heard at all from this far; it fades out over the last quarter |
 | `rolloff` | 0.5..3 (default 1): how fast it dies away with distance (0.5 carries far, 3 is gone quickly) |
 | `active` | `false`: silent until something switches it on (a lever, button or plate with a `sound` target, see below) |
 | `id` | optional name (max 60 chars) for the operable targets to address the sound by, instead of its cell; a new sound does not inherit the last one's |

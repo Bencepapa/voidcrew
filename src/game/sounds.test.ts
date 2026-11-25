@@ -35,7 +35,7 @@ assert.deepEqual(
 const limited = readSound({ x: 0, y: 0, kind: "tone", pitch: 5000, volume: 7, range: 1e6, rolloff: 99, pos: [3, 99, -3], pulse: { on: -1, off: 1e5 } })!;
 assert.equal(limited.pitch, 2000);
 assert.equal(limited.volume, 1);
-assert.equal(limited.range, 100);
+assert.equal(limited.range, SOUND_LIMITS.range.max);
 assert.equal(limited.rolloff, 3);
 assert.deepEqual(limited.pos, [0.5, 8, -0.5]);
 assert.deepEqual(limited.pulse, { on: 0, off: 60 });
