@@ -1,20 +1,12 @@
 import { isTextEntry } from "../keyboardFocus";
-import { createWeather } from "../render/weather";
-import { createGroundFog } from "../render/groundFog";
-import { createFireflies } from "../render/fireflies";
-import { lockMarkerMaterial } from "../render/lockMarker";
-import { createMotes } from "../render/motes";
-import type { SpriteEmitter } from "../render/spriteCloud";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { prepareRaycastsGradually } from "../render/bvh";
-import { makeSoundIcon } from "../render/soundIcon";
-import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeWorld } from "../render/smoke";
-import { createPetals, type PetalEmitter } from "../render/petals";
+import type { SmokeBody } from "../render/smoke";
 import { effectiveViewDistance } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
-import { ITEM_TYPES, isSharedPickupId, itemSpot } from "../game/items";
+import { ITEM_TYPES, isSharedPickupId } from "../game/items";
 import {
   actorInteraction,
   interactionAt,
@@ -22,12 +14,10 @@ import {
   sameInteractionCell,
   touchAt,
   type ClickEvent,
-  type Interaction,
   type InteractionTarget,
   type WallInteractionTarget,
 } from "../game/interactions";
 import { wallFaceSpans, type WallFacePart } from "../game/mapGeometry";
-import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
 import {
   propCastsBakedShadow,
@@ -59,7 +49,6 @@ import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type Ed
 import { buildRoofGeometry } from "../render/roofMesh";
 import {
   fenceFaces,
-  fenceFloorMark,
   fenceFormOf,
   fenceIndex,
   fenceModelSpec,
@@ -67,17 +56,16 @@ import {
   type FenceModelSpec,
 } from "../game/fences";
 import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
-import { fireLightColor, generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
+import { generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
 import type { LightSpec } from "../game/lights";
 import { buildOperableModel, setOperablePose } from "../render/operableModel";
 import { operableView } from "../game/operableStore";
-import { emitterView, emittersShown } from "../game/emitterStore";
+import { emitterView } from "../game/emitterStore";
 import { operableLink } from "../editor/operableLink";
 import { hasClickables, sourceKeys } from "../game/operables";
 import {
   PROP_TYPES,
-  PROP_RELIEF_SCALE,
   propPlacement,
   propHeight,
   propReliefAmount,
@@ -111,8 +99,6 @@ import { doorLeafMotion, type DoorType } from "../game/doorTypes";
 import {
   onSharedDecalsChanged,
   onSharedPickupsChanged,
-  pickupTexture,
-  sharedImage,
 } from "../render/sharedImages";
 import { gameSound } from "../audio/gameSound";
 import { soundsOn } from "../game/soundOperables";
@@ -162,7 +148,6 @@ import {
   CAMERA_ALARM_LIGHT,
   LIGHT_SPOT_GAP,
   SURFACE_PIXELS,
-  SMOKE_COLOR,
   SURFACE_GLOW,
   DOOR_PANEL_SETS,
   FACING_ROTATION,
@@ -200,10 +185,6 @@ import {
   FIRE_LIGHT_INTENSITY,
   FIRE_LIGHT_RANGE,
   FIRE_LIGHT_LIFT,
-  FIRE_SMOKE_COLOR,
-  FIRE_SMOKE_LIFT,
-  FIRE_SMOKE_DENSITY,
-  FIRE_SMOKE_SIZE,
   fireFlicker,
 } from "../render/viewport/lighting";
 import {
@@ -233,17 +214,7 @@ import {
   zoomedFov,
   verticalFov,
 } from "../render/viewport/camera";
-import {
-  ITEM_HEIGHT,
-  ITEM_LIFT,
-  ITEM_TOPDOWN_GROW,
-  ITEM_GLOW,
-  ITEM_NORMAL_KEEP,
-  ITEM_NORMAL_BEND,
-  SPILL_OUT_MS,
-  SPILL_REST_MS,
-  SPILL_IN_MS,
-} from "../render/viewport/loot";
+import { ITEM_TOPDOWN_GROW } from "../render/viewport/loot";
 import {
   EDIT_REACH,
   EDIT_DIG_COLOR,
@@ -290,7 +261,12 @@ import {
   easeOutQuad,
   smoothstep,
 } from "../render/viewport/poses";
-import { eventMarkerMaterial, makeExitMarker, makeStairsMarker, drawChalkCross } from "../render/viewport/markers";
+import { drawChalkCross } from "../render/viewport/markers";
+import { createSmokeFire } from "../render/viewport/smokeFire";
+import { createItemsLoot } from "../render/viewport/itemsLoot";
+import { createEditorMarkers, SOUND_ICON_SIZE } from "../render/viewport/editorMarkers";
+import { createEventMarkers } from "../render/viewport/eventMarkers";
+import { createFenceMarkers } from "../render/viewport/fenceMarkers";
 import { turnClockwise } from "../render/viewport/pixels";
 import type {
   ReliefStats,
@@ -317,9 +293,6 @@ export type {
   ViewportStats,
 } from "../render/viewport/contracts";
 
-// a sound emitter's sign in the editor: its size (world units), and the camera distance from which it grows to stay readable
-const SOUND_ICON_SIZE = 0.28;
-const SOUND_ICON_FAR = 7;
 
 export function GameViewport({
   doorPreview,
@@ -2564,50 +2537,7 @@ export function GameViewport({
 
     // ---- fences and blocks (see game/fences.ts) ----
     // Their floor marks while editing: a hatched square for a block, strips for the fences (amber, cyan, green)
-    const fenceMarkTexture = (() => {
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = 64;
-      const g = canvas.getContext("2d")!;
-      g.strokeStyle = "#ffffff";
-      g.lineWidth = 6;
-      g.strokeRect(3, 3, 58, 58);
-      g.lineWidth = 5;
-      for (let i = -64; i < 64; i += 16) {
-        g.beginPath();
-        g.moveTo(i, 64);
-        g.lineTo(i + 64, 0);
-        g.stroke();
-      }
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      return tex;
-    })();
-    const fenceMarkMats = Object.fromEntries(
-      (["block", "edge", "mid"] as const).map((form) => [
-        form,
-        new THREE.MeshBasicMaterial({
-          color: form === "block" ? 0xffb347 : form === "edge" ? 0x4fd1ff : 0x7dff9a,
-          map: fenceMarkTexture,
-          transparent: true,
-          opacity: 0.7,
-          side: THREE.DoubleSide,
-          fog: false,
-          polygonOffset: true,
-          polygonOffsetFactor: -2,
-          polygonOffsetUnits: -2,
-        }),
-      ]),
-    ) as Record<"block" | "edge" | "mid", THREE.MeshBasicMaterial>;
-    // The floor marks of the pieces built (by prop index), and the piece each belongs to: in the scene only
-    // while editing (a hidden mesh would still be hit by the shots' rays)
-    const fenceMarkers = new Map<number, { marker: THREE.Object3D; owner: THREE.Object3D }>();
-    function syncFenceMarkers() {
-      const want = editModeRef.current;
-      for (const { marker, owner } of fenceMarkers.values()) {
-        if (want && marker.parent !== owner) owner.add(marker);
-        else if (!want && marker.parent) marker.parent.remove(marker);
-      }
-    }
+    const fences = createFenceMarkers({ geometries, reliefDepth, editModeRef });
     // A fence or block piece's model: its faces - upright relief cutouts, as the panels' (front and mirrored
     // back, so it looks the same from both sides; a block's outer sides only), and flat caps - laid out round
     // the middle of its cell, in its texture sets (unset or not known: the deck's walls), and the floor mark
@@ -2650,17 +2580,7 @@ export function GameViewport({
         if (f.mirror) mesh.scale.x = -1;
         template.add(mesh);
       }
-      const marker = new THREE.Group();
-      marker.name = "fenceMarker";
-      for (const r of fenceFloorMark(spec)) {
-        const geo = new THREE.PlaneGeometry(r.sx, r.sz);
-        geometries.push(geo);
-        const mark = new THREE.Mesh(geo, fenceMarkMats[spec.form]);
-        mark.rotation.x = -Math.PI / 2;
-        mark.position.set(r.x, reliefDepth + 0.01, r.z);
-        marker.add(mark);
-      }
-      template.add(marker);
+      template.add(fences.buildFenceMarker(spec));
       return template;
     }
 
@@ -3130,10 +3050,7 @@ export function GameViewport({
         group.add(prop);
         if (PROP_TYPES[now.prop].kind === "operable") syncOperables(false);
         // (a fence's floor mark: shown while editing)
-        const marker = prop.getObjectByName("fenceMarker");
-        if (marker) fenceMarkers.set(index, { marker, owner: prop });
-        else fenceMarkers.delete(index);
-        syncFenceMarkers();
+        fences.syncFenceMarker(index, prop);
         refreshPropWires();
       }).catch((err) => console.error("Prop build failed:", err));
     }
@@ -3159,7 +3076,7 @@ export function GameViewport({
       propsVersion++;
       for (const obj of propObjects.values()) group.remove(obj);
       propObjects.clear();
-      fenceMarkers.clear();
+      fences.clear();
       billboardProps.length = 0;
       markedProps.clear();
     }
@@ -3230,454 +3147,32 @@ export function GameViewport({
     }
     propWiresRef.current = refreshPropWires;
 
-    // ---- smoke (see smoke.ts): the map's emitters, and a marker at each for
-    // the editor to pick it by (shown only while editing) ----
-    const smokeMarkers = new Map<number, THREE.Mesh>();
-    const smokeMarkerGeo = new THREE.OctahedronGeometry(0.04);
-    geometries.push(smokeMarkerGeo);
-    const smokeMarkerMat = new THREE.MeshBasicMaterial({ color: 0xb8c4cc, wireframe: true });
-    // a ground fog's area while editing: a ring showing its spread on the floor under the emitter
-    const fogRingMat = new THREE.MeshBasicMaterial({ color: 0x9fd4ff, transparent: true, opacity: 0.85, depthTest: false, side: THREE.DoubleSide, fog: false });
-    const fogHeightMat = new THREE.LineBasicMaterial({ color: 0x9fd4ff, depthTest: false, fog: false });
-    // (and a line from it the way it blows)
-    const smokeBlowGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]);
-    geometries.push(smokeBlowGeo);
-    const smokeBlowMat = new THREE.LineBasicMaterial({ color: 0xffd060 });
-    // the fires' flames (see fire.ts), made with the smoke: each a fire
-    // emitter here and dark smoke rising off it among the smoke's
-    type FireEmitter = SmokeEmitter & { lightColor: number; lightIntensity: number; lightReach: number };
-    const fireEmitters = new Map<number, FireEmitter>();
-    const fireLight = (spec: NonNullable<GameMap["smokes"]>[number]) => ({
-      lightColor: fireLightColor(spec),
-      lightIntensity: spec.lightIntensity ?? 1,
-      lightReach: spec.lightReach ?? 1,
-    });
-    let petalEmitters: SpriteEmitter[] = [];
-    let moteEmitters: PetalEmitter[] = [], mistEmitters: SpriteEmitter[] = [], flyEmitters: SpriteEmitter[] = [];
-    const effectColors = new Map<number, THREE.Color>();
-    // which emitters are shown now (see emitterStore.ts: while playing only those that are on; the editor shows all)
-    const shownSig = (m: GameMap) => emittersShown(m).map(Number).join("");
-    let appliedShown = "";
-    const buildSmoke = (m: GameMap) => {
-      effectColors.clear();
-      fireEmitters.clear();
-      petalEmitters = []; moteEmitters = []; mistEmitters = []; flyEmitters = [];
-      const shown = emittersShown(m);
-      appliedShown = shownSig(m);
-      return createSmoke(
-      (m.smokes ?? []).flatMap((spec, index): SmokeEmitter[] => {
-        const at = new THREE.Vector3(
-          spec.cell.x + spec.pos[0],
-          (floorHeight(map, spec.cell.x, spec.cell.y) + spec.pos[1]) * wallHeight,
-          spec.cell.y + spec.pos[2],
-        );
-        const marker = new THREE.Mesh(smokeMarkerGeo, smokeMarkerMat);
-        marker.position.copy(at);
-        marker.userData.smokeIndex = index;
-        marker.userData.item = true;
-        marker.visible = false;
-        group.add(marker);
-        smokeMarkers.set(index, marker);
-        let blow: [number, number, number] | undefined;
-        if (spec.blow?.speed) {
-          const yaw = (spec.blow.yaw * Math.PI) / 180;
-          const pitch = ((spec.blow.pitch ?? 0) * Math.PI) / 180;
-          const way = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
-          blow = [way.x * spec.blow.speed, way.y * spec.blow.speed, way.z * spec.blow.speed];
-          const line = new THREE.Line(smokeBlowGeo, smokeBlowMat);
-          line.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), way);
-          line.scale.setScalar(0.1 + 0.1 * spec.blow.speed);
-          marker.add(line);
-        }
-        // (an emitter that is switched off makes nothing - its marker stays for the editor)
-        if (!shown[index]) return [];
-        const emitter: SmokeEmitter = {
-          x: at.x,
-          y: at.y,
-          z: at.z,
-          ceiling: ceilingY(spec.cell.x, spec.cell.y),
-          floor: floorY(spec.cell.x, spec.cell.y),
-          blow,
-          density: spec.density ?? 1,
-          size: spec.size ?? 1,
-          opacity: spec.opacity,
-          opacityDark: spec.opacityDark,
-          color: new THREE.Color(parseColor(spec.color) ?? SMOKE_COLOR),
-          cell: cellKey(spec.cell.x, spec.cell.y),
-        };
-        const effect = spec.effect ?? (spec.petals ? "motes" : spec.fire ? "fire" : "smoke");
-        effectColors.set(index, emitter.color);
-        if (effect === "groundfog") {
-          // (not pickable: a click on it is a click on the floor under it)
-          const r = Math.max(0.25, spec.spread ?? 3);
-          const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.01, r - 0.05), r, 96), fogRingMat);
-          for (const shape of [ring]) {
-            shape.rotation.x = -Math.PI / 2;
-            shape.position.y = emitter.floor - at.y + 0.04;
-            shape.renderOrder = 9;
-            shape.raycast = () => {};
-            shape.userData.fogShape = true;
-            geometries.push(shape.geometry);
-            marker.add(shape);
-          }
-          const base = emitter.floor - at.y + 0.04;
-          const height = (spec.height ?? .6) * wallHeight;
-          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, base, 0), new THREE.Vector3(0, base + height, 0),
-            new THREE.Vector3(.12, base + height, 0),
-          ]), fogHeightMat);
-          line.userData.fogShape = true;
-          line.raycast = () => {};
-          line.renderOrder = 9;
-          geometries.push(line.geometry);
-          marker.add(line);
-        }
-        if (effect === "mist") return [{ ...emitter, standing: true, blow: undefined }];
-        if (["motes", "petals", "groundfog", "fireflies"].includes(effect)) {
-          // falling petals: their own little system, no smoke from here
-          const list = effect === "motes" ? moteEmitters : effect === "groundfog" ? mistEmitters : effect === "fireflies" ? flyEmitters : petalEmitters;
-          const color = new THREE.Color(parseColor(spec.color) ?? (effect === "fireflies" ? 0xd9ef78 : effect === "groundfog" ? 0xb4b8bc : effect === "petals" ? 0xffffff : 0xf4a6c0));
-          effectColors.set(index, color);
-          (list as SpriteEmitter[]).push({
-            sprite: spec.sprite, height: (spec.height ?? .6) * wallHeight,
-            x: emitter.x,
-            y: emitter.y,
-            z: emitter.z,
-            floor: emitter.floor,
-            spread: effect === "groundfog" ? spec.spread ?? 3 : .9,
-            density: emitter.density,
-            size: emitter.size,
-            color,
-            wind: blow ? [blow[0] * 0.1, blow[2] * 0.1] : [0, 0],
-          });
-          return [];
-        }
-        if (effect !== "fire") return [emitter];
-        // (its color tints the flames: none, as they burn)
-        emitter.color.setHex(parseColor(spec.color) ?? 0xffffff);
-        fireEmitters.set(index, { ...emitter, ...fireLight(spec) });
-        return [{
-          ...emitter,
-          y: Math.min(emitter.ceiling - 0.1, emitter.y + FIRE_SMOKE_LIFT * wallHeight),
-          blow: undefined,
-          density: emitter.density * FIRE_SMOKE_DENSITY,
-          size: emitter.size * FIRE_SMOKE_SIZE,
-          color: new THREE.Color(FIRE_SMOKE_COLOR),
-        }];
-      }),
-      lightGrid,
-      smokeWorld(m),
-      { quality: settings.particleQuality },
-    );
-    };
-    const buildFire = (m: GameMap) => createSmoke([...fireEmitters.values()], lightGrid, smokeWorld(m), { fire: true, quality: settings.particleQuality });
-    // what the smoke bumps into: the deck's walls, floors and ceilings, and
-    // its props as boxes (not the 45-degree cuts: a box would close their
-    // whole corner)
-    function smokeWorld(m: GameMap): SmokeWorld {
-      // The cells' walls, floors and ceilings in flat arrays: every puff asks the world several times a frame, and a
-      // lookup through cellAt / floorHeight was a sixth of the editor's frame time.
-      const W = m.width;
-      const H = m.height;
-      const wallCell = new Uint8Array(W * H);
-      const floorCell = new Float32Array(W * H);
-      const ceilingCell = new Float32Array(W * H);
-      for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-          wallCell[y * W + x] = cellAt(m, x, y) === "wall" ? 1 : 0;
-          floorCell[y * W + x] = floorY(x, y);
-          ceilingCell[y * W + x] = ceilingY(x, y);
-        }
-      }
-      return {
-        // (outside the map: a wall, as cellAt says; floor 0 and a ceiling one wall height up, as the heights say)
-        wall: (x, z) => {
-          const cx = Math.round(x);
-          const cz = Math.round(z);
-          return cx < 0 || cz < 0 || cx >= W || cz >= H || wallCell[cz * W + cx] === 1;
-        },
-        floor: (x, z) => {
-          const cx = Math.round(x);
-          const cz = Math.round(z);
-          return cx < 0 || cz < 0 || cx >= W || cz >= H ? 0 : floorCell[cz * W + cx];
-        },
-        ceiling: (x, z) => {
-          const cx = Math.round(x);
-          const cz = Math.round(z);
-          return cx < 0 || cz < 0 || cx >= W || cz >= H ? wallHeight : ceilingCell[cz * W + cx];
-        },
-        boxes: (m.props ?? [])
-          .filter((p) => PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "chamfer" && PROP_TYPES[p.prop].kind !== "roof" && PROP_TYPES[p.prop].kind !== "fence")
-          .map((p) => {
-            const { x, z, reachX, reachZ } = propPlacement(p);
-            const bottom = floorY(p.cell.x, p.cell.y) + (p.elevation ?? 0) * wallHeight;
-            return {
-              minX: x - reachX,
-              maxX: x + reachX,
-              minZ: z - reachZ,
-              maxZ: z + reachZ,
-              minY: bottom,
-              maxY: bottom + propHeight(m, p) * wallHeight,
-            };
-          }),
-      };
-    }
     // the robots as the smoke feels them (see updateActors)
     const smokeBodies: SmokeBody[] = [];
-    let smoke = buildSmoke(map);
-    scene.add(smoke.mesh);
-    let fire = buildFire(map);
-    scene.add(fire.mesh);
-    let petals = createPetals(petalEmitters, settings.particleQuality);
-    scene.add(petals.mesh);
-    let motes = createMotes(moteEmitters, settings.particleQuality);
-    let mist = createGroundFog(mistEmitters, settings.particleQuality, lightGrid, (x,z)=>cellAt(latestMapRef.current,x,z)!=="wall" && cellAt(latestMapRef.current,x,z)!==undefined);
-    let flies = createFireflies(flyEmitters, settings.particleQuality);
-    const weather = createWeather(settings.particleQuality, lightGrid.weather);
-    let weatherMap = map;
-    scene.add(motes.mesh, mist.mesh, flies.mesh, weather.mesh);
-    // the editor changed only the smoke: made anew, the rest stays built
-    function applySmoke(next: GameMap) {
-      for (const marker of smokeMarkers.values()) {
-        group.remove(marker);
-        marker.traverse((o) => {
-          if (o.userData.fogShape) (o as THREE.Mesh).geometry.dispose();
-        });
-      }
-      smokeMarkers.clear();
-      scene.remove(smoke.mesh, fire.mesh, petals.mesh, motes.mesh, mist.mesh, flies.mesh);
-      motes.dispose(); mist.dispose(); flies.dispose();
-      smoke.dispose();
-      fire.dispose();
-      petals.dispose();
-      smoke = buildSmoke(next);
-      scene.add(smoke.mesh);
-      fire = buildFire(next);
-      scene.add(fire.mesh);
-      petals = createPetals(petalEmitters, settings.particleQuality);
-      scene.add(petals.mesh);
-      motes = createMotes(moteEmitters, settings.particleQuality);
-      mist = createGroundFog(mistEmitters, settings.particleQuality, lightGrid, (x,z)=>cellAt(latestMapRef.current,x,z)!=="wall" && cellAt(latestMapRef.current,x,z)!==undefined);
-      flies = createFireflies(flyEmitters, settings.particleQuality);
-      scene.add(motes.mesh, mist.mesh, flies.mesh);
-      weatherMap = next;
-    }
+    const smokeFire = createSmokeFire({
+      scene, group, camera, map, getLatestMap: () => latestMapRef.current, settings, lightGrid,
+      wallHeight, floorY, ceilingY, geometries, editModeRef, hiddenLayersRef, selectedSmokeRef,
+    });
     // a lever, button or plate switched emitters on or off (see emitterStore.ts): the particle systems are made anew -
     // only when the set of shown emitters really changed
     const offEmitters = emitterView.subscribe(() => {
       const m = latestMapRef.current;
-      if (shownSig(m) === appliedShown) return;
-      applySmoke(m);
+      if (!smokeFire.shownChanged(m)) return;
+      smokeFire.applySmoke(m);
       sceneVersion++;
     });
 
-    // ---- sound emitters (see sounds.ts): a marker at each for the editor to pick it by, shown only while editing
-    // (nothing of them is built into the deck: they are heard, see audio/soundSystem.ts) ----
-    // (the sign of a sound: a loudspeaker with sound waves on a plane that faces the camera - see render/soundIcon.ts; the
-    // plane is what a click picks, the group round it holds the range ring)
-    const soundMarkers = new Map<number, THREE.Group>();
-    const soundMarkerGeo = new THREE.PlaneGeometry(1, 1);
-    geometries.push(soundMarkerGeo);
-    const soundIconTexture = makeSoundIcon();
-    const soundMarkerMat = new THREE.MeshBasicMaterial({ map: soundIconTexture, alphaTest: 0.35, side: THREE.DoubleSide, fog: false });
-    // the range, as a ring on the floor under the selected one
-    const soundRingMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.55, depthTest: false, side: THREE.DoubleSide, fog: false });
-    const clearSoundMarkers = () => {
-      for (const marker of soundMarkers.values()) {
-        group.remove(marker);
-        marker.traverse((o) => {
-          if (o.userData.soundRing) (o as THREE.Mesh).geometry.dispose();
-        });
-      }
-      soundMarkers.clear();
-    };
-    const buildSoundMarkers = (m: GameMap) => {
-      clearSoundMarkers();
-      (m.sounds ?? []).forEach((spec, index) => {
-        const marker = new THREE.Group();
-        const floor = floorY(spec.x, spec.y);
-        marker.position.set(spec.x + (spec.pos?.[0] ?? 0), (floorHeight(m, spec.x, spec.y) + (spec.pos?.[1] ?? 0.5)) * wallHeight, spec.y + (spec.pos?.[2] ?? 0));
-        marker.userData.soundIndex = index;
-        marker.userData.item = true;
-        marker.visible = false;
-        const icon = new THREE.Mesh(soundMarkerGeo, soundMarkerMat);
-        icon.scale.setScalar(SOUND_ICON_SIZE);
-        icon.userData.soundIndex = index;
-        icon.userData.soundIcon = true;
-        marker.add(icon);
-        const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.01, spec.range - 0.06), spec.range, 96), soundRingMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = floor - marker.position.y + 0.04;
-        ring.renderOrder = 9;
-        // (not pickable: a click on it is a click on the floor under it)
-        ring.raycast = () => {};
-        ring.userData.soundRing = true;
-        ring.visible = false;
-        marker.add(ring);
-        group.add(marker);
-        soundMarkers.set(index, marker);
-      });
-    };
-    buildSoundMarkers(map);
-
-    // ---- exits: a glowing plate on the floor of each way off the ship ----
-    const exitMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(), transparent: true, depthWrite: false, fog: true });
-    const gateMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(true), transparent: true, depthWrite: false, fog: true });
-    const exitGeo = new THREE.PlaneGeometry(0.8, 0.8);
-    geometries.push(exitGeo);
-    // (by cell: the editor frames the selected one)
-    const linkPlates = new Map<string, THREE.Object3D>();
-    for (const exit of map.exits ?? []) {
-      const plate = new THREE.Mesh(exitGeo, exit.to ? gateMat : exitMat);
-      linkPlates.set(`${exit.cell.x},${exit.cell.y}`, plate);
-      plate.rotation.x = -Math.PI / 2;
-      // (just above the floor's relief)
-      plate.position.set(exit.cell.x, floorY(exit.cell.x, exit.cell.y) + reliefDepth + 0.006, exit.cell.y);
-      group.add(plate);
-    }
-    // stairs (see StairsSpec): such a plate each, by direction and style
-    const stairsMats = new Map<string, THREE.MeshBasicMaterial>();
-    for (const stairs of map.stairs ?? []) {
-      const key = `${stairs.direction}-${stairs.style ?? "straight"}`;
-      let mat = stairsMats.get(key);
-      if (!mat) {
-        mat = new THREE.MeshBasicMaterial({ map: makeStairsMarker(stairs.direction === "up", stairs.style === "spiral"), transparent: true, depthWrite: false, fog: true });
-        stairsMats.set(key, mat);
-      }
-      const plate = new THREE.Mesh(exitGeo, mat);
-      linkPlates.set(`${stairs.cell.x},${stairs.cell.y}`, plate);
-      plate.rotation.x = -Math.PI / 2;
-      plate.position.set(stairs.cell.x, floorY(stairs.cell.x, stairs.cell.y) + reliefDepth + 0.006, stairs.cell.y);
-      group.add(plate);
-    }
-
-    // ---- loot ----
-    // An item's sprite: an upright relief cutout of its art, standing on
-    // its bottom edge, turned to the camera each frame (see updateLoot).
-    const itemTemplates = new Map<string, Promise<THREE.Group | null>>();
-    function itemTemplate(id: string): Promise<THREE.Group | null> {
-      let made = itemTemplates.get(id);
-      if (!made) {
-        made = (async () => {
-          const pickup = sharedImage(id)?.pickup;
-          if (isSharedPickupId(id) && !pickup) return null;
-          const kit = sharedPropKitFor(`item_${id}`, pickup ? pickupTexture(id) : undefined);
-          let gridPromise = cache.grids.get(kit.depthUrl);
-          if (!gridPromise) {
-            gridPromise = loadWithRetry(kit.depthUrl, 4);
-            cache.grids.set(kit.depthUrl, gridPromise);
-          }
-          const grid = await gridPromise;
-          const h = pickup?.height ?? ITEM_HEIGHT;
-          const w = (h * grid.width) / grid.height;
-          const relief = await buildPropRelief(kit, { width: w, height: h, flushEdges: false, depth: propReliefDepth * PROP_RELIEF_SCALE * 0.6 }, 24);
-          if (!relief) return null;
-          for (const mat of kitMaterials(kit)) useLightGrid(mat, lightGrid);
-          // a faint glow of their own: loot reads even in a dark room
-          kit.wallMat.emissiveMap = kit.wallMat.map;
-          kit.wallMat.emissive.setHex(0xffffff);
-          kit.wallMat.emissiveIntensity = pickup?.glow ?? ITEM_GLOW;
-          kit.wallMat.needsUpdate = true;
-          // Its normals bent up (and a little back): turned to the camera
-          // whichever way it's seen, it would take only the light from the
-          // viewer's side - bent, the lamps above and beyond it light it too.
-          const geometry = relief.geometry.clone();
-          const normals = geometry.getAttribute("normal") as THREE.BufferAttribute;
-          const n = new THREE.Vector3();
-          for (let i = 0; i < normals.count; i++) {
-            n.fromBufferAttribute(normals, i).multiplyScalar(ITEM_NORMAL_KEEP).add(ITEM_NORMAL_BEND).normalize();
-            normals.setXYZ(i, n.x, n.y, n.z);
-          }
-          normals.needsUpdate = true;
-          geometries.push(geometry);
-          const template = new THREE.Group();
-          const mesh = new THREE.Mesh(geometry, [kit.wallMat, kit.sideMat]);
-          mesh.position.y = h / 2;
-          template.add(mesh);
-          return template;
-        })();
-        itemTemplates.set(id, made);
-      }
-      return made;
-    }
-    // the loose items, by index in map.items; and what's flying (spilled
-    // out of a container, or drawn in to the party's feet)
-    // (`toss`: an item the party has just dropped, flying from its hands to where it lies)
-    const looseItems = new Map<number, { obj: THREE.Object3D; cell: string; taken: boolean; toss?: { start: number; from?: THREE.Vector3; rest: THREE.Vector3 } }>();
-    interface Flyer {
-      obj: THREE.Object3D;
-      from: THREE.Vector3;
-      rest: THREE.Vector3;
-      start: number;
-    }
-    const flyers: Flyer[] = [];
-    // (built again, in place, when the map's items change - see applyLightsRef)
-    let itemsVersion = 0;
-    // the newest item the party dropped that has been shown (a build later does not toss it again)
-    let lastDrop = Math.max(-1, ...(latestMapRef.current.items ?? []).map((i) => i.dropped ?? -1));
-    function buildItems(m: GameMap) {
-    const version = ++itemsVersion;
-    (m.items ?? []).forEach((spec, index) => {
-      // (a dropped item that is new tosses from the party's hands; see updateLoot)
-      const tossed = spec.dropped !== undefined && spec.dropped > lastDrop;
-      if (tossed) lastDrop = spec.dropped!;
-      track(async () => {
-        const template = await itemTemplate(spec.item);
-        if (!template || disposed || version !== itemsVersion) return;
-        const [dx, dz] = itemSpot(spec.offset, index);
-        const obj = template.clone();
-        obj.position.set(spec.cell.x + dx, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight + ITEM_LIFT, spec.cell.y + dz);
-        obj.userData.item = true;
-        // the editor picks it by this
-        obj.userData.itemIndex = index;
-        obj.visible = false;
-        group.add(obj);
-        // (one taken before this build - a deck entered again, items changed in place - is not drawn in again)
-        looseItems.set(index, {
-          obj,
-          cell: cellKey(spec.cell.x, spec.cell.y),
-          taken: !!lootRef.current.takenItems?.has(index),
-          // (real time: the game's clock stands still while the inventory is open, which is where an item is dropped from)
-          toss: tossed ? { start: performance.now(), rest: obj.position.clone() } : undefined,
-        });
-      }).catch((err) => console.error("Item build failed:", err));
+    const editorMarkers = createEditorMarkers({
+      group, camera, map, geometries, floorY, wallHeight, reliefDepth, editModeRef, hiddenLayersRef, selectedSoundRef,
     });
-    }
-    function clearItems() {
-      itemsVersion++;
-      for (const it of looseItems.values()) group.remove(it.obj);
-      looseItems.clear();
-    }
-    buildItems(map);
-    // spills already shown (before this build) aren't shown again
-    let lastSpill = Math.max(0, ...(lootRef.current.spills ?? []).map((s) => s.id));
-    async function spill(event: LootSpill) {
-      const now = gameClock.now();
-      const from = new THREE.Vector3(event.from.x, event.from.y * wallHeight, event.from.z);
-      const cx = Math.round(event.from.x);
-      const cz = Math.round(event.from.z);
-      let n = 0;
-      for (const stack of event.items) {
-        const template = await itemTemplate(stack.item);
-        if (!template || disposed) continue;
-        for (let k = 0; k < Math.min(stack.count, 3); k++, n++) {
-          const obj = template.clone();
-          obj.userData.item = true;
-          const a = Math.random() * Math.PI * 2;
-          const r = 0.15 + Math.random() * 0.2;
-          const clamp = (v: number, c: number) => Math.min(c + 0.4, Math.max(c - 0.4, v));
-          const rest = new THREE.Vector3(
-            clamp(from.x + Math.cos(a) * r, cx),
-            event.floorY * wallHeight + ITEM_LIFT,
-            clamp(from.z + Math.sin(a) * r, cz),
-          );
-          obj.position.copy(from);
-          group.add(obj);
-          // one after another, a little apart
-          flyers.push({ obj, from: from.clone(), rest, start: now + n * 60 });
-        }
-      }
-    }
+    const { soundMarkers, linkPlates, buildSoundMarkers } = editorMarkers;
+
+    const itemsLoot = createItemsLoot({
+      group, map, getLatestMap: () => latestMapRef.current, lootRef, getVisibleCells: () => sight.cells,
+      draggedWorldItem, markLooted, isDisposed: () => disposed, track, geometries, grids: cache.grids,
+      sharedPropKitFor, loadWithRetry, buildPropRelief, lightGrid, propReliefDepth, wallHeight, floorY,
+    });
+    const { buildItems, clearItems, updateLoot, looseItems } = itemsLoot;
     // an emptied container: its lid lifted a little and askew, a chalk
     // cross on it (or, lidless, on its front)
     // (a copy of each face material with the cross chalked into its
@@ -4415,28 +3910,14 @@ export function GameViewport({
       }
     }
     applyLightsRef.current = (next: GameMap) => {
-      weatherMap = next;
+      smokeFire.setWeatherMap(next);
       if (next.structureKey !== previewKey) {
         previewKey = next.structureKey;
         applyStructure(next);
       }
       const lightsChanged = lightsOf(next) !== lightsOf(applied);
       if (lightsChanged) applyLights(next);
-      if (JSON.stringify(next.smokes) !== JSON.stringify(applied.smokes)) {
-        const shape = (m: GameMap) => JSON.stringify(m.smokes?.map(({ color, lightColor, lightIntensity, lightReach, active, harm, ...rest }) => rest));
-        if (shape(next) === shape(applied)) {
-          next.smokes?.forEach((spec, index) => {
-            const effect = spec.effect ?? (spec.petals ? "motes" : spec.fire ? "fire" : "smoke");
-            const fallback = effect === "fire" || effect === "petals" ? 0xffffff : effect === "fireflies" ? 0xd9ef78 : effect === "motes" ? 0xf4a6c0 : effect === "groundfog" ? 0xb4b8bc : SMOKE_COLOR;
-            effectColors.get(index)?.setHex(parseColor(spec.color) ?? fallback);
-            const fire = fireEmitters.get(index);
-            if (fire) Object.assign(fire, fireLight(spec));
-          });
-        } else {
-          applySmoke(next);
-          sceneVersion++;
-        }
-      }
+      if (smokeFire.updateSmokeSpecs(next, applied)) sceneVersion++;
       // (the sounds' markers only: the sounds themselves are the audio system's)
       if (JSON.stringify(next.sounds) !== JSON.stringify(applied.sounds)) buildSoundMarkers(next);
       if (renderedSpecs(next.decals) !== renderedSpecs(applied.decals) && settingsRef.current.decalsEnabled) {
@@ -4513,7 +3994,7 @@ export function GameViewport({
       }
       // the fires' flickering glow
       let fireIndex = 0;
-      fireEmitters.forEach((e, i) => {
+      smokeFire.fireEmitters.forEach((e, i) => {
         const flickerIndex = fireIndex++;
         if (e.lightIntensity === 0) return;
         list.push({
@@ -4807,72 +4288,6 @@ export function GameViewport({
       actorMeshes.delete(id);
     }
 
-    // the loot's sprites: the loose ones turned to the camera (shown while
-    // in sight and not taken), new spills let out, the flyers moved
-    function updateLoot(camX: number, camZ: number, feetY: number) {
-      const now = gameClock.now();
-      const loot = lootRef.current;
-      markLooted(loot.lootedProps);
-      for (const event of loot.spills ?? []) {
-        if (event.id <= lastSpill) continue;
-        lastSpill = event.id;
-        spill(event).catch((err) => console.error("Spill failed:", err));
-      }
-      for (const [index, item] of looseItems) {
-        if (!item.taken && loot.takenItems?.has(index)) {
-          // taken: drawn in from where it lies
-          item.taken = true;
-          flyers.push({ obj: item.obj, from: item.obj.position.clone(), rest: item.obj.position.clone(), start: now - SPILL_REST_MS });
-        }
-        if (item.taken) continue;
-        if (item.toss) {
-          // just dropped: out of the party's hands to where it lies, in a little arc (as a spill's items fly)
-          const toss = item.toss;
-          toss.from ??= new THREE.Vector3(camX, feetY + ITEM_LIFT + 0.35 * wallHeight, camZ);
-          const p = (performance.now() - toss.start) / SPILL_OUT_MS;
-          if (p >= 1) {
-            item.obj.position.copy(toss.rest);
-            item.toss = undefined;
-          } else {
-            const q = Math.max(0, p);
-            item.obj.position.lerpVectors(toss.from, toss.rest, q);
-            item.obj.position.y += Math.sin(q * Math.PI) * 0.18;
-          }
-        }
-        // (not the one being dragged to the screen's hands and backpack - see slotDrag's beginWorldDrag)
-        item.obj.visible = sight.cells.has(item.cell) && draggedWorldItem() !== index;
-        item.obj.rotation.y = Math.atan2(camX - item.obj.position.x, camZ - item.obj.position.z);
-      }
-      const feet = new THREE.Vector3(camX, feetY + ITEM_LIFT, camZ);
-      for (let i = flyers.length - 1; i >= 0; i--) {
-        const f = flyers[i];
-        const t = now - f.start;
-        const obj = f.obj;
-        if (t < 0) {
-          obj.visible = false;
-          continue;
-        }
-        obj.visible = true;
-        obj.rotation.y = Math.atan2(camX - obj.position.x, camZ - obj.position.z);
-        if (t < SPILL_OUT_MS) {
-          // out of the container in a little arc
-          const p = t / SPILL_OUT_MS;
-          obj.position.lerpVectors(f.from, f.rest, p);
-          obj.position.y += Math.sin(p * Math.PI) * 0.18;
-        } else if (t < SPILL_REST_MS) {
-          obj.position.copy(f.rest);
-        } else if (t < SPILL_REST_MS + SPILL_IN_MS) {
-          // drawn in to the party's feet, shrinking
-          const q = (t - SPILL_REST_MS) / SPILL_IN_MS;
-          obj.position.lerpVectors(f.rest, feet, q * q);
-          obj.scale.setScalar(1 - 0.7 * q);
-        } else {
-          obj.visible = false;
-          group.remove(obj);
-          flyers.splice(i, 1);
-        }
-      }
-    }
 
     function updateActors(camX: number, camZ: number) {
       const now = gameClock.now();
@@ -6455,7 +5870,7 @@ export function GameViewport({
       }
       // a selected smoke emitter: framed around its marker
       const smokeIndex = editModeRef.current ? selectedSmokeRef.current : null;
-      const smokeMarker = smokeIndex === null ? undefined : smokeMarkers.get(smokeIndex);
+      const smokeMarker = smokeIndex === null ? undefined : smokeFire.smokeMarkers.get(smokeIndex);
       if (smokeMarker) {
         frameObject(selectBox, smokeMarker, 0.05);
         selectBox.visible = true;
@@ -6615,7 +6030,7 @@ export function GameViewport({
         const item = looseItems.get(target.item!);
         if (item) frameObject(editBox, item.obj, 0.02);
       } else if (mode === "smoke") {
-        const marker = smokeMarkers.get(target.smoke!);
+        const marker = smokeFire.smokeMarkers.get(target.smoke!);
         if (marker) frameObject(editBox, marker, 0.03);
       } else if (mode === "sound") {
         const marker = soundMarkers.get(target.sound!);
@@ -6683,7 +6098,6 @@ export function GameViewport({
     const startedAt = performance.now();
     let lastFrameAt = startedAt;
     let lastStatsAt = 0;
-    let particleFrame = 0;
     // frames counted for the fps
     let fpsFrames = 0;
     let fpsSince = performance.now();
@@ -6699,111 +6113,10 @@ export function GameViewport({
     let waterLightsAt = -1e9;
     // (whether a layer was hidden last frame: showing it again needs one pass)
     let hiddenApplied = false;
-    const eventMarkers = new THREE.Group();
-    const eventMaterials = new Map<Interaction["kind"], THREE.SpriteMaterial>();
-    scene.add(eventMarkers);
-    let markerMap: GameMap | undefined;
-    let markerDecalCount = 0;
-    let markerLayers: ReadonlySet<string> | undefined;
-    function updateEventMarkers() {
-      const m = latestMapRef.current;
-      const hidden = hiddenLayersRef.current;
-      eventMarkers.visible = !!editModeRef.current;
-      if (!eventMarkers.visible) return;
-      const decalCount = decals.pieceCount;
-      if (markerMap === m && markerDecalCount === decalCount && markerLayers === hidden) return;
-      markerMap = m;
-      markerDecalCount = decalCount;
-      markerLayers = hidden;
-      eventMarkers.clear();
-      const add = (target: InteractionTarget, event: Interaction, x: number, y: number, z: number) => {
-        let material = eventMaterials.get(event.kind);
-        if (!material) {
-          material = eventMarkerMaterial(event.kind);
-          eventMaterials.set(event.kind, material);
-        }
-        const sprite = new THREE.Sprite(material);
-        sprite.userData.interactionTarget = target;
-        sprite.position.set(x, y, z);
-        sprite.scale.setScalar(0.28);
-        sprite.renderOrder = 100;
-        eventMarkers.add(sprite);
-      };
-      for (const { cell, side, part, interaction } of m.wallInteractions ?? []) {
-        const center = interactionWallCenter(m, cell, side, part);
-        if (!center) continue;
-        const v = DIR_VECTOR[side];
-        const y = part ? center.y : floorY(cell.x, cell.y) + wallHeight * 0.55;
-        add({ kind: "wall", cell, side, part }, interaction, center.x - v.x * 0.20, y, center.z - v.y * 0.20);
-      }
-      for (const door of m.doors ?? []) {
-        if (!door.interaction) continue;
-        const { x, y } = door.cell;
-        const v = DIR_VECTOR[door.facing];
-        for (const side of [-1, 1]) {
-          const offset = (door.offset ?? 0) + side * 0.18;
-          add({ kind: "door", cell: door.cell }, door.interaction, x + v.x * offset, floorY(x, y) + wallHeight * 0.72, y + v.y * offset);
-        }
-      }
-      if (!hidden.has("decal")) m.decals?.forEach((spec, index) => {
-        const { interaction } = spec;
-        const center = interaction && decals.center(index);
-        if (!interaction || !center) return;
-        const position = center.clone();
-        if (spec.surface === "floor") position.y += 0.16;
-        else if (spec.surface === "ceiling") position.y -= 0.16;
-        else {
-          const v = DIR_VECTOR[spec.surface];
-          position.x -= v.x * 0.16;
-          position.z -= v.y * 0.16;
-        }
-        add({ kind: "decal", index }, interaction, position.x, position.y, position.z);
-      });
-      if (!hidden.has("prop")) m.props?.forEach((spec, index) => {
-        if (!spec.interaction || !PROP_TYPES[spec.prop]) return;
-        const { x, z, type } = propPlacement(spec);
-        const lift = (type.elevation ?? 0) * (spec.scale ?? 1);
-        const y = floorY(spec.cell.x, spec.cell.y) + ((spec.elevation ?? 0) + lift + propHeight(m, spec)) * wallHeight + 0.15;
-        const inward = type.wall ? 0.3 : 0;
-        add({ kind: "prop", index }, spec.interaction,
-          THREE.MathUtils.lerp(x, spec.cell.x, inward), Math.min(y, ceilingY(spec.cell.x, spec.cell.y) - 0.14),
-          THREE.MathUtils.lerp(z, spec.cell.y, inward));
-      });
-      if (!hidden.has("item")) m.items?.forEach((spec, index) => {
-        if (!spec.interaction) return;
-        const { x, y } = spec.cell;
-        const [dx, dz] = itemSpot(spec.offset, index);
-        add({ kind: "item", index }, spec.interaction, x + dx, floorY(x, y) + (spec.elevation ?? 0) * wallHeight + 0.25, y + dz);
-      });
-    }
-    // a padlock over each locked prop, while editing (see game/propLocks.ts)
-    const lockMarkers = new THREE.Group();
-    const lockMaterial = lockMarkerMaterial();
-    scene.add(lockMarkers);
-    let lockMarkerMap: GameMap | undefined;
-    let lockMarkerLayers: ReadonlySet<string> | undefined;
-    function updateLockMarkers() {
-      const m = latestMapRef.current;
-      const hidden = hiddenLayersRef.current;
-      lockMarkers.visible = !!editModeRef.current;
-      if (!lockMarkers.visible || (lockMarkerMap === m && lockMarkerLayers === hidden)) return;
-      lockMarkerMap = m;
-      lockMarkerLayers = hidden;
-      lockMarkers.clear();
-      if (hidden.has("prop")) return;
-      for (const spec of m.props ?? []) {
-        if (!spec.lock || !PROP_TYPES[spec.prop]) continue;
-        const { x, z, type } = propPlacement(spec);
-        const lift = (type.elevation ?? 0) * (spec.scale ?? 1);
-        const y = floorY(spec.cell.x, spec.cell.y) + ((spec.elevation ?? 0) + lift + propHeight(m, spec)) * wallHeight + 0.3;
-        const inward = type.wall ? 0.3 : 0;
-        const sprite = new THREE.Sprite(lockMaterial);
-        sprite.position.set(THREE.MathUtils.lerp(x, spec.cell.x, inward), Math.min(y, ceilingY(spec.cell.x, spec.cell.y) - 0.12), THREE.MathUtils.lerp(z, spec.cell.y, inward));
-        sprite.scale.setScalar(0.22);
-        sprite.renderOrder = 101;
-        lockMarkers.add(sprite);
-      }
-    }
+    const events = createEventMarkers({
+      scene, latestMapRef, editModeRef, hiddenLayersRef, decals, floorY, ceilingY, wallHeight, interactionWallCenter,
+    });
+    const { eventMarkers, updateEventMarkers, updateLockMarkers } = events;
     function renderFrame() {
       updateEventMarkers();
       updateLockMarkers();
@@ -6820,7 +6133,7 @@ export function GameViewport({
           ...mapLights
             .filter((l) => l.kind !== "window")
             .map((l) => ({ x: l.x, y: l.y * wallHeight, z: l.z, color: l.color, intensity: l.intensity })),
-          ...[...fireEmitters.values()].filter(e => e.lightIntensity > 0).map(e => ({
+          ...[...smokeFire.fireEmitters.values()].filter(e => e.lightIntensity > 0).map(e => ({
             x: e.x, y: e.y + FIRE_LIGHT_LIFT * wallHeight, z: e.z, color: e.lightColor,
             intensity: FIRE_LIGHT_INTENSITY * e.lightIntensity * 0.5,
           })),
@@ -7157,47 +6470,11 @@ export function GameViewport({
       );
       updateActors(camX, camZ);
       updateLoot(camX, camZ, cam.y * wallHeight);
-      const smokePhysics = { walls: s.smokeWalls, props: s.smokeProps, actors: s.smokeActors ? smokeBodies : null };
-      // (with a lighter setting the particles are moved every 2nd or 3rd frame, by that many frames' time)
-      particleFrame++;
-      weather.update(gameDt, t, camera, weatherMap.weather, (x, z) => {
-        const cell = cellAt(weatherMap,x,z);
-        const open = (weatherMap.ceilingTextureAt?.(x,z) ?? weatherMap.textures?.ceiling) === "sky";
-        return { floor:floorY(x,z), ceiling:open ? Infinity : ceilingY(x,z), valid:cell!==undefined && cell!=="wall", open };
-      }, weatherMap);
-      const every = Math.max(1, Math.round(s.particleEvery));
-      if (every === 1 || particleFrame % every === 0) {
-        const pdt = gameDt * every;
-        smoke.update(pdt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
-        fire.update(pdt, camera, sight.cells, s.ambientIntensity, s.smokeStyle, smokePhysics);
-        petals.update(pdt, t, camera);
-        motes.update(pdt, t); mist.update(pdt, t, camera); flies.update(pdt, t, camera);
-      }
-      for (const marker of smokeMarkers.values()) {
-        marker.visible = editModeRef.current && !hiddenLayersRef.current.has("smoke");
-        // (a ground fog's area - ring and disc - shows only while its emitter is the one selected)
-        const picked = marker.userData.smokeIndex === selectedSmokeRef.current;
-        for (const child of marker.children) if (child.userData.fogShape) child.visible = picked;
-      }
-      for (const marker of soundMarkers.values()) {
-        marker.visible = editModeRef.current && !hiddenLayersRef.current.has("sound");
-        if (!marker.visible) continue;
-        // (the range shows while its emitter is the one selected; the sign faces the camera, and grows with the distance
-        // so it stays readable from the top-down view)
-        const picked = marker.userData.soundIndex === selectedSoundRef.current;
-        const grow = Math.max(1, camera.position.distanceTo(marker.position) / SOUND_ICON_FAR);
-        for (const child of marker.children) {
-          if (child.userData.soundRing) child.visible = picked;
-          else if (child.userData.soundIcon) {
-            child.quaternion.copy(camera.quaternion);
-            child.scale.setScalar(SOUND_ICON_SIZE * grow);
-          }
-        }
-      }
-      syncFenceMarkers();
-      // the exits' plates throb
-      exitMat.opacity = gateMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
-      for (const mat of stairsMats.values()) mat.opacity = exitMat.opacity;
+      smokeFire.updateParticles(gameDt, t, s, sight.cells, smokeBodies);
+      smokeFire.updateMarkers();
+      editorMarkers.updateSoundMarkers();
+      fences.syncFenceMarkers();
+      editorMarkers.updateLinkPlates(gameNow);
       updateTracers();
       camera.updateMatrixWorld();
       updateEditHighlight();
@@ -7245,20 +6522,13 @@ export function GameViewport({
         // Surfaces already restore their visibility in the culling pass above.
         if (hidden.has("texture")) for (const obj of facingSurfaces) obj.visible = false;
         backingMat.visible = s.wallBacking && !hidden.has("texture");
-        const smokeShown = !hidden.has("smoke");
-        smoke.mesh.visible = smokeShown;
-        fire.mesh.visible = smokeShown;
-        petals.mesh.visible = smokeShown;
-        motes.mesh.visible = mist.mesh.visible = flies.mesh.visible = weather.mesh.visible = smokeShown;
+        smokeFire.setVisible(!hidden.has("smoke"));
         const propsHidden = hidden.has("prop");
         for (const obj of propObjects.values()) obj.visible = !propsHidden;
         // (shown again: the culling pass decides afresh which are in sight)
         if (!propsHidden) culledCount = -1;
         decals.setVisible(!hidden.has("decal"));
-        if (hidden.has("item")) {
-          for (const item of looseItems.values()) item.obj.visible = false;
-          for (const f of flyers) f.obj.visible = false;
-        }
+        if (hidden.has("item")) itemsLoot.hideItems();
         if (hidden.has("robot")) {
           for (const entry of actorMeshes.values()) {
             entry.mesh.visible = false;
@@ -7340,14 +6610,14 @@ export function GameViewport({
       const pixel = new Uint8Array(4);
       const run = (withSmoke: boolean) => {
         const times: number[] = [];
-        smoke.mesh.visible = withSmoke;
+        smokeFire.getSmoke().mesh.visible = withSmoke;
         for (let i = 0; i < frames + 10; i++) {
           const start = performance.now();
           renderFrame();
           gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
           if (i >= 10) times.push(performance.now() - start);
         }
-        smoke.mesh.visible = true;
+        smokeFire.getSmoke().mesh.visible = true;
         times.sort((a, b) => a - b);
         return times[times.length >> 1];
       };
@@ -7355,9 +6625,10 @@ export function GameViewport({
       const without = run(false);
       const again = run(true);
       const start = performance.now();
-      for (let i = 0; i < 1000; i++) smoke.update(0, camera, sight.cells, 0.3);
+      for (let i = 0; i < 1000; i++) smokeFire.getSmoke().update(0, camera, sight.cells, 0.3);
       const update = (performance.now() - start) / 1000;
-      const puffs = smoke.mesh.geometry instanceof THREE.InstancedBufferGeometry ? smoke.mesh.geometry.instanceCount : 0;
+      const geometry = smokeFire.getSmoke().mesh.geometry;
+      const puffs = geometry instanceof THREE.InstancedBufferGeometry ? geometry.instanceCount : 0;
       renderer.setPixelRatio(ratio);
       renderer.setSize(size.x, size.y, false);
       if (size.x > 0 && size.y > 0) {
@@ -7407,10 +6678,7 @@ export function GameViewport({
         kit.litMat?.dispose();
       }
       for (const mat of ownMaterials) mat.dispose();
-      for (const material of eventMaterials.values()) {
-        material.map?.dispose();
-        material.dispose();
-      }
+    events.dispose();
       postPipeline.disposeFaceMaterials();
       offOperables();
       offEmitters();
@@ -7438,30 +6706,11 @@ export function GameViewport({
       sky.stopWaiting();
       decals.dispose();
       disposeLightGrid(lightGrid);
-      fenceMarkTexture.dispose();
-      for (const mat of Object.values(fenceMarkMats)) mat.dispose();
-      exitMat.map?.dispose();
-      exitMat.dispose();
-      gateMat.map?.dispose();
-      gateMat.dispose();
-      for (const mat of stairsMats.values()) {
-        mat.map?.dispose();
-        mat.dispose();
-      }
-      scene.remove(smoke.mesh, fire.mesh, petals.mesh, motes.mesh, mist.mesh, flies.mesh);
-      motes.dispose(); mist.dispose(); flies.dispose();
-      petals.dispose();
-      weather.dispose();
-      smoke.dispose();
-      fire.dispose();
-      smokeMarkerMat.dispose();
-      clearSoundMarkers();
-      soundMarkerMat.dispose();
-      soundIconTexture.dispose();
-      soundRingMat.dispose();
-      fogRingMat.dispose();
-      fogHeightMat.dispose();
-      smokeBlowMat.dispose();
+    fences.dispose();
+    editorMarkers.disposeLinkPlates();
+    smokeFire.dispose();
+    editorMarkers.disposeSoundMarkers();
+    smokeFire.disposeMarkerDetails();
       backingMat.dispose();
       for (const mat of billboardMaterials) mat.dispose();
       sky.dispose();
