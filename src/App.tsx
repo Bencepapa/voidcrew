@@ -32,6 +32,7 @@ import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
 import { WORLD_SETTING_KEYS, worldDefaults } from "./game/worldRenderDefaults";
 import { saveGraphics } from "./render/graphics";
+import { savePostSaved } from "./render/postSettingsStore";
 import type { AimFocus, AimFrame, EditDrag, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { editorToolLabel } from "./editor/EditorBar";
 import { SharedEditor } from "./editor/SharedEditor";
@@ -363,6 +364,8 @@ export default function App() {
   const [, setEdits] = useState(0);
   const draftNotice = useMapDrafts(map.id, replaceMap, () => setEdits((n) => n + 1), pushLog);
   // the graphics choices belong to the device: kept in this browser
+  // the dark fantasy look is kept in the browser, so a reload does not lose a hand-tuned one
+  useEffect(() => savePostSaved(settings), [settings.postDark, settings.postDarkness, settings.postWarm, settings.postCold, settings.postSaturation, settings.postPalette, settings.postVignette, settings.postRules, settings.postOthers]);
   useEffect(() => saveGraphics(settings), [settings.particleQuality, settings.wallDetail, settings.pixelRatioCap, settings.particleEvery, settings.viewDistanceCap, settings.lodScale, settings.antialias, settings.lightPool, settings.normalMaps]);
   const [editLamp, setEditLamp] = useState(true);
   const viewSettings = editMode ? { ...settings, noclip: true, headlamp: editLamp } : settings;

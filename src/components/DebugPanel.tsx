@@ -16,6 +16,7 @@ import { storyEnabled } from "../game/story/storyRuntime";
 import { PlayToggle } from "./PlayToggle";
 import { StoryDebugSection } from "./StoryDebugSection";
 import { AudioProbeSection } from "./AudioProbeSection";
+import { parsePostText, postToText } from "../render/postSettingsStore";
 import { SoundSection } from "./SoundSection";
 import { SharedCacheDebugSection } from "./SharedCacheDebugSection";
 import { parsePickupMode, worldDefaultPickup } from "../game/pickupMode";
@@ -253,6 +254,38 @@ export function DebugPanel({
   );
   const button = "text-[11px] border border-neutral-600 rounded-sm px-2 py-1 hover:bg-neutral-800 text-left";
 
+  // the dark fantasy look to / from the clipboard (see render/postSettingsStore.ts); where the browser will not give the
+  // clipboard (no permission, an embedded pane) a text box takes its place: the text to copy by hand, or a place to paste into
+  const [postNote, setPostNote] = useState("");
+  const [postBox, setPostBox] = useState<{ mode: "copy" | "paste"; text: string } | null>(null);
+  const copyPost = () => {
+    const text = postToText(settings);
+    const manual = () => {
+      setPostBox({ mode: "copy", text });
+      setPostNote("");
+    };
+    if (!navigator.clipboard?.writeText) return manual();
+    navigator.clipboard.writeText(text).then(() => { setPostBox(null); setPostNote(t("debug.postCopied")); }, manual);
+  };
+  const applyPostText = (text: string | null) => {
+    const read = text ? parsePostText(text) : undefined;
+    if (!read) {
+      setPostNote(t("debug.postPasteInvalid"));
+      return;
+    }
+    onChange({ ...settings, ...read });
+    setPostBox(null);
+    setPostNote(t("debug.postPasted"));
+  };
+  const pastePost = () => {
+    const manual = () => {
+      setPostBox({ mode: "paste", text: "" });
+      setPostNote("");
+    };
+    if (!navigator.clipboard?.readText) return manual();
+    navigator.clipboard.readText().then(applyPostText, manual);
+  };
+
   return (
     <div
       className={`w-full flex flex-col gap-1 border border-neutral-700 rounded-sm p-2 text-neutral-200 ${compact ? "bg-neutral-950/95" : "h-full bg-neutral-900/80 overflow-y-auto"}`}
@@ -386,6 +419,28 @@ export function DebugPanel({
         <>
           <div className="text-[10px] text-neutral-300">{t("debug.postDarkHint")}</div>
           {check("postDark", t("debug.postDarkOn"))}
+          <div className="flex flex-wrap items-center gap-1">
+            <button type="button" className={button} title={t("debug.postCopyHint")} onClick={copyPost}>{t("debug.postCopy")}</button>
+            <button type="button" className={button} title={t("debug.postPasteHint")} onClick={pastePost}>{t("debug.postPaste")}</button>
+          </div>
+          {postBox && (
+            <div className="flex flex-col gap-1">
+              <textarea
+                rows={5}
+                value={postBox.text}
+                readOnly={postBox.mode === "copy"}
+                onFocus={(e) => postBox.mode === "copy" && e.target.select()}
+                onChange={(e) => setPostBox({ ...postBox, text: e.target.value })}
+                placeholder={postBox.mode === "paste" ? t("debug.postPasteHere") : undefined}
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-sm text-[10px] p-1 font-mono"
+              />
+              <div className="flex gap-1">
+                {postBox.mode === "paste" && <button type="button" className={button} onClick={() => applyPostText(postBox.text)}>{t("debug.postPasteApply")}</button>}
+                <button type="button" className={button} onClick={() => setPostBox(null)}>{t("debug.postClose")}</button>
+              </div>
+            </div>
+          )}
+          {postNote && <div className="text-[10px] text-neutral-300">{postNote}</div>}
           {settings.postDark && (
             <>
               {slider({ key: "postDarkness", label: "debug.postDarkness", min: 0, max: 1, step: 0.01 })}

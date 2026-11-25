@@ -93,6 +93,7 @@ import { onSharedDecalsChanged, onSharedImagesChanged, onSharedPickupsChanged, p
 import { isSharedSkyId, skySource } from "../game/skyImage";
 import { gameSound } from "../audio/gameSound";
 import { bakeCacheKey, createBakeCache } from "../render/lightBakeCache";
+import { loadPostSaved } from "../render/postSettingsStore";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
@@ -386,6 +387,8 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   ambientIntensity: 0.35,
   bobEnabled: true,
   ...defaultPostSettings(),
+  // (the dark fantasy look the browser kept, see render/postSettingsStore.ts)
+  ...loadPostSaved(),
   bevelFraction: 0.2,
   bevelAngleDeg: 30,
   displacementScale: 0.03,
