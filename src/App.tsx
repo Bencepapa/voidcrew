@@ -83,6 +83,8 @@ import { PROP_TYPES, flamePosition, isSharedPropId, propBlocks, propPlacement, p
 import { MIN_HEADROOM } from "./game/heights";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo, SoundInfo } from "./editor/EditorBar";
 import { newSound, resolveSound, type SoundSpec } from "./game/sounds";
+import { useGameAcoustics } from "./audio/useGameAcoustics";
+import { useAcousticsEditor } from "./editor/useAcousticsEditor";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
 import { ACTOR_TYPES, isFriendlySpec } from "./game/actors";
@@ -1584,6 +1586,8 @@ export default function App() {
   });
   // (the sky check of validateMap answers once the shared sky is registered: App follows the registry for that)
   useSharedImages();
+  // (the sound zones and the rooms' echo of the map being played or edited)
+  useGameAcoustics(map);
   const skyLoaded = isSharedSkyId(map.textures?.sky) && !!sharedImage(map.textures.sky);
   const problems = useMemo(()=>editMode ? validateMap(map) : [],[editMode,map,skyLoaded]);
   const repairProblems = (code:"inWall"|"duplicate") => {
@@ -1593,6 +1597,18 @@ export default function App() {
     setEdits(n=>n+1);
   };
   const zoomed = editMode && miniZoom && !compact;
+  // The sound zones: Shift+click a room on the minimap picks it, the map settings' panel makes a zone of the pick
+  const acoustics = useAcousticsEditor({
+    map,
+    block: zoomed ? miniSel : null,
+    edit: (change, merge) => {
+      const result = applyEdit(map.id, change, merge);
+      if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
+      else replaceMap(result.map);
+      setEdits((n) => n + 1);
+    },
+    log: (text) => pushLog(text, "editor"),
+  });
   // Ctrl+C on the block of cells copies everything in it, Ctrl+V pastes it where the pointer is (see editor/useAreaClipboard)
   const areaClip = useAreaClipboard({
     editMode,
@@ -3023,6 +3039,7 @@ export default function App() {
           onRenameMap={renameCurrentMap}
           mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle, loadingImage: map.loadingImage, pickup: map.pickup, look: map.look }}
           onMapLook={changeMapLook}
+          acoustics={acoustics.panel}
           renderSettings={settings}
           onRenderSettings={setSettings}
           mapHasRender={!!map.render}
@@ -3211,6 +3228,7 @@ export default function App() {
               onSelect: zoomed && !areaClip.pasting ? setMiniSel : undefined,
               paste: areaClip.ghost,
               onHover: areaClip.onHover,
+              zones: acoustics.minimap,
             }
           : undefined
       }

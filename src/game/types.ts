@@ -8,6 +8,7 @@ import type { OperableSpec } from "./operables";
 import type { PropLock } from "./propLocks";
 import type { SkyGradient } from "./skyGradient";
 import type { SoundSpec } from "./sounds";
+import type { AcousticZone } from "./acousticZones";
 
 export type Direction = "N" | "E" | "S" | "W";
 
@@ -139,6 +140,8 @@ export interface GameMap {
   smokes?: SmokeSpec[];
   // generated sounds placed in cells (see sounds.ts), cleaned by parseMap; heard in the game, not in the editor
   sounds?: SoundSpec[];
+  // sound zones (see acousticZones.ts), cleaned by parseMap: the listener's zone gives every sound its echo
+  acoustics?: AcousticZone[];
   actors?: ActorSpec[];
 }
 

@@ -2,7 +2,8 @@
 // listener, to hear the 3D sound by hand - panning as the party turns, the highs lost behind and through walls, many
 // voices at once. They play through the same engine as the map's sound emitters (engine.ts) and take the same maths
 // (soundField.ts): only the places and the lengths are made up here. Nothing is saved.
-import { engine, engineStatus, getListener, type Voice } from "./engine";
+import { currentRoom, engine, engineStatus, getListener, type Voice } from "./engine";
+import { wetSend } from "./roomMix";
 import { attenuation, distanceTo, muffle } from "./soundField";
 import { stereoPan } from "./stereo";
 import type { VoiceState, WaveSpec } from "./soundSystem";
@@ -32,7 +33,9 @@ function stateOf(source: ProbeSource): VoiceState {
   const distance = distanceTo(listener, source);
   const level = 0.7 * (source.volume ?? 1) * attenuation(distance, RANGE, 1);
   const pan = stereoPan(listener, source.x, source.z, { distance, level });
-  return { x: source.x, y: source.y, z: source.z, pan, level, gate: 1, attack: 0, release: 0, cutoff: wall.cutoff, wallGain: wall.gain };
+  // (the test voices echo in the listener's room too: a way to hear the zones without placing a sound)
+  const send = wetSend(currentRoom()?.acoustics.reverb ?? 0, distance);
+  return { x: source.x, y: source.y, z: source.z, pan, level, gate: 1, attack: 0, release: 0, cutoff: wall.cutoff, wallGain: wall.gain, send };
 }
 
 /** Plays one voice of the test sound at a world position for a moment (it stays there while the listener turns and walks). */

@@ -10,6 +10,7 @@ import { roofPieceEdited } from "./roofEdits";
 import { fencePieceEdited } from "./fenceEdits";
 import { fenceFormOf } from "../game/fences";
 import { fixTargetsBeforeRemove } from "./operableEdits";
+import { clearZoneCells, shiftZones } from "./acousticEdits";
 import type { Direction, MapLight, MapLinkTarget, PropAnchor, StairsDirection, StairsStyle, Vec2 } from "../game/types";
 
 // Edits on a map file (see mapStore.applyEdit): each takes a copy of the
@@ -126,6 +127,8 @@ export function fill(file: MapFile, cell: Vec2): MapFile {
     if (!file.faceTextures.length) delete file.faceTextures;
   }
   if (file.lights) file.lights = file.lights.filter((l) => !here(l));
+  // (a wall is in no sound zone)
+  clearZoneCells(file, [cell]);
   return file;
 }
 
@@ -379,6 +382,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
   for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.sounds, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions, file.exits, file.stairs]) {
     for (const item of list ?? []) move(item);
   }
+  shiftZones(file, dx, dy);
   for (const actor of file.actors ?? []) {
     move(actor);
     actor.patrol = actor.patrol?.map(([x, y]) => [x + dx, y + dy]);
@@ -725,6 +729,7 @@ export function clearCells(file: MapFile, cells: Vec2[]): MapFile {
     else delete f[key];
   }
   if (file.restricted) file.restricted = file.restricted.filter(([x, y]) => !has.has(`${x},${y}`));
+  clearZoneCells(file, cells);
   return file;
 }
 

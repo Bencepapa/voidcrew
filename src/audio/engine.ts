@@ -12,6 +12,9 @@
 // listener, the place) is chased by an exponential approach on its own time constant (smoothing.ts), a voice fades in
 // and out (the doorway's voice slowly), and a pulse's gate follows its attack and release.
 //
+// The rooms' echo (reverbBus.ts): each voice also sends a share of itself, from after its fade, to one echo bus whose
+// convolver follows the listener's room (the sound system tells it: `setRoom`); the bus plays into Howler's master gain.
+//
 // FRAGILE: Howler has no hook for effects. A voice's chain is   source -> panner -> gain node -> master,   and the
 // filters (the ear's shadow behind the listener, the muffling of walls, the loudness, the pulse's gate and the fade)
 // go between the panner and the gain node: `Howl._soundById(id)` and the sound's `_panner` (a StereoPannerNode after
@@ -24,6 +27,9 @@ import { behindness } from "./soundField";
 import { DEFAULT_REAR_STRENGTH, rearFilter } from "./rear";
 import { createStereoMeter, type Levels, type StereoMeter } from "./meter";
 import { Smoother, TAU, gateTimeConstant } from "./smoothing";
+import { createReverbBus, type ReverbBus } from "./reverbBus";
+import { DEFAULT_REVERB_AMOUNT, masterSend } from "./roomMix";
+import type { Place } from "./acoustics";
 import type { Listener } from "./soundField";
 import type { SoundBackend, StartOptions, VoiceState, WaveSpec } from "./soundSystem";
 import { waveKey } from "../game/sounds";
@@ -36,9 +42,12 @@ export interface SoundSettings {
   muted: boolean;
   // how much a sound behind the listener is dulled, 0..1 (0: not at all; see rear.ts)
   rearStrength: number;
+  // the echo of the rooms (see reverbBus.ts): the master slider 0..1 (0.6 plays the zones' own numbers as they are), and a switch
+  reverbAmount: number;
+  reverbOn: boolean;
 }
 const STORAGE_KEY = "voidcrew-sound";
-const DEFAULT_SETTINGS: SoundSettings = { volume: 0.8, muted: false, rearStrength: DEFAULT_REAR_STRENGTH };
+const DEFAULT_SETTINGS: SoundSettings = { volume: 0.8, muted: false, rearStrength: DEFAULT_REAR_STRENGTH, reverbAmount: DEFAULT_REVERB_AMOUNT, reverbOn: true };
 const unit = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback);
 
 function loadSettings(): SoundSettings {
@@ -48,6 +57,8 @@ function loadSettings(): SoundSettings {
       volume: unit(saved?.volume, DEFAULT_SETTINGS.volume),
       muted: saved?.muted === true,
       rearStrength: unit(saved?.rearStrength, DEFAULT_SETTINGS.rearStrength),
+      reverbAmount: unit(saved?.reverbAmount, DEFAULT_SETTINGS.reverbAmount),
+      reverbOn: saved?.reverbOn !== false,
     };
   } catch {
     // (no storage, or a damaged value: the defaults)
@@ -85,6 +96,8 @@ export const setMasterVolume = (volume: number) => changeSettings({ ...settings,
 export const setMuted = (muted: boolean) => changeSettings({ ...settings, muted });
 // (the voices follow it at their next state: it is smoothed like everything else)
 export const setRearStrength = (strength: number) => changeSettings({ ...settings, rearStrength: unit(strength, DEFAULT_SETTINGS.rearStrength) });
+export const setReverbAmount = (amount: number) => changeSettings({ ...settings, reverbAmount: unit(amount, DEFAULT_SETTINGS.reverbAmount) });
+export const setReverbOn = (on: boolean) => changeSettings({ ...settings, reverbOn: on });
 applySettings();
 
 // ---- the audio context: unlocked by the first touch, and asleep while the page is hidden
@@ -139,6 +152,35 @@ export function outputLevels(): Levels {
   return meter?.levels() ?? { left: 0, right: 0 };
 }
 
+// ---- the rooms' echo: one bus for every voice, and what the listener's room says of it
+
+let bus: ReverbBus | null = null;
+let room: Place | null = null;
+function ensureReverb(): ReverbBus | null {
+  if (bus) return bus;
+  const ctx = context();
+  if (!ctx) return null;
+  ensureLimiter();
+  try {
+    // (it plays into Howler's master gain: the master volume and the mute switch rule the echo too)
+    bus = createReverbBus(ctx, Howler.masterGain);
+    if (room) bus.setRoom(room.acoustics.decay, room.acoustics.softness);
+  } catch (error) {
+    console.warn("[sound] no echo", error);
+  }
+  return bus;
+}
+function setRoom(place: Place) {
+  room = place;
+  bus?.setRoom(place.acoustics.decay, place.acoustics.softness);
+}
+// the master factor of every voice's send (the Debug panel's Echo slider and switch)
+const reverbGain = () => masterSend(settings.reverbAmount, settings.reverbOn);
+
+// the room the echo plays now, the wet level (linear RMS) and the impulse in use (the Debug panel's lines)
+export const currentRoom = (): Place | null => room;
+export const wetLevel = (): number => bus?.level() ?? 0;
+export const echoImpulse = () => bus?.current() ?? null;
 // ---- the sounds: one Howl for each wave, made once (the sample buffer is generated once, never a file)
 
 const howls = new Map<string, Howl>();
@@ -201,6 +243,8 @@ interface Chain {
   gate: GainNode;
   // the fade of a voice coming in and going out
   presence: GainNode;
+  // the share of the voice that goes to the echo bus (null: no bus)
+  send: GainNode | null;
   nodes: AudioNode[];
 }
 interface HowlerSound {
@@ -210,7 +254,7 @@ interface HowlerSound {
 
 // what a voice chases (see smoothing.ts): the balance, the loudness, the walls' filter, the shadow behind the
 // listener, and - for the 3D panner - the place relative to the listener
-type Aim = "pan" | "level" | "cutoff" | "wallGain" | "rearCutoff" | "rearGain" | "rx" | "ry" | "rz";
+type Aim = "pan" | "level" | "cutoff" | "wallGain" | "rearCutoff" | "rearGain" | "send" | "rx" | "ry" | "rz";
 const newSmoother = () =>
   new Smoother<Aim>({
     pan: { tau: TAU.pan },
@@ -219,6 +263,7 @@ const newSmoother = () =>
     wallGain: { tau: TAU.wallGain },
     rearCutoff: { tau: TAU.rear, log: true },
     rearGain: { tau: TAU.rear },
+    send: { tau: TAU.level },
     rx: { tau: TAU.place },
     ry: { tau: TAU.place },
     rz: { tau: TAU.place },
@@ -276,6 +321,7 @@ function wire(voice: Voice): boolean {
     gate: gain(1),
     // (silent until the first state: a voice fades in)
     presence: gain(0),
+    send: null,
     nodes: [],
   };
   chain.nodes = [chain.rear, chain.rearLevel, chain.muffleA, chain.muffleB, chain.wallLevel, chain.level, chain.gate, chain.presence];
@@ -285,6 +331,13 @@ function wire(voice: Voice): boolean {
     if (i < chain.nodes.length - 1) node.connect(chain.nodes[i + 1]);
   });
   chain.presence.connect(sound._node);
+  // (a send from after the fade: the echo of a voice comes and goes with it)
+  const echo = ensureReverb();
+  if (echo) {
+    chain.send = gain(0);
+    chain.presence.connect(chain.send);
+    chain.send.connect(echo.input);
+  }
   voice.chain = chain;
   return true;
 }
@@ -303,6 +356,7 @@ function unwire(voice: Voice) {
     /* (gone with its Howl) */
   }
   for (const node of chain.nodes) node.disconnect();
+  chain.send?.disconnect();
   voice.chain = null;
 }
 
@@ -375,6 +429,7 @@ function apply(voice: Voice, state: VoiceState, fresh = !voice.applied) {
     wallGain: state.wallGain,
     rearCutoff: Math.min(ear.cutoff, nyquist),
     rearGain: ear.gain,
+    send: (state.send ?? 0) * reverbGain(),
     rx: state.x - listener.x,
     ry: state.y - listener.y,
     rz: state.z - listener.z,
@@ -399,6 +454,7 @@ function apply(voice: Voice, state: VoiceState, fresh = !voice.applied) {
   to(chain.muffleB.frequency, now.cutoff);
   to(chain.wallLevel.gain, now.wallGain);
   to(chain.level.gain, now.level);
+  if (chain.send) to(chain.send.gain, now.send);
   // the pulse's gate: the edge follows the attack (opening) or the release (closing)
   if (fresh) {
     chain.gate.gain.value = state.gate;
@@ -466,7 +522,7 @@ function stop(voice: Voice) {
   }, Math.ceil(tau * 7000) + 40);
 }
 
-export const engine: SoundBackend<Voice> = { start, set, stop, setListener };
+export const engine: SoundBackend<Voice> = { start, set, stop, setListener, setRoom };
 
 // the context's state, its rate, and how many voices there are (the Debug panel's line)
 export function engineStatus(): { state: string; sampleRate: number; voices: number } {
