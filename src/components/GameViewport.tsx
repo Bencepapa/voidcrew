@@ -1,6 +1,5 @@
 import { isTextEntry } from "../keyboardFocus";
-import { cleanSkyGradient, skyGradientStops, type SkyGradient } from "../game/skyGradient";
-
+import { cleanSkyGradient } from "../game/skyGradient";
 import { createWeather } from "../render/weather";
 import { createGroundFog } from "../render/groundFog";
 import { createFireflies } from "../render/fireflies";
@@ -8,24 +7,32 @@ import { lockMarkerMaterial } from "../render/lockMarker";
 import { createMotes } from "../render/motes";
 import type { SpriteEmitter } from "../render/spriteCloud";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { MutableRefObject } from "react";
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { DarkFantasyShader, updateDarkFantasyUniforms } from "../render/darkFantasyShader";
-import { defaultPostSettings, type PostProcessSettings } from "../render/postSettings";
 import { createColorLookPass, type ColorLookPass } from "../render/colorLookPass";
 import { createLookResolver, type ResolvedLook } from "../game/look";
 import { prepareRaycastsGradually } from "../render/bvh";
-import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeStyle, type SmokeWorld } from "../render/smoke";
+import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
-import { effectiveViewDistance, loadGraphics } from "../render/graphics";
+import { effectiveViewDistance } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, isSharedPickupId, itemSpot } from "../game/items";
-import { actorInteraction, interactionAt, operableInteraction, sameInteractionCell, touchAt, type ClickEvent, type Interaction, type InteractionTarget, type WallInteractionTarget } from "../game/interactions";
+import {
+  actorInteraction,
+  interactionAt,
+  operableInteraction,
+  sameInteractionCell,
+  touchAt,
+  type ClickEvent,
+  type Interaction,
+  type InteractionTarget,
+  type WallInteractionTarget,
+} from "../game/interactions";
 import { wallFaceSpans, type WallFacePart } from "../game/mapGeometry";
 import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
@@ -41,16 +48,35 @@ import {
   setLightGrid,
   useLightGrid,
 } from "../render/lightGrid";
-import type { LightGridMode } from "../render/lightGrid";
 import type { LightBakeRequest, LightBakeResult } from "../render/lightBake.worker";
-import { DOOR_EDGE_OFFSET, bridgeAt, cellAt, ceilingHeight, doorAt, doorFacingAt, doorFits, floorHeight, ladderBetween, liftDoorOf, windowPanels } from "../game/map";
-import { BRIDGE_THICKNESS, BRIDGE_WIDTH, CLIMB_MS_PER_HEIGHT, MAX_STEP } from "../game/heights";
+import {
+  DOOR_EDGE_OFFSET,
+  bridgeAt,
+  cellAt,
+  ceilingHeight,
+  doorAt,
+  doorFacingAt,
+  doorFits,
+  floorHeight,
+  ladderBetween,
+  liftDoorOf,
+  windowPanels,
+} from "../game/map";
+import { BRIDGE_THICKNESS, BRIDGE_WIDTH, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
 import type { Direction, DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type EdgeSegment } from "../render/reliefMesh";
 import { buildRoofGeometry } from "../render/roofMesh";
-import { fenceFaces, fenceFloorMark, fenceFormOf, fenceIndex, fenceModelSpec, sideFromPoint, type FenceModelSpec } from "../game/fences";
+import {
+  fenceFaces,
+  fenceFloorMark,
+  fenceFormOf,
+  fenceIndex,
+  fenceModelSpec,
+  sideFromPoint,
+  type FenceModelSpec,
+} from "../game/fences";
 import { buildCornerJoins, edgeModes, mergeCornerJoins, type JoinedStrips, type JoinPanel } from "../render/cornerJoins";
 import { fireLightColor, generateLights, isSkyCeiling, lampColor, ownCeilingLight, parseColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
@@ -60,7 +86,15 @@ import { operableView } from "../game/operableStore";
 import { emitterView, emittersShown } from "../game/emitterStore";
 import { operableLink } from "../editor/operableLink";
 import { hasClickables, sourceKeys } from "../game/operables";
-import { PROP_TYPES, PROP_RELIEF_SCALE, isSharedPropId, propPlacement, propHeight, propReliefAmount, propReliefCells } from "../game/props";
+import {
+  PROP_TYPES,
+  PROP_RELIEF_SCALE,
+  isSharedPropId,
+  propPlacement,
+  propHeight,
+  propReliefAmount,
+  propReliefCells,
+} from "../game/props";
 import { ACTOR_TYPES, BODY_PARTS, actorHeight, critAt } from "../game/actors";
 import { actorOffsets } from "../render/actorOffsets";
 import { actorSheetFiles } from "../render/actorSheetFiles";
@@ -68,7 +102,7 @@ import { actorView } from "../game/actorSheets";
 import { onSharedActorsChanged } from "../editor/sharedActors";
 import { onTextureTuningSaved, textureTuning } from "../render/textureTuning";
 import { buildEditPreview, changedCells } from "../render/editPreview";
-import type { ActorState, BodyPart } from "../game/actors";
+import type { BodyPart } from "../game/actors";
 import { gameClock } from "../game/clock";
 import { weaponAccuracy } from "../game/combat";
 import type { ShotResult, Weapon } from "../game/combat";
@@ -76,9 +110,6 @@ import { cellKey, visibleCells } from "../game/visibility";
 import type { PropFace, PropPart, PropType, PropView } from "../game/props";
 import { doorCellKey } from "../game/useGameState";
 import { forwardOf } from "../game/freeMovement";
-import type { FreePose } from "../game/freeMovement";
-import type { PeekState } from "./useViewControls";
-import type { LiftRide, MapTransit } from "../game/useGameState";
 import { WALL_ROTATION, surfaceFrame, surfaceKey } from "../render/surfaces";
 import { DecalLibrary, fetchDecalManifest } from "../render/decals";
 import { WIRE_TILE, createWiredGlass, getStarfield } from "../render/space";
@@ -89,1547 +120,215 @@ import { mapUsesTexture, wantSharedUrl } from "../editor/textureLibrary";
 import { onSharedPropsChanged } from "../editor/sharedProps";
 import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import { doorLeafMotion, type DoorType } from "../game/doorTypes";
-import { onSharedDecalsChanged, onSharedImagesChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
+import {
+  onSharedDecalsChanged,
+  onSharedImagesChanged,
+  onSharedPickupsChanged,
+  pickupTexture,
+  sharedImage,
+} from "../render/sharedImages";
 import { isSharedSkyId, skySource } from "../game/skyImage";
 import { gameSound } from "../audio/gameSound";
-import { bakeCacheKey, createBakeCache } from "../render/lightBakeCache";
-import { loadPostSaved } from "../render/postSettingsStore";
+import { bakeCacheKey } from "../render/lightBakeCache";
 import { publishSight } from "../render/sightStore";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
 
-import type { ReliefMode } from "../game/renderLook";
-
-export type { TextureSetId };
-export type WallProfileId = "flat" | "convex" | "concave" | "relief";
-// debug: draw every surface with its textures, or just its polygons -
-// flat-shaded faces colored by their direction, or a wireframe
-// (or the normal maps / depth maps themselves, drawn as the surfaces' colour -
-// what the 2D sprites show instead of flat faces and wire)
-export type GeometryViewId = "textured" | "faces" | "wireframe" | "normals" | "depth";
-
-export interface ViewportSettings extends PostProcessSettings {
-  textureSet: TextureSetId;
-  // a second texture set used on a share of the walls
-  accentTextureSet: TextureSetId | "none";
-  accentRatio: number;
-  // "map" = per cell, as the map specifies (GameMap.floorAt); a set id
-  // forces that floor everywhere; "none" = plain dark floor
-  floorTextureSet: TextureSetId | "map" | "none";
-  // "none" = plain dark ceiling
-  ceilingTextureSet: TextureSetId | "none";
-  // step cell by cell (true) or move freely with joysticks/held keys (false)
-  gridMovement: boolean;
-  // the map's decals (bullet holes, stencils...)
-  decalsEnabled: boolean;
-  wallProfile: WallProfileId;
-  // diagnostic toggle for the black backing behind walls and inside pillars
-  wallBacking: boolean;
-  backingInspect: boolean;
-  geometryView: GeometryViewId;
-  // feature switches for looking at one thing at a time: the normal maps,
-  // the metal / roughness maps and metalness, the glow and emissive maps, the
-  // baked ambient occlusion
-  showNormals: boolean;
-  showMetal: boolean;
-  showGlow: boolean;
-  showAO: boolean;
-  // combat: aim with the crosshair mini-game (else the hit chance is rolled)
-  aimMiniGame: boolean;
-  // testing: hits still take HP, but never below 1
-  immortalCrew: boolean;
-  // testing: walk through walls, doors, props and enemies
-  noclip: boolean;
-  // crew gear: a scanner outlining enemies in view, even in the dark
-  enemyScanner: boolean;
-  // the headlamp: a light that moves with the party (off: map lights only)
-  headlamp: boolean;
-  // the headlamp's colour (saved with the map)
-  headlampColor: string;
-  // the map's lights baked (see lightGrid.ts) - any number of them, the
-  // real lights left for flashes; off: every map light a real one
-  bakedLights: boolean;
-  // the baked light's samples per cell, and how they keep it (see
-  // lightGrid.ts)
-  lightGridDensity: number;
-  // the rough first bake after an edit (samples per cell; 0 or not under the real density: none), shown while the
-  // real one is still being computed
-  lightGridQuickDensity: number;
-  lightGridMode: LightGridMode;
-  // how much light the bake lets bounce round corners into the cells no
-  // light sees (see lightGrid.ts bounceLight; 0: none, they stay dark)
-  lightBounce: number;
-  // what the smoke's puffs look like (see smoke.ts), and what they bump
-  // into: the walls (and floors and ceilings), the props, the robots
-  smokeStyle: SmokeStyle;
-  // the ship's livery (see variation.ts accentOf): "rolled" (the ship's),
-  // "painted" (none), or a hue (degrees) to try; and how saturated a
-  // texture's pixel must be to count as accent
-  shipAccent: "rolled" | "painted" | number;
-  accentMinSat: number;
-  smokeWalls: boolean;
-  smokeProps: boolean;
-  smokeActors: boolean;
-  // how far (cells) the view reaches: the fog, the lights and what's drawn
-  // (within the graphics setting's viewDistanceCap - see effectiveViewDistance)
-  viewDistance: number;
-  eyeHeight: number;
-  wallHeight: number;
-  cameraPullback: number;
-  moveDurationMs: number;
-  fov: number;
-  pointLightIntensity: number;
-  ambientIntensity: number;
-  bobEnabled: boolean;
-  bevelFraction: number;
-  bevelAngleDeg: number;
-  displacementScale: number;
-  reliefDepth: number;
-  reliefLevels: number;
-  reliefMinIsland: number;
-  // stepped levels, or a smooth height field with slopes
-  reliefMode: ReliefMode;
-  // EXPERIMENT: door panels and frames as a smooth hybrid relief (a smooth
-  // mesh with the holes' quads left out, the pixel edge from an alpha cutout
-  // on the diffuse) instead of the stepped one - see createSmoothReliefGeometry
-  // the floors' own relief depth (world units) and normal strength; 0: as the walls'
-  floorReliefDepth: number;
-  floorNormalStrength: number;
-  // the player's graphics choices (see render/graphics.ts)
-  particleQuality: number;
-  wallDetail: number;
-  // the door parts' own detail (cells a side, the frame and leaf, which have holes): 0 follows the wall detail; set, it is
-  // taken as it is (more than the wall detail too: a few doors are cheap next to the walls)
-  doorDetail: number;
-  pixelRatioCap: number;
-  particleEvery: number;
-  viewDistanceCap: number;
-  lodScale: number;
-  antialias: number;
-  lightPool: number;
-  normalMaps: number;
-  mapLightIntensity: number;
-  // the sky's light on the cells under an open ceiling (see lights.ts SkyLight)
-  skyLightIntensity: number;
-  skyLightAzimuth: number;
-  skyLightElevation: number;
-  skyLightColor: string;
-  // what the distance fades to ("#rrggbb"; black: darkness - a lit hall far
-  // off still glows through it, see fogNear)
-  fogColor: string;
-  // the fog's start and full-thickness distance in cells (0: automatic from the view distance)
-  fogStart: number;
-  fogEnd: number;
-  roughness: number;
-  metalness: number;
-  normalStrength: number;
-  // ambient occlusion (relief walls only): strength on ambient light, how
-  // much it also darkens direct lights, and how far it looks for occluders
-  aoIntensity: number;
-  aoDirect: number;
-  aoRadius: number;
-}
-
-export interface ReliefStats {
-  trianglesPerWall: number;
-  levelCount: number;
-  // levels came straight from the map's distinct grays
-  baked: boolean;
-}
-
-// What the aiming overlay gets each frame: the enemies in reach, nearest
-// first, with their body parts' rectangles (view pixels) and hit chances;
-// and a way to shoot at a point of the view.
-export interface AimTarget {
-  id: number;
-  name: string;
-  distance: number;
-  parts: { part: BodyPart; label: string; rect: [number, number, number, number]; chance: number }[];
-}
-export interface AimFrame {
-  targets: AimTarget[];
-  width: number;
-  height: number;
-  // the view's current magnification (1 = the normal field of view): a
-  // weapon's sway, an angle, spans this many times more pixels
-  zoom: number;
-  shoot: (x: number, y: number) => ShotResult;
-}
-
-// What the aiming overlay has picked, for the camera: it turns to the
-// target - framing it while a part is picked, then at the weapon's zoom
-// (Weapon.aimZoom) for the mini-game.
-export interface AimFocus {
-  target: number | null;
-  // the picked body part: its pixels light up on the sprite
-  part: BodyPart | null;
-  phase: "pick" | "aim";
-}
-
-// The kinds of thing the editor drags, and one step of a drag: what (its
-// index in the map's list - a door by its cell), whether Ctrl copies it, the
-// drag's first step, the drag (one undo step each), and for those that slide
-// on a level (props on a floor, lights, robots, doors) where the spot they
-// were grabbed by is taken to (world x, z); `drop`: a door let go of.
-export type EditDragKind = "prop" | "decal" | "item" | "smoke" | "sound" | "light" | "actor" | "door";
-export interface EditDrag {
-  kind: EditDragKind;
-  index: number;
-  door?: Vec2;
-  copy: boolean;
-  first: boolean;
-  id: number;
-  at?: [number, number];
-  drop?: boolean;
-  // a door slid inside its cell, let go of: where it stands there now
-  offset?: number;
-}
-
-// The map editor (see EDITOR.md): what the pointer is on - a wall to dig
-// out (with the open cell it's dug from, whose face was pointed at), or the
-// floor / ceiling of a cell to fill, paint or hang a light in.
-export interface EditTarget {
-  kind: "wall" | "floor" | "ceiling";
-  cell: Vec2;
-  from?: Vec2;
-  // the Light tool: a hand-placed light pointed at (its index in the map's
-  // lights - a free-standing one's bulb)
-  light?: number;
-  // where a free-standing light would go: just off the surface pointed at -
-  // its cell and its MapLight.pos there
-  spot?: { cell: Vec2; pos: [number, number, number] };
-  // the Prop tool: the prop pointed at (its index in the map's props)
-  prop?: number;
-  // the Decal tool: the decal pointed at (its index in the map's decals)
-  decal?: number;
-  // the Door tool: the door pointed at (its cell)
-  door?: Vec2;
-  // the Robot tool: the actor pointed at (its index in the map's actors)
-  actor?: number;
-  // the Item tool: the loose item pointed at (its index in the map's items)
-  item?: number;
-  // the Smoke tool: the emitter pointed at (its index in the map's smokes)
-  smoke?: number;
-  // the Sound tool: the sound emitter's marker pointed at (its index in the map's sounds)
-  sound?: number;
-  // the point hit, exactly: its cell, and across, up (wall heights above
-  // the cell's floor) and along from the cell's center - where an item goes
-  point?: { cell: Vec2; pos: [number, number, number] };
-  // the surface pointed at as a decal sees it (see DecalSpec): its cell and
-  // side, and the point on it in surface pixels (0..255 across a panel;
-  // from its top left, a wall's first panel)
-  surfacePoint?: { cell: Vec2; surface: Direction | "floor" | "ceiling"; u: number; v: number };
-  // where the pointer's ray met a floor or ceiling exactly (grid units: x, z): the fence tools say from it which
-  // side of the cell was meant
-  at?: [number, number];
-  // The step face pointed at (kind is "floor" then: it isn't a wall to dig):
-  // a riser (the side of a higher floor) or a header (a lower ceiling's
-  // strip), addressed like a wall face - by the open cell it's seen from
-  // (the lower floor's / higher ceiling's) and the side toward the other.
-  face?: { cell: Vec2; side: Direction; part: "riser" | "header" };
-}
-
-export interface ViewportStats {
-  // triangles actually drawn last frame (after culling), and draw calls
-  renderedTriangles: number;
-  drawCalls: number;
-  // cells in sight (see updateSight)
-  visibleCells: number;
-  // frames per second, and the milliseconds a frame takes on average (over half a second)
-  fps: number;
-  frameMs: number;
-  // null unless the relief wall type is active and built
-  relief: ReliefStats | null;
-}
-
-// this device's graphics choices (an Ultra one sees as far as it allows)
-const DEVICE_GRAPHICS = loadGraphics();
-export const DEFAULT_SETTINGS: ViewportSettings = {
-  textureSet: "wall4",
-  accentTextureSet: "wall5",
-  accentRatio: 0.35,
-  floorTextureSet: "map",
-  ceilingTextureSet: "ceiling1",
-  gridMovement: true,
-  decalsEnabled: true,
-  wallProfile: "relief",
-  wallBacking: true,
-  backingInspect: false,
-  geometryView: "textured",
-  showNormals: true,
-  showMetal: true,
-  showGlow: true,
-  showAO: true,
-  aimMiniGame: true,
-  immortalCrew: false,
-  noclip: false,
-  enemyScanner: false,
-  headlamp: false,
-  headlampColor: "#fff2d9",
-  bakedLights: true,
-  lightGridDensity: 3,
-  lightGridQuickDensity: 1,
-  lightGridMode: "directional",
-  lightBounce: 0.4,
-  smokeStyle: "animated",
-  shipAccent: "rolled",
-  accentMinSat: 0.35,
-  smokeWalls: true,
-  smokeProps: true,
-  smokeActors: true,
-  // (as far as the device's setting allows: High's 9 cells, not 7 - a lit
-  // hall 7 cells off was past the lights' fade and deep in the fog; Low's
-  // and Medium's caps are below 7 anyway)
-  viewDistance: DEVICE_GRAPHICS.viewDistanceCap,
-  eyeHeight: 0.5,
-  wallHeight: 1.0,
-  cameraPullback: 0.3,
-  moveDurationMs: 220,
-  fov: 72,
-  pointLightIntensity: 1.6,
-  ambientIntensity: 0.35,
-  bobEnabled: true,
-  ...defaultPostSettings(),
-  // (the dark fantasy look the browser kept, see render/postSettingsStore.ts)
-  ...loadPostSaved(),
-  bevelFraction: 0.2,
-  bevelAngleDeg: 30,
-  displacementScale: 0.03,
-  reliefDepth: 0.04,
-  reliefLevels: 6,
-  reliefMinIsland: 3,
-  reliefMode: "steps",
-  floorReliefDepth: 0,
-  floorNormalStrength: 0,
-  ...DEVICE_GRAPHICS,
-  mapLightIntensity: 1.6,
-  skyLightIntensity: 0,
-  skyLightAzimuth: 200,
-  skyLightElevation: 40,
-  skyLightColor: "#a8bcff",
-  fogColor: "#000000",
-  fogStart: 0,
-  fogEnd: 0,
-  doorDetail: 0,
-  roughness: 0.55,
-  metalness: 0.45,
-  normalStrength: 1,
-  aoIntensity: 1,
-  aoDirect: 0.6,
-  aoRadius: 6,
-};
-
-// three.js applies aoMap to ambient/indirect light only, so crevices facing a
-// point light still light up fully. This extends the same occlusion term to
-// direct light by `uCavity` (0 = physically standard, 1 = full) - a common
-// stylization that makes cracks and step feet read as dark.
-function addDirectLightOcclusion(material: THREE.MeshStandardMaterial, cavity: { value: number }) {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uCavity = cavity;
-    shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform float uCavity;")
-      .replace(
-        "#include <aomap_fragment>",
-        `#include <aomap_fragment>
-#ifdef USE_AOMAP
-  reflectedLight.directDiffuse *= mix( 1.0, ambientOcclusion, uCavity );
-  reflectedLight.directSpecular *= mix( 1.0, ambientOcclusion, uCavity );
-#endif`,
-      );
-  };
-}
-
-// A flat wall panel with the top/bottom edges beveled, like the classic
-// sci-fi corridor look: floor and ceiling stay flush with the grid boundary,
-// but the middle band bulges toward the room (convex, sign=+1) or recedes
-// away from it (concave, sign=-1) via two angled bevels.
-//
-// Each wall face is built independently, so a naive width-uniform bevel
-// doesn't meet correctly where two perpendicular walls share a corner: convex
-// leaves a gap (both edges pull away from the true corner line in different
-// directions) and concave overlaps (both edges push past it). The fix is to
-// taper the bevel amount back to zero within a small margin of each side
-// edge, so every panel is flush (z=0) exactly at the corner regardless of
-// direction, and only bulges/recedes in its own middle stretch.
-// `subdivisions` splits each coarse height-band/width-column into a fine
-// grid - a displacementMap needs enough vertices to read as smooth relief
-// instead of a handful of blocky quads.
-function createBeveledWallGeometry(
-  width: number,
-  height: number,
-  bevelFraction: number,
-  bevelAngleDeg: number,
-  sign: 1 | -1,
-  subdivisions = 10,
-): THREE.BufferGeometry {
-  const bevelH = height * bevelFraction;
-  // bevelAngleDeg is measured from horizontal (the floor/ceiling plane), not
-  // from vertical - so recess = adjacent/opposite = bevelH / tan(angle).
-  // Lower angle -> closer to flat/horizontal -> more dramatic recess.
-  const recess = (bevelH / Math.tan((bevelAngleDeg * Math.PI) / 180)) * sign;
-  const halfH = height / 2;
-  const halfW = width / 2;
-  const margin = Math.min(0.15, width * 0.2);
-
-  // profile points (y, zBase) centered on the origin to match
-  // THREE.PlaneGeometry's local coordinate convention (both are positioned
-  // by the same `mesh.position.y = wallHeight / 2` call)
-  const yProfile: [number, number][] = [
-    [-halfH, 0],
-    [-halfH + bevelH, recess],
-    [halfH - bevelH, recess],
-    [halfH, 0],
-  ];
-
-  // width columns: flush at the true edges, full effect inside the margin
-  const xCols = [-halfW, -halfW + margin, halfW - margin, halfW];
-  const taper = [0, 1, 1, 0];
-
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const uvs: number[] = [];
-
-  for (let yi = 0; yi < yProfile.length - 1; yi++) {
-    const [y0, z0base] = yProfile[yi];
-    const [y1, z1base] = yProfile[yi + 1];
-
-    // flat per-row normal from the height-direction slope only (the small
-    // extra slope introduced by the width taper near corners is ignored -
-    // an acceptable approximation given how narrow that margin is)
-    const dy = y1 - y0;
-    const dz = z1base - z0base;
-    let ny = -dz;
-    let nz = dy;
-    const len = Math.hypot(ny, nz) || 1;
-    ny /= len;
-    nz /= len;
-    if (nz < 0) {
-      ny = -ny;
-      nz = -nz;
-    }
-
-    for (let xi = 0; xi < xCols.length - 1; xi++) {
-      const x0 = xCols[xi];
-      const x1 = xCols[xi + 1];
-      const t0 = taper[xi];
-      const t1 = taper[xi + 1];
-      const uvBase0 = yi / (yProfile.length - 1);
-      const uvBase1 = (yi + 1) / (yProfile.length - 1);
-
-      for (let sv = 0; sv < subdivisions; sv++) {
-        const fv0 = sv / subdivisions;
-        const fv1 = (sv + 1) / subdivisions;
-        const yA = lerp(y0, y1, fv0);
-        const yB = lerp(y0, y1, fv1);
-        const zBaseA = lerp(z0base, z1base, fv0);
-        const zBaseB = lerp(z0base, z1base, fv1);
-        const uvA = lerp(uvBase0, uvBase1, fv0);
-        const uvB = lerp(uvBase0, uvBase1, fv1);
-
-        for (let sh = 0; sh < subdivisions; sh++) {
-          const fh0 = sh / subdivisions;
-          const fh1 = (sh + 1) / subdivisions;
-          const xA = lerp(x0, x1, fh0);
-          const xB = lerp(x0, x1, fh1);
-          const tA = lerp(t0, t1, fh0);
-          const tB = lerp(t0, t1, fh1);
-          const uA = (xA + halfW) / width;
-          const uB = (xB + halfW) / width;
-
-          const v00 = [xA, yA, zBaseA * tA];
-          const v10 = [xB, yA, zBaseA * tB];
-          const v11 = [xB, yB, zBaseB * tB];
-          const v01 = [xA, yB, zBaseB * tA];
-
-          positions.push(...v00, ...v10, ...v11, ...v00, ...v11, ...v01);
-          for (let k = 0; k < 6; k++) normals.push(0, ny, nz);
-          uvs.push(uA, uvA, uB, uvA, uB, uvB, uA, uvA, uB, uvB, uA, uvB);
-        }
-      }
-    }
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  return geo;
-}
-
-// a lit ceiling panel glows in its deck's lamp color (see lampColor)
-const LIGHT_PANEL_INTENSITY = 1.6;
-
-// floor used where the map doesn't specify one
-const DEFAULT_FLOOR: TextureSetId = "floor1";
-
-// A wall panel is a whole texture tall, or - where a wall's height isn't a
-// whole number of panels - a band of the texture: its top ("t") or bottom
-// ("b") rows, this fraction of it high.
-type PanelVariant = "full" | `t${number}` | `b${number}`;
-
-function variantRows(variant: PanelVariant): [number, number] | undefined {
-  if (variant === "full") return undefined;
-  const fraction = Number(variant.slice(1));
-  return variant[0] === "t" ? [0, fraction] : [1 - fraction, 1];
-}
-
-function variantHeight(variant: PanelVariant): number {
-  return variant === "full" ? 1 : Number(variant.slice(1));
-}
-
-// Splits the vertical span of a wall (in wall heights) into panels: whole
-// ones stacked from the anchored end, plus a band for the rest. A wall
-// standing on a floor continues upward into its texture's top rows; a step
-// face (a riser) shorter than a panel shows the bottom rows, like the foot
-// of a wall; a strip hanging from a ceiling (a header) the top rows.
-function wallPanels(bottom: number, top: number, anchor: "bottom" | "top"): { bottom: number; variant: PanelVariant }[] {
-  const length = top - bottom;
-  const whole = Math.floor(length + 1e-6);
-  const rest = Math.round((length - whole) * 4) / 4;
-  const panels: { bottom: number; variant: PanelVariant }[] = [];
-  if (anchor === "bottom") {
-    for (let i = 0; i < whole; i++) panels.push({ bottom: bottom + i, variant: "full" });
-    if (rest > 0) panels.push({ bottom: bottom + whole, variant: whole > 0 ? `t${rest}` : `b${rest}` });
-  } else {
-    for (let i = 0; i < whole; i++) panels.push({ bottom: top - 1 - i, variant: "full" });
-    if (rest > 0) panels.push({ bottom, variant: whole > 0 ? `b${rest}` : `t${rest}` });
-  }
-  return panels;
-}
-
-// a flat panel showing only a band of its texture (see PanelVariant)
-function createBandPlane(height: number, [top, bottom]: [number, number]): THREE.BufferGeometry {
-  const geo = new THREE.PlaneGeometry(1, height);
-  const uv = geo.getAttribute("uv");
-  for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - bottom + uv.getY(i) * (bottom - top));
-  return geo;
-}
-
-interface WallSlot {
-  x: number;
-  z: number;
-  // world height of the panel's center (walls) or plane (floors, ceilings)
-  y: number;
-  rotY: number;
-  // walls only
-  variant?: PanelVariant;
-  part?: WallFacePart;
-  // ceiling tile under a ceiling light: use the kit's glowing material
-  lit?: boolean;
-  // surfaceKey of the panel, for decals to find it
-  key: string;
-}
-
-// Everything the walls (or floors, ceilings) of one texture set need: its own
-// materials and, in relief mode, its own geometry (built from that set's
-// depth map).
-interface WallKit {
-  // its texture folder: the key of its tuning (see textureTuning.ts)
-  id: string;
-  depthUrl: string;
-  // see TextureSetPaths
-  grateLevels?: number;
-  // its relief is built smooth (slopes) whatever the viewer's relief mode: a continuous depth map (see TextureSetFiles.smooth)
-  smooth?: boolean;
-  wallMat: THREE.MeshStandardMaterial;
-  // relief step sides: same texture, no normal map (see reliefMesh.ts groups)
-  sideMat: THREE.MeshStandardMaterial;
-  // wallMat plus the set's emissive mask glowing, if it has one
-  litMat?: THREE.MeshStandardMaterial;
-  // disposed with the scene (incl. the relief AO map once built)
-  textures: THREE.Texture[];
-  slots: WallSlot[];
-  // a prop's own normal strength, relative to the viewer's (PropType.normal)
-  normal?: number;
-  // a floor kit: it takes the floors' own normal strength
-  floor?: boolean;
-}
-
-// Stable pseudo-random 0..1 per wall face, from its position (face centers
-// sit on half-cell coordinates, so doubled they're integers). Keeps the
-// accent texture on the same walls across reloads and setting changes.
-function kitMaterials(kit: WallKit): THREE.MeshStandardMaterial[] {
-  return kit.litMat ? [kit.wallMat, kit.sideMat, kit.litMat] : [kit.wallMat, kit.sideMat];
-}
-
-function wallVariantRoll(x: number, z: number): number {
-  let h = Math.imul(Math.round(x * 2), 374761393) ^ Math.imul(Math.round(z * 2), 668265263);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-// custom HMR event sent by the texture hot-reload plugin in vite.config.ts
-const TEXTURE_CHANGED_EVENT = "voidcrew:texture-changed";
-// how long the editor leaves the quick flat preview of its structural edits before the scene's full build
-const EDIT_SETTLE_MS = 3000;
-const LIGHT_EDIT_SETTLE_MS = 500;
-const ORIGIN_NDC = new THREE.Vector2(0, 0);
-// the relief depth a floor texture is tuned against in the Asset Manager (its default)
-export const FLOOR_BASE_DEPTH = 0.04;
-// The top-down view (editing; the O key or the button): the camera high above
-// the map looking down (tilted with Ctrl+wheel), the ceilings and the sight
-// culling and fog off - to survey and texture a large area, even across
-// walls. Height above the floor: ZOOM_MIN..ZOOM_MAX cells; the wheel zooms.
-const TOPDOWN_FOV = 40;
-const TOPDOWN_REACH = 400;
-
-function renderedSpecs<T extends { interaction?: Interaction }>(specs: readonly T[] | undefined): string | undefined {
-  return JSON.stringify(specs?.map(({ interaction: _interaction, ...spec }) => spec));
-}
-
-function eventMarkerMaterial(kind: Interaction["kind"]): THREE.SpriteMaterial {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 64;
-  const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = kind === "message" ? "#244665" : "#68451f";
-  ctx.strokeStyle = kind === "message" ? "#91daff" : "#ffd481";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.roundRect(5, 5, 54, 47, 10);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 34px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(kind === "message" ? "!" : "▣", 32, 31);
-  const map = new THREE.CanvasTexture(canvas);
-  map.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.SpriteMaterial({ map, depthWrite: false, fog: false, toneMapped: false });
-}
-const TOPDOWN_ZOOM_MIN = 1.5;
-const TOPDOWN_ZOOM_MAX = 60;
-
-const FOG_NEAR = 1.6;
-// (the fog ends this far short of the view distance)
-// the baked light grids of the last few scenes (see render/lightBakeCache.ts): a rebuild whose light inputs did not change
-// (a wall texture, say) reuses its grid instead of baking again
-const bakeCache = createBakeCache<{ data: LightBakeResult["data"]; ambient?: LightBakeResult["ambient"] }>(4);
-const FOG_FAR_MARGIN = 0.5;
-// The fog thickens over at most this many cells before its end: up to the
-// usual 7-cell view it starts at FOG_NEAR as ever, but a farther view moves
-// its start out with it - else a longer view only added more black, a lit
-// hall 8 cells off fogged as dark as one past the view (the fog, not the
-// lights' reach, was what hid it).
-const FOG_SPAN = 5;
-function fogNear(far: number): number {
-  return Math.max(FOG_NEAR, far - FOG_SPAN);
-}
-// The fog's span for a view reach: automatic (0) ends just inside the view and starts FOG_SPAN cells before that; a map can
-// set where it starts and where it is fully thick (the end never beyond what is drawn, the start before the end).
-export function fogRange(viewReach: number, start: number, end: number): { near: number; far: number } {
-  const autoFar = viewReach - FOG_FAR_MARGIN;
-  const far = end > 0 ? Math.max(0.5, Math.min(end, autoFar)) : autoFar;
-  const near = start > 0 ? Math.max(0, Math.min(start, far - 0.1)) : fogNear(far);
-  return { near, far };
-}
-// A dark fog is the dark, not a haze: what a lamp lights stands out of it
-// as far as it's drawn. So a lit pixel (by its brightness) isn't fogged
-// over the fog's whole span, only over its last LIT_FOG_SPAN cells - the
-// lights fade out over about as much (LIGHT_FADE_SPAN) - and an unlit one
-// as before. Without it a shorter view (High's 9 cells against Ultra's 14)
-// left a torch-lit hall 7 cells off nearly black, though drawn and lit:
-// the fog starts FOG_SPAN short of the view's end. A light fog (mist) is
-// left alone: it hides lit things too. (Every material's fog; a few
-// instructions a pixel.)
-const LIT_FOG_SPAN = 1.5;
-// (once: a hot reload runs this module again)
-if (!THREE.ShaderChunk.fog_fragment.includes("fogLit")) THREE.ShaderChunk.fog_fragment = THREE.ShaderChunk.fog_fragment.replace(
-  "gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );",
-  `#ifndef FOG_EXP2
-	{
-		const vec3 fogLuma = vec3( 0.3, 0.59, 0.11 );
-		float fogLit = smoothstep( 0.12, 0.4, dot( gl_FragColor.rgb, fogLuma ) ) * ( 1.0 - smoothstep( 0.03, 0.2, dot( fogColor, fogLuma ) ) );
-		fogFactor = mix( fogFactor, smoothstep( fogFar - ${LIT_FOG_SPAN.toFixed(2)}, fogFar, vFogDepth ), fogLit );
-	}
-	#endif
-	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );`,
-);
-
-// Map lights are served by a fixed pool of point lights reassigned to the
-// best sources every frame: three.js compiles the light count into its
-// shaders, so a constant pool avoids recompiles, and the per-pixel lighting
-// cost stays bounded however many lights the map has. Only sources in
-// cells the party can see (or next to one - their light spills through
-// doorways) compete, nearest first, those ahead of the camera favored.
-// Lights fade out with distance, about where the fog closes, and a slot
-// fades its light in and out instead of popping.
-// The sight (lights and culling) reaches the view distance setting; lights
-// fade out over its last LIGHT_FADE_SPAN cells.
-// (the most: the graphics setting can ask for fewer - Graphics.lightPool;
-// and no more than the reach texture has bits for, see lightGrid.ts)
-const LIGHT_POOL_SIZE = 8;
-const LIGHT_FADE_SPAN = 1.5;
-// where in the party's cell the sight is taken from (offsets from its center)
-const SIGHT_POINTS: [number, number][] = [
-  [0, 0],
-  [-0.35, -0.35],
-  [0.35, -0.35],
-  [-0.35, 0.35],
-  [0.35, 0.35],
-];
-// aiming camera: how much of the view a target fills while a part is
-// picked, the narrowest field of view (degrees) and how fast it eases (s)
-const AIM_FRAMING = 1.6;
-const AIM_MIN_FOV = 8;
-const AIM_CAMERA_TAU = 0.12;
-// the party's cover (see updatePartyCover): how often it's measured (ms),
-// the heights sampled on its body (shares of the eye height) and how wide
-// it stands
-const PARTY_COVER_REFRESH_MS = 250;
-const PARTY_BODY_HEIGHTS = [0.3, 0.65, 1];
-const PARTY_BODY_HALF_WIDTH = 0.12;
-// the hit chance samples a grid of this many spots squared over a part
-const CHANCE_GRID = 6;
-// actors: how long a hit flashes and a death fades (game ms)
-const ACTOR_FLASH_MS = 220;
-const ACTOR_FADE_MS = 900;
-// an actor's firing pose, held after a shot; each of its dying frames (ms)
-const ACTOR_SHOOT_POSE_MS = 350;
-const ACTOR_DIE_FRAME_MS = 260;
-// each of its firing rows, when it has several (ActorType.shootRows)
-const ACTOR_SHOOT_FRAME_MS = 70;
-// how long its hit pose shows (ActorType.hitRow)
-const ACTOR_HIT_POSE_MS = 320;
-// aiming: how often the hit chances are worked out again (real ms), and how
-// long a shot's trace lingers
-const AIM_CHANCE_REFRESH_MS = 250;
-// how many body parts' chances are worked out again per frame
-const AIM_CHANCE_PARTS_PER_FRAME = 1;
-const TRACER_MS = 220;
-// objects wider or deeper than this (cells) are never culled
-const CULL_MAX_SIZE = 1.3;
-// Walls, floors and ceilings farther than this (world units) switch to a
-// relief built from a height grid LOD_FACTOR times coarser: a few times
-// fewer triangles, and at that distance, in the fog, it looks the same.
-const LOD_DISTANCE = 2.2;
-const LOD_FACTOR = 4;
-// Smooth relief resamples its height grid to the wall detail setting, so a
-// coarser grid alone wouldn't thin it out: its distant versions take fewer
-// cells instead - a half as many each way (a quarter of the triangles) past
-// LOD_DISTANCE, a quarter past SMOOTH_LODS' second distance - never below
-// SMOOTH_LOD_MIN_CELLS along a whole panel's long side.
-const SMOOTH_LODS: { distance: number; divisor: number }[] = [
-  { distance: LOD_DISTANCE, divisor: 2 },
-  { distance: 3.6, divisor: 4 },
-];
-const SMOOTH_LOD_MIN_CELLS = 8;
-// Relief wall panels run their relief right up to their side edges and are
-// joined to their neighbors by thin strips built from both edges (see
-// cornerJoins.ts) - stones meeting stones round a corner. Off: every panel
-// eases to the flat base along its sides instead, the old way (also from
-// the console, dev only: __voidcrewNoJoins = true, then rebuild the scene).
-const CORNER_JOINS = true;
-// a surface's distant version, and from how far it's shown
-interface FarLevel {
-  geometry: THREE.BufferGeometry;
-  distance: number;
-}
-// a source behind the camera ranks as if this much further away
-const LIGHT_BEHIND_PENALTY = 0.35;
-// a source this much (world units) past its own reach behind the camera
-// doesn't compete at all (see updateLightPool)
-const LIGHT_BEHIND_SLACK = 0.5;
-// a source already in the pool keeps its slot until a rival ranks this
-// much nearer (a fraction of its distance), so near-ties don't flicker
-const LIGHT_KEEP_BIAS = 0.85;
-// how fast a slot's light fades in or out (per second, 0..1)
-const LIGHT_SLOT_FADE = 4;
-
-// settings.fov is applied to the screen's shorter side; on a portrait screen
-// that makes the vertical FOV large, capped here to limit distortion
-const MAX_VERTICAL_FOV = 115;
-
-// Doors: a door cell holds one door at its center, across the passage, so
-// the doorway reads as a thick bulkhead with a shallow alcove on each side.
-// The frame is a two-sided slab (two relief halves back to back, their
-// opening's jambs meeting at the center plane); the panel is a thinner
-// two-sided slab inside it, recessed behind the frame's faces, that slides
-// up into the ceiling to open.
-const DOOR_FRAME_SET: TextureSetId = "doorframe1";
-// Windows: the frame panel, how deep its opening recesses into the wall
-// (the glass sits at the back), and the glass's slight cool tint
-const WINDOW_SET: TextureSetId = "window1";
-const WINDOW_DEPTH = 0.1;
-const NO_LAYERS: ReadonlySet<string> = new Set();
-
-// The starry sky behind open walls and ceilings (a map's "sky" texture set): a
-// night gradient with a few hundred stars, drawn once as the scene's
-// background (an equirectangular image, so it turns with the view and
-// stays out of the fog and the far plane). Seeded, so it's the same sky
-// every time.
-function makeSkyTexture(): THREE.Texture {
-  const w = 1024;
-  const h = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d")!;
-  const gradient = ctx.createLinearGradient(0, 0, 0, h);
-  gradient.addColorStop(0, "#02030a");
-  gradient.addColorStop(0.55, "#0a1230");
-  gradient.addColorStop(1, "#16203f");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, w, h);
-  let seed = 20240611;
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  for (let i = 0; i < 700; i++) {
-    const x = Math.floor(random() * w);
-    const y = Math.floor(random() * h * 0.85);
-    const bright = 0.35 + random() * 0.65;
-    const size = random() < 0.08 ? 2 : 1;
-    ctx.fillStyle = `rgba(${Math.round(200 + 55 * random())}, ${Math.round(210 + 45 * random())}, 255, ${bright})`;
-    ctx.fillRect(x, y, size, size);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  // (the shader below writes these values as they are: no color conversion)
-  texture.colorSpace = THREE.NoColorSpace;
-  return texture;
-}
-
-// A gradient sky needs no file: a narrow canvas, zenith at its top, horizon
-// halfway down and the ground colour (when there is one) at its bottom.
-function makeSkyGradientTexture(spec: SkyGradient): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 4;
-  canvas.height = 256;
-  const ctx = canvas.getContext("2d")!;
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  for (const stop of skyGradientStops(spec)) gradient.addColorStop(stop.offset, stop.color);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-// A pane of sky: it shows the sky image in the direction the camera looks
-// through it, so panes next to each other join up and the sky stays far away
-// whatever the pane's distance. Not lit, not fogged.
-function makeSkyMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    uniforms: { map: { value: makeSkyTexture() }, gradientMode: { value: 0 } },
-    side: THREE.DoubleSide,
-    vertexShader: `
-      varying vec3 vWorld;
-      void main() {
-        vec4 world = modelMatrix * vec4(position, 1.0);
-        vWorld = world.xyz;
-        gl_Position = projectionMatrix * viewMatrix * world;
-      }`,
-    fragmentShader: `
-      uniform sampler2D map;
-      uniform float gradientMode;
-      varying vec3 vWorld;
-      void main() {
-        vec3 dir = normalize(vWorld - cameraPosition);
-        float elevation = asin(clamp(dir.y, -1.0, 1.0));
-        // the image covers the upper hemisphere (horizon at its bottom edge);
-        // a gradient's canvas also has room below the horizon for its ground colour
-        float v = gradientMode > 0.5 ? elevation / 3.14159265 + 0.5 : clamp(elevation / 1.5707963, 0.0, 1.0);
-        vec2 uv = vec2(atan(dir.z, dir.x) / 6.2831853 + 0.5, v);
-        vec3 color = texture2D(map, uv).rgb;
-        if (gradientMode > 0.5) {
-          // the canvas colour is sRGB: undo the GPU's decode so the ramp shows its colours
-          color = mix(color * 12.92, 1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), color));
-        }
-        gl_FragColor = vec4(color, 1.0);
-      }`,
-  });
-}
-// loot items' sprites: how tall (world units), how far above the floor, and
-// a spill's timing (ms): out of the container, lying there until, drawn in
-const ITEM_HEIGHT = 0.2;
-const ITEM_LIFT = 0.005;
-// how much bigger a loose item is drawn lying flat in the top-down view
-const ITEM_TOPDOWN_GROW = 1.4;
-// how much they glow (see itemTemplate)
-const ITEM_GLOW = 0.1;
-// how their normals are bent (see itemTemplate): how much of the relief's
-// own normal is kept, and what's added - up, and a little back
-const ITEM_NORMAL_KEEP = 0.6;
-const ITEM_NORMAL_BEND = new THREE.Vector3(0, 1, -0.35);
-const SPILL_OUT_MS = 380;
-const SPILL_REST_MS = 1000;
-const SPILL_IN_MS = 380;
-
-// an exit's floor marker: a green frame with chevrons and EXIT - a gate to
-// another map (see mapLinks.ts) is amber, and says GATE
-function makeExitMarker(gate = false): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 128;
-  const ctx = canvas.getContext("2d")!;
-  ctx.strokeStyle = ctx.fillStyle = gate ? "#ffcf5d" : "#5dffa0";
-  ctx.lineWidth = 5;
-  ctx.strokeRect(8, 8, 112, 112);
-  ctx.lineWidth = 6;
-  ctx.lineJoin = "miter";
-  for (const y of [34, 50]) {
-    ctx.beginPath();
-    ctx.moveTo(40, y + 12);
-    ctx.lineTo(64, y - 6);
-    ctx.lineTo(88, y + 12);
-    ctx.stroke();
-  }
-  ctx.font = "bold 28px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText(gate ? "GATE" : "EXIT", 64, 102);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-// a staircase's floor marker (see StairsSpec): steps rising (up, cyan) or
-// sinking (down, violet) with an arrow above them - or, for a spiral, a spiral
-// turning up or down - and UP / DOWN
-function makeStairsMarker(up: boolean, spiral: boolean): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 128;
-  const ctx = canvas.getContext("2d")!;
-  ctx.strokeStyle = ctx.fillStyle = up ? "#7fd8ff" : "#d6a8ff";
-  ctx.lineWidth = 5;
-  ctx.strokeRect(8, 8, 112, 112);
-  ctx.lineWidth = 6;
-  ctx.lineJoin = "miter";
-  ctx.beginPath();
-  if (spiral) {
-    // (a spiral winding out from the middle; its arrowhead says which way it turns)
-    const turn = up ? 1 : -1;
-    let x = 64;
-    let y = 52;
-    for (let a = 0; a <= 4.4; a += 0.08) {
-      x = 64 + Math.cos(a * turn - Math.PI / 2) * (4 + a * 6);
-      y = 52 + Math.sin(a * turn - Math.PI / 2) * (4 + a * 6);
-      if (a === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    // (four steps; up they rise to the right, down to the left)
-    for (let i = 0; i < 4; i++) {
-      const x = up ? 30 + i * 17 : 98 - i * 17;
-      const y = 78 - i * 11;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-      ctx.lineTo(x, y - 11);
-      ctx.lineTo(x + (up ? 17 : -17), y - 11);
-    }
-    ctx.stroke();
-  }
-  ctx.font = "bold 24px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText(up ? "UP" : "DOWN", 64, 104);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-// a chalk cross over a whole texture, a few rough strokes (the mark on an
-// emptied container)
-function drawChalkCross(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  ctx.save();
-  ctx.lineCap = "round";
-  const unit = Math.min(w, h) / 128;
-  let seed = 7;
-  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 3 * unit;
-  const stroke = (x0: number, y0: number, x1: number, y1: number) => {
-    for (let pass = 0; pass < 2; pass++) {
-      ctx.strokeStyle = pass ? "rgba(250, 248, 240, 0.95)" : "rgba(235, 232, 222, 0.55)";
-      ctx.lineWidth = (pass ? 4 : 8) * unit;
-      ctx.beginPath();
-      const steps = 10;
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = x0 + (x1 - x0) * t + rand();
-        const y = y0 + (y1 - y0) * t + rand();
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-  };
-  stroke(w * 0.2, h * 0.18, w * 0.8, h * 0.8);
-  stroke(w * 0.8, h * 0.2, w * 0.22, h * 0.82);
-  ctx.restore();
-}
-// ... and a coarser one: their faces are small, so a full-size height grid
-// packs several times the walls' triangles into them
-const PROP_COARSE = 2;
-const GLASS_TINT = 0xdfe8ff;
-// how strongly lights glint on the glass
-const GLASS_SHEEN = 0.25;
-
-// Lift rides: the cabin lights dip this long either side of the deck swap;
-// a shaft light passes every SHAFT_LIGHT_PERIOD_MS, sweeping this far above
-// and below the eyes
-const LIFT_DIP_MS = 350;
-const SHAFT_LIGHT_COLOR = 0xffe2b0;
-const SHAFT_LIGHT_INTENSITY = 3.5;
-const SHAFT_LIGHT_PERIOD_MS = 700;
-const SHAFT_LIGHT_SWEEP = 1.2;
-// a change of map: how long the black sheet takes to clear after arriving (s)
-const TRANSIT_FADE_IN_S = 0.6;
-// taking stairs: how far ahead (cells) the eye walks and how far it climbs or
-// sinks (wall heights) by the end of the ride
-const STAIRS_WALK = 0.55;
-const STAIRS_RISE = 0.7;
-// how far away an interactive decal can be touched (world units)
-const TOUCH_REACH = 1.4;
-// a camera's light on the crew: watching, raising the alarm
-const CAMERA_WATCH_LIGHT = 0xffc23a;
-const CAMERA_ALARM_LIGHT = 0xff2418;
-// a fire (see fire.ts): its light (color, intensity and reach at size 1,
-// how high over its flames), and the dark smoke rising off it (color, how
-// high over the flames it comes from, how much and how big beside them)
-const FIRE_LIGHT_INTENSITY = 1.8;
-const FIRE_LIGHT_RANGE = 2.4;
-const FIRE_LIGHT_LIFT = 0.15;
-const FIRE_SMOKE_COLOR = 0x2e2a27;
-const FIRE_SMOKE_LIFT = 0.3;
-const FIRE_SMOKE_DENSITY = 0.8;
-const FIRE_SMOKE_SIZE = 1.3;
-// a fire light's flicker at `now` (ms): about 1, quickly unsteady
-function fireFlicker(now: number, seed: number): number {
-  return 1 + 0.22 * Math.sin(now / 47 + seed * 1.7) + 0.15 * Math.sin(now / 23 + seed * 4.1) + 0.12 * (Math.random() - 0.5);
-}
-// the crew down: how long the view takes to fall, the eye's height above
-// the floor then, how far up it looks and how far over the head rolls
-const DOWN_FALL_MS = 900;
-const DOWN_EYE = 0.09;
-const DOWN_LOOK_UP = 0.35;
-const DOWN_ROLL = 1.25;
-// the map editor: how far (world units) it picks cells, and the highlight's
-// colors - a wall to dig out, a floor to fill in
-const EDIT_REACH = 8;
-const EDIT_DIG_COLOR = 0xffa040;
-const EDIT_FILL_COLOR = 0x40d0ff;
-// the Texture tool paints the surface green; the Light tool shows yellow
-// where a click adds a ceiling light, blue where it takes one away
-const EDIT_PAINT_COLOR = 0x60ff80;
-const EDIT_LIGHT_ADD_COLOR = 0xffe040;
-const EDIT_SELECT_COLOR = 0x80f0ff;
-// the editor tools whose layer can be locked (and the layer each edits)
-const TOOL_LAYER: Partial<Record<EditTool, string>> = { texture: "texture", light: "light", prop: "prop", roofauto: "prop", fenceblock: "prop", fenceedge: "prop", fencemid: "prop", decal: "decal", robot: "robot", item: "item", smoke: "smoke", sound: "sound" };
-// the tools that work by strokes (a button held while the pointer crosses cells): the roof and the fences
-const STROKE_TOOLS: ReadonlySet<EditTool> = new Set<EditTool>(["roofauto", "fenceblock", "fenceedge", "fencemid"]);
-// how far off a surface a free-standing light is placed (world units)
-const LIGHT_SPOT_GAP = 0.12;
-// muzzle flashes (see addFlash): the party's, and an actor's (its color,
-// strength, reach and length in ms)
-const PARTY_FLASH_COLOR = 0xffe2a0;
-const ACTOR_FLASH = { color: 0xff9a40, intensity: 3.5, range: 3, duration: 110 };
-// a surface's pixels across one panel (as decals count them - see decals.ts)
-const SURFACE_PIXELS = 256;
-// smoke's own color where the map gives none (see SmokeSpec)
-const SMOKE_COLOR = 0xb4b8bc;
-// how strongly a texture set's glow map shines (see TextureSetFiles.glow)
-const SURFACE_GLOW = 1.2;
-// an actor's glowing pixels (see glowMapOf): at least this red, no more
-// than this green or blue
-const GLOW_MIN_RED = 150;
-const GLOW_MAX_OTHER = 90;
-// ... or, for the other colors that glow (see ActorType.glow), bright and
-// clearly that color
-const GLOW_COLORS: Record<"red" | "blue" | "cyan", (r: number, g: number, b: number) => boolean> = {
-  red: (r, g, b) => r >= GLOW_MIN_RED && Math.max(g, b) <= GLOW_MAX_OTHER,
-  blue: (r, _g, b) => b > 170 && b - r > 70,
-  cyan: (r, g, b) => g > 170 && b > 170 && r < 130,
-};
-const EDIT_LIGHT_REMOVE_COLOR = 0x40d0ff;
-const DOOR_PANEL_SETS: Record<DoorSpec["kind"], TextureSetId> = {
-  standard: "door1",
-  lift: "liftdoor1",
-};
-// door group Y rotation that turns its local +Z toward the door's facing
-const FACING_ROTATION: Record<Direction, number> = {
-  S: 0,
-  E: Math.PI / 2,
-  N: Math.PI,
-  W: -Math.PI / 2,
-};
-// where a door's label goes on its panel texture (pixels): the blank field
-// on the left of the lift door panel, minus the strip hidden behind the
-// frame's jamb (the panel reaches DOOR_PANEL_OVERLAP behind the frame)
-const DOOR_LABEL_AREA = { x: 14, y: 8, w: 78, h: 240 };
-// label letters are at most this many texture pixels per font pixel (a 5x7
-// letter at 4 = 20x28 of the panel's 256px)
-const DOOR_LABEL_MAX_SCALE = 4;
-// a lift door's deck number sits this far (panel pixels) above its label
-const DOOR_NUMBER_GAP = 12;
-// the dark red of the walls' painted stripes
-const LABEL_PAINT: [number, number, number] = [156, 27, 26];
-const LABEL_PAINT_DARK: [number, number, number] = [133, 22, 24];
-// each frame half's base plane sits this far from the center plane (keep it
-// deeper than the frame relief's deepest recess)
-const DOOR_FRAME_HALF_DEPTH = 0.05;
-// same for the panel: well behind the frame's faces
-const DOOR_PANEL_HALF_DEPTH = 0.02;
-// how far the panel reaches behind the frame around the opening
-const DOOR_PANEL_OVERLAP = 0.03;
-const DOOR_OPEN_MS = 400;
-
-// trim textures cut from the decals (scripts/make-trim-textures.ts), mapped
-// at the walls' density: texels per world unit
-const TRIM_PAINT_URL = `${import.meta.env.BASE_URL}textures/trim_paint/diffuse.png`;
-const TRIM_HAZARD_URL = `${import.meta.env.BASE_URL}textures/trim_hazard/diffuse.png`;
-const TRIM_TEXELS = 256;
-
-// Ladders (world units), in the worn yellow paint
-const LADDER_HALF_WIDTH = 0.16;
-const LADDER_RAIL = 0.03;
-const LADDER_RUNG = 0.022;
-// in front of the step face, clear of its relief
-const LADDER_STANDOFF = 0.09;
-// the rails reach this far above the ledge (wall heights)...
-const LADDER_HANDHOLD = 0.3;
-// ...and come down onto it this far back from the edge
-const LADDER_NECK = 0.12;
-// the low plate along a bridge deck's edges (world units): as tall as the
-// hazard stripe band
-const BRIDGE_KICK = 16 / TRIM_TEXELS;
-// the beams along a see-through deck's edges, under it
-const BRIDGE_STRINGER = 0.04;
-
-// a peek eases back to center once its input has been idle this long...
-const PEEK_IDLE_MS = 300;
-// ...with this time constant (s)
-const PEEK_RETURN_TAU = 0.25;
-
-interface GameViewportProps {
-  map: GameMap;
-  doorPreview?: DoorType;
-  pos: Vec2;
-  dir: Direction;
-  // the height stood at: the cell's floor, or a bridge (wall heights)
-  elevation: number;
-  // door cells ("x,y") that are open
-  openDoors: ReadonlySet<string>;
-  // a lift ride in progress: the cabin shakes, the shaft's lights sweep by
-  ride?: LiftRide | null;
-  // a change of map through a gate: the view fades to black, stays black while
-  // the next map loads, then fades back in (see useGameState's startTransit);
-  // its picture is the loading screen's
-  transit?: MapTransit | null;
-  // the deck's moving actors (drawn as sprites, see updateActors)
-  actors?: readonly ActorState[];
-  // a crewmate aiming this weapon: each frame fills aimFrameRef for the
-  // aiming overlay
-  aiming?: Weapon | null;
-  // the whole crew down since (performance.now()): the view drops to the floor
-  downAt?: number | null;
-  // the ship's livery hue (see variation.ts accentOf; null: as painted)
-  shipAccent?: number | null;
-  aimFrameRef?: MutableRefObject<AimFrame | null>;
-  aimFocusRef?: MutableRefObject<AimFocus | null>;
-  // written here: how much of the party each hostile actor sees past cover
-  partyCoverRef?: MutableRefObject<Map<number, number>>;
-  // an interactive decal (DecalSpec.action) was clicked or tapped within
-  // reach
-  onTouch?: (action: string) => void;
-  onInteraction?: (interaction: ClickEvent) => boolean;
-  onEditInteraction?: (target: InteractionTarget | null, remove: boolean) => void;
-  interactionUseRef?: MutableRefObject<(() => boolean) | null>;
-  interactionOpen?: boolean;
-  // the map editor is on: the cell under the pointer is highlighted, and a
-  // click or tap edits it (`alt`: the right button)
-  editMode?: boolean;
-  // the top-down view was left: the cell at the middle of what it looked at (the party goes there)
-  onTopdownExit?: (cell: Vec2) => void;
-  // the editor's layers hidden from the view ("robot" for the NPCs, "smoke" for the
-  // particles, "prop", "decal", "item") - drawing only, the map still has them
-  hiddenLayers?: ReadonlySet<string>;
-  // the editor's layers locked from picking and editing in the view - they stay
-  // visible, and clicks pass through them to what is behind
-  lockedLayers?: ReadonlySet<string>;
-  // the tool the editor has picked: what the highlight says a click does
-  editTool?: EditTool;
-  onEdit?: (target: EditTarget, alt: boolean, shift: boolean, ctrl?: boolean) => void;
-  // the Event tool's selected event: the target it is attached to
-  selectedEvent?: InteractionTarget | null;
-  // the Light tool's selected light (its index in the map's lights)
-  selectedLight?: number | null;
-  // the Prop tool's selected prop (its index in the map's props)
-  selectedProp?: number | null;
-  // the Decal tool's selected decal (its index in the map's decals)
-  selectedDecal?: number | null;
-  // the Door tool's selected door (its cell)
-  selectedDoor?: Vec2 | null;
-  // the selected gate or staircase (its cell): framed in the view
-  selectedLink?: Vec2 | null;
-  // the Robot tool's selected actor (its index in the map's actors)
-  selectedActor?: number | null;
-  // the Item tool's selected item (its index in the map's items)
-  selectedItem?: number | null;
-  // the Smoke tool's selected emitter (its index in the map's smokes)
-  selectedSmoke?: number | null;
-  // the Sound tool's selected sound emitter (its index in the map's sounds)
-  selectedSound?: number | null;
-  // the sound emitter (its index) the editor's Listen button plays - the only one heard while editing
-  previewSound?: number | null;
-  // the surface under the pointer whenever it changes - the editor's
-  // texture palette follows it
-  onEditHover?: (target: EditTarget | null) => void;
-  // an area being pasted (see editor/useAreaClipboard): its size in cells - its outline lies on the floor with its
-  // top-left corner on the cell pointed at
-  areaGhost?: { w: number; h: number } | null;
-  // The editor: something dragged (see App and EditDrag). The first call may
-  // copy it (Ctrl held); it returns the index of what is being dragged from
-  // then on - for a door dropped, whether the map took it.
-  onEditDrag?: (drag: EditDrag, target: EditTarget) => number | boolean | void;
-  // The editor, Roof tool: a stroke painting (or, `erase`, taking off) cells - called for each new
-  // cell the pointer reaches while a button is held; `first` the stroke's first, `id` the same
-  // all along it (one undo step)
-  onEditPaint?: (target: EditTarget, stroke: { id: number; first: boolean; erase: boolean; shift: boolean; ctrl: boolean }) => void;
-  // The editor: the wheel (or Alt+drag) over the view raises, scales or turns the
-  // selected prop or decal by a step
-  onEditAdjust?: (adjust: { what: "height" | "scale" | "rotate"; delta: number }) => void;
-  // a map's scene is fully built and shown (after the loading screen)
-  onReady?: (mapId: string) => void;
-  // free movement: called every frame with the frame time (s), returns the
-  // camera pose; when absent the camera follows pos/dir on the grid
-  freeTick?: (dt: number) => FreePose;
-  // grid movement: glance-around yaw offset (see useViewControls); eased
-  // back to 0 here once its input goes idle
-  peekRef?: MutableRefObject<PeekState>;
-  settings: ViewportSettings;
-  onStats?: (stats: ViewportStats) => void;
-  // loot (see useGameState): the containers emptied and the loose items
-  // taken (indices in map.props / map.items), and the spills to show
-  lootedProps?: ReadonlySet<number>;
-  takenItems?: ReadonlySet<number>;
-  spills?: readonly LootSpill[];
-}
-
-interface CamTarget {
-  x: number;
-  z: number;
-  tx: number;
-  tz: number;
-  // height of the surface under the camera (wall heights)
-  y: number;
-}
-
-function computeTarget(pos: Vec2, dir: Direction, elevation: number): CamTarget {
-  const fwd = DIR_VECTOR[dir];
-  return { x: pos.x, z: pos.y, tx: pos.x + fwd.x, tz: pos.y + fwd.y, y: elevation };
-}
-
-// Jumping off a bridge: a step sideways off the deck (`side`, from the
-// cell's center), the fall, and back under the bridge to the cell's center.
-function jumpPose(
-  from: CamTarget,
-  to: CamTarget,
-  side: Vec2,
-  elapsed: number,
-  moveMs: number,
-): { cam: CamTarget; done: boolean } {
-  const drop = from.y - to.y;
-  const off = { x: from.x + side.x * JUMP_CLEARANCE, z: from.z + side.y * JUMP_CLEARANCE };
-  const fallMs = 1000 * Math.sqrt((2 * drop) / FALL_GRAVITY);
-  const t1 = moveMs * 0.6;
-  const t2 = t1 + fallMs;
-  const t3 = t2 + moveMs;
-  let x = to.x;
-  let z = to.z;
-  let y = to.y;
-  if (elapsed < t1) {
-    const e = easeInOutQuad(elapsed / t1);
-    x = lerp(from.x, off.x, e);
-    z = lerp(from.z, off.z, e);
-    y = from.y;
-  } else if (elapsed < t2) {
-    const f = (elapsed - t1) / fallMs;
-    x = off.x;
-    z = off.z;
-    y = from.y - drop * f * f;
-  } else if (elapsed < t3) {
-    const e = easeInOutQuad((elapsed - t2) / moveMs);
-    x = lerp(off.x, to.x, e);
-    z = lerp(off.z, to.z, e);
-  }
-  return {
-    cam: { x, z, y, tx: x + (to.tx - to.x), tz: z + (to.tz - to.z) },
-    done: elapsed >= t3,
-  };
-}
-
-// how fast a fall off a ledge speeds up (wall heights per second squared;
-// stylized - a wall is ~2.5 m, so real gravity would be ~4)
-const FALL_GRAVITY = 12;
-// a fall starts this far into the step off the ledge
-const FALL_START = 0.4;
-// ladder rungs are this far apart (wall heights); a climb pulls up rung by
-// rung
-const RUNG_SPACING = 0.125;
-// how far from a bridge's middle line a jump off it clears the deck
-const JUMP_CLEARANCE = BRIDGE_WIDTH / 2 + 0.15;
-
-// The camera along a ladder move: walk to the ladder, climb, walk off. Up:
-// to the cell edge (the pulled-back eye then sits just in front of the step
-// face), up, and on over the ledge. Down: out over the edge into the lower
-// cell (the eye just beyond the step face), then down.
-function climbPose(from: CamTarget, to: CamTarget, elapsed: number, moveMs: number): { cam: CamTarget; done: boolean } {
-  const up = to.y > from.y;
-  const height = Math.abs(to.y - from.y);
-  const climbMs = CLIMB_MS_PER_HEIGHT * height;
-  const at = up ? { x: (from.x + to.x) / 2, z: (from.z + to.z) / 2 } : { x: to.x, z: to.z };
-  const walkIn = up ? moveMs * 0.5 : moveMs;
-  const walkOut = up ? moveMs * 0.5 : 0;
-  const total = walkIn + climbMs + walkOut;
-
-  let x: number;
-  let z: number;
-  let y: number;
-  if (elapsed < walkIn) {
-    const e = easeInOutQuad(elapsed / walkIn);
-    x = lerp(from.x, at.x, e);
-    z = lerp(from.z, at.z, e);
-    y = from.y;
-  } else if (elapsed < walkIn + climbMs) {
-    const c = (elapsed - walkIn) / climbMs;
-    // speeding up and slowing down once per rung
-    const rungs = Math.max(1, Math.round(height / RUNG_SPACING));
-    const p = c - (Math.sin(2 * Math.PI * c * rungs) / (2 * Math.PI * rungs)) * 0.8;
-    x = at.x;
-    z = at.z;
-    y = lerp(from.y, to.y, p);
-  } else {
-    const e = walkOut ? easeOutQuad(Math.min(1, (elapsed - walkIn - climbMs) / walkOut)) : 1;
-    x = lerp(at.x, to.x, e);
-    z = lerp(at.z, to.z, e);
-    y = to.y;
-  }
-  // the facing (normally unchanged by a move) blends over the whole climb
-  const k = Math.min(1, elapsed / total);
-  return {
-    cam: { x, z, y, tx: x + lerp(from.tx - from.x, to.tx - to.x, k), tz: z + lerp(from.tz - from.z, to.tz - to.z, k) },
-    done: elapsed >= total,
-  };
-}
-
-// shared by every scene, never disposed (see GeometryViewId)
-const GEOMETRY_VIEW_MATERIALS: Partial<Record<GeometryViewId, THREE.Material>> = {};
-function geometryViewMaterial(view: GeometryViewId): THREE.Material | null {
-  // (the map views swap the materials' maps instead: see applyMaterialViews)
-  if (view === "textured" || view === "normals" || view === "depth") return null;
-  GEOMETRY_VIEW_MATERIALS[view] ??=
-    view === "faces"
-      ? new THREE.MeshNormalMaterial({ flatShading: true, side: THREE.DoubleSide })
-      : new THREE.MeshBasicMaterial({ color: 0x4dff88, wireframe: true, fog: true });
-  return GEOMETRY_VIEW_MATERIALS[view];
-}
-
-// Aiming: the picked body part lights up on its actor's sprite - its own
-// pixels, not a box: a faint fill and a bright outline, drawn in the scene,
-// so whatever covers part of it covers the highlight too. The sprite's
-// material gets the four parts' zones (sheet UVs of the cell shown) and the
-// picked one's index (-1: none). Its weak spots (ActorType.crits) show red
-// with a yellow rim.
-const MAX_CRIT_ZONES = 10;
-interface PartHighlight {
-  zones: { value: THREE.Vector4[] };
-  // 1: outline the whole sprite (the crew's scanner, see enemyScanner)
-  outline: { value: number };
-  part: { value: number };
-  texel: { value: THREE.Vector2 };
-  // the weak spots' zones in the cell shown, their parts, and how many
-  crits: { value: THREE.Vector4[] };
-  critParts: { value: number[] };
-  critCount: { value: number };
-  // the actor's glowing parts (see ActorType.glow) and how bright they are
-  glowMap: { value: THREE.Texture };
-  glow: { value: number };
-}
-// no glow (a sampler needs some texture)
-const NO_GLOW = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
-NO_GLOW.needsUpdate = true;
-function highlightMaterial(material: THREE.MeshStandardMaterial): PartHighlight {
-  const uniforms: PartHighlight = {
-    zones: { value: BODY_PARTS.map(() => new THREE.Vector4()) },
-    outline: { value: 0 },
-    part: { value: -1 },
-    texel: { value: new THREE.Vector2(1 / 512, 1 / 512) },
-    crits: { value: Array.from({ length: MAX_CRIT_ZONES }, () => new THREE.Vector4()) },
-    critParts: { value: new Array(MAX_CRIT_ZONES).fill(-1) },
-    critCount: { value: 0 },
-    glowMap: { value: NO_GLOW },
-    glow: { value: 0 },
-  };
-  material.customProgramCacheKey = () => "actor-part-highlight";
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uPartZones = uniforms.zones;
-    shader.uniforms.uPart = uniforms.part;
-    shader.uniforms.uOutline = uniforms.outline;
-    shader.uniforms.uTexel = uniforms.texel;
-    shader.uniforms.uCrits = uniforms.crits;
-    shader.uniforms.uCritParts = uniforms.critParts;
-    shader.uniforms.uCritCount = uniforms.critCount;
-    shader.uniforms.uGlowMap = uniforms.glowMap;
-    shader.uniforms.uGlow = uniforms.glow;
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        "#include <emissivemap_fragment>",
-        `#include <emissivemap_fragment>
-totalEmissiveRadiance += texture2D(uGlowMap, vMapUv).rgb * uGlow;`,
-      )
-      .replace(
-        "#include <map_pars_fragment>",
-        `#include <map_pars_fragment>
-uniform vec4 uPartZones[${BODY_PARTS.length}];
-uniform float uOutline;
-uniform sampler2D uGlowMap;
-uniform float uGlow;
-uniform int uPart;
-uniform vec2 uTexel;
-uniform vec4 uCrits[${MAX_CRIT_ZONES}];
-uniform float uCritParts[${MAX_CRIT_ZONES}];
-uniform int uCritCount;
-bool inZone(vec4 z, vec2 uv) { return uv.x >= z.x && uv.x <= z.z && uv.y <= z.y && uv.y >= z.w; }
-// the weak spot zone a spot of the sheet is in (-1: none)
-int critOf(vec2 uv) {
-  for (int i = 0; i < ${MAX_CRIT_ZONES}; i++) {
-    if (i >= uCritCount) break;
-    if (inZone(uCrits[i], uv)) return i;
-  }
-  return -1;
-}
-// the part a spot of the sheet belongs to (a BODY_PARTS index): a weak
-// spot's, else head, torso, legs, then the arms (they reach across the
-// torso) - as hitPart() on the CPU
-int partOf(vec2 uv) {
-  int c = critOf(uv);
-  if (c >= 0) return int(uCritParts[c] + 0.5);
-  if (inZone(uPartZones[0], uv)) return 0;
-  if (inZone(uPartZones[1], uv)) return 1;
-  if (inZone(uPartZones[4], uv)) return 4;
-  if (inZone(uPartZones[2], uv)) return 2;
-  if (inZone(uPartZones[3], uv)) return 3;
-  return -1;
-}
-bool solid(vec2 uv) { return texture2D(map, uv).a >= 0.5; }
-bool onPart(vec2 uv) { return texture2D(map, uv).a >= 0.5 && partOf(uv) == uPart; }
-bool onCrit(vec2 uv) { return texture2D(map, uv).a >= 0.5 && critOf(uv) >= 0 && partOf(uv) == uPart; }`,
-      )
-      .replace(
-        "#include <fog_fragment>",
-        `#include <fog_fragment>
-// after the fog, so it reads at any distance: a tint over the part, and a
-// two-texel outline where it meets another part or the transparent edge
-if (uPart >= 0 && onPart(vMapUv)) {
-  bool edge = false;
-  for (int i = 1; i <= 2; i++) {
-    vec2 d = uTexel * float(i);
-    edge = edge || !onPart(vMapUv + vec2(d.x, 0.0)) || !onPart(vMapUv - vec2(d.x, 0.0)) ||
-      !onPart(vMapUv + vec2(0.0, d.y)) || !onPart(vMapUv - vec2(0.0, d.y));
-  }
-  if (edge) gl_FragColor.rgb = vec3(0.5, 1.0, 0.7);
-  else if (critOf(vMapUv) >= 0) {
-    bool rim = !onCrit(vMapUv + vec2(uTexel.x, 0.0)) || !onCrit(vMapUv - vec2(uTexel.x, 0.0)) ||
-      !onCrit(vMapUv + vec2(0.0, uTexel.y)) || !onCrit(vMapUv - vec2(0.0, uTexel.y));
-    gl_FragColor.rgb = rim ? vec3(1.0, 0.85, 0.2) : mix(gl_FragColor.rgb, vec3(1.0, 0.18, 0.08), 0.55);
-  } else gl_FragColor.rgb += vec3(0.04, 0.16, 0.09);
-} else if (uOutline > 0.5 && uPart < 0 && solid(vMapUv)) {
-  // the crew's scanner: the sprite's outline, whatever the light
-  bool rim = false;
-  for (int i = 1; i <= 2; i++) {
-    vec2 d = uTexel * float(i);
-    rim = rim || !solid(vMapUv + vec2(d.x, 0.0)) || !solid(vMapUv - vec2(d.x, 0.0)) ||
-      !solid(vMapUv + vec2(0.0, d.y)) || !solid(vMapUv - vec2(0.0, d.y));
-  }
-  if (rim) gl_FragColor.rgb = vec3(1.0, 0.45, 0.15);
-}`,
-      );
-  };
-  return uniforms;
-}
-
-// What one build of the scene leaves for the next - an edit rebuilds the
-// deck, but its walls' textures and relief don't change: the renderer (and
-// the shaders it has compiled), the wall kits' textures, the depth maps and
-// the relief geometry (with its AO map and raycast hierarchy), each keyed
-// by everything it's made from. Emptied when the textures hot-reload
-// (`version`) and when the view goes.
-interface SceneCache {
-  renderer: THREE.WebGLRenderer | null;
-  // whether the renderer was asked for antialiasing (fixed when it's made:
-  // a change of the setting makes a new one)
-  antialias: boolean;
-  version: string;
-  textures: Map<string, THREE.Texture>;
-  decalTextures: Map<string, Promise<THREE.Texture>>;
-  decalManifest: ReturnType<typeof fetchDecalManifest> | null;
-  decalGeometries: Map<string, THREE.BufferGeometry | null>;
-  grids: Map<string, ReturnType<typeof loadHeightGrid>>;
-  reliefs: Map<string, Promise<ReturnType<typeof createReliefWallGeometry> | null>>;
-}
-function clearSceneCache(cache: SceneCache) {
-  for (const tex of cache.textures.values()) tex.dispose();
-  cache.textures.clear();
-  for (const tex of cache.decalTextures.values()) tex.then((t) => t.dispose()).catch(() => {});
-  cache.decalTextures.clear();
-  cache.decalManifest = null;
-  for (const geo of cache.decalGeometries.values()) geo?.dispose();
-  cache.decalGeometries.clear();
-  cache.grids.clear();
-  for (const relief of cache.reliefs.values()) {
-    relief.then((r) => {
-      r?.geometry.dispose();
-      r?.aoMap.dispose();
-    }).catch(() => {});
-  }
-  cache.reliefs.clear();
-}
-
-// a vertical field of view (degrees) magnified `zoom` times
-function zoomedFov(fov: number, zoom: number): number {
-  return THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(fov) / 2) / zoom));
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-function easeOutQuad(t: number): number {
-  return 1 - (1 - t) * (1 - t);
-}
-
-// an RGBA image turned 90 degrees clockwise (text reading top to bottom)
-function turnClockwise(img: { width: number; height: number; rgba: Uint8Array }) {
-  const { width: w, height: h } = img;
-  const rgba = new Uint8Array(w * h * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      // (x, y) -> (h - 1 - y, x) in the w-tall, h-wide result
-      const src = (y * w + x) * 4;
-      const dst = (x * h + (h - 1 - y)) * 4;
-      rgba.set(img.rgba.subarray(src, src + 4), dst);
-    }
-  }
-  return { width: h, height: w, rgba };
-}
-
-function easeInOutQuad(t: number): number {
-  return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
-}
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-}
-
-// vertical FOV that shows `fov` degrees across the shorter screen side
-function verticalFov(fov: number, aspect: number): number {
-  if (aspect >= 1) return fov;
-  const v = (2 * Math.atan(Math.tan((fov * Math.PI) / 360) / aspect) * 180) / Math.PI;
-  return Math.min(MAX_VERTICAL_FOV, v);
-}
+export { DEFAULT_SETTINGS } from "../render/viewport/settings";
+
+import type { GeometryViewId, ViewportSettings } from "../render/viewport/settings";
+import {
+  createBeveledWallGeometry,
+  LIGHT_PANEL_INTENSITY,
+  DEFAULT_FLOOR,
+  type PanelVariant,
+  variantRows,
+  variantHeight,
+  wallPanels,
+  createBandPlane,
+  type WallSlot,
+  type WallKit,
+  kitMaterials,
+  wallVariantRoll,
+  FLOOR_BASE_DEPTH,
+  LOD_DISTANCE,
+  LOD_FACTOR,
+  SMOOTH_LODS,
+  SMOOTH_LOD_MIN_CELLS,
+  CORNER_JOINS,
+  type FarLevel,
+} from "../render/viewport/walls";
+import {
+  TEXTURE_CHANGED_EVENT,
+  EDIT_SETTLE_MS,
+  LIGHT_EDIT_SETTLE_MS,
+  ORIGIN_NDC,
+  CULL_MAX_SIZE,
+  DOOR_FRAME_SET,
+  WINDOW_SET,
+  WINDOW_DEPTH,
+  NO_LAYERS,
+  PROP_COARSE,
+  GLASS_TINT,
+  GLASS_SHEEN,
+  TOUCH_REACH,
+  CAMERA_WATCH_LIGHT,
+  CAMERA_ALARM_LIGHT,
+  LIGHT_SPOT_GAP,
+  SURFACE_PIXELS,
+  SMOKE_COLOR,
+  SURFACE_GLOW,
+  DOOR_PANEL_SETS,
+  FACING_ROTATION,
+  DOOR_LABEL_AREA,
+  DOOR_LABEL_MAX_SCALE,
+  DOOR_NUMBER_GAP,
+  LABEL_PAINT,
+  LABEL_PAINT_DARK,
+  DOOR_FRAME_HALF_DEPTH,
+  DOOR_PANEL_HALF_DEPTH,
+  DOOR_PANEL_OVERLAP,
+  DOOR_OPEN_MS,
+  TRIM_PAINT_URL,
+  TRIM_HAZARD_URL,
+  TRIM_TEXELS,
+  LADDER_HALF_WIDTH,
+  LADDER_RAIL,
+  LADDER_RUNG,
+  LADDER_STANDOFF,
+  LADDER_HANDHOLD,
+  LADDER_NECK,
+  BRIDGE_KICK,
+  BRIDGE_STRINGER,
+} from "../render/viewport/constants";
+import { bakeCache, type SceneCache, clearSceneCache, renderedSpecs } from "../render/viewport/sceneCache";
+import { fogRange } from "../render/viewport/fog";
+import {
+  LIGHT_POOL_SIZE,
+  LIGHT_FADE_SPAN,
+  SIGHT_POINTS,
+  LIGHT_BEHIND_PENALTY,
+  LIGHT_BEHIND_SLACK,
+  LIGHT_KEEP_BIAS,
+  LIGHT_SLOT_FADE,
+  FIRE_LIGHT_INTENSITY,
+  FIRE_LIGHT_RANGE,
+  FIRE_LIGHT_LIFT,
+  FIRE_SMOKE_COLOR,
+  FIRE_SMOKE_LIFT,
+  FIRE_SMOKE_DENSITY,
+  FIRE_SMOKE_SIZE,
+  fireFlicker,
+} from "../render/viewport/lighting";
+import {
+  TOPDOWN_FOV,
+  TOPDOWN_REACH,
+  TOPDOWN_ZOOM_MIN,
+  TOPDOWN_ZOOM_MAX,
+  AIM_FRAMING,
+  AIM_MIN_FOV,
+  AIM_CAMERA_TAU,
+  LIFT_DIP_MS,
+  SHAFT_LIGHT_COLOR,
+  SHAFT_LIGHT_INTENSITY,
+  SHAFT_LIGHT_PERIOD_MS,
+  SHAFT_LIGHT_SWEEP,
+  TRANSIT_FADE_IN_S,
+  STAIRS_WALK,
+  STAIRS_RISE,
+  DOWN_FALL_MS,
+  DOWN_EYE,
+  DOWN_LOOK_UP,
+  DOWN_ROLL,
+  PEEK_IDLE_MS,
+  PEEK_RETURN_TAU,
+  type CamTarget,
+  computeTarget,
+  zoomedFov,
+  verticalFov,
+} from "../render/viewport/camera";
+import {
+  ITEM_HEIGHT,
+  ITEM_LIFT,
+  ITEM_TOPDOWN_GROW,
+  ITEM_GLOW,
+  ITEM_NORMAL_KEEP,
+  ITEM_NORMAL_BEND,
+  SPILL_OUT_MS,
+  SPILL_REST_MS,
+  SPILL_IN_MS,
+} from "../render/viewport/loot";
+import {
+  EDIT_REACH,
+  EDIT_DIG_COLOR,
+  EDIT_FILL_COLOR,
+  EDIT_PAINT_COLOR,
+  EDIT_LIGHT_ADD_COLOR,
+  EDIT_SELECT_COLOR,
+  TOOL_LAYER,
+  STROKE_TOOLS,
+  EDIT_LIGHT_REMOVE_COLOR,
+} from "../render/viewport/editor";
+import { addDirectLightOcclusion, geometryViewMaterial } from "../render/viewport/materials";
+import {
+  PARTY_COVER_REFRESH_MS,
+  PARTY_BODY_HEIGHTS,
+  PARTY_BODY_HALF_WIDTH,
+  CHANCE_GRID,
+  ACTOR_FLASH_MS,
+  ACTOR_FADE_MS,
+  ACTOR_SHOOT_POSE_MS,
+  ACTOR_DIE_FRAME_MS,
+  ACTOR_SHOOT_FRAME_MS,
+  ACTOR_HIT_POSE_MS,
+  AIM_CHANCE_REFRESH_MS,
+  AIM_CHANCE_PARTS_PER_FRAME,
+  TRACER_MS,
+  PARTY_FLASH_COLOR,
+  ACTOR_FLASH,
+  GLOW_COLORS,
+  MAX_CRIT_ZONES,
+  type PartHighlight,
+  highlightMaterial,
+} from "../render/viewport/actors";
+import { makeSkyGradientTexture, makeSkyMaterial } from "../render/viewport/sky";
+import {
+  jumpPose,
+  FALL_GRAVITY,
+  FALL_START,
+  RUNG_SPACING,
+  climbPose,
+  lerp,
+  easeOutQuad,
+  smoothstep,
+} from "../render/viewport/poses";
+import { eventMarkerMaterial, makeExitMarker, makeStairsMarker, drawChalkCross } from "../render/viewport/markers";
+import { turnClockwise } from "../render/viewport/pixels";
+import type {
+  ReliefStats,
+  AimTarget,
+  AimFrame,
+  AimFocus,
+  EditDragKind,
+  EditTarget,
+  GameViewportProps,
+} from "../render/viewport/contracts";
+import { LoadingScreen } from "../render/viewport/LoadingScreen";
+
+export type { TextureSetId, WallProfileId, GeometryViewId, ViewportSettings } from "../render/viewport/settings";
+export { FLOOR_BASE_DEPTH } from "../render/viewport/walls";
+export { fogRange } from "../render/viewport/fog";
+export type {
+  ReliefStats,
+  AimTarget,
+  AimFrame,
+  AimFocus,
+  EditDragKind,
+  EditDrag,
+  EditTarget,
+  ViewportStats,
+} from "../render/viewport/contracts";
 
 export function GameViewport({
   doorPreview,
@@ -9111,37 +7810,3 @@ export function GameViewport({
     </div>
   );
 }
-
-// Shown over the view while a map's scene loads: the deck's name and a
-// progress bar, fading out once it's all built. `image`: a shared still
-// image's id (see MapFile.loadingImage, MapLinkTarget.loadingImage) shown
-// behind the text, dimmed so the text stays readable - none: the plain screen.
-function LoadingScreen({ loading, inLift, title, image }: { loading: { title: string; progress: number } | null; inLift: boolean; title: string; image?: string }) {
-  const images = useSharedImages();
-  // keep the last title and picture while fading out
-  const [shown, setShown] = useState(loading);
-  const [shownImage, setShownImage] = useState(image);
-  useEffect(() => {
-    if (loading) {
-      setShown(loading);
-      setShownImage(image);
-    }
-  }, [loading, image]);
-  const url = shownImage ? images.find((i) => i.id === shownImage)?.url : undefined;
-  return (
-    <div
-      className={`absolute inset-0 bg-black flex flex-col items-center justify-center gap-3 font-mono transition-opacity duration-500 ${loading ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-    >
-      {url && <img src={url} alt="" draggable={false} className="absolute inset-0 h-full w-full object-cover" />}
-      {url && <div className="absolute inset-0 bg-black/55" />}
-      <div className="relative flex flex-col items-center gap-3" style={url ? { textShadow: "0 1px 6px #000, 0 0 2px #000" } : undefined}>
-        <div className="text-[10px] tracking-[0.3em] text-green-700">{inLift ? "LIFT IN TRANSIT" : title}</div>
-        <div className="text-sm tracking-[0.2em] text-green-400 uppercase">{shown?.title}</div>
-        <div className="w-48 h-1 bg-green-950 overflow-hidden">
-          <div className="h-full bg-green-500 transition-[width] duration-200" style={{ width: `${Math.round((shown?.progress ?? 1) * 100)}%` }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
