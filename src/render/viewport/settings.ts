@@ -115,8 +115,9 @@ export interface ViewportSettings extends PostProcessSettings {
   lightPool: number;
   normalMaps: number;
   mapLightIntensity: number;
-  // the sky's light on the cells under an open ceiling (see lights.ts SkyLight)
+  // Directional sunlight and diffuse sky illumination in the bake.
   skyLightIntensity: number;
+  skyDomeIntensity: number;
   skyLightAzimuth: number;
   skyLightElevation: number;
   skyLightColor: string;
@@ -198,6 +199,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   ...DEVICE_GRAPHICS,
   mapLightIntensity: 1.6,
   skyLightIntensity: 0,
+  skyDomeIntensity: 0.65,
   skyLightAzimuth: 200,
   skyLightElevation: 40,
   skyLightColor: "#a8bcff",

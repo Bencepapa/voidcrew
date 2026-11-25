@@ -341,6 +341,7 @@ export function DebugPanel({
               {slider({ key: "lightGridDensity", label: "debug.bakedSamplesPerCellUnlessTheMap", min: 2, max: 12, step: 1 })}
               {slider({ key: "lightGridQuickDensity", label: "debug.quickBakeSamplesPerCell", min: 0, max: 4, step: 1 })}
               {slider({ key: "lightBounce", label: "debug.lightBounce0UnlitRoomsStayDark", min: 0, max: 3, step: 0.05 })}
+              {slider({ key: "skyDomeIntensity", label: "debug.skyDomeStrength0None", min: 0, max: 3, step: 0.05 })}
             </>
           )}
           {select(

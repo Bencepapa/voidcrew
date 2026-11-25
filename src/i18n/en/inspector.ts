@@ -9,7 +9,7 @@ export const inspectorEn = {
   "inspector.floors": "Floors",
   "inspector.material": "Material",
   "inspector.light": "Light",
-  "inspector.skyLight": "Sky light",
+  "inspector.skyLight": "Sun and sky",
   "inspector.gameplay": "Gameplay",
   "inspector.next": "Next {kind}",
 };

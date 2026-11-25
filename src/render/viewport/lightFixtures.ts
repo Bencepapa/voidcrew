@@ -1,17 +1,10 @@
 import * as THREE from "three";
-import { generateLights, isSkyCeiling, parseColor, type LightSpec } from "../../game/lights";
+import { generateLights, isSkyCeiling, type LightSpec } from "../../game/lights";
 import { cellKey } from "../../game/visibility";
 import type { GameMap } from "../../game/types";
-import type { ViewportSettings } from "./settings";
 import type { WallKit } from "./walls";
 
 
-const skyLightOf = (s: ViewportSettings) => ({
-  color: parseColor(s.skyLightColor) ?? 0xa8bcff,
-  intensity: s.skyLightIntensity,
-  azimuth: s.skyLightAzimuth,
-  elevation: s.skyLightElevation,
-});
 const ceilingLightCells = (lights: LightSpec[]) =>
   new Set(lights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`));
 // the color of each lit cell's ceiling lamp
@@ -22,8 +15,8 @@ const ceilingLightColors = (lights: LightSpec[]) =>
 const effectLampCells = (lights: LightSpec[]) =>
   new Map<string, number>(lights.flatMap((l, i) => (l.kind === "ceiling" && l.effect ? [[`${Math.round(l.x)},${Math.round(l.z)}`, i] as [string, number]] : [])));
 
-export function createMapLightState(map: GameMap, settings: ViewportSettings) {
-  let mapLights = generateLights(map, skyLightOf(settings));
+export function createMapLightState(map: GameMap) {
+  let mapLights = generateLights(map);
   const cellsOf = (lights: LightSpec[]) => lights.map((l) => cellKey(Math.round(l.x), Math.round(l.z)));
   let lightCells = cellsOf(mapLights);
   let litCells = ceilingLightCells(mapLights);
@@ -32,8 +25,8 @@ export function createMapLightState(map: GameMap, settings: ViewportSettings) {
   // each such panel's own copy of its glowing material, and its glow
   const effectPanels = new Map<string, { mat: THREE.MeshStandardMaterial; base: number; light: number }>();
 
-  function replace(next: GameMap, settings: ViewportSettings) {
-    mapLights = generateLights(next, skyLightOf(settings));
+  function replace(next: GameMap) {
+    mapLights = generateLights(next);
     litCells = ceilingLightCells(mapLights);
     litColors = ceilingLightColors(mapLights);
     effectCells = effectLampCells(mapLights);
@@ -120,8 +113,8 @@ export function createLightFixtures(deps: {
   // The editor changed only the deck's lights: the ceiling tiles' glowing
   // panels, the fixtures and the light pool follow, the rest stays built.
   // A pool slot keeps its light if the new set still has it.
-  function applyLights(next: GameMap, settings: ViewportSettings) {
-    lights.replace(next, settings);
+  function applyLights(next: GameMap) {
+    lights.replace(next);
     const { litCells, litColors } = lights;
     for (const tile of ceilingTiles) {
       const material = ceilingMaterial(tile.kit, tile.relief, litCells.has(tile.cell), litColors.get(tile.cell), tile.cell);

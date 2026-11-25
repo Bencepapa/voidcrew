@@ -24,6 +24,7 @@ export const RENDER_NUMBER_KEYS = [
   // the sky's light on the cells under an open ceiling (strength; compass
   // degrees it comes from; degrees above the horizon)
   "skyLightIntensity",
+  "skyDomeIntensity",
   "skyLightAzimuth",
   "skyLightElevation",
   "reliefLevels",
