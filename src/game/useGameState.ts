@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FIRE_ACTOR_DAMAGE, FIRE_BURN_MS, FIRE_DAMAGE, fireCells } from "./fire";
 import { WORLDS } from "./worlds";
 import { MAPS, START_MAP, cellAt, doorAt, doorCrossed, floorHeight, liftAt, liftDoorOf } from "./map";
@@ -15,13 +15,13 @@ import {
 } from "./dropItem";
 import { PROP_TYPES, propHeight, propPlacement } from "./props";
 import type { ShipMood } from "./variation";
-import { ACTOR_TYPES, SPOTTED_MS, actorAt, actorFromSpec, actorWake, createActors, faceParty, partyHitChance, scared, stepActors, type Spotted } from "./actors";
+import { ACTOR_TYPES, SPOTTED_MS, actorAt, actorFromSpec, actorWake, createActors, faceParty, partyHitChance, scared, spawnActors as spawnFromSpecs, stepActors, type Spotted } from "./actors";
 import { onSharedActorsChanged } from "../editor/sharedActors";
 import { moodOdds } from "./variation";
 import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
 import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
-import { getMeta, setStoryFlag } from "./meta";
+import { getMeta, setCredits, setStoryFlag } from "./meta";
 import { storyEvent, storyInventoryChanged, storySetCutscene } from "./story/storyRuntime";
 import { addToInventory, changeInventory, getInventory, handWeapon, haulOf, startRun, useInventory } from "./inventoryStore";
 import { LEFT, effectiveHand, handLoc, handView, parseLoc, slotAt, takeSlot, type HandIndex } from "./inventory";
@@ -46,6 +46,7 @@ import { reviveCrew, wipeOutcome } from "./editorWipe";
 import { pickVictim } from "./operables";
 import { lockedMessage } from "./keys";
 import { useOperables } from "./useOperables";
+import { emittersOn } from "./emitterStore";
 import { useLocks } from "./useLocks";
 
 // no cell burns (the fire is not armed, see trapsActive)
@@ -400,7 +401,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     // reinforcements (on the deck shown)
     (m.actors ?? []).forEach((spec, index) => {
       const wake = spec.wake;
-      if (wake?.mode !== "arrive" || level < wake.level || !ACTOR_TYPES[spec.actor]) return;
+      if (wake?.mode !== "arrive" || spec.dormant || level < wake.level || !ACTOR_TYPES[spec.actor]) return;
       const due = nextArrivalRef.current.get(index) ?? now;
       if (now < due) return;
       const standing = actors.filter((a) => a.spawnOf === index && a.diedAt === null).length;
@@ -656,7 +657,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       // fire (see fire.ts): every so often it burns a crewmate standing in
       // it, and anything else in it - a hazard like a trap, so it is on only while playing (the
       // fire itself still burns and lights the deck; the ship's simulation goes on)
-      const burning = trapsActive() ? fireCells(m) : NO_FIRE;
+      const burning = trapsActive() ? fireCells(m, emittersOn(m)) : NO_FIRE;
       burnClockRef.current = burning.size ? burnClockRef.current + ACTOR_TICK_MS : 0;
       const burnNow = burnClockRef.current >= FIRE_BURN_MS;
       if (burnNow) {
@@ -1220,6 +1221,30 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     hasFlag,
     raiseFlag,
     pushLog,
+    // the fire / poison / spawn targets (see operables.ts): dormant NPCs and items come in, a reward is paid
+    spawnActors: (indices) => {
+      const m = mapRef.current;
+      const now = gameClock.now();
+      const here = new Set(actorsRef.current.map((a) => a.id));
+      const fresh = spawnFromSpecs(m, indices.filter((i) => !here.has(i)), now, alertLevelRef.current).map((a) =>
+        killedRef.current.has(actorKey(m, a.id)) ? { ...a, hp: 0, diedAt: now - 1e6 } : a,
+      );
+      if (fresh.length) updateActorsRef.current([...actorsRef.current, ...fresh]);
+      return fresh.filter((a) => a.diedAt === null).map((a) => ACTOR_TYPES[a.type].name);
+    },
+    // (a dormant item is hidden through the looted set, see below; it stays revealed for the run)
+    revealItems: (indices) => {
+      const keys = indices.flatMap((i) => {
+        const it = mapRef.current.items?.[i];
+        return it ? [itemKey(it)] : [];
+      });
+      for (const key of keys) revealedItemsRef.current.add(key);
+      setLooted((prev) => new Set([...prev].filter((k) => !keys.includes(k))));
+    },
+    giveReward: (credits, items) => {
+      if (credits > 0) setCredits(getMeta().credits + credits);
+      addToHaul(items.filter((i) => Object.hasOwn(ITEM_TYPES, i.item) || isSharedPickupId(i.item)));
+    },
   });
   // The locks on chests, levers and buttons (see propLocks.ts); the lever's own touch goes through the gate
   const locks = useLocks({ active: variation !== null, mapRef, fullMapRef, hasFlag, raiseFlag, pushLog });
@@ -1449,6 +1474,14 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     (it: MapItem) => (it.dropped !== undefined ? dropLootKey(dropScope, it.dropped) : lootKey("item", (fullMap.items ?? []).indexOf(it))),
     [dropScope, lootKey, fullMap],
   );
+  // Dormant items (MapItem.dormant: "appears when triggered") are kept out of the world by counting them as looted until an
+  // operable `item` target reveals them (the keys of the revealed ones are kept for the run). The map editor shows them all.
+  const revealedItemsRef = useRef(new Set<string>());
+  useLayoutEffect(() => {
+    if (variation === null) return;
+    const hide = (map.items ?? []).flatMap((it) => (it.dormant ? [itemKey(it)] : [])).filter((k) => !revealedItemsRef.current.has(k));
+    if (hide.length) setLooted((prev) => (hide.every((k) => prev.has(k)) ? prev : new Set([...prev, ...hide])));
+  }, [map, variation, itemKey, looted]);
   // (into the backpack; what doesn't fit is carried loose, and said so)
   const addToHaul = useCallback((stacks: ItemStack[]) => {
     if (!stacks.length) return;
@@ -1900,6 +1933,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     // (a clean backpack, the loadout in hand again)
     startRun();
     setLooted(new Set());
+    revealedItemsRef.current = new Set();
     // (a new run: what was dropped is gone with the old one)
     setDrops([]);
     setSpills([]);

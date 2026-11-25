@@ -11,7 +11,8 @@ export const FIRE_BURN_MS = 1000;
 export const FIRE_DAMAGE: [number, number] = [3, 6];
 export const FIRE_ACTOR_DAMAGE = 6;
 
-// the burning cells ("x,y"): a decorative fire (a torch) doesn't count
-export function fireCells(map: GameMap): Set<string> {
-  return new Set((map.smokes ?? []).filter((s) => s.fire && !s.decorative).map((s) => `${s.cell.x},${s.cell.y}`));
+// the burning cells ("x,y"): a decorative fire (a torch) doesn't count, nor one that is switched off (`on`: whether the
+// emitter with that index in the map's smokes is on - see emitterStore.ts emittersOn; unset: all are)
+export function fireCells(map: GameMap, on?: (index: number) => boolean): Set<string> {
+  return new Set((map.smokes ?? []).filter((s, i) => s.fire && !s.decorative && (!on || on(i))).map((s) => `${s.cell.x},${s.cell.y}`));
 }

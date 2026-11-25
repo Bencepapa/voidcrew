@@ -6,7 +6,8 @@ import { PROP_TYPES, isSharedPropId } from "./props";
 import { parseRoofGroup } from "./roofAutotile";
 import { isRoofPieceId } from "./roofPieces";
 import { cleanFenceStyle, fenceFormOf, isSide, type FenceStyle } from "./fences";
-import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, MapLinkTarget, PropAnchor, StairsDirection, StairsStyle } from "./types";
+import type { ActorWake, CellType, DecalSpec, Direction, DoorSpec, GameMap, MapLight, MapLinkTarget, PropAnchor, SmokeHarm, StairsDirection, StairsStyle } from "./types";
+import { readHarm } from "./emitters";
 import { readLinkTarget } from "./mapLinks";
 import { readDoorTexture } from "./doorTextures";
 import { readOperable, type OperableSpec } from "./operables";
@@ -163,6 +164,9 @@ export interface MapFile {
     opacity?: number;
     opacityDark?: number;
     chance?: number;
+    // inactive until switched on / what it does to the crew in its smoke (see SmokeSpec)
+    active?: boolean;
+    harm?: SmokeHarm;
     id?: string;
     with?: string;
     without?: string;
@@ -180,6 +184,8 @@ export interface MapFile {
     // a story item (see MapItem)
     name?: string;
     sets?: string;
+    // appears when an operable `item` target reveals it (see MapItem.dormant)
+    dormant?: boolean;
     id?: string;
     with?: string;
     without?: string;
@@ -240,6 +246,8 @@ export interface MapFile {
     portrait?: string;
     shop?: string;
     greeting?: string;
+    // appears when an operable `spawn` target brings it in (see ActorSpec.dormant)
+    dormant?: boolean;
     id?: string;
     with?: string;
     without?: string;
@@ -519,6 +527,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
         opacity: s.opacity === undefined ? undefined : Math.max(0.05, Math.min(1.5, s.opacity)),
         opacityDark: s.opacityDark === undefined ? undefined : Math.max(0, Math.min(1, s.opacityDark)),
         chance: s.chance,
+        active: s.active === false ? false : undefined,
+        harm: readHarm(s.harm),
         id: s.id,
         with: s.with,
         without: s.without,
@@ -539,6 +549,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         chance: it.chance,
         name: it.name,
         sets: it.sets,
+        dormant: it.dormant === true ? true : undefined,
         id: it.id,
         with: it.with,
         without: it.without,
@@ -561,6 +572,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         portrait: typeof a.portrait === "string" && a.portrait ? a.portrait : undefined,
         shop: typeof a.shop === "string" && a.shop ? a.shop : undefined,
         greeting: typeof a.greeting === "string" && a.greeting.trim() ? a.greeting : undefined,
+        dormant: a.dormant === true ? true : undefined,
         id: a.id,
         with: a.with,
         without: a.without,

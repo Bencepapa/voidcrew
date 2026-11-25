@@ -9,6 +9,7 @@ import { PROP_TYPES } from "../game/props";
 import { roofPieceEdited } from "./roofEdits";
 import { fencePieceEdited } from "./fenceEdits";
 import { fenceFormOf } from "../game/fences";
+import { fixTargetsBeforeRemove } from "./operableEdits";
 import type { Direction, MapLight, MapLinkTarget, PropAnchor, StairsDirection, StairsStyle, Vec2 } from "../game/types";
 
 // Edits on a map file (see mapStore.applyEdit): each takes a copy of the
@@ -479,6 +480,7 @@ export function updateActor(file: MapFile, index: number, patch: Partial<ActorEn
 
 export function removeActor(file: MapFile, index: number): MapFile {
   if (!file.actors?.[index]) return file;
+  fixTargetsBeforeRemove(file, "spawn", index);
   file.actors.splice(index, 1);
   if (!file.actors.length) delete file.actors;
   return file;
@@ -528,6 +530,7 @@ export function updateItem(file: MapFile, index: number, patch: Partial<ItemEntr
 }
 
 export function removeItem(file: MapFile, index: number): MapFile {
+  fixTargetsBeforeRemove(file, "item", index);
   file.items?.splice(index, 1);
   if (file.items && !file.items.length) delete file.items;
   return file;
@@ -625,6 +628,7 @@ export function updateSmoke(file: MapFile, index: number, patch: Partial<SmokeEn
 }
 
 export function removeSmoke(file: MapFile, index: number): MapFile {
+  fixTargetsBeforeRemove(file, "emitter", index);
   file.smokes?.splice(index, 1);
   if (file.smokes && !file.smokes.length) delete file.smokes;
   return file;

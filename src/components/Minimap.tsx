@@ -12,6 +12,9 @@ import { PROP_TYPES } from "../game/props";
 import { operableLinks, operableSources } from "../game/operables";
 import { fenceFormOf, fenceIndex, fenceMarks } from "../game/fences";
 
+// the operable props' links by what they work: doors amber, wall traps red, emitters orange, NPCs purple, items green
+const LINK_COLORS: Record<string, string> = { door: "#fbbf24", trap: "#ff5a3c", emitter: "#ff9a3c", spawn: "#c084fc", item: "#4ade80" };
+
 interface MinimapProps {
   map: GameMap;
   pos: Vec2;
@@ -337,7 +340,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
     // the operable props' links (a lever to its doors and traps) and their floor marks: a plate's frame, a trap cell's cross
     const operableMarks = !visible("prop") ? [] : [
       ...operableLinks(map).map((l, i) => (
-        <line key={`ol${i}`} x1={l.from.x + 0.5} y1={l.from.y + 0.5} x2={l.to.x + 0.5} y2={l.to.y + 0.5} stroke={l.kind === "door" ? "#fbbf24" : "#ff5a3c"} strokeWidth={0.07} strokeDasharray="0.25 0.15" pointerEvents="none" />
+        <line key={`ol${i}`} x1={l.from.x + 0.5} y1={l.from.y + 0.5} x2={l.to.x + 0.5} y2={l.to.y + 0.5} stroke={LINK_COLORS[l.kind] ?? "#ff5a3c"} strokeWidth={0.07} strokeDasharray="0.25 0.15" pointerEvents="none" />
       )),
       ...operableSources(map).filter((s) => s.kind === "plate" || s.kind === "trapcell").map((s) => (
         <rect key={`op${s.key}`} x={s.cell.x + 0.12} y={s.cell.y + 0.12} width={0.76} height={0.76} fill="none" stroke={s.kind === "plate" ? "#3fd0ff" : "#ff4d4d"} strokeWidth={0.09} pointerEvents="none" />

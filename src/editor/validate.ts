@@ -135,7 +135,10 @@ export function validateMap(map: GameMap): Problem[] {
     if (d.lock?.code && !codes) add("missingCode", d.cell);
   }
   // levers, buttons, plates and traps: every target has to be a door or a wall trap; a wall trap should not face a wall
-  for (const p of operableProblems(map)) add(p.code, p.cell, p.code === "operableNoTarget" ? { kind: t(`operable.kind.${p.params!.kind as OperableKind}`) } : p.params);
+  for (const p of operableProblems(map)) {
+    add(p.code, p.cell, p.code === "operableNoTarget" ? { kind: t(`operable.kind.${p.params!.kind as OperableKind}`) }
+      : p.code === "operableDormantUnused" ? { what: t(`minimap.problem.what.${p.params!.what as "npc" | "item"}`) } : p.params);
+  }
   // the locks of chests, levers and buttons: a key, one that something on the map gives (see propLocks.ts)
   for (const p of propLockProblems(map)) add(p.code, p.cell, p.params);
   // a door's own leaf / frame texture must be a texture set (a shared one counts once it's loaded)

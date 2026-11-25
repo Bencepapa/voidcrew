@@ -1,3 +1,4 @@
+import { emitterOn, readAddress, resolveAddress, smokeKeys, type Address, type Area } from "./emitters";
 import { DIR_VECTOR } from "./movement";
 import type { Direction, Vec2 } from "./types";
 
@@ -20,11 +21,29 @@ export type OperableKind = "lever" | "button" | "plate" | "trapcell" | "emitter"
 export type DoorAction = "open" | "close" | "toggle";
 export type Projectile = "arrow" | "spell";
 
+export type EmitterAction = "on" | "off" | "toggle";
+// a reward's items: `qty` of an item type
+export interface RewardItem { item: string; qty: number }
+
 export type OperableTarget =
   // the door cell at x,y: opened, closed or flipped; `force` opens a locked one too (else it stays shut and says so)
   | { kind: "door"; x: number; y: number; action?: DoorAction; force?: boolean }
   // the wall trap(s) in the cell x,y (those hanging on `side`, if given) fire
-  | { kind: "trap"; x: number; y: number; side?: Direction };
+  | { kind: "trap"; x: number; y: number; side?: Direction }
+  // the smoke / fire emitter(s) addressed (a cell + `index`, an `id`, or an `area` of cells) switched on / off / toggled
+  // (not to be confused with a wall trap, `OperableKind` "emitter": that fires a shot). The default action is "on"; as the
+  // source goes off (a lever pushed back, a plate left) the inverse follows, unless the source latches.
+  | ({ kind: "emitter"; action?: EmitterAction } & Address)
+  // the dormant NPC(s) addressed (ActorSpec.dormant) appear, once, as the source goes on
+  | ({ kind: "spawn" } & Address)
+  // the dormant item(s) addressed (MapItem.dormant) appear, once, as the source goes on
+  | ({ kind: "item" } & Address)
+  // credits and / or items straight into the party's hands as the source goes on; once only unless `once: false`
+  | { kind: "reward"; credits?: number; items?: RewardItem[]; once?: boolean };
+
+// a target that points at a place (not a reward)
+export type AddressedTarget = Extract<OperableTarget, { kind: "emitter" | "spawn" | "item" }>;
+export const isAddressed = (t: OperableTarget): t is AddressedTarget => t.kind === "emitter" || t.kind === "spawn" || t.kind === "item";
 
 export interface OperableSpec {
   // (decals only: a prop's kind is its type's)
@@ -75,6 +94,24 @@ const num = (v: unknown, min: number, max: number): number | undefined =>
 export function readTarget(raw: unknown): OperableTarget | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const r = raw as Record<string, unknown>;
+  if (r.kind === "emitter" || r.kind === "spawn" || r.kind === "item") {
+    const address = readAddress(r);
+    if (!address) return undefined;
+    const action = r.kind === "emitter" && (r.action === "off" || r.action === "toggle") ? r.action : undefined;
+    return { kind: r.kind, ...address, ...(action ? { action } : {}) } as OperableTarget;
+  }
+  if (r.kind === "reward") {
+    const credits = num(r.credits, 0, 1_000_000);
+    const items = Array.isArray(r.items)
+      ? r.items.flatMap((i): RewardItem[] => {
+          const it = i as Record<string, unknown> | null;
+          const qty = it ? num(it.qty, 1, 999) : undefined;
+          return it && typeof it.item === "string" && it.item.trim() && qty !== undefined ? [{ item: it.item.trim(), qty: Math.round(qty) }] : [];
+        })
+      : [];
+    if (!(credits && Math.round(credits) >= 1) && !items.length) return undefined;
+    return { kind: "reward", ...(credits && Math.round(credits) >= 1 ? { credits: Math.round(credits) } : {}), ...(items.length ? { items } : {}), ...(r.once === false ? { once: false } : {}) };
+  }
   if (!isCell(r.x) || !isCell(r.y)) return undefined;
   if (r.kind === "door") {
     const action = r.action === "close" || r.action === "toggle" ? r.action : undefined;
@@ -117,6 +154,10 @@ export interface OperableMap {
   cells: ("floor" | "wall" | "door")[][];
   props?: PropLike[];
   decals?: DecalLike[];
+  // what the new targets address (see OperableTarget): smoke emitters, NPCs and loose items
+  smokes?: { cell: Vec2; id?: string; active?: boolean }[];
+  actors?: { cell: Vec2; id?: string; dormant?: boolean }[];
+  items?: { cell: Vec2; id?: string; dormant?: boolean }[];
 }
 
 export interface OperableSource {
@@ -239,8 +280,15 @@ export interface OperableState {
   springAt: Record<string, number>;
   // a wall trap: when it can fire again (clock ms)
   readyAt: Record<string, number>;
+  // the smoke emitters a switch has turned on or off, by emitter key (see emitters.ts smokeKeys); the others follow `active`
+  emit: Record<string, boolean>;
+  // the dormant NPCs (by index in the map's actors) and items (by index in its items) already brought in
+  spawned: Record<string, boolean>;
+  revealed: Record<string, boolean>;
+  // the rewards paid on this deck (by "<source key>#<target index>")
+  paid: Record<string, boolean>;
 }
-export const initialOperableState = (): OperableState => ({ on: {}, fired: {}, springAt: {}, readyAt: {} });
+export const initialOperableState = (): OperableState => ({ on: {}, fired: {}, springAt: {}, readyAt: {}, emit: {}, spawned: {}, revealed: {}, paid: {} });
 
 export interface OperableContext {
   // the clock (ms)
@@ -251,6 +299,8 @@ export interface OperableContext {
   doorOpen: (cell: Vec2) => boolean;
   // how many items the party dropped lie on a cell (see dropItem.ts): a plate answers to them as to the party (a trap cell does not)
   itemsOn?: (cell: Vec2) => number;
+  // whether a reward was paid before (kept for the whole run, not only this deck's visit)
+  rewarded?: (key: string) => boolean;
 }
 
 export type OperableEffect =
@@ -263,7 +313,15 @@ export type OperableEffect =
   // the story flag a source raises (or lowers)
   | { type: "flag"; flag: string; value: boolean }
   // a target that cannot do it (no such door...), for the log
-  | { type: "blocked"; source: string; reason: "noDoor" | "noTrap" | "cooling" };
+  | { type: "blocked"; source: string; reason: "noDoor" | "noTrap" | "cooling" | "noEmitter" | "noSpawn" | "noItem" }
+  // smoke / fire emitters (by key) switched on or off (only the ones that really changed)
+  | { type: "emitters"; source: string; keys: string[]; on: boolean }
+  // dormant NPCs (indices in the map's actors) come into the world
+  | { type: "spawn"; source: string; actors: number[] }
+  // dormant items (indices in the map's items) appear
+  | { type: "reveal"; source: string; items: number[] }
+  // credits and items go to the party; `key` tells the runtime which reward it is (to remember it was paid)
+  | { type: "reward"; source: string; key: string; credits: number; items: RewardItem[] };
 
 export interface Step {
   state: OperableState;
@@ -284,22 +342,73 @@ export function holdsEffect(source: OperableSource): boolean {
 // the targets of a source work: as it goes on (`active`), or - if it holds - as it goes off
 function work(map: OperableMap, sources: OperableSource[], source: OperableSource, active: boolean, ctx: OperableContext, s: OperableState, effects: OperableEffect[]) {
   if (!active && !holdsEffect(source)) return;
-  for (const target of source.spec.targets ?? []) {
-    const cell = { x: target.x, y: target.y };
+  (source.spec.targets ?? []).forEach((target, ti) => {
     if (target.kind === "door") {
+      const cell = { x: target.x, y: target.y };
       if ((map.cells[cell.y]?.[cell.x] ?? "wall") !== "door") {
         effects.push({ type: "blocked", source: source.key, reason: "noDoor" });
-        continue;
+        return;
       }
       const base = target.action ?? "open";
       const action = active ? base : inverse(base);
       effects.push({ type: "door", cell, action: action === "toggle" ? (ctx.doorOpen(cell) ? "close" : "open") : action, force: target.force === true, source: source.key });
-    } else if (active) {
+    } else if (target.kind === "emitter") {
+      switchEmitters(map, source, target, active, s, effects);
+    } else if (!active) {
+      // (what follows happens as a source goes on: a shot, a spawn, a reveal, a reward are not undone when it goes off)
+    } else if (target.kind === "trap") {
       const traps = emittersAt(sources, target);
       if (!traps.length) effects.push({ type: "blocked", source: source.key, reason: "noTrap" });
       for (const trap of traps) fire(map, trap, ctx, s, effects, source.key);
+    } else if (target.kind === "spawn") {
+      const found = resolveAddress(map.actors, target, (a) => a.dormant === true);
+      if (!found.length) effects.push({ type: "blocked", source: source.key, reason: "noSpawn" });
+      const fresh = found.filter((i) => !s.spawned[i]);
+      for (const i of fresh) s.spawned[i] = true;
+      if (fresh.length) effects.push({ type: "spawn", source: source.key, actors: fresh });
+    } else if (target.kind === "item") {
+      const found = resolveAddress(map.items, target, (it) => it.dormant === true);
+      if (!found.length) effects.push({ type: "blocked", source: source.key, reason: "noItem" });
+      const fresh = found.filter((i) => !s.revealed[i]);
+      for (const i of fresh) s.revealed[i] = true;
+      if (fresh.length) effects.push({ type: "reveal", source: source.key, items: fresh });
+    } else {
+      const key = rewardKey(source.key, ti);
+      const once = target.once !== false || source.spec.once === true;
+      if (once && (s.paid[key] || ctx.rewarded?.(key))) return;
+      s.paid[key] = true;
+      effects.push({ type: "reward", source: source.key, key, credits: target.credits ?? 0, items: target.items ?? [] });
     }
+  });
+}
+
+// the id of a reward target (its source, its place in the source's list): what a paid reward is remembered by
+export const rewardKey = (sourceKey: string, targetIndex: number) => `${sourceKey}#${targetIndex}`;
+
+const inverseEmit = (a: EmitterAction): EmitterAction => (a === "on" ? "off" : a === "off" ? "on" : "toggle");
+
+// The emitters a target addresses go on, off or flip (as the source goes on: its action; off: the inverse). Only the ones
+// that really change are reported.
+function switchEmitters(map: OperableMap, source: OperableSource, target: Extract<OperableTarget, { kind: "emitter" }>, active: boolean, s: OperableState, effects: OperableEffect[]) {
+  const found = resolveAddress(map.smokes, target);
+  if (!found.length) {
+    effects.push({ type: "blocked", source: source.key, reason: "noEmitter" });
+    return;
   }
+  const keys = smokeKeys(map.smokes);
+  const base = target.action ?? "on";
+  const action = active ? base : inverseEmit(base);
+  const turnedOn: string[] = [];
+  const turnedOff: string[] = [];
+  for (const i of found) {
+    const now = emitterOn(map.smokes![i], keys[i], s.emit);
+    const want = action === "toggle" ? !now : action === "on";
+    if (want === now) continue;
+    s.emit[keys[i]] = want;
+    (want ? turnedOn : turnedOff).push(keys[i]);
+  }
+  if (turnedOn.length) effects.push({ type: "emitters", source: source.key, keys: turnedOn, on: true });
+  if (turnedOff.length) effects.push({ type: "emitters", source: source.key, keys: turnedOff, on: false });
 }
 
 function fire(map: OperableMap, trap: OperableSource, ctx: OperableContext, s: OperableState, effects: OperableEffect[], by: string) {
@@ -316,7 +425,10 @@ function fire(map: OperableMap, trap: OperableSource, ctx: OperableContext, s: O
   });
 }
 
-const copy = (state: OperableState): OperableState => ({ on: { ...state.on }, fired: { ...state.fired }, springAt: { ...state.springAt }, readyAt: { ...state.readyAt } });
+const copy = (state: OperableState): OperableState => ({
+  on: { ...state.on }, fired: { ...state.fired }, springAt: { ...state.springAt }, readyAt: { ...state.readyAt },
+  emit: { ...state.emit }, spawned: { ...state.spawned }, revealed: { ...state.revealed }, paid: { ...state.paid },
+});
 
 function setOn(source: OperableSource, on: boolean, s: OperableState, effects: OperableEffect[]) {
   s.on[source.key] = on;
@@ -432,27 +544,59 @@ export function pickVictim<T extends { hp: number }>(crew: readonly T[], roll: n
 // ---- checks for the editor's problem list
 
 export interface OperableProblem {
-  code: "operableNoTarget" | "operableDoorMissing" | "operableTrapMissing" | "operableFacesWall" | "operableUnused";
+  code:
+    | "operableNoTarget" | "operableDoorMissing" | "operableTrapMissing" | "operableFacesWall" | "operableUnused"
+    | "operableEmitterMissing" | "operableSpawnMissing" | "operableItemMissing" | "operableInactiveUnused" | "operableDormantUnused";
   cell: Vec2;
   params?: Record<string, string | number>;
+}
+
+// where a target points, for a message ("3,2", "area 1,1-4,3", "id fire-a")
+export function describeAddress(a: Address): string {
+  if (a.id) return `id ${a.id}`;
+  if (a.area) return `${a.area.x0},${a.area.y0}-${a.area.x1},${a.area.y1}`;
+  return `${a.x},${a.y}${a.index !== undefined ? `#${a.index + 1}` : ""}`;
 }
 
 export function operableProblems(map: OperableMap): OperableProblem[] {
   const sources = operableSources(map);
   const out: OperableProblem[] = [];
   const targeted = new Set<string>();
+  const wakers = { emitter: new Set<number>(), actor: new Set<number>(), item: new Set<number>() };
   for (const source of sources) {
     if (source.kind !== "emitter" && !(source.spec.targets?.length)) out.push({ code: "operableNoTarget", cell: source.cell, params: { kind: source.kind } });
     for (const target of source.spec.targets ?? []) {
       if (target.kind === "door") {
         if ((map.cells[target.y]?.[target.x] ?? "wall") !== "door") out.push({ code: "operableDoorMissing", cell: source.cell, params: { x: target.x, y: target.y } });
-      } else {
+      } else if (target.kind === "trap") {
         const traps = emittersAt(sources, target);
         if (!traps.length) out.push({ code: "operableTrapMissing", cell: source.cell, params: { x: target.x, y: target.y } });
         for (const t of traps) targeted.add(t.key);
+      } else if (target.kind === "emitter") {
+        const found = resolveAddress(map.smokes, target);
+        if (!found.length) out.push({ code: "operableEmitterMissing", cell: source.cell, params: { at: describeAddress(target) } });
+        for (const i of found) wakers.emitter.add(i);
+      } else if (target.kind === "spawn") {
+        const found = resolveAddress(map.actors, target, (a) => a.dormant === true);
+        if (!found.length) out.push({ code: "operableSpawnMissing", cell: source.cell, params: { at: describeAddress(target) } });
+        for (const i of found) wakers.actor.add(i);
+      } else if (target.kind === "item") {
+        const found = resolveAddress(map.items, target, (it) => it.dormant === true);
+        if (!found.length) out.push({ code: "operableItemMissing", cell: source.cell, params: { at: describeAddress(target) } });
+        for (const i of found) wakers.item.add(i);
       }
     }
   }
+  // what waits for a switch that nothing works: an inactive emitter, a dormant NPC or item
+  (map.smokes ?? []).forEach((s, i) => {
+    if (s.active === false && !wakers.emitter.has(i)) out.push({ code: "operableInactiveUnused", cell: s.cell });
+  });
+  (map.actors ?? []).forEach((a, i) => {
+    if (a.dormant && !wakers.actor.has(i)) out.push({ code: "operableDormantUnused", cell: a.cell, params: { what: "npc" } });
+  });
+  (map.items ?? []).forEach((it, i) => {
+    if (it.dormant && !wakers.item.has(i)) out.push({ code: "operableDormantUnused", cell: it.cell, params: { what: "item" } });
+  });
   for (const source of sources) {
     if (source.kind !== "emitter") continue;
     if (!targeted.has(source.key)) out.push({ code: "operableUnused", cell: source.cell });
@@ -467,13 +611,42 @@ export function operableProblems(map: OperableMap): OperableProblem[] {
 
 // A source copied with an area (moved by dx, dy): the targets inside the area move with it, so a lever and its doors keep
 // working together; the ones outside it stay where they were.
-export function relocateOperable(spec: OperableSpec | undefined, area: { x0: number; y0: number; x1: number; y1: number }, dx: number, dy: number): OperableSpec | undefined {
+export function relocateOperable(spec: OperableSpec | undefined, area: Area, dx: number, dy: number): OperableSpec | undefined {
   if (!spec?.targets) return spec;
-  const inside = (t: OperableTarget) => t.x >= area.x0 && t.x <= area.x1 && t.y >= area.y0 && t.y <= area.y1;
-  return { ...spec, targets: spec.targets.map((t) => (inside(t) ? { ...t, x: t.x + dx, y: t.y + dy } : { ...t })) };
+  const inside = (x: number, y: number) => x >= area.x0 && x <= area.x1 && y >= area.y0 && y <= area.y1;
+  return {
+    ...spec,
+    targets: spec.targets.map((t): OperableTarget => {
+      if (t.kind === "reward") return { ...t };
+      // (a target made of an area moves with it when the whole block lies inside the copied one)
+      if (isAddressed(t) && t.area) {
+        const a = t.area;
+        if (!(inside(a.x0, a.y0) && inside(a.x1, a.y1))) return { ...t, area: { ...a } };
+        return { ...t, ...(t.x !== undefined && t.y !== undefined ? { x: t.x + dx, y: t.y + dy } : {}), area: { x0: a.x0 + dx, y0: a.y0 + dy, x1: a.x1 + dx, y1: a.y1 + dy } };
+      }
+      return t.x !== undefined && t.y !== undefined && inside(t.x, t.y) ? { ...t, x: t.x + dx, y: t.y + dy } : { ...t };
+    }),
+  };
+}
+
+// the cells a target points at (a door's, a wall trap's, the emitters', NPCs' or items' it addresses); a reward has none
+export function targetCells(map: OperableMap, t: OperableTarget): Vec2[] {
+  switch (t.kind) {
+    case "door":
+    case "trap":
+      return [{ x: t.x, y: t.y }];
+    case "emitter":
+      return resolveAddress(map.smokes, t).map((i) => map.smokes![i].cell);
+    case "spawn":
+      return resolveAddress(map.actors, t, (a) => a.dormant === true).map((i) => map.actors![i].cell);
+    case "item":
+      return resolveAddress(map.items, t, (it) => it.dormant === true).map((i) => map.items![i].cell);
+    case "reward":
+      return [];
+  }
 }
 
 // the targets of a source, as the editor draws its links (source cell -> target cell)
 export function operableLinks(map: OperableMap): { from: Vec2; to: Vec2; kind: OperableTarget["kind"] }[] {
-  return operableSources(map).flatMap((s) => (s.spec.targets ?? []).map((t) => ({ from: s.cell, to: { x: t.x, y: t.y }, kind: t.kind })));
+  return operableSources(map).flatMap((s) => (s.spec.targets ?? []).flatMap((t) => targetCells(map, t).map((to) => ({ from: s.cell, to, kind: t.kind }))));
 }

@@ -21,6 +21,9 @@ import { moveActionForKey } from "./game/controls";
 import { interactionAt, type ClickEvent, type Interaction, type InteractionTarget } from "./game/interactions";
 import { setInteraction } from "./editor/mapEdits";
 import { addTarget, decalOperableInfo, linkTargetFor, operableInfo } from "./editor/operableEdits";
+import { describeTarget } from "./editor/operableTargetText";
+import { jetYawFor } from "./game/emitterPresets";
+import { operableArea } from "./editor/operableArea";
 import { operableLink } from "./editor/operableLink";
 import { propLockInfo } from "./editor/lockEdits";
 import { keyFlags } from "./game/keys";
@@ -657,7 +660,7 @@ export default function App() {
   // is selected, the inspector shows and changes these (see placingKind).
   const templates = useRef<Record<"smoke" | "light" | "prop" | "item" | "actor", Record<string, unknown>>>({ smoke: {}, light: {}, prop: {}, item: {}, actor: {} });
   const TEMPLATE_KEYS = {
-    smoke: ["effect", "mistStyle", "sprite", "spread", "height", "density", "size", "color", "blow", "chance", "decorative", "opacity", "opacityDark", "lightColor", "lightIntensity", "lightReach"],
+    smoke: ["effect", "mistStyle", "sprite", "spread", "height", "density", "size", "color", "blow", "chance", "decorative", "opacity", "opacityDark", "lightColor", "lightIntensity", "lightReach", "active", "harm"],
     light: ["color", "intensity", "range", "effect", "bulb", "chance"],
     prop: ["texture", "scale", "chance"],
     item: ["count", "chance"],
@@ -1092,7 +1095,7 @@ export default function App() {
       operableLink.cancel();
       return true;
     }
-    const to = linkTargetFor(map, { door: target.door, prop: target.prop, cell: target.cell });
+    const to = linkTargetFor(map, { door: target.door, prop: target.prop, cell: target.cell, smoke: target.smoke, actor: target.actor, item: target.item });
     if (!to) {
       pushLog(t("operable.link.nothing"), "editor");
       return true;
@@ -1101,7 +1104,7 @@ export default function App() {
     if ("error" in result) pushLog(t("app.editorError", { error: result.error }), "error");
     else {
       replaceMap(result.map);
-      pushLog(t("operable.link.added", { what: t(to.kind === "door" ? "operable.target.door" : "operable.target.trap", { x: to.x, y: to.y, side: to.kind === "trap" && to.side ? ` ${to.side}` : "" }) }), "editor");
+      pushLog(t("operable.link.added", { what: describeTarget(to) }), "editor");
     }
     setEdits((n) => n + 1);
     return true;
@@ -1520,6 +1523,8 @@ export default function App() {
   minimapCell.current = onMinimapCell;
   const [miniZoom, setMiniZoom] = useState(false);
   const [miniSel, setMiniSel] = useState<Rect | null>(null);
+  // (the operable props' panel can take the selected block as an area target)
+  useEffect(() => operableArea.set(editMode && miniZoom ? miniSel : null), [editMode, miniZoom, miniSel]);
   // (the minimap block folds away to give the asset tree the column's height)
   const [minimapCollapsed, setMinimapCollapsed] = useState(() => {
     try {
@@ -1796,7 +1801,7 @@ export default function App() {
   const selectedActorInfo: ActorInfo | null = (() => {
     const spec = selectedActor === null ? undefined : map.actors?.[selectedActor];
     return spec
-      ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length, links: linksOf(spec), wake: spec.wake, friendly: isFriendlySpec(spec), dialogue: spec.dialogue, portrait: spec.portrait, shop: spec.shop, greeting: spec.greeting }
+      ? { type: spec.actor, facing: spec.facing, chance: spec.chance ?? 1, route: spec.patrol.length, links: linksOf(spec), wake: spec.wake, friendly: isFriendlySpec(spec), dialogue: spec.dialogue, portrait: spec.portrait, shop: spec.shop, greeting: spec.greeting, dormant: spec.dormant }
       : null;
   })();
   const changeActor = (patch: Parameters<typeof updateActor>[2], merge?: string) => {
@@ -1920,6 +1925,9 @@ export default function App() {
         petals: !!selectedSmokeSpec.petals,
         chance: selectedSmokeSpec.chance ?? 1,
         links: linksOf(selectedSmokeSpec),
+        active: selectedSmokeSpec.active !== false,
+        harm: selectedSmokeSpec.harm,
+        jetYaw: jetYawFor(map, selectedSmokeSpec.cell, selectedSmokeSpec.pos),
       }
     : null;
   // (a `pos` patch with NaN parts keeps the emitter's own there: the
@@ -2005,6 +2013,7 @@ export default function App() {
       links: linksOf(spec),
       name: spec.name,
       sets: spec.sets,
+      dormant: spec.dormant,
     };
   })();
   const changeItem = (patch: Parameters<typeof updateItem>[2], merge?: string) => {
@@ -2096,7 +2105,7 @@ export default function App() {
   const selectedDecalInfo: DecalInfo | null = (() => {
     const spec = selectedDecal === null ? undefined : map.decals?.[selectedDecal];
     return spec
-      ? { name: spec.decal, rotation: spec.rotation ?? 0, scale: spec.scale ?? 1, action: spec.action, chance: spec.chance ?? 1, links: linksOf(spec), operable: decalOperableInfo(spec, selectedDecal!) }
+      ? { name: spec.decal, rotation: spec.rotation ?? 0, scale: spec.scale ?? 1, action: spec.action, chance: spec.chance ?? 1, links: linksOf(spec), operable: decalOperableInfo(spec, selectedDecal!, map) }
       : null;
   })();
   const changeDecal = (patch: Parameters<typeof updateDecal>[2], merge?: string) => {
@@ -2178,7 +2187,7 @@ export default function App() {
       top: (spec.elevation ?? 0) + (type?.size[1] ?? 0),
       auto: spec.auto ? { group: spec.auto, detached: !!spec.detached } : undefined,
       fence: fenceFormOf(spec.prop) ? { form: fenceFormOf(spec.prop)!, style: cleanFenceStyle(spec.fence) ?? {}, side: isSide(spec.at) ? spec.at : "N" } : undefined,
-      operable: operableInfo(spec, selectedProp!),
+      operable: operableInfo(spec, selectedProp!, map),
       lock: propLockInfo(map, spec),
     };
   })();
@@ -2542,6 +2551,8 @@ export default function App() {
     petals: false,
     chance: smokeTemplate.chance ?? 1,
     links: {},
+    active: smokeTemplate.active !== false,
+    harm: smokeTemplate.harm,
   };
   const lightTemplate = templates.current.light as Partial<MapLight>;
   const lightTemplateInfo: LightInfo = {

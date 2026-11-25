@@ -27,6 +27,10 @@ return <>
 </label>
 <button type="button" className={`${BUTTON} ${idle}`} title={t("operable.item.keyFlagTitle")} onClick={() => p.onItemChange({ name: p.item!.name ?? ITEM_TYPES[p.item!.item]?.name, sets: p.item!.sets ?? keyFlagFor(p.item!.item) })}>{t("operable.item.makeKey")}</button>
 {chanceSlider(p.item.chance, (chance) => p.onItemChange({ chance }))}
+<label className="flex items-center gap-1" title={t("trap.dormantItemTitle")}>
+  <input type="checkbox" checked={!!p.item.dormant} onChange={e => p.onItemChange({ dormant: e.target.checked || undefined })}/>
+  {t("trap.dormantItem")}
+</label>
 {linkFields(p.item.links, p.linkIds, p.onItemChange)}
 </Section>
 <footer className="flex flex-wrap gap-2 border-t border-neutral-700 p-2"><button type="button" className={`${BUTTON} ${idle}`} onClick={p.onItemDelete} title={t("editorBar.delete")}>{t("editorBar.remove")}</button>
