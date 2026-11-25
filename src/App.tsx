@@ -83,6 +83,7 @@ import { PROP_TYPES, flamePosition, isSharedPropId, propBlocks, propPlacement, p
 import { MIN_HEADROOM } from "./game/heights";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo, SoundInfo } from "./editor/EditorBar";
 import { newSound, resolveSound, type SoundSpec } from "./game/sounds";
+import { useGameAcoustics } from "./audio/useGameAcoustics";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
 import type { ShipMood } from "./game/variation";
 import { ACTOR_TYPES, isFriendlySpec } from "./game/actors";
@@ -1584,6 +1585,8 @@ export default function App() {
   });
   // (the sky check of validateMap answers once the shared sky is registered: App follows the registry for that)
   useSharedImages();
+  // (the sound zones and the rooms' echo of the map being played or edited)
+  useGameAcoustics(map);
   const skyLoaded = isSharedSkyId(map.textures?.sky) && !!sharedImage(map.textures.sky);
   const problems = useMemo(()=>editMode ? validateMap(map) : [],[editMode,map,skyLoaded]);
   const repairProblems = (code:"inWall"|"duplicate") => {

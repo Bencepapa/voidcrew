@@ -20,6 +20,7 @@ import { worldOfMap } from "./worlds";
 import { parsePickupMode } from "./pickupMode";
 import type { RenderLook } from "./renderLook";
 import { readSounds, type SoundSpec } from "./sounds";
+import { readZones, type AcousticZone } from "./acousticZones";
 
 // Map files (src/maps/*.json): a character grid for the cells plus optional
 // per-cell layers, each its own character grid with a legend. Characters
@@ -208,6 +209,8 @@ export interface MapFile {
   lights?: MapLight[];
   // generated sounds in cells (see SoundSpec); read and cleaned by parseMap
   sounds?: SoundSpec[];
+  // sound zones: areas with their own echo (see acousticZones.ts); read and cleaned by parseMap
+  acoustics?: AcousticZone[];
   // x, y: the (leftmost) cell; wall: the wall it's in; width: panels
   // glow: false - no starlight glowing in through it
   windows?: { x: number; y: number; wall: Direction; width?: number; glow?: boolean }[];
@@ -434,6 +437,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     bridges,
     lights: (file.lights ?? []).map((l) => ({ ...l })),
     sounds: soundsIn(file.sounds, cells),
+    acoustics: readZones(file.acoustics, cells),
     structureKey: JSON.stringify({
       ...file,
       // the cleaned sky spec: a bad colour must not rebuild the scene differently
@@ -444,6 +448,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
       smokes: undefined,
       // (a sound is heard, not built: the audio system takes a change in place)
       sounds: undefined,
+      // (the sound zones are heard, not built, too)
+      acoustics: undefined,
       weather: undefined,
       actors: undefined,
       terminals: undefined,

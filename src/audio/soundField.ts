@@ -5,6 +5,7 @@
 // half a cell each way. `blocked(x, y)` says whether a cell stops sound: a wall, the edge of the map, a closed door
 // (an open door does not). The same function serves the walls counted and the doorways looked for.
 import type { ResolvedSound } from "../game/sounds";
+import { insulationFactor } from "./roomMix";
 
 export type Blocked = (x: number, y: number) => boolean;
 export interface Point {
@@ -84,10 +85,21 @@ export function wallsBetween(ax: number, az: number, bx: number, bz: number, blo
   return walls;
 }
 
-// how a number of walls dulls a sound: the low-pass's cutoff (Hz) and the level it keeps
-export function muffle(walls: number): { cutoff: number; gain: number } {
-  const n = Math.max(0, Math.min(MAX_WALLS, Math.round(walls)));
-  return { cutoff: MUFFLE_CUTOFFS[n], gain: 0.5 ** n };
+// the cutoff of a wall count one past the third: only walls that insulate (see `muffle`'s factor) get there
+const MUFFLE_DEEP = 200;
+
+// How a number of walls dulls a sound: the low-pass's cutoff (Hz) and the level it keeps. `factor` (1..1.6, see
+// roomMix.ts `insulationFactor`) makes every wall count for more - a zone that shuts sound in or out: 1 wall at factor 1.6
+// dulls like 1.6 walls (the cutoff between the first and second step, -9.6 dB). Beyond the third it gets no worse.
+export function muffle(walls: number, factor = 1): { cutoff: number; gain: number } {
+  const count = Math.max(0, Math.min(MAX_WALLS, Math.round(walls)));
+  const n = Math.min(count * Math.max(1, factor), MAX_WALLS + 1);
+  const lower = Math.floor(n);
+  const steps = [...MUFFLE_CUTOFFS, MUFFLE_DEEP];
+  const a = steps[lower];
+  const b = steps[Math.min(lower + 1, steps.length - 1)];
+  // (the cutoff slides along the octaves between two steps)
+  return { cutoff: a * (b / a) ** (n - lower), gain: 0.5 ** n };
 }
 
 // ---- doorways
@@ -207,6 +219,9 @@ export function selectPool(listener: Spot, emitters: readonly Emitter[], max = M
 export interface SourcePlan {
   id: number;
   walls: number;
+  // 0..1: how well the zone of the listener or of the sound shuts sound in or out (the stronger of the two); only worked
+  // out for a sound with a wall in the way (see soundSystem.ts)
+  insulation?: number;
   portal?: {
     // the cell after the listener's on the way, where the path's rest begins; and the cells from there to the sound's
     via: Cell;
@@ -259,7 +274,7 @@ export function voiceTargets(listener: Spot, emitter: Emitter, plan: SourcePlan)
   const { sound } = emitter;
   const straight = distanceTo(listener, emitter);
   const out: VoiceTarget[] = [];
-  const wall = muffle(plan.walls);
+  const wall = muffle(plan.walls, insulationFactor(plan.insulation ?? 0));
   const direct = sound.volume * attenuation(straight, sound.range, sound.rolloff);
   if (direct > 0) out.push({ role: "direct", x: emitter.x, y: emitter.y, z: emitter.z, level: direct, distance: straight, cutoff: wall.cutoff, wallGain: wall.gain });
   if (plan.portal) {
