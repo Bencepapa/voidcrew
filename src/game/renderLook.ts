@@ -14,6 +14,10 @@ export const RENDER_NUMBER_KEYS = [
   "wallHeight",
   "ambientIntensity",
   "mapLightIntensity",
+  // where the distance fog starts to thicken and where it is fully thick (cells from the camera; 0: automatic, from the
+  // view distance - see fogRange)
+  "fogStart",
+  "fogEnd",
   // the baked light bounced round corners (see lightGrid.ts bounceLight)
   "lightBounce",
   "accentRatio",

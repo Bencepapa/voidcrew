@@ -32,6 +32,12 @@ const LIGHT_SLIDERS: SliderConfig[] = [
   { key: "ambientIntensity", label: "debug.ambientLight", min: 0, max: 2, step: 0.05 },
 ];
 
+// the distance fog: where it starts to thicken and where it is fully thick (0: automatic from the view distance)
+const FOG_SLIDERS: SliderConfig[] = [
+  { key: "fogStart", label: "debug.fogStart", min: 0, max: 20, step: 0.5 },
+  { key: "fogEnd", label: "debug.fogEnd", min: 0, max: 30, step: 0.5 },
+];
+
 const RELIEF_SLIDERS: SliderConfig[] = [
   { key: "reliefDepth", label: "debug.reliefDepthUnlessTheMapSetsIt", min: 0.005, max: 0.12, step: 0.005 },
   { key: "reliefMinIsland", label: "debug.minFeatureSizePx1Off", min: 1, max: 16, step: 1 },
@@ -198,6 +204,7 @@ export function MapRenderSettings({
               className="w-8 h-6 bg-transparent border border-neutral-600"
             />
           </label>
+          {FOG_SLIDERS.map(slider)}
         </>,
       )}
       {group(

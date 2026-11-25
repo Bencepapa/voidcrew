@@ -210,6 +210,9 @@ export interface ViewportSettings extends PostProcessSettings {
   // what the distance fades to ("#rrggbb"; black: darkness - a lit hall far
   // off still glows through it, see fogNear)
   fogColor: string;
+  // the fog's start and full-thickness distance in cells (0: automatic from the view distance)
+  fogStart: number;
+  fogEnd: number;
   roughness: number;
   metalness: number;
   normalStrength: number;
@@ -396,6 +399,8 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   skyLightElevation: 40,
   skyLightColor: "#a8bcff",
   fogColor: "#000000",
+  fogStart: 0,
+  fogEnd: 0,
   roughness: 0.55,
   metalness: 0.45,
   normalStrength: 1,
@@ -696,6 +701,14 @@ const FOG_FAR_MARGIN = 0.5;
 const FOG_SPAN = 5;
 function fogNear(far: number): number {
   return Math.max(FOG_NEAR, far - FOG_SPAN);
+}
+// The fog's span for a view reach: automatic (0) ends just inside the view and starts FOG_SPAN cells before that; a map can
+// set where it starts and where it is fully thick (the end never beyond what is drawn, the start before the end).
+export function fogRange(viewReach: number, start: number, end: number): { near: number; far: number } {
+  const autoFar = viewReach - FOG_FAR_MARGIN;
+  const far = end > 0 ? Math.max(0.5, Math.min(end, autoFar)) : autoFar;
+  const near = start > 0 ? Math.max(0, Math.min(start, far - 0.1)) : fogNear(far);
+  return { near, far };
 }
 // A dark fog is the dark, not a haze: what a lamp lights stands out of it
 // as far as it's drawn. So a lit pixel (by its brightness) isn't fogged
@@ -2000,8 +2013,8 @@ export function GameViewport({
     const milestones: Record<string, number> = {};
 
     const scene = new THREE.Scene();
-    const fogStartFar = effectiveViewDistance(settings) - FOG_FAR_MARGIN;
-    const fog = new THREE.Fog(settings.fogColor, fogNear(fogStartFar), fogStartFar);
+    const fogStart = fogRange(effectiveViewDistance(settings), settings.fogStart, settings.fogEnd);
+    const fog = new THREE.Fog(settings.fogColor, fogStart.near, fogStart.far);
     scene.fog = fog;
     // what's past the far plane (nothing drawn) is the fog's colour too
     const fogBackground = new THREE.Color(settings.fogColor);
@@ -8581,10 +8594,10 @@ export function GameViewport({
       }
       lightGrid.scale.value = s.bakedLights ? s.mapLightIntensity * rideDip : 0;
       const viewReach = topdown.on ? TOPDOWN_REACH : effectiveViewDistance(s);
-      const fogFar = viewReach - FOG_FAR_MARGIN;
-      if (fog.far !== fogFar) {
-        fog.far = fogFar;
-        fog.near = fogNear(fogFar);
+      const fogSpan = fogRange(viewReach, s.fogStart, s.fogEnd);
+      if (fog.far !== fogSpan.far || fog.near !== fogSpan.near) {
+        fog.far = fogSpan.far;
+        fog.near = fogSpan.near;
         camera.far = viewReach + 0.5;
         camera.updateProjectionMatrix();
       }

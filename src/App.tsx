@@ -30,6 +30,7 @@ import { keyFlags } from "./game/keys";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
 import { pickRender, renderDefaults } from "./game/renderLook";
+import { WORLD_SETTING_KEYS, worldDefaults } from "./game/worldRenderDefaults";
 import { saveGraphics } from "./render/graphics";
 import type { AimFocus, AimFrame, EditDrag, EditTarget, ViewportSettings, ViewportStats } from "./components/GameViewport";
 import { editorToolLabel } from "./editor/EditorBar";
@@ -244,12 +245,22 @@ export default function App() {
       interactionBlocksMovement.current = false;
     };
   }, [inventoryShown]);
-  const [settings, setSettings] = useState<ViewportSettings>(() => ({ ...DEFAULT_SETTINGS, ...map.render }));
+  const [settings, setSettings] = useState<ViewportSettings>(() => ({ ...worldDefaults(map.world, DEFAULT_SETTINGS), ...map.render }));
   const [settingsMapId, setSettingsMapId] = useState(map.id);
+  const [settingsWorld, setSettingsWorld] = useState(map.world);
   if (settingsMapId !== map.id) {
-    // Resolve the destination's look before the viewport can build it.
+    // Resolve the destination's look before the viewport can build it. A map of another world also takes that
+    // world's camera and light defaults (the render block alone only covers the saved look values).
     setSettingsMapId(map.id);
-    setSettings((s) => ({ ...s, ...renderDefaults(DEFAULT_SETTINGS), ...map.render }));
+    const defaults = worldDefaults(map.world, DEFAULT_SETTINGS);
+    const worldChanged = settingsWorld !== map.world;
+    if (worldChanged) setSettingsWorld(map.world);
+    setSettings((s) => ({
+      ...s,
+      ...renderDefaults(defaults),
+      ...(worldChanged ? Object.fromEntries(WORLD_SETTING_KEYS.map((key) => [key, defaults[key]])) : {}),
+      ...map.render,
+    }));
   }
   // the map editor (see EDITOR.md): while it's on the world holds still,
   // walls don't stop the party and the headlamp is lit
@@ -1723,7 +1734,7 @@ export default function App() {
     });
   };
   const saveRender = (clear = false) => {
-    const render = clear ? undefined : pickRender(settings, DEFAULT_SETTINGS);
+    const render = clear ? undefined : pickRender(settings, worldDefaults(map.world, DEFAULT_SETTINGS));
     // nothing differs from the defaults: say so instead of wiping what the map has
     if (!clear && !render) {
       pushLog(t("app.defaultRender"), "editor");
@@ -1745,7 +1756,7 @@ export default function App() {
           .catch((err) => pushLog(t(`app.${note}Error`, { error: err instanceof Error ? err.message : err }), "error"));
       } else pushLog(t(`app.${note}Download`), "editor");
     }
-    if (clear) setSettings((s) => ({ ...s, ...renderDefaults(DEFAULT_SETTINGS) }));
+    if (clear) setSettings((s) => ({ ...s, ...renderDefaults(worldDefaults(map.world, DEFAULT_SETTINGS)) }));
     setEdits((n) => n + 1);
   };
   // one of the map's default texture sets (wall, accent, floor, ceiling, doors...)

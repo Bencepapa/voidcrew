@@ -35,6 +35,7 @@ export const RELEASES: Release[] = [
       { title: "Kerítések és blokkok", text: "A Tető mellett új eszközök: blokk, kerítés a cella szélén és kerítés a közepén (átlátszó textúrával is, a mögötte lévő jelenet látszik), a textúrát pedig miniatűrös listából választhatod az Inspectorban." },
       { title: "Területek másolása", text: "A kijelölt terület minden eleme (falak, tárgyak, ajtók, tetők, kerítések) másolható, elforgatható és beilleszthető, akár másik pályába is." },
       { title: "Új tetőformák", text: "A tető eszközzel gúla (akár 1x1-es toronysüveg) és keskeny, hosszú házra való nyeregtető is építhető." },
+      { title: "Köd és fantasy alapértékek", text: "A távoli köd kezdete és teljes sűrűsége pályánként beállítható (Fény szakasz), a fantasy világ hangolt kamera- és fényalapértékekkel indul." },
       { title: "Gyors fényelőszámítás", text: "Fény vagy tárgy szerkesztése után előbb egy durva, gyors bake mutatja a változást, a pontos a háttérben számolódik ki (Debug: gyors előszámítás, 0 = ki)." },
       { title: "Égbolt feltöltése", text: "Az Assets managerben 2:1 arányú panorámaképet tölthetsz fel égboltnak, és a pálya beállításaiban kiválaszthatod." },
       { title: "Tárgy eldobása", text: "A hátizsákból a nézetre húzva vagy a Drop gombbal eldobhatod a tárgyat a földre; nyomólapon fekve ajtót tarthat nyitva." },

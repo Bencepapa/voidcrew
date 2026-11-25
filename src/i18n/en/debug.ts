@@ -77,6 +77,8 @@ export const debugEn = {
   "debug.audioNoiseMuffled": "Noise through a wall (muffled)",
   "debug.audioRearDull": "Duller from behind (front/back cue)",
   "debug.audioNoiseAhead": "Noise ahead",
+  "debug.fogStart": "Fog starts (cells, 0: automatic, saved with the map)",
+  "debug.fogEnd": "Fog fully thick (cells, 0: at the view distance, saved with the map)",
   "debug.audioStop": "Stop",
   "debug.audioStatus": "Audio: {state}, {rate} Hz, {active} playing",
   "debug.quickBakeSamplesPerCell": "Quick bake after an edit, samples per cell (0: off)",

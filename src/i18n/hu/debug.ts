@@ -77,6 +77,8 @@ export const debugHu = {
   "debug.audioNoiseMuffled": "Zaj falon át (tompítva)",
   "debug.audioRearDull": "Hátulról tompább (elöl/hátul érzet)",
   "debug.audioNoiseAhead": "Zaj elöl",
+  "debug.fogStart": "Köd kezdete (mező, 0: automatikus, a pályával mentve)",
+  "debug.fogEnd": "Köd teljesen sűrű (mező, 0: a látótávnál, a pályával mentve)",
   "debug.audioStop": "Leállítás",
   "debug.audioStatus": "Hang: {state}, {rate} Hz, {active} szól",
   "debug.quickBakeSamplesPerCell": "Gyors előszámítás szerkesztés után, minta/mező (0: ki)",
