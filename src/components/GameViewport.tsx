@@ -147,6 +147,9 @@ export interface ViewportSettings extends PostProcessSettings {
   // the baked light's samples per cell, and how they keep it (see
   // lightGrid.ts)
   lightGridDensity: number;
+  // the rough first bake after an edit (samples per cell; 0 or not under the real density: none), shown while the
+  // real one is still being computed
+  lightGridQuickDensity: number;
   lightGridMode: LightGridMode;
   // how much light the bake lets bounce round corners into the cells no
   // light sees (see lightGrid.ts bounceLight; 0: none, they stay dark)
@@ -352,6 +355,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   headlampColor: "#fff2d9",
   bakedLights: true,
   lightGridDensity: 3,
+  lightGridQuickDensity: 1,
   lightGridMode: "directional",
   lightBounce: 0.4,
   smokeStyle: "animated",
@@ -2282,20 +2286,22 @@ export function GameViewport({
     // the map as edited since the scene was built (see applyStructure): what the quick preview of an edit shows
     let liveMap = map;
     // the map's own density, else the settings'
-    const bakeOptions = (m: GameMap) => ({
-      // (a rough bake while the quick preview of an edit shows - see applyStructure)
-      perCell: liveMap !== map ? 1 : (m.lightGridDensity ?? settingsRef.current.lightGridDensity),
+    const finalDensity = (m: GameMap) => m.lightGridDensity ?? settingsRef.current.lightGridDensity;
+    const bakeOptions = (m: GameMap, quick = false) => ({
+      // (a rough bake while the quick preview of an edit shows - see applyStructure - or the first, quick one after an
+      // edit, see bakeLatest)
+      perCell: liveMap !== map ? 1 : quick ? Math.max(1, settingsRef.current.lightGridQuickDensity) : finalDensity(m),
       mode: settingsRef.current.lightGridMode,
       bounce: settingsRef.current.lightBounce,
     });
     // the bake (and a coarser one for the ambient part, if the map asks)
     let cancelBake: (() => void) | undefined;
-    const bake = (m: GameMap): Promise<void> => {
+    const bake = (m: GameMap, quick = false): Promise<void> => {
       cancelBake?.();
       const bakeFrom = performance.now();
-      const options = bakeOptions(m);
+      const options = bakeOptions(m, quick);
       const ambientDensity =
-        options.mode === "directional" && liveMap === map && m.lightGridAmbient && m.lightGridAmbient !== options.perCell
+        !quick && options.mode === "directional" && liveMap === map && m.lightGridAmbient && m.lightGridAmbient !== options.perCell
           ? m.lightGridAmbient
           : undefined;
       const lights = mapLights;
@@ -2380,9 +2386,23 @@ export function GameViewport({
       clearTimeout(bakeTimer);
       clearTimeout(lightEditTimer);
     };
+    // After an edit: a rough bake first (a few samples per cell, on the worker like the real one), so the change shows
+    // within moments, then the real one replaces it. A newer edit cancels whichever is running.
+    let bakeRun = 0;
     const bakeLatest = () => {
       clearBakeTimers();
-      if (!disposed) void bake(latestMapRef.current);
+      if (disposed) return;
+      const run = ++bakeRun;
+      const m = latestMapRef.current;
+      const quickDensity = settingsRef.current.lightGridQuickDensity;
+      const rough = quickDensity >= 1 && quickDensity < finalDensity(m) && liveMap === map;
+      if (!rough) {
+        void bake(m);
+        return;
+      }
+      void bake(m, true).then(() => {
+        if (!disposed && run === bakeRun) void bake(latestMapRef.current);
+      });
     };
     const bakeSoon = () => {
       clearTimeout(bakeTimer);

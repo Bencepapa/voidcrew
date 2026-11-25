@@ -63,6 +63,7 @@ export const debugHu = {
   "debug.directionalMainLightAmbient": "irányított (főfény + környezeti)",
   "debug.cubeSixDirections": "kocka (hat irány)",
   "debug.bakedSamplesPerCellUnlessTheMap": "Fényminták mezőnként (ha a pálya nem adja meg)",
+  "debug.quickBakeSamplesPerCell": "Gyors előszámítás szerkesztés után, minta/mező (0: ki)",
   "debug.lightBounce0UnlitRoomsStayDark": "Fényvisszaverődés (0 = a sötét szobák sötétek maradnak)",
   "debug.shipLivery": "Hajófestés",
   "debug.rolledForTheShip": "hajónként sorsolt",

@@ -63,6 +63,7 @@ export const debugEn = {
   "debug.directionalMainLightAmbient": "directional (main light + ambient)",
   "debug.cubeSixDirections": "cube (six directions)",
   "debug.bakedSamplesPerCellUnlessTheMap": "Baked samples per cell (unless the map sets it)",
+  "debug.quickBakeSamplesPerCell": "Quick bake after an edit, samples per cell (0: off)",
   "debug.lightBounce0UnlitRoomsStayDark": "Light bounce (0 = unlit rooms stay dark)",
   "debug.shipLivery": "Ship livery",
   "debug.rolledForTheShip": "rolled for the ship",
