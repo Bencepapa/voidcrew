@@ -27,6 +27,9 @@ export interface PostOthers {
 }
 
 export interface PostProcessSettings {
+  // the map's colour look (see colorGrade.ts) is not drawn: a display switch to see the textures'
+  // own colours, never saved
+  postLookOff: boolean;
   postDark: boolean;
   postDarkness: number;
   postWarm: number;
@@ -56,6 +59,7 @@ export const DEFAULT_POST_OTHERS: PostOthers = { mode: "fade", fade: 0.5 };
 
 export function defaultPostSettings(): PostProcessSettings {
   return {
+    postLookOff: false,
     postDark: false,
     postDarkness: 0.7,
     postWarm: 1.8,
