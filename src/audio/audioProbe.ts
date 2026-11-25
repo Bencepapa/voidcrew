@@ -155,14 +155,21 @@ function behindness(x: number, z: number): number {
   return Math.max(0, -(dx * listener.fx + dz * listener.fz) / length);
 }
 
-function applyRear() {
+// `immediate`: set the values at once (a sound that has just started must not begin open and then glide shut)
+function applyRear(only?: Entry) {
   const ctx = Howler.ctx as AudioContext | undefined;
   if (!ctx) return;
-  for (const entry of entries) {
+  for (const entry of only ? [only] : entries) {
     const behind = rearDull ? behindness(entry.x, entry.z) : 0;
     // straight behind: the highs cut down to about 700 Hz and the level halved (about -6 dB)
-    entry.rear.frequency.setTargetAtTime(18000 * Math.pow(0.04, behind), ctx.currentTime, 0.05);
-    entry.level.gain.setTargetAtTime(1 - 0.5 * behind, ctx.currentTime, 0.05);
+    const cutoff = 18000 * Math.pow(0.04, behind), gain = 1 - 0.5 * behind;
+    if (only) {
+      entry.rear.frequency.value = cutoff;
+      entry.level.gain.value = gain;
+    } else {
+      entry.rear.frequency.setTargetAtTime(cutoff, ctx.currentTime, 0.05);
+      entry.level.gain.setTargetAtTime(gain, ctx.currentTime, 0.05);
+    }
   }
 }
 
@@ -195,7 +202,7 @@ function shape(howl: Howl, id: number, source: ProbeSource) {
     tail.connect(sound._node);
     const entry: Entry = { rear, level: rearLevel, x: source.x, z: source.z };
     entries.add(entry);
-    applyRear();
+    applyRear(entry);
     howl.once("end", () => entries.delete(entry), id);
   } catch (error) {
     console.warn("[audio probe] shaping failed", error);
