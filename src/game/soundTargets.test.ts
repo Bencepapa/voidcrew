@@ -30,10 +30,10 @@ const rows = ["WWWWWWWWW", "W...D...W", "W.......W", "W.......W", "WWWWWWWWW"];
 const cells = rows.map((r) => r.split("").map((c) => (c === "W" ? "wall" : c === "D" ? "door" : "floor") as "wall" | "door" | "floor"));
 const at = (x: number, y: number) => ({ x, y });
 const sounds = [
-  { x: 2, y: 3, kind: "tone" as const },
-  { x: 2, y: 3, kind: "tone" as const, active: false },
-  { x: 6, y: 3, kind: "noise" as const, active: false, id: "alarm" },
-  { x: 7, y: 3, kind: "tone" as const },
+  { x: 2, y: 3, kind: "tone" as const, range: 12 },
+  { x: 2, y: 3, kind: "tone" as const, active: false, range: 12 },
+  { x: 6, y: 3, kind: "noise" as const, active: false, id: "alarm", range: 12 },
+  { x: 7, y: 3, kind: "tone" as const, range: 12 },
 ];
 const prop = (name: string, x: number, y: number, side: string, operable?: OperableSpec) => ({ prop: name, cell: at(x, y), at: side, operable });
 const mapOf = (props: OperableMap["props"], extra: Partial<OperableMap> = {}): OperableMap => ({ width: 9, height: 5, cells, props, sounds, ...extra });
