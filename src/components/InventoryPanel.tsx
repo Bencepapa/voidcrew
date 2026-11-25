@@ -6,7 +6,8 @@ import { haulOf, useInventory } from "../game/inventoryStore";
 import { activeWorld } from "../game/worlds";
 import { t } from "../i18n";
 import { HelpTip, InfoArea, QtyPopover, SlotGrid, moveInInventory, slotOfKey, splitInInventory } from "./InventorySlots";
-import { cancelDrag, cancelQty, clearInfo, clearSelection, useDropOverPack, useInfoSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
+import { cancelDrag, cancelQty, clearInfo, clearSelection, dropSlot, dropSlotAsking, pinnedSlot, useDropOverPack, useInfoSlot, usePinnedSlot, useSelectedSlot, useSlotNotice } from "./slotDrag";
+import { getInventory } from "../game/inventoryStore";
 
 // the arrow keys move between slots: the nearest one that way
 export function focusNeighbor(root: HTMLElement, key: string) {
@@ -106,6 +107,18 @@ export function InventoryPanel({ partyDock, onClose }: {
       } else if (e.key === "i" || e.key === "I") {
         swallow();
         if (!e.repeat) latest.current();
+      } else if (e.key === "d" || e.key === "D") {
+        // drop the focused slot's item (else the pinned one) on the floor: all of it, with Shift choose how many
+        swallow();
+        if (e.repeat) return;
+        const el = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>("[data-slot]") : null;
+        const key = el?.dataset.slot ?? pinnedSlot();
+        const stack = key ? slotOfKey(getInventory(), key) : null;
+        if (!key || !stack) return;
+        if (e.shiftKey && stack.qty > 1) {
+          const r = (el ?? root.current)?.getBoundingClientRect();
+          dropSlotAsking(key, stack.qty, { x: r ? r.left + r.width / 2 : 0, y: r ? r.top : 0 });
+        } else dropSlot(key);
       } else if (e.key.startsWith("Arrow")) {
         swallow();
         if (root.current) focusNeighbor(root.current, e.key);
@@ -128,9 +141,13 @@ export function InventoryPanel({ partyDock, onClose }: {
   const picked = selected ? slotAt(inventory, parseLoc(selected) ?? packLoc(-1)) : null;
   const infoKey = useInfoSlot();
   const shown = infoKey ? slotOfKey(inventory, infoKey) : null;
+  // (the Drop button is there for the item a click pinned: a hovered one is gone when the pointer goes to the button)
+  const pinned = usePinnedSlot();
+  const canDrop = !!shown && !!infoKey && infoKey === pinned;
 
   return (
     <div
+      data-drop-world
       className="fixed inset-x-0 top-0 z-[70] flex items-center justify-center bg-black/40 p-3"
       style={{ bottom: bottomInset }}
       onPointerDown={(e) => e.stopPropagation()}
@@ -171,7 +188,7 @@ export function InventoryPanel({ partyDock, onClose }: {
             <span>{t("inventory.worthValue", { n: worth })}</span>
           </div>
         )}
-        <InfoArea slot={shown} empty={t("inventory.infoEmpty")} />
+        <InfoArea slot={shown} empty={t("inventory.infoEmpty")} onDrop={canDrop ? (at) => dropSlotAsking(infoKey!, shown!.qty, at) : undefined} />
         <p className="h-[1.4em] truncate text-neutral-500" aria-live="polite">
           {notice ? <span className="text-red-300">{t(`inventory.fail.${notice}` as "inventory.fail.full")}</span> : picked ? <span className="text-amber-200">{t("inventory.selected", { item: itemName(picked.item) })}</span> : null}
         </p>

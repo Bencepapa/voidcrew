@@ -4,11 +4,15 @@ import { WORLDS } from "./worlds";
 import { MAPS, START_MAP, cellAt, doorAt, doorCrossed, floorHeight, liftAt, liftDoorOf } from "./map";
 import { DIR_VECTOR, behindOf, leftOf, rightOf, stepForward } from "./movement";
 import { CLIMB_MS_PER_HEIGHT, jumpDown, passage } from "./heights";
-import type { Direction, GameMap, Vec2, PropSpec } from "./types";
+import type { Direction, GameMap, MapItem, Vec2, PropSpec } from "./types";
 import { crewOf } from "./crew";
 import { variantOf } from "./variation";
-import { ITEM_TYPES, isSharedPickupId, rollLoot, stacksText, stacksValue } from "./items";
+import { ITEM_TYPES, isSharedPickupId, itemSpot, rollLoot, stacksText, stacksValue } from "./items";
 import type { ItemStack, LootSpill } from "./items";
+import {
+  DROP_PER_CELL, armDrops, autoExempt, dropLootKey, itemsOnCell, landingCell, liveDrops, makeDrop, pickSpot, planInventoryDrop, platesKey, spotCandidates,
+  type DroppedItem,
+} from "./dropItem";
 import { PROP_TYPES, propHeight, propPlacement } from "./props";
 import type { ShipMood } from "./variation";
 import { ACTOR_TYPES, SPOTTED_MS, actorAt, actorFromSpec, actorWake, createActors, faceParty, partyHitChance, scared, spawnActors as spawnFromSpecs, stepActors, type Spotted } from "./actors";
@@ -18,11 +22,11 @@ import type { ActorState } from "./actors";
 import { gameClock } from "./clock";
 import { AIM_TIME_RATE, applyHit, rollAmount } from "./combat";
 import { getMeta, setCredits, setStoryFlag } from "./meta";
-import { storyEvent, storySetCutscene } from "./story/storyRuntime";
+import { storyEvent, storyInventoryChanged, storySetCutscene } from "./story/storyRuntime";
 import { addToInventory, changeInventory, getInventory, handWeapon, haulOf, startRun, useInventory } from "./inventoryStore";
-import { LEFT, effectiveHand, handLoc, handView, takeSlot, type HandIndex } from "./inventory";
+import { LEFT, effectiveHand, handLoc, handView, parseLoc, slotAt, takeSlot, type HandIndex } from "./inventory";
 import { readyAtOf, withCooldown, type ReadyAt } from "./handCooldown";
-import { isWeaponItem, itemRules } from "./itemRules";
+import { isWeaponItem, itemName, itemRules } from "./itemRules";
 import { itemInfo } from "./itemInfo";
 import { applyUse } from "./itemUse";
 import { hasKey, t, type Key } from "../i18n";
@@ -43,6 +47,7 @@ import { pickVictim } from "./operables";
 import { lockedMessage } from "./keys";
 import { useOperables } from "./useOperables";
 import { emittersOn } from "./emitterStore";
+import { useLocks } from "./useLocks";
 
 // no cell burns (the fire is not armed, see trapsActive)
 const NO_FIRE: ReadonlySet<string> = new Set();
@@ -168,13 +173,35 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   // the ship's power thrown back on: its lights up (only its lights change -
   // see variantOf - so the view relights in place)
   const [lightsUp, setLightsUp] = useState(false);
-  const map = useMemo(
+  // the containers emptied and the loose items taken (see lootKey), and the items the party dropped from
+  // its inventory (see dropItem.ts: kept for the run in memory, never in a map file, not saved with anything)
+  const [looted, setLooted] = useState<ReadonlySet<string>>(() => new Set());
+  const [drops, setDrops] = useState<readonly DroppedItem[]>([]);
+  const dropIdRef = useRef(0);
+  // the deck and variation the party is in: what it dropped lies in this scope only (a deck visited again in the
+  // same run has its drops back; another seed's variation does not)
+  const dropScope = `${variation?.seed ?? 0}|${fullMap.id}`;
+  const playedMap = useMemo(
     () =>
       variation === null
         ? fullMap
         : variantOf(fullMap, variation.seed, lightsUp ? { ...variation.mood, light: "bright" } : variation.mood),
     [fullMap, variation, lightsUp],
   );
+  // the drops of this deck, appended to the played map's items (so they are picked up, clicked, dragged and drawn
+  // like the rest); never while editing - the editor's map is the map file's
+  const hereDrops = useMemo(() => (variation === null ? [] : drops.filter((d) => d.scope === dropScope)), [variation, drops, dropScope]);
+  const map = useMemo(
+    () => (hereDrops.length ? { ...playedMap, items: [...(playedMap.items ?? []), ...hereDrops.map((d) => d.spec)] } : playedMap),
+    [playedMap, hereDrops],
+  );
+  // the drops still lying there (not picked up again)
+  const liveDropSpecs = useMemo(
+    () => liveDrops(hereDrops, dropScope, (id) => looted.has(dropLootKey(dropScope, id))),
+    [hereDrops, dropScope, looted],
+  );
+  const dropsRef = useRef(drops);
+  dropsRef.current = drops;
   const mapRef = useRef(map);
   mapRef.current = map;
   const fullMapRef = useRef(fullMap);
@@ -1167,6 +1194,9 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     pos,
     elevation,
     openDoorsRef,
+    // (a pressure plate is held down by what the party dropped on it)
+    itemsOn: (cell) => itemsOnCell(liveDropSpecs, cell),
+    itemsKey: platesKey(liveDropSpecs),
     openDoor: (cell, animated) =>
       animated ? storyRef.current.open(cell) : setOpenDoors((prev) => new Set(prev).add(doorCellKey(cell))),
     closeDoor: (cell) =>
@@ -1206,7 +1236,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     revealItems: (indices) => {
       const keys = indices.flatMap((i) => {
         const it = mapRef.current.items?.[i];
-        return it ? [lootKey("item", (fullMap.items ?? []).indexOf(it))] : [];
+        return it ? [itemKey(it)] : [];
       });
       for (const key of keys) revealedItemsRef.current.add(key);
       setLooted((prev) => new Set([...prev].filter((k) => !keys.includes(k))));
@@ -1216,6 +1246,14 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       addToHaul(items.filter((i) => Object.hasOwn(ITEM_TYPES, i.item) || isSharedPickupId(i.item)));
     },
   });
+  // The locks on chests, levers and buttons (see propLocks.ts); the lever's own touch goes through the gate
+  const locks = useLocks({ active: variation !== null, mapRef, fullMapRef, hasFlag, raiseFlag, pushLog });
+  const lockGate = locks.gate;
+  const touchOperable = operables.touch;
+  const operateGated = useCallback(
+    (from: "prop" | "decal", index: number) => (locks.gateOperable(from, index) ? touchOperable(from, index) : true),
+    [locks.gateOperable, touchOperable],
+  );
 
   // Takes the lift the party stands in to its other deck: shuts the door,
   // rides (the next map is swapped in mid-ride, behind the closed door),
@@ -1425,21 +1463,25 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
   // some out); and the spills the view shows
   const inventory = useInventory();
   const haul = useMemo(() => haulOf(inventory), [inventory]);
-  const [looted, setLooted] = useState<ReadonlySet<string>>(() => new Set());
   const [spills, setSpills] = useState<LootSpill[]>([]);
   const spillIdRef = useRef(0);
   const lootKey = useCallback(
     (kind: "prop" | "item", index: number) => `${variation?.seed ?? 0}|${fullMap.id}|${kind === "item" ? "item " : ""}${index}`,
     [variation, fullMap.id],
   );
+  // what marks a loose item taken: its place in the deck's full map - or, for one the party dropped, its drop
+  const itemKey = useCallback(
+    (it: MapItem) => (it.dropped !== undefined ? dropLootKey(dropScope, it.dropped) : lootKey("item", (fullMap.items ?? []).indexOf(it))),
+    [dropScope, lootKey, fullMap],
+  );
   // Dormant items (MapItem.dormant: "appears when triggered") are kept out of the world by counting them as looted until an
   // operable `item` target reveals them (the keys of the revealed ones are kept for the run). The map editor shows them all.
   const revealedItemsRef = useRef(new Set<string>());
   useLayoutEffect(() => {
     if (variation === null) return;
-    const hide = (map.items ?? []).flatMap((it) => (it.dormant ? [lootKey("item", (fullMap.items ?? []).indexOf(it))] : [])).filter((k) => !revealedItemsRef.current.has(k));
+    const hide = (map.items ?? []).flatMap((it) => (it.dormant ? [itemKey(it)] : [])).filter((k) => !revealedItemsRef.current.has(k));
     if (hide.length) setLooted((prev) => (hide.every((k) => prev.has(k)) ? prev : new Set([...prev, ...hide])));
-  }, [map, fullMap, variation, lootKey, looted]);
+  }, [map, variation, itemKey, looted]);
   // (into the backpack; what doesn't fit is carried loose, and said so)
   const addToHaul = useCallback((stacks: ItemStack[]) => {
     if (!stacks.length) return;
@@ -1471,8 +1513,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     [map, fullMap, looted, lootKey],
   );
   const takenItems = useMemo(
-    () => new Set((map.items ?? []).flatMap((it, i) => (looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))) ? [i] : []))),
-    [map, fullMap, looted, lootKey],
+    () => new Set((map.items ?? []).flatMap((it, i) => (looted.has(itemKey(it)) ? [i] : []))),
+    [map, looted, itemKey],
   );
   // within reach: in the party's cell (and with `ahead`, the one it faces),
   // on the surface it stands on
@@ -1487,12 +1529,14 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     [map, pos, dir, elevation],
   );
   // takes the loose items within reach (not yet taken): the haul gets them,
-  // the view draws them in; false if there were none
+  // the view draws them in; false if there were none. `auto`: by stepping (not Use): what the party dropped
+  // where it stands stays until it has left the cell once (see dropItem.ts)
   const pickUpItems = useCallback(
-    (ahead: boolean) => {
+    (ahead: boolean, auto = false) => {
       const found = (map.items ?? []).filter(
         (it) => (!isSharedPickupId(it.item) || Object.hasOwn(ITEM_TYPES, it.item)) &&
-          inReach(it.cell, ahead) && !looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))),
+          inReach(it.cell, ahead) && !looted.has(itemKey(it)) &&
+          !(auto && it.dropped !== undefined && autoExempt(dropsRef.current.find((d) => d.id === it.dropped), posRef.current)),
       );
       if (!found.length) return false;
       const stacks = found.map((it) => ({ item: it.item, count: it.count ?? 1 }));
@@ -1502,14 +1546,14 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       if (plain.length) pushLog(`You pick up ${stacksText(plain)}.`, "success");
       for (const it of named) pushLog(`You pick up the ${it.name}.`, "success");
       addToHaul(stacks);
-      setLooted((prev) => new Set([...prev, ...found.map((it) => lootKey("item", (fullMap.items ?? []).indexOf(it)))]));
+      setLooted((prev) => new Set([...prev, ...found.map((it) => itemKey(it))]));
       for (const it of found) {
         if (it.sets) raiseFlag(it.sets, true);
         fireEvent({ on: "pickup", item: it.item });
       }
       return true;
     },
-    [map, fullMap, inReach, looted, lootKey, pushLog, addToHaul, raiseFlag, fireEvent],
+    [map, inReach, looted, itemKey, pushLog, addToHaul, raiseFlag, fireEvent],
   );
   // stepping into a cell picks up what lies there - in "auto" pickup mode (see pickupMode.ts); in
   // "click" mode what lies there stays until it is clicked or Used
@@ -1520,8 +1564,12 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     // the editor walks over what lies about)
     if (variationRef.current === null) return;
     if (!stepCollects(resolvePickupMode(mapRef.current, storedPickupMode()))) return;
-    pickUpRef.current(false);
+    pickUpRef.current(false, true);
   }, [pos, elevation, map.id]);
+  // the party has left the cell it dropped something in: stepping back takes it (auto mode)
+  useEffect(() => {
+    setDrops((prev) => armDrops(prev, dropScope, pos) as DroppedItem[]);
+  }, [pos, dropScope]);
   // A click on a loose item in the view (the "pickup:<index>" touch, the index in the played map's
   // items): taken if it is within a short reach; else it says so.
   const pickUpClicked = useCallback(
@@ -1529,7 +1577,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       const it = map.items?.[index];
       if (!it || variationRef.current === null || (isSharedPickupId(it.item) && !Object.hasOwn(ITEM_TYPES, it.item))) return;
       const outcome = clickPickup({
-        taken: looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))),
+        taken: looted.has(itemKey(it)),
         busy: busy(),
         reach: inPickupReach(pos, elevation, it.cell, floorHeight(map, it.cell.x, it.cell.y)),
       });
@@ -1538,11 +1586,11 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       const stacks = [{ item: it.item, count: it.count ?? 1 }];
       pushLog(it.name ? `You pick up the ${it.name}.` : `You pick up ${stacksText(stacks)}.`, "success");
       addToHaul(stacks);
-      setLooted((prev) => new Set([...prev, lootKey("item", (fullMap.items ?? []).indexOf(it))]));
+      setLooted((prev) => new Set([...prev, itemKey(it)]));
       if (it.sets) raiseFlag(it.sets, true);
       fireEvent({ on: "pickup", item: it.item });
     },
-    [map, fullMap, pos, elevation, looted, lootKey, pushLog, addToHaul, raiseFlag, fireEvent],
+    [map, pos, elevation, looted, itemKey, pushLog, addToHaul, raiseFlag, fireEvent],
   );
   // A loose item dragged from the view and let go over a hand box (taken in that hand), a crewmate's
   // card (a consumable is used on them, else it goes into the backpack), or the inventory (button,
@@ -1554,7 +1602,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       const use = ITEM_TYPES[it.item]?.use;
       const plan = planWorldDrop({
         target,
-        taken: looted.has(lootKey("item", (fullMap.items ?? []).indexOf(it))),
+        taken: looted.has(itemKey(it)),
         busy: busy(),
         reach: inPickupReach(pos, elevation, it.cell, floorHeight(map, it.cell.x, it.cell.y)),
         usable: !!use,
@@ -1586,11 +1634,11 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
         pushLog(it.name ? `You pick up the ${it.name}.` : `You pick up ${stacksText([{ item: it.item, count: stack.qty }])}.`, "success");
       }
       storyEvent("item_picked", it.item);
-      setLooted((prev) => new Set([...prev, lootKey("item", (fullMap.items ?? []).indexOf(it))]));
+      setLooted((prev) => new Set([...prev, itemKey(it)]));
       if (it.sets) raiseFlag(it.sets, true);
       fireEvent({ on: "pickup", item: it.item });
     },
-    [map, fullMap, pos, elevation, looted, lootKey, pushLog, raiseFlag, fireEvent],
+    [map, pos, elevation, looted, itemKey, pushLog, raiseFlag, fireEvent],
   );
   const dropWorldItemRef = useRef(dropWorldItem);
   dropWorldItemRef.current = dropWorldItem;
@@ -1598,6 +1646,71 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     setWorldDropHandler((index, target) => dropWorldItemRef.current(index, target));
     return () => setWorldDropHandler(null);
   }, []);
+  // the drops of decks left behind that were picked up again are forgotten (the one still lying stays with its deck)
+  useEffect(() => {
+    setDrops((prev) => {
+      const keep = prev.filter((d) => d.scope === dropScope || !looted.has(dropLootKey(d.scope, d.id)));
+      return keep.length === prev.length ? prev : keep;
+    });
+    // (on a change of deck or variation only)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dropScope]);
+
+  // Drops what is in a backpack cell or a hand box ("pack:3", "hand:reese:1") on the floor - all of it, or `qty` of it:
+  // it lands in the cell the party faces if it could walk onto it, else in its own, as a loose item of this deck (see
+  // dropItem.ts). Not while editing (the editor's map is the map file's), nor while the party can't act (a ride, a
+  // terminal...; the dialogue and shop windows are refused by App). Returns why not (the inventory panel says it), or null.
+  const dropInventoryItem = useCallback(
+    (from: string, qty?: number): string | null => {
+      if (variationRef.current === null) {
+        pushLog(t("drop.editor"), "warn");
+        return "editor";
+      }
+      if (
+        inLift || transit !== null || openingDoor || wipedRef.current !== null || transitBusyRef.current || performance.now() < busyUntilRef.current ||
+        readyMapRef.current !== mapRef.current.id || aimRef.current !== null || terminalRef.current !== null || keypadRef.current !== null
+      ) {
+        pushLog(t("drop.busy"), "warn");
+        return "busy";
+      }
+      const planned = planInventoryDrop(getInventory(), from, qty, itemRules, { isWeapon: isWeaponItem, known: (item) => Object.hasOwn(ITEM_TYPES, item) });
+      if (!planned.ok) {
+        if (planned.reason === "empty") return "empty";
+        const slot = parseLoc(from) ? slotAt(getInventory(), parseLoc(from)!) : null;
+        pushLog(t("drop.keep", { item: slot ? itemName(slot.item) : "" }), "warn");
+        return "keep";
+      }
+      const m = mapRef.current;
+      const facing = DIR_VECTOR[dir];
+      const landing = landingCell(pos, facing, elevation, {
+        cellType: (c) => cellAt(m, c.x, c.y),
+        floor: (c) => floorHeight(m, c.x, c.y),
+        walkable: (a, b) => passage(m, a, elevation, b, dir).kind === "walk",
+        doorShut: (a, b) => {
+          const door = doorCrossed(m, a, b);
+          return !!door && !openDoorsRef.current.has(doorCellKey(door));
+        },
+      });
+      // what already lies in that cell (not taken): the new pile goes in a spot of its own
+      const lying = (m.items ?? []).filter((it) => it.cell.x === landing.cell.x && it.cell.y === landing.cell.y && !looted.has(itemKey(it)));
+      if (lying.filter((it) => it.dropped !== undefined).length >= DROP_PER_CELL) {
+        pushLog(t("drop.crowded"), "warn");
+        return "crowded";
+      }
+      const spot = pickSpot(
+        spotCandidates(landing.ahead, facing),
+        lying.map((it) => itemSpot(it.offset, (m.items ?? []).indexOf(it))),
+      );
+      changeInventory(() => planned.inv);
+      const drop = makeDrop({ id: ++dropIdRef.current, scope: dropScope, item: planned.item, count: planned.count, cell: landing.cell, spot, party: pos });
+      setDrops((prev) => [...prev, drop]);
+      pushLog(t("drop.done", { item: stacksText([{ item: planned.item, count: planned.count }]) }));
+      // (no item_picked: it is not a pick-up - but a quest that counted it is not ready any more)
+      storyInventoryChanged();
+      return null;
+    },
+    [inLift, transit, openingDoor, dir, pos, elevation, looted, itemKey, dropScope, pushLog],
+  );
 
   // Use: whatever is in front of the party - a lift's button, or the
   // containers within reach: everything in them spills out and goes into
@@ -1636,7 +1749,9 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       forceDoor(ahead);
       return;
     }
-    const containers = (map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.container && inReach(p.cell, true));
+    const reachable = (map.props ?? []).filter((p) => PROP_TYPES[p.prop]?.container && inReach(p.cell, true));
+    // (a locked one: told why, or unlocked with the key - see propLocks.ts)
+    const containers = reachable.filter((p) => lockGate(p));
     const picked = pickUpItems(true);
     // wrecks within reach, not searched yet: their parts
     const wrecks = actorsRef.current.filter(
@@ -1657,6 +1772,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       setLooted((prev) => new Set([...prev, ...wrecks.map((a) => `${actorKey(map, a.id)} wreck`)]));
       if (!containers.length) return;
     }
+    // (only locked ones within reach: nothing else to use here)
+    if (!containers.length && reachable.length) return;
     if (!containers.length) {
       // a way off the ship underfoot
       const exit = (map.exits ?? []).find((e) => inReach(e.cell, false));
@@ -1707,7 +1824,7 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       setSpills((prev) => [...prev.slice(-8), ...newSpills]);
     }
     setLooted((prev) => new Set([...prev, ...keys]));
-  }, [map, pos, dir, startLift, startTransit, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey, showTerminal, openDoors, doorLock, openLock, raiseFlag]);
+  }, [map, pos, dir, startLift, startTransit, pushLog, inReach, pickUpItems, lootOf, looted, addToHaul, actorKey, showTerminal, openDoors, doorLock, openLock, raiseFlag, lockGate]);
 
   // The breaker: the ship's power back on (if it's down)
   const throwBreaker = () => {
@@ -1769,7 +1886,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
       if (items.length) marks.push({ ...spec.cell, big: vault || stacksValue(items) >= LOOT_BIG });
     }
     (map.items ?? []).forEach((it, i) => {
-      if (takenItems.has(i)) return;
+      // (what the party dropped itself is no loot to scan for)
+      if (takenItems.has(i) || it.dropped !== undefined) return;
       marks.push({ ...it.cell, big: stacksValue([{ item: it.item, count: it.count ?? 1 }]) >= LOOT_BIG });
     });
     for (const a of actors) {
@@ -1816,6 +1934,8 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     startRun();
     setLooted(new Set());
     revealedItemsRef.current = new Set();
+    // (a new run: what was dropped is gone with the old one)
+    setDrops([]);
     setSpills([]);
     killedRef.current = new Set();
     setKills(0);
@@ -2021,8 +2141,10 @@ export function useGameState(variation: { seed: number; mood: ShipMood } | null,
     elevation,
     jumpDown: jump,
     use,
+    // an item out of the backpack or a hand, onto the floor (see dropItem.ts)
+    dropInventoryItem,
     // a lever or button touched (see operables.ts)
-    operate: operables.touch,
+    operate: operateGated,
     touch,
     // (a lift ride, or a gate's change of map: nothing else can be done meanwhile)
     inLift: inLift || transit !== null,

@@ -4,6 +4,7 @@ import { cleanSkyGradient, skyGradientStops, type SkyGradient } from "../game/sk
 import { createWeather } from "../render/weather";
 import { createGroundFog } from "../render/groundFog";
 import { createFireflies } from "../render/fireflies";
+import { lockMarkerMaterial } from "../render/lockMarker";
 import { createMotes } from "../render/motes";
 import type { SpriteEmitter } from "../render/spriteCloud";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -5011,7 +5012,8 @@ export function GameViewport({
     }
     // the loose items, by index in map.items; and what's flying (spilled
     // out of a container, or drawn in to the party's feet)
-    const looseItems = new Map<number, { obj: THREE.Object3D; cell: string; taken: boolean }>();
+    // (`toss`: an item the party has just dropped, flying from its hands to where it lies)
+    const looseItems = new Map<number, { obj: THREE.Object3D; cell: string; taken: boolean; toss?: { start: number; from?: THREE.Vector3; rest: THREE.Vector3 } }>();
     interface Flyer {
       obj: THREE.Object3D;
       from: THREE.Vector3;
@@ -5021,9 +5023,14 @@ export function GameViewport({
     const flyers: Flyer[] = [];
     // (built again, in place, when the map's items change - see applyLightsRef)
     let itemsVersion = 0;
+    // the newest item the party dropped that has been shown (a build later does not toss it again)
+    let lastDrop = Math.max(-1, ...(latestMapRef.current.items ?? []).map((i) => i.dropped ?? -1));
     function buildItems(m: GameMap) {
     const version = ++itemsVersion;
     (m.items ?? []).forEach((spec, index) => {
+      // (a dropped item that is new tosses from the party's hands; see updateLoot)
+      const tossed = spec.dropped !== undefined && spec.dropped > lastDrop;
+      if (tossed) lastDrop = spec.dropped!;
       track(async () => {
         const template = await itemTemplate(spec.item);
         if (!template || disposed || version !== itemsVersion) return;
@@ -5035,7 +5042,14 @@ export function GameViewport({
         obj.userData.itemIndex = index;
         obj.visible = false;
         group.add(obj);
-        looseItems.set(index, { obj, cell: cellKey(spec.cell.x, spec.cell.y), taken: false });
+        // (one taken before this build - a deck entered again, items changed in place - is not drawn in again)
+        looseItems.set(index, {
+          obj,
+          cell: cellKey(spec.cell.x, spec.cell.y),
+          taken: !!lootRef.current.takenItems?.has(index),
+          // (real time: the game's clock stands still while the inventory is open, which is where an item is dropped from)
+          toss: tossed ? { start: performance.now(), rest: obj.position.clone() } : undefined,
+        });
       }).catch((err) => console.error("Item build failed:", err));
     });
     }
@@ -6220,6 +6234,20 @@ export function GameViewport({
           flyers.push({ obj: item.obj, from: item.obj.position.clone(), rest: item.obj.position.clone(), start: now - SPILL_REST_MS });
         }
         if (item.taken) continue;
+        if (item.toss) {
+          // just dropped: out of the party's hands to where it lies, in a little arc (as a spill's items fly)
+          const toss = item.toss;
+          toss.from ??= new THREE.Vector3(camX, feetY + ITEM_LIFT + 0.35 * wallHeight, camZ);
+          const p = (performance.now() - toss.start) / SPILL_OUT_MS;
+          if (p >= 1) {
+            item.obj.position.copy(toss.rest);
+            item.toss = undefined;
+          } else {
+            const q = Math.max(0, p);
+            item.obj.position.lerpVectors(toss.from, toss.rest, q);
+            item.obj.position.y += Math.sin(q * Math.PI) * 0.18;
+          }
+        }
         // (not the one being dragged to the screen's hands and backpack - see slotDrag's beginWorldDrag)
         item.obj.visible = sight.cells.has(item.cell) && draggedWorldItem() !== index;
         item.obj.rotation.y = Math.atan2(camX - item.obj.position.x, camZ - item.obj.position.z);
@@ -8121,8 +8149,37 @@ export function GameViewport({
         add({ kind: "item", index }, spec.interaction, x + dx, floorY(x, y) + (spec.elevation ?? 0) * wallHeight + 0.25, y + dz);
       });
     }
+    // a padlock over each locked prop, while editing (see game/propLocks.ts)
+    const lockMarkers = new THREE.Group();
+    const lockMaterial = lockMarkerMaterial();
+    scene.add(lockMarkers);
+    let lockMarkerMap: GameMap | undefined;
+    let lockMarkerLayers: ReadonlySet<string> | undefined;
+    function updateLockMarkers() {
+      const m = latestMapRef.current;
+      const hidden = hiddenLayersRef.current;
+      lockMarkers.visible = !!editModeRef.current;
+      if (!lockMarkers.visible || (lockMarkerMap === m && lockMarkerLayers === hidden)) return;
+      lockMarkerMap = m;
+      lockMarkerLayers = hidden;
+      lockMarkers.clear();
+      if (hidden.has("prop")) return;
+      for (const spec of m.props ?? []) {
+        if (!spec.lock || !PROP_TYPES[spec.prop]) continue;
+        const { x, z, type } = propPlacement(spec);
+        const lift = (type.elevation ?? 0) * (spec.scale ?? 1);
+        const y = floorY(spec.cell.x, spec.cell.y) + ((spec.elevation ?? 0) + lift + propHeight(m, spec)) * wallHeight + 0.3;
+        const inward = type.wall ? 0.3 : 0;
+        const sprite = new THREE.Sprite(lockMaterial);
+        sprite.position.set(THREE.MathUtils.lerp(x, spec.cell.x, inward), Math.min(y, ceilingY(spec.cell.x, spec.cell.y) - 0.12), THREE.MathUtils.lerp(z, spec.cell.y, inward));
+        sprite.scale.setScalar(0.22);
+        sprite.renderOrder = 101;
+        lockMarkers.add(sprite);
+      }
+    }
     function renderFrame() {
       updateEventMarkers();
+      updateLockMarkers();
       const s = settingsRef.current;
       const now = performance.now();
       const t = (now - startedAt) / 1000;
@@ -8796,7 +8853,7 @@ export function GameViewport({
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
-      <div ref={containerRef} className="absolute inset-0" />
+      <div ref={containerRef} data-drop-world className="absolute inset-0" />
       {editMode && (
         <button
           type="button"

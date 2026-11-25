@@ -11,6 +11,7 @@ import { readHarm } from "./emitters";
 import { readLinkTarget } from "./mapLinks";
 import { readDoorTexture } from "./doorTextures";
 import { readOperable, type OperableSpec } from "./operables";
+import { readPropLock, type PropLock } from "./propLocks";
 import type { Lock, Terminal, Trigger } from "./story";
 import { cleanRenderLook } from "./renderLook";
 import { cleanSkyGradient, type SkyGradient } from "./skyGradient";
@@ -225,6 +226,8 @@ export interface MapFile {
     fence?: FenceStyle;
     // a lever, button, plate, trap cell or wall trap's targets and settings (see operables.ts)
     operable?: OperableSpec;
+    // a lock on a container, lever or button: shut until the party has its key (see propLocks.ts)
+    lock?: PropLock;
     id?: string;
     with?: string;
     without?: string;
@@ -475,6 +478,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
         detached: p.detached,
         fence: cleanFenceStyle(p.fence),
         operable: readOperable(p.operable),
+        lock: readPropLock(p.lock),
         id: p.id,
         with: p.with,
         without: p.without,

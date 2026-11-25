@@ -4,6 +4,7 @@ import type { WorldId } from "./worlds";
 import type { Interaction, WallInteractionTarget } from "./interactions";
 import type { FenceStyle } from "./fences";
 import type { OperableSpec } from "./operables";
+import type { PropLock } from "./propLocks";
 import type { SkyGradient } from "./skyGradient";
 
 export type Direction = "N" | "E" | "S" | "W";
@@ -258,6 +259,8 @@ export interface PropSpec extends Linked {
   fence?: FenceStyle;
   // a lever, button, plate, trap cell or wall trap: what it works (see operables.ts)
   operable?: OperableSpec;
+  // a container, lever or button that stays shut until the party has its key (see propLocks.ts)
+  lock?: PropLock;
 }
 
 // A smoke emitter (see render/smoke.ts): a leaking pipe, a smouldering
@@ -387,6 +390,9 @@ export interface MapItem extends Linked {
   sets?: string;
   // "appears when triggered": not there until an operable `item` target reveals it (see operables.ts)
   dormant?: boolean;
+  // RUNTIME ONLY, never in a map file: set on an item the party dropped from its inventory (the id of the
+  // drop - see game/dropItem.ts); the played map carries it appended to its items
+  dropped?: number;
 }
 
 // A lift cabin: the cell behind a lift door. Its button (a decal with the

@@ -225,6 +225,17 @@ export function storyEvent(event: string, arg?: string) {
   apply(e.dispatch(event, arg));
 }
 
+/**
+ * The inventory lost something the story did not take itself (an item dropped on the ground): a quest whose
+ * `readyWhen` counted it is no longer ready. No event is raised (it is not a pick-up).
+ */
+export function storyInventoryChanged() {
+  const e = ensure();
+  if (!e || e.state.ended) return;
+  const changed = e.refreshQuests();
+  if (changed.length) apply(changed);
+}
+
 // ---- the debug panel ----
 
 export interface StoryDebug {

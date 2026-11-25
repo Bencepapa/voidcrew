@@ -19,6 +19,7 @@ export const RELEASES: Release[] = [
     date: "2026-11-23",
     items: [
       { title: "Tűz-, méreg- és előhívó csapdák", text: "A kar, gomb és nyomólap tűz- vagy mérgező füst-kibocsátót kapcsolhat be, NPC-ket idézhet meg, tárgyat vagy aranyat adhat; a tűz fajtája és színe állítható." },
+      { title: "Zárható ládák és kulcsok", text: "Ládák, tárolók és karok is zárhatók kulccsal: a kulcs egy felvehető tárgy, a zár üzenete és a kulcs elhasználása állítható." },
       { title: "Gradiens égbolt", text: "Kültéri pályákhoz kép nélküli, színátmenetes égbolt választható a pálya beállításaiban." },
       { title: "Működtethető elemek", text: "Kar, gomb, nyomólap és csapda rakható le, amelyek ajtót nyitnak vagy a csapatot támadják; az ajtókhoz kulcs is megadható." },
       { title: "Felvétel, Play gomb és tesztelési segédletek", text: "A tárgyak kattintással vagy húzással (hátizsákra, kézre, karakterre) is felvehetők, a szerkesztő békés módban indul (ellenfelek és csapdák kikapcsolva), a Play gomb élesíti őket, és szerkesztés közben a csapat halála nem dob ki a pályáról." },
@@ -34,6 +35,7 @@ export const RELEASES: Release[] = [
       { title: "Területek másolása", text: "A kijelölt terület minden eleme (falak, tárgyak, ajtók, tetők, kerítések) másolható, elforgatható és beilleszthető, akár másik pályába is." },
       { title: "Új tetőformák", text: "A tető eszközzel gúla (akár 1x1-es toronysüveg) és keskeny, hosszú házra való nyeregtető is építhető." },
       { title: "Égbolt feltöltése", text: "Az Assets managerben 2:1 arányú panorámaképet tölthetsz fel égboltnak, és a pálya beállításaiban kiválaszthatod." },
+      { title: "Tárgy eldobása", text: "A hátizsákból a nézetre húzva vagy a Drop gombbal eldobhatod a tárgyat a földre; nyomólapon fekve ajtót tarthat nyitva." },
     ],
   },
 ];

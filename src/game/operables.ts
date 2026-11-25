@@ -297,7 +297,7 @@ export interface OperableContext {
   party: Vec2 | null;
   // whether a door cell's door is open
   doorOpen: (cell: Vec2) => boolean;
-  // how many items lie on a cell (a plate answers to them too; none can be put down in the world yet)
+  // how many items the party dropped lie on a cell (see dropItem.ts): a plate answers to them as to the party (a trap cell does not)
   itemsOn?: (cell: Vec2) => number;
   // whether a reward was paid before (kept for the whole run, not only this deck's visit)
   rewarded?: (key: string) => boolean;
@@ -474,8 +474,8 @@ export function tick(map: OperableMap, state: OperableState, ctx: OperableContex
   return { state: s, effects };
 }
 
-// Whether the party (or an item) is on each plate and trap cell: call it when the party moves and when items are put
-// down or taken away.
+// Whether the party (or, for a plate, an item) is on each plate and trap cell: call it when the party moves and when
+// items are put down or taken away.
 export function evaluatePlates(map: OperableMap, state: OperableState, ctx: OperableContext): Step {
   const sources = operableSources(map);
   const s = copy(state);
@@ -483,7 +483,8 @@ export function evaluatePlates(map: OperableMap, state: OperableState, ctx: Oper
   for (const source of sources) {
     if (source.kind !== "plate" && source.kind !== "trapcell") continue;
     const key = source.key;
-    const active = (!!ctx.party && same(ctx.party, source.cell)) || (ctx.itemsOn?.(source.cell) ?? 0) > 0;
+    // (an item lying on a plate presses it; a trap cell answers to the party alone - an item dropped on it must not fire it)
+    const active = (!!ctx.party && same(ctx.party, source.cell)) || (source.kind === "plate" && (ctx.itemsOn?.(source.cell) ?? 0) > 0);
     const was = !!s.on[key];
     if (source.kind === "plate") {
       if (holdsEffect(source)) {

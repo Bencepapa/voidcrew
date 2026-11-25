@@ -25,6 +25,7 @@ import { describeTarget } from "./editor/operableTargetText";
 import { jetYawFor } from "./game/emitterPresets";
 import { operableArea } from "./editor/operableArea";
 import { operableLink } from "./editor/operableLink";
+import { propLockInfo } from "./editor/lockEdits";
 import { keyFlags } from "./game/keys";
 import { useGameState } from "./game/useGameState";
 import { GameViewport, DEFAULT_SETTINGS } from "./components/GameViewport";
@@ -115,6 +116,7 @@ import { ActionMenu } from "./components/ActionMenu";
 import { InventoryPanel } from "./components/InventoryPanel";
 import { worldPause } from "./game/worldPause";
 import { DragGhost } from "./components/InventorySlots";
+import { setInventoryDropHandler } from "./game/worldDropHandler";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { KeypadPanel } from "./components/KeypadPanel";
 import { AlertMeter } from "./components/AlertMeter";
@@ -163,6 +165,7 @@ export default function App() {
     elevation,
     jumpDown,
     use: useBase,
+    dropInventoryItem,
     operate,
     haul,
     lootedProps,
@@ -413,6 +416,21 @@ export default function App() {
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [closeInteraction]);
+  // An item let go over the view, or dropped with the Drop button or the D key, goes to the game's dropInventoryItem
+  // (see game/dropItem.ts) - except while a dialogue, a shop or a modal message is open.
+  const dropInventoryRef = useRef(dropInventoryItem);
+  dropInventoryRef.current = dropInventoryItem;
+  useEffect(() => {
+    setInventoryDropHandler((from, qty) => {
+      const event = activeInteractionRef.current;
+      if (event && (event.kind === "dialogue" || event.kind === "shop" || (event.kind === "message" && event.modal))) {
+        pushLog(t("drop.busy"), "warn");
+        return "busy";
+      }
+      return dropInventoryRef.current(from, qty);
+    });
+    return () => setInventoryDropHandler(null);
+  }, [pushLog]);
   const openInteraction = (event: ClickEvent) => {
     if (editMode || phase !== "run" || inLift || terminal || keypad || aim || runEnd || wipedAt !== null || activeInteractionRef.current || inventoryShown) return false;
     // a lever or button: worked, no popup (see operables.ts)
@@ -2170,6 +2188,7 @@ export default function App() {
       auto: spec.auto ? { group: spec.auto, detached: !!spec.detached } : undefined,
       fence: fenceFormOf(spec.prop) ? { form: fenceFormOf(spec.prop)!, style: cleanFenceStyle(spec.fence) ?? {}, side: isSide(spec.at) ? spec.at : "N" } : undefined,
       operable: operableInfo(spec, selectedProp!, map),
+      lock: propLockInfo(map, spec),
     };
   })();
   const changeProp = (patch: Parameters<typeof updateProp>[2], merge?: string) => {
