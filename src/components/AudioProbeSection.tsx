@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { t } from "../i18n";
-import { isHrtf, isRearDull, playAt, playMany, playOrbit, probeStatus, relative, setHrtf, setRearDull, stopAllProbes, type ProbeStatus } from "../audio/audioProbe";
+import { playAt, playMany, playOrbit, probeStatus, relative, stopAllProbes, type ProbeStatus } from "../audio/audioProbe";
+import { isHrtf, isRearDull, setHrtf, setRearDull } from "../audio/engine";
 
-// The Debug panel's "Hang (próba)" section: the Howler spike's buttons (see src/audio/audioProbe.ts). Each sound stays
-// where it was put in the world, so turning and walking should move it in the stereo field.
+// The Debug panel's "Sound (probe)" section: test voices put at places round the listener (see src/audio/audioProbe.ts).
+// Each stays where it was put in the world, so turning and walking should move it in the stereo field.
 const BUTTON = "text-[11px] border border-neutral-600 rounded-sm px-2 py-1 hover:bg-neutral-800 text-left";
 
 export function AudioProbeSection() {
@@ -28,10 +29,10 @@ export function AudioProbeSection() {
         <button type="button" className={BUTTON} onClick={run(() => playAt(relative(0, -3)))}>{t("debug.audioLeft")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playAt(relative(-3, 0)))}>{t("debug.audioBehind")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playOrbit())}>{t("debug.audioOrbit")}</button>
-        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), muffle: 300 }))}>{t("debug.audioMuffled")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), walls: 3 }))}>{t("debug.audioMuffled")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), noise: true }))}>{t("debug.audioNoiseAhead")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(-3, 0), noise: true }))}>{t("debug.audioNoiseBehind")}</button>
-        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), noise: true, muffle: 800 }))}>{t("debug.audioNoiseMuffled")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), noise: true, walls: 2 }))}>{t("debug.audioNoiseMuffled")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playMany(20))}>{t("debug.audioMany")}</button>
         <button type="button" className={BUTTON} onClick={run(() => stopAllProbes())}>{t("debug.audioStop")}</button>
       </div>

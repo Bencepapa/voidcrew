@@ -89,7 +89,7 @@ import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import { doorLeafMotion, type DoorType } from "../game/doorTypes";
 import { onSharedDecalsChanged, onSharedImagesChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
 import { isSharedSkyId, skySource } from "../game/skyImage";
-import { setListener as setAudioListener } from "../audio/audioProbe";
+import { gameSound } from "../audio/gameSound";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
@@ -261,7 +261,7 @@ export interface AimFocus {
 // drag's first step, the drag (one undo step each), and for those that slide
 // on a level (props on a floor, lights, robots, doors) where the spot they
 // were grabbed by is taken to (world x, z); `drop`: a door let go of.
-export type EditDragKind = "prop" | "decal" | "item" | "smoke" | "light" | "actor" | "door";
+export type EditDragKind = "prop" | "decal" | "item" | "smoke" | "sound" | "light" | "actor" | "door";
 export interface EditDrag {
   kind: EditDragKind;
   index: number;
@@ -300,6 +300,8 @@ export interface EditTarget {
   item?: number;
   // the Smoke tool: the emitter pointed at (its index in the map's smokes)
   smoke?: number;
+  // the Sound tool: the sound emitter's marker pointed at (its index in the map's sounds)
+  sound?: number;
   // the point hit, exactly: its cell, and across, up (wall heights above
   // the cell's floor) and along from the cell's center - where an item goes
   point?: { cell: Vec2; pos: [number, number, number] };
@@ -1087,7 +1089,7 @@ const EDIT_PAINT_COLOR = 0x60ff80;
 const EDIT_LIGHT_ADD_COLOR = 0xffe040;
 const EDIT_SELECT_COLOR = 0x80f0ff;
 // the editor tools whose layer can be locked (and the layer each edits)
-const TOOL_LAYER: Partial<Record<EditTool, string>> = { texture: "texture", light: "light", prop: "prop", roofauto: "prop", fenceblock: "prop", fenceedge: "prop", fencemid: "prop", decal: "decal", robot: "robot", item: "item", smoke: "smoke" };
+const TOOL_LAYER: Partial<Record<EditTool, string>> = { texture: "texture", light: "light", prop: "prop", roofauto: "prop", fenceblock: "prop", fenceedge: "prop", fencemid: "prop", decal: "decal", robot: "robot", item: "item", smoke: "smoke", sound: "sound" };
 // the tools that work by strokes (a button held while the pointer crosses cells): the roof and the fences
 const STROKE_TOOLS: ReadonlySet<EditTool> = new Set<EditTool>(["roofauto", "fenceblock", "fenceedge", "fencemid"]);
 // how far off a surface a free-standing light is placed (world units)
@@ -1240,6 +1242,10 @@ interface GameViewportProps {
   selectedItem?: number | null;
   // the Smoke tool's selected emitter (its index in the map's smokes)
   selectedSmoke?: number | null;
+  // the Sound tool's selected sound emitter (its index in the map's sounds)
+  selectedSound?: number | null;
+  // the sound emitter (its index) the editor's Listen button plays - the only one heard while editing
+  previewSound?: number | null;
   // the surface under the pointer whenever it changes - the editor's
   // texture palette follows it
   onEditHover?: (target: EditTarget | null) => void;
@@ -1635,6 +1641,8 @@ export function GameViewport({
   selectedEvent,
   selectedItem,
   selectedSmoke,
+  selectedSound,
+  previewSound,
   selectedDecal,
   selectedDoor,
   selectedLink,
@@ -1797,6 +1805,8 @@ export function GameViewport({
   selectedItemRef.current = selectedItem ?? null;
   const selectedSmokeRef = useRef(selectedSmoke ?? null);
   selectedSmokeRef.current = selectedSmoke ?? null;
+  const selectedSoundRef = useRef(selectedSound ?? null);
+  selectedSoundRef.current = selectedSound ?? null;
   const selectedDecalRef = useRef(selectedDecal ?? null);
   selectedDecalRef.current = selectedDecal ?? null;
   const selectedDoorRef = useRef(selectedDoor ?? null);
@@ -1937,6 +1947,39 @@ export function GameViewport({
   useEffect(() => {
     if (map !== sceneMap) applyLightsRef.current?.(map);
   }, [map, sceneMap]);
+
+  // The map's sound emitters (see audio/soundSystem.ts): the game plays them; the editor is silent but for the
+  // preview. A sound is heard, not built, so a change to them never touches the scene - the audio system takes it in
+  // place. (The little viewport that previews a door does not speak for the game.)
+  const soundWallHeight = settings.wallHeight;
+  useEffect(() => {
+    if (doorPreview) return;
+    gameSound.setScene({
+      sounds: map.sounds ?? [],
+      // a wall, the map's edge or a shut door stops sound
+      blocked: (x, y) => {
+        const cell = cellAt(map, x, y);
+        return cell === "wall" || (cell === "door" && !openDoorsRef.current.has(`${x},${y}`));
+      },
+      floorHeight: (x, y) => floorHeight(map, x, y),
+      wallHeight: soundWallHeight,
+    });
+  }, [map, soundWallHeight, doorPreview]);
+  useEffect(() => {
+    if (!doorPreview) gameSound.invalidate();
+  }, [openDoors, doorPreview]);
+  useEffect(() => {
+    if (doorPreview) return;
+    gameSound.setEditing(!!editMode);
+    gameSound.setPreview(editMode ? previewSound ?? null : null);
+  }, [editMode, previewSound, doorPreview]);
+  // (the viewport goes: its sounds stop)
+  useEffect(
+    () => () => {
+      if (!doorPreview) gameSound.setScene(null);
+    },
+    [doorPreview],
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -4951,6 +4994,47 @@ export function GameViewport({
       sceneVersion++;
     });
 
+    // ---- sound emitters (see sounds.ts): a marker at each for the editor to pick it by, shown only while editing
+    // (nothing of them is built into the deck: they are heard, see audio/soundSystem.ts) ----
+    const soundMarkers = new Map<number, THREE.Mesh>();
+    const soundMarkerGeo = new THREE.SphereGeometry(0.05, 12, 8);
+    geometries.push(soundMarkerGeo);
+    const soundMarkerMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf });
+    // the range, as a ring on the floor under the selected one
+    const soundRingMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.55, depthTest: false, side: THREE.DoubleSide, fog: false });
+    const clearSoundMarkers = () => {
+      for (const marker of soundMarkers.values()) {
+        group.remove(marker);
+        marker.traverse((o) => {
+          if (o.userData.soundRing) (o as THREE.Mesh).geometry.dispose();
+        });
+      }
+      soundMarkers.clear();
+    };
+    const buildSoundMarkers = (m: GameMap) => {
+      clearSoundMarkers();
+      (m.sounds ?? []).forEach((spec, index) => {
+        const marker = new THREE.Mesh(soundMarkerGeo, soundMarkerMat);
+        const floor = floorY(spec.x, spec.y);
+        marker.position.set(spec.x + (spec.pos?.[0] ?? 0), (floorHeight(m, spec.x, spec.y) + (spec.pos?.[1] ?? 0.5)) * wallHeight, spec.y + (spec.pos?.[2] ?? 0));
+        marker.userData.soundIndex = index;
+        marker.userData.item = true;
+        marker.visible = false;
+        const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.01, spec.range - 0.06), spec.range, 96), soundRingMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = floor - marker.position.y + 0.04;
+        ring.renderOrder = 9;
+        // (not pickable: a click on it is a click on the floor under it)
+        ring.raycast = () => {};
+        ring.userData.soundRing = true;
+        ring.visible = false;
+        marker.add(ring);
+        group.add(marker);
+        soundMarkers.set(index, marker);
+      });
+    };
+    buildSoundMarkers(map);
+
     // ---- exits: a glowing plate on the floor of each way off the ship ----
     const exitMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(), transparent: true, depthWrite: false, fog: true });
     const gateMat = new THREE.MeshBasicMaterial({ map: makeExitMarker(true), transparent: true, depthWrite: false, fog: true });
@@ -5866,6 +5950,8 @@ export function GameViewport({
           sceneVersion++;
         }
       }
+      // (the sounds' markers only: the sounds themselves are the audio system's)
+      if (JSON.stringify(next.sounds) !== JSON.stringify(applied.sounds)) buildSoundMarkers(next);
       if (renderedSpecs(next.decals) !== renderedSpecs(applied.decals) && settingsRef.current.decalsEnabled) {
         // (decals: redone on the surfaces already there)
         track(decals.reset(next.decals ?? []));
@@ -7100,6 +7186,8 @@ export function GameViewport({
           return u.itemIndex === d.index;
         case "smoke":
           return u.smokeIndex === d.index;
+        case "sound":
+          return u.soundIndex === d.index;
         case "light":
           return u.mapLight === d.index;
         case "actor":
@@ -7200,7 +7288,7 @@ export function GameViewport({
       if (tool === "select" && pickEventMarker(press.ndc)) return;
       // each tool grabs only its own kind of thing; Select any kind, the nearest
       let kind: EditDragKind | null =
-        tool === "prop" || tool === "decal" || tool === "item" || tool === "smoke" || tool === "light" || tool === "door"
+        tool === "prop" || tool === "decal" || tool === "item" || tool === "smoke" || tool === "sound" || tool === "light" || tool === "door"
           ? tool
           : tool === "robot"
             ? "actor"
@@ -7209,7 +7297,7 @@ export function GameViewport({
       const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
       if (!hit) return;
       if (tool === "select")
-        kind = hit.actor !== undefined ? "actor" : hit.item !== undefined ? "item" : hit.prop !== undefined ? "prop" : hit.decal !== undefined ? "decal" : hit.light !== undefined ? "light" : hit.smoke !== undefined ? "smoke" : null;
+        kind = hit.actor !== undefined ? "actor" : hit.item !== undefined ? "item" : hit.prop !== undefined ? "prop" : hit.decal !== undefined ? "decal" : hit.light !== undefined ? "light" : hit.smoke !== undefined ? "smoke" : hit.sound !== undefined ? "sound" : null;
       if (!kind) return;
       let index: number | undefined;
       let door: Vec2 | undefined;
@@ -7217,6 +7305,7 @@ export function GameViewport({
       else if (kind === "decal") index = hit.decal;
       else if (kind === "item") index = hit.item;
       else if (kind === "smoke") index = hit.smoke;
+      else if (kind === "sound") index = hit.sound;
       else if (kind === "actor") index = hit.actor;
       else if (kind === "light") {
         // a bulb or a lamp panel; or a ceiling with its lamp in it (a lit
@@ -7581,6 +7670,7 @@ export function GameViewport({
         if (u.itemIndex !== undefined) return "item";
         if (u.actorId !== undefined) return "robot";
         if (u.smokeIndex !== undefined) return "smoke";
+        if (u.soundIndex !== undefined) return "sound";
         if (u.mapLight !== undefined) return "light";
       }
       return undefined;
@@ -7602,7 +7692,7 @@ export function GameViewport({
         for (const hit of intersections) {
           if (!hit.face || !drawnChain(hit.object) || seeThrough(hit.object)) continue;
           const layer = objectLayer(hit.object);
-          if (layer === "light" || layer === "smoke" || layer === "actor" || layer === "decal") continue;
+          if (layer === "light" || layer === "smoke" || layer === "sound" || layer === "actor" || layer === "decal") continue;
           // Nudge off vertical faces into the adjacent open cell.
           editNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
           const x = hit.point.x + editNormal.x * 0.05;
@@ -7659,6 +7749,13 @@ export function GameViewport({
         const at = hits.find((h) => h.object.userData.smokeIndex !== undefined);
         const spec = at && latestMapRef.current.smokes?.[at.object.userData.smokeIndex as number];
         if (at && spec) return { kind: "floor", cell: { ...spec.cell }, smoke: at.object.userData.smokeIndex as number };
+      }
+      // the Sound tool: a sound emitter's marker pointed at
+      // (as near as the nearest thing: a marker behind a wall is not the one a click is meant for)
+      if (editToolRef.current === "sound" || selecting) {
+        const at = hits.find((h) => h.object.userData.soundIndex !== undefined && h.distance <= hit.distance + 0.25);
+        const spec = at && latestMapRef.current.sounds?.[at.object.userData.soundIndex as number];
+        if (at && spec) return { kind: "floor", cell: { x: spec.x, y: spec.y }, sound: at.object.userData.soundIndex as number };
       }
       // the Item tool: an item pointed at
       if (editToolRef.current === "item" || selecting || operableLink.active()) {
@@ -7880,6 +7977,16 @@ export function GameViewport({
         selectBox.visible = true;
         return;
       }
+      // a selected sound emitter: framed around its marker
+      const soundIndex = editModeRef.current ? selectedSoundRef.current : null;
+      const soundMarker = soundIndex === null ? undefined : soundMarkers.get(soundIndex);
+      if (soundMarker) {
+        // (not frameObject: the range ring under it is part of the marker, and would be framed too)
+        selectBox.position.copy(soundMarker.position);
+        selectBox.scale.setScalar(0.16);
+        selectBox.visible = true;
+        return;
+      }
       // a selected item: framed around its sprite
       const itemIndex = editModeRef.current ? selectedItemRef.current : null;
       const itemObj = itemIndex === null ? undefined : looseItems.get(itemIndex)?.obj;
@@ -7942,12 +8049,12 @@ export function GameViewport({
       // dev: what's under the pointer, for the console and tests
       if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewEditTarget: target });
       const tool = editToolRef.current;
-      let mode: "wall" | "plate" | "face" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | "smoke" | null = null;
+      let mode: "wall" | "plate" | "face" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | "smoke" | "sound" | null = null;
       let color = EDIT_FILL_COLOR;
       if (target) {
         if (tool === "select") {
           // any kind pointed at: the nearest, as a click would pick it
-          mode = target.actor !== undefined ? "actor" : target.item !== undefined ? "item" : target.prop !== undefined ? "prop" : target.decal !== undefined ? "decal" : target.light !== undefined ? "bulb" : target.smoke !== undefined ? "smoke" : null;
+          mode = target.actor !== undefined ? "actor" : target.item !== undefined ? "item" : target.prop !== undefined ? "prop" : target.decal !== undefined ? "decal" : target.light !== undefined ? "bulb" : target.smoke !== undefined ? "smoke" : target.sound !== undefined ? "sound" : null;
           color = EDIT_LIGHT_ADD_COLOR;
         } else if (tool === "texture") {
           mode = target.face ? "face" : target.kind === "wall" ? "wall" : "plate";
@@ -7970,6 +8077,15 @@ export function GameViewport({
         } else if (tool === "smoke") {
           mode = target.smoke !== undefined ? "smoke" : null;
           color = EDIT_LIGHT_ADD_COLOR;
+        } else if (tool === "sound") {
+          // a marker pointed at is picked; any other floor or ceiling gets a new emitter in its cell
+          if (target.sound !== undefined) {
+            mode = "sound";
+            color = EDIT_LIGHT_ADD_COLOR;
+          } else if (target.kind !== "wall") {
+            mode = "plate";
+            color = EDIT_LIGHT_ADD_COLOR;
+          }
         } else if (tool === "light") {
           // a light hangs in the cell's ceiling, so either surface of it works
           if (target.light !== undefined) {
@@ -8017,6 +8133,12 @@ export function GameViewport({
       } else if (mode === "smoke") {
         const marker = smokeMarkers.get(target.smoke!);
         if (marker) frameObject(editBox, marker, 0.03);
+      } else if (mode === "sound") {
+        const marker = soundMarkers.get(target.sound!);
+        if (marker) {
+          editBox.position.copy(marker.position);
+          editBox.scale.setScalar(0.14);
+        }
       } else if (mode === "decal") {
         selectBounds.makeEmpty();
         for (const obj of group.children) {
@@ -8573,6 +8695,12 @@ export function GameViewport({
         const picked = marker.userData.smokeIndex === selectedSmokeRef.current;
         for (const child of marker.children) if (child.userData.fogShape) child.visible = picked;
       }
+      for (const marker of soundMarkers.values()) {
+        marker.visible = editModeRef.current && !hiddenLayersRef.current.has("sound");
+        // (the range shows while its emitter is the one selected)
+        const picked = marker.userData.soundIndex === selectedSoundRef.current;
+        for (const child of marker.children) if (child.userData.soundRing) child.visible = picked;
+      }
       syncFenceMarkers();
       // the exits' plates throb
       exitMat.opacity = gateMat.opacity = 0.75 + 0.25 * Math.sin(gameNow / 420);
@@ -8583,8 +8711,15 @@ export function GameViewport({
       updatePartyCover(camX, cam.y * wallHeight, camZ, s.eyeHeight);
       if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ);
       else if (aimFrameRef.current) aimFrameRef.current = null;
-      // (the ears: where the party's eye is and which way it looks - see audio/audioProbe.ts)
-      setAudioListener(camX, eyeY, camZ, fwdX / fwdLen, fwdZ / fwdLen);
+      // (the ears: where the party's eye is and which way it looks - see audio/soundSystem.ts)
+      // (in the editor's top-down view it is the spot looked at: the camera floats high above the map)
+      if (!doorPreview) {
+        gameSound.frame(
+          topdown.on
+            ? { x: topdown.x, y: floorY(Math.round(topdown.x), Math.round(topdown.z)) + s.eyeHeight, z: topdown.z, fx: Math.sin(topdown.yaw), fz: -Math.cos(topdown.yaw) }
+            : { x: camX, y: eyeY, z: camZ, fx: fwdX / fwdLen, fz: fwdZ / fwdLen },
+        );
+      }
       updateLightPool(
         topdown.on ? { x: topdown.x, z: topdown.z } : { x: cam.x, z: cam.z },
         topdown.on
@@ -8830,6 +8965,9 @@ export function GameViewport({
       smoke.dispose();
       fire.dispose();
       smokeMarkerMat.dispose();
+      clearSoundMarkers();
+      soundMarkerMat.dispose();
+      soundRingMat.dispose();
       fogRingMat.dispose();
       fogHeightMat.dispose();
       smokeBlowMat.dispose();

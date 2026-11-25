@@ -16,6 +16,7 @@ import { storyEnabled } from "../game/story/storyRuntime";
 import { PlayToggle } from "./PlayToggle";
 import { StoryDebugSection } from "./StoryDebugSection";
 import { AudioProbeSection } from "./AudioProbeSection";
+import { SoundSection } from "./SoundSection";
 import { SharedCacheDebugSection } from "./SharedCacheDebugSection";
 import { parsePickupMode, worldDefaultPickup } from "../game/pickupMode";
 import { setEnemiesOff, setStoredPickupMode, useEnemiesOff, useStoredPickupMode } from "../game/playPrefs";
@@ -619,6 +620,8 @@ export function DebugPanel({
       )}
 
       {sharedConfigured && section(t("debug.swTitle"), <SharedCacheDebugSection />)}
+
+      {section(t("sound.section"), <SoundSection />)}
 
       {section(t("debug.audioProbe"), <AudioProbeSection />)}
 

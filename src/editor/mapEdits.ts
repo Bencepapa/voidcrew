@@ -39,6 +39,7 @@ export type EditTool =
   | "robot"
   | "item"
   | "smoke"
+  | "sound"
   | "exit"
   | "stairs"
   | "restricted"
@@ -375,7 +376,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
     p.y += dy;
   };
   move(file.start);
-  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions, file.exits, file.stairs]) {
+  for (const list of [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.sounds, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions, file.exits, file.stairs]) {
     for (const item of list ?? []) move(item);
   }
   for (const actor of file.actors ?? []) {
@@ -386,7 +387,7 @@ function shiftAll(file: MapFile, dx: number, dy: number) {
 
 // every position on the map (to check a strip being cut off is empty)
 function allPositions(file: MapFile): { x: number; y: number }[] {
-  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions, file.exits, file.stairs];
+  const lists = [file.doors, file.lifts, file.ladders, file.bridges, file.lights, file.sounds, file.windows, file.props, file.decals, file.faceTextures, file.chanceWalls, file.wallInteractions, file.exits, file.stairs];
   return [
     file.start,
     ...lists.flatMap((list) => (list ?? []) as { x: number; y: number }[]),
@@ -634,6 +635,38 @@ export function removeSmoke(file: MapFile, index: number): MapFile {
   return file;
 }
 
+type SoundEntry = NonNullable<MapFile["sounds"]>[number];
+
+// The map's sound emitters (see SoundSpec): put one in, change one, take one out. A key of the patch that is
+// undefined is taken off the sound (back to its default); one that doesn't belong to its kind goes with a change of kind.
+export function addSound(file: MapFile, sound: SoundEntry): MapFile {
+  (file.sounds ?? (file.sounds = [])).push(sound);
+  return file;
+}
+
+export function updateSound(file: MapFile, index: number, patch: Partial<SoundEntry>): MapFile {
+  const sound = file.sounds?.[index];
+  if (!sound) return file;
+  const next = { ...sound, ...patch } as Record<string, unknown>;
+  for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
+  if ("kind" in patch) {
+    if (next.kind === "tone") delete next.noise;
+    else {
+      delete next.wave;
+      delete next.pitch;
+    }
+  }
+  file.sounds![index] = next as unknown as SoundEntry;
+  return file;
+}
+
+export function removeSound(file: MapFile, index: number): MapFile {
+  if (!file.sounds?.[index]) return file;
+  file.sounds.splice(index, 1);
+  if (!file.sounds.length) delete file.sounds;
+  return file;
+}
+
 // ---- areas: what the zoomed minimap's selection does to all its cells at once
 
 // a block of cells, corners included
@@ -650,7 +683,7 @@ export function rectCells(rect: Rect): Vec2[] {
   return cells;
 }
 
-const PLACED_LISTS = ["doors", "exits", "stairs", "smokes", "items", "chanceWalls", "ladders", "bridges", "lights", "props", "actors", "decals", "faceTextures", "wallInteractions"] as const;
+const PLACED_LISTS = ["doors", "exits", "stairs", "smokes", "sounds", "items", "chanceWalls", "ladders", "bridges", "lights", "props", "actors", "decals", "faceTextures", "wallInteractions"] as const;
 
 export function setInteraction(file: MapFile, map: Parameters<typeof doorAt>[0], target: InteractionTarget, interaction?: Interaction): MapFile {
   switch (target.kind) {
