@@ -3,6 +3,7 @@ import { t } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
 import { NumberField } from "../NumberField";
 import { CommitContext, KindChoice, Section, BUTTON, idle, active } from "./parts";
+import { DEFAULT_INTERVAL, DEFAULT_SAMPLE, SAMPLES, SAMPLE_IDS, isSampleId, samplePatch, type SampleId } from "../../audio/samples";
 import { NOISE_COLORS, SOUND_KINDS, SOUND_LIMITS, SOUND_WAVES, changePulse, type NoiseColor, type SoundKind, type SoundWave } from "../../game/sounds";
 
 // a pitch is felt in octaves: the slider runs along the logarithm of the frequency
@@ -27,9 +28,40 @@ export function SoundFields(p: EditorBarProps & { placing?: boolean }) {
           label={t("sound.kind")}
           value={s.kind}
           options={SOUND_KINDS.map((value) => ({ value, label: t(`sound.kind.${value}`) }))}
-          onChange={(kind) => change({ kind: kind as SoundKind })}
+          onChange={(kind) => change(kind === "sample" ? samplePatch(isSampleId(s.sample) ? s.sample : DEFAULT_SAMPLE, s.interval) : { kind: kind as SoundKind })}
         />
-        {s.kind === "tone" ? (
+        {s.kind === "sample" ? (
+          <>
+            <label className="flex min-w-0 items-center gap-1">
+              {t("sound.sample")}
+              <select
+                aria-label={t("sound.sample")}
+                value={s.sample}
+                onChange={(e) => change(samplePatch(e.target.value as SampleId, s.interval))}
+                onBlur={commit}
+                className="min-w-0 flex-1 bg-neutral-800 border border-neutral-700 px-1"
+              >
+                {!isSampleId(s.sample) && <option value={s.sample}>{t("sound.sampleUnknown", { id: s.sample || "-" })}</option>}
+                {SAMPLE_IDS.map((id) => (
+                  <option key={id} value={id}>{t(`sound.sample.${id}`)}</option>
+                ))}
+              </select>
+            </label>
+            {num(t("sound.rate"), s.rate, SOUND_LIMITS.rate.min, SOUND_LIMITS.rate.max, 0.05, (rate) => change({ rate: rate === SOUND_LIMITS.rate.default ? undefined : rate }), { title: t("sound.rateHint"), defaultValue: SOUND_LIMITS.rate.default })}
+            {isSampleId(s.sample) && SAMPLES[s.sample].loop ? (
+              <span className="text-neutral-500">{t("sound.loopsHint")}</span>
+            ) : (
+              <>
+                <label className="flex items-center gap-1" title={t("sound.pauseHint")}>
+                  <input type="checkbox" checked={!!s.interval} onChange={(e) => change({ interval: e.target.checked ? { ...DEFAULT_INTERVAL } : undefined })} />
+                  {t("sound.pause")}
+                </label>
+                {s.interval && num(t("sound.pauseMin"), s.interval.min, SOUND_LIMITS.interval.min, 120, 0.5, (min) => change({ interval: { min, max: Math.max(min, s.interval!.max) } }), { defaultValue: DEFAULT_INTERVAL.min })}
+                {s.interval && num(t("sound.pauseMax"), s.interval.max, SOUND_LIMITS.interval.min, 120, 0.5, (max) => change({ interval: { min: Math.min(max, s.interval!.min), max } }), { defaultValue: DEFAULT_INTERVAL.max })}
+              </>
+            )}
+          </>
+        ) : s.kind === "tone" ? (
           <>
             <KindChoice
               label={t("sound.wave")}
@@ -64,16 +96,18 @@ export function SoundFields(p: EditorBarProps & { placing?: boolean }) {
         {num(t("sound.volumeField"), s.volume, 0, 1, 0.05, (volume) => change({ volume }), { defaultValue: SOUND_LIMITS.volume.default })}
         {num(t("sound.range"), s.range, 1, SOUND_LIMITS.range.max, 0.5, (range) => change({ range }), { title: t("sound.rangeHint"), defaultValue: SOUND_LIMITS.range.default })}
         {num(t("sound.rolloff"), s.rolloff, SOUND_LIMITS.rolloff.min, SOUND_LIMITS.rolloff.max, 0.1, (rolloff) => change({ rolloff: rolloff === 1 ? undefined : rolloff }), { title: t("sound.rolloffHint"), defaultValue: SOUND_LIMITS.rolloff.default })}
-        <KindChoice
-          label={t("sound.repeat")}
-          value={s.pulse ? "pulse" : "loop"}
-          options={[
-            { value: "loop", label: t("sound.repeat.loop") },
-            { value: "pulse", label: t("sound.repeat.pulse") },
-          ]}
-          onChange={(mode) => change({ pulse: mode === "pulse" ? { on: 0.3, off: 0.7 } : undefined })}
-        />
-        {s.pulse && (
+        {s.kind !== "sample" && (
+          <KindChoice
+            label={t("sound.repeat")}
+            value={s.pulse ? "pulse" : "loop"}
+            options={[
+              { value: "loop", label: t("sound.repeat.loop") },
+              { value: "pulse", label: t("sound.repeat.pulse") },
+            ]}
+            onChange={(mode) => change({ pulse: mode === "pulse" ? { on: 0.3, off: 0.7 } : undefined })}
+          />
+        )}
+        {s.kind !== "sample" && s.pulse && (
           <>
             {num(t("sound.on"), s.pulse.on, 0.05, 10, 0.05, (on) => change({ pulse: changePulse(s.pulse!, { on }) }))}
             {num(t("sound.off"), s.pulse.off, 0.05, 10, 0.05, (off) => change({ pulse: changePulse(s.pulse!, { off }) }))}

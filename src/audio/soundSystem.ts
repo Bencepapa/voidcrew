@@ -5,12 +5,14 @@
 // distances, the voices' places) every frame.
 import { pulseOn, resolveSound, waveKey, type SoundSpec, type ResolvedSound } from "../game/sounds";
 import { stereoPan } from "./stereo";
+import { isSampleId } from "./samples";
 import { NO_PLACE, type Place } from "./acoustics";
 import { createRoomTracker, wallInsulation, wetSend } from "./roomMix";
 import { MAX_SOURCES, planSources, voiceTargets, type Blocked, type Emitter, type Listener, type SourcePlan } from "./soundField";
 
 // what the backend plays: a looping wave (see ResolvedSound)
-export type WaveSpec = Pick<ResolvedSound, "kind" | "wave" | "pitch" | "noise">;
+// (a sample's id and speed are there for kind "sample"; the generated kinds leave them off)
+export type WaveSpec = Pick<ResolvedSound, "kind" | "wave" | "pitch" | "noise"> & Partial<Pick<ResolvedSound, "sample" | "rate">>;
 
 // One voice's state, for the backend to take on: where it seems to be (world, cells), its loudness before the pulse
 // and the pulse's gate (0 or 1: the backend smooths the edges), and how the walls dull it.
@@ -45,6 +47,10 @@ export interface SoundBackend<H = unknown> {
   setListener(listener: Listener): void;
   // the room the listener is in (its echo): told when it changes, and when the numbers of the same room do
   setRoom?(place: Place): void;
+  // A one-shot sample voice that has played to its end (it stays silent and keeps its place in the pool) ...
+  finished?(voice: H): boolean;
+  // ... and plays it again from the start (the system calls it when the pause between plays is over).
+  replay?(voice: H): void;
 }
 
 // the acoustics of a cell of the map (see acoustics.ts zoneAt)
@@ -69,6 +75,8 @@ export interface SoundSystemOptions {
   max?: number;
   // how long the plans last without the listener changing cells (seconds)
   refreshEvery?: number;
+  // 0..1 (the random pauses between a one-shot's plays; a test fixes it)
+  random?: () => number;
 }
 
 export interface SoundSystem {
@@ -99,6 +107,10 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
   const now = options.now ?? (() => performance.now() / 1000);
   const max = options.max ?? MAX_SOURCES;
   const refreshEvery = options.refreshEvery ?? 0.2;
+  const random = options.random ?? Math.random;
+  // The pause after a one-shot sample (an emitter's id) has played out: when it plays again. The emitter's voices (the
+  // direct one and the doorway's) are replayed together.
+  const replayAt = new Map<number, number>();
 
   let scene: SoundScene | null = null;
   let editing = false;
@@ -126,6 +138,7 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
   const stopAll = () => {
     for (const key of [...voices.keys()]) stopVoice(key);
     plans = [];
+    replayAt.clear();
   };
 
   // the emitters that may sound now, in the world
@@ -136,6 +149,8 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
     sounds.forEach((spec, id) => {
       if (editing && id !== preview) return;
       const sound = resolveSound(spec);
+      // (a sample the registry does not know makes no sound; the problems list says so)
+      if (sound.kind === "sample" && !isSampleId(sound.sample)) return;
       // (the preview sounds whether the emitter is on or not)
       if (!(isOn ? isOn(id) : sound.active) && !(editing && id === preview)) return;
       out.push({
@@ -214,11 +229,13 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
         dirty = false;
       }
       const wanted = new Set<string>();
+      const sounding = new Set<number>();
       for (const plan of plans) {
         const emitter = byId.get(plan.id);
         // (an emitter edited away since the plan was made: its plan waits for the next refresh)
         if (!emitter) continue;
         const gate = pulseOn(emitter.sound.pulse, t) ? 1 : 0;
+        const handles: H[] = [];
         for (const target of voiceTargets(listener, emitter, plan)) {
           const key = `${plan.id}:${target.role}`;
           wanted.add(key);
@@ -235,6 +252,7 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
             voice = { handle, wave };
             voices.set(key, voice);
           }
+          handles.push(voice.handle);
           backend.set(voice.handle, {
             x: target.x,
             y: target.y,
@@ -249,7 +267,21 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
             send: wetSend(place.acoustics.reverb, target.distance),
           });
         }
+        // a one-shot sample with a pause: when its voices have played out, wait a random time, then play them again
+        const pause = emitter.sound.interval;
+        if (pause && handles.length) {
+          sounding.add(plan.id);
+          const due = replayAt.get(plan.id);
+          if (due === undefined) {
+            if (handles.some((h) => backend.finished?.(h))) replayAt.set(plan.id, t + pause.min + (pause.max - pause.min) * random());
+          } else if (t >= due) {
+            for (const h of handles) if (backend.finished?.(h)) backend.replay?.(h);
+            replayAt.delete(plan.id);
+          }
+        }
       }
+      // (an emitter that left the pool or lost its pause starts afresh when it comes back)
+      for (const id of [...replayAt.keys()]) if (!sounding.has(id)) replayAt.delete(id);
       for (const key of [...voices.keys()]) if (!wanted.has(key)) stopVoice(key);
     },
   };

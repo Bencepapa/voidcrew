@@ -657,10 +657,19 @@ export function updateSound(file: MapFile, index: number, patch: Partial<SoundEn
   const next = { ...sound, ...patch } as Record<string, unknown>;
   for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key];
   if ("kind" in patch) {
+    // (what belongs to another kind goes with a change of kind; a sample has no pulse)
     if (next.kind === "tone") delete next.noise;
     else {
       delete next.wave;
       delete next.pitch;
+    }
+    if (next.kind !== "sample") {
+      delete next.sample;
+      delete next.rate;
+      delete next.interval;
+    } else {
+      delete next.noise;
+      delete next.pulse;
     }
   }
   file.sounds![index] = next as unknown as SoundEntry;

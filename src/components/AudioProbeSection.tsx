@@ -29,9 +29,9 @@ export function AudioProbeSection() {
         <button type="button" className={BUTTON} onClick={run(() => playAt(relative(-3, 0)))}>{t("debug.audioBehind")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playOrbit())}>{t("debug.audioOrbit")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), walls: 3 }))}>{t("debug.audioMuffled")}</button>
-        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), noise: true }))}>{t("debug.audioNoiseAhead")}</button>
-        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(-3, 0), noise: true }))}>{t("debug.audioNoiseBehind")}</button>
-        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), noise: true, walls: 2 }))}>{t("debug.audioNoiseMuffled")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), cackle: true }, 6000))}>{t("debug.audioCackleAhead")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(-3, 0), cackle: true }, 6000))}>{t("debug.audioCackleBehind")}</button>
+        <button type="button" className={BUTTON} onClick={run(() => playAt({ ...relative(3, 0), cackle: true, walls: 2 }, 6000))}>{t("debug.audioCackleMuffled")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playMany(20))}>{t("debug.audioMany")}</button>
         <button type="button" className={BUTTON} onClick={run(() => stopAllProbes())}>{t("debug.audioStop")}</button>
       </div>

@@ -131,9 +131,47 @@ If it changes, either mend `wire` / `unwire` or replace the engine with raw Web 
   and two equal ones in a spot come from the shared placement checks.
 - i18n: `src/i18n/{en,hu}/sound.ts`.
 
+## Samples (branch `feature/sound-samples`)
+
+Real recordings replace the generated beep / hiss as what the editor puts down. `kind: "sample"` is new and additive:
+`tone` / `noise` stay in the parser and the engine, old maps play and edit as before (the Inspector's kind switch can turn
+one into a sample; the asset tree no longer lists the generated ones).
+
+```json
+{ "x": 4, "y": 2, "kind": "sample", "sample": "goblin-cackle", "rate": 1.25, "interval": { "min": 3, "max": 8 }, "volume": 0.6, "range": 6 }
+```
+
+| field | meaning |
+|---|---|
+| `sample` | id in the registry `src/audio/samples.ts` (`birds-forest`, `fire-crackle`, `fireplace-loop`, `crackling-fire`, `goblin-cackle`, `goblin-death`, `hammer`). An unknown id is **kept** in the file (it may belong to a later release) and warned of in the Problems panel (`soundSampleUnknown`); it makes no sound |
+| `rate` | playback speed = pitch, 0.5..2, default 1 (not written) |
+| `interval` | one-shot samples only: seconds of silence between a play's end and the next, a random one in `min..max` (0..600). Unset: plays once (until the voice leaves the pool and comes back). The editor writes 3..8 when a one-shot is picked. A loop never has one (dropped by `readSound`). `min > max` is kept as written and warned of (`soundIntervalOrder`); the engine swaps them |
+| `pulse` | ignored (dropped) for samples; the Inspector hides the repeat section. `volume`, `range`, `rolloff`, `active`, `id`, `pos` work as ever |
+
+- **Registry** (`samples.ts`, pure, `samples.test.ts`): `SAMPLES[id] = { name (Hungarian), file, loop, gain, category }`,
+  `sampleUrl(id, baseUrl)`, `isSampleId`, `samplePatch` (what picking a sample writes). English names: i18n `sound.sample.<id>`.
+  Loops: birds, fire-crackle, fireplace-loop, crackling-fire. One-shots: goblin-cackle, goblin-death, hammer.
+- **Files** are in `public/sounds/` (mp3, short lower-case names) and served as static files by Pages, not from the shared
+  store. Source recordings are still in `concept/snd/` (untouched).
+- **Engine** (`engine.ts`): one Howl per sample (Web Audio decoding, not html5), made lazily and **loaded at the first voice**
+  that needs it (nothing out of range ever loads); until it has loaded the voice waits silently; a load error warns once in
+  the console and the voice stays silent. The chain (pan / rear / walls / echo) is the same as for generated waves. `rate`
+  is part of the voice's key (`waveKey`), so a changed speed starts a new voice. The registry's `gain` multiplies the level.
+- **Pauses** (`soundSystem.ts`): the backend reports a one-shot voice `finished` (its Howler `end` event; the chain is taken
+  out at once so Howler can reuse the sound object) and the system schedules the `replay` after a random pause, per
+  *emitter*, so the direct voice and the doorway's voice play together. The pool of 12 and the range rule are unchanged.
+- **Loudness**: `gain` measured in the browser (decoded, mono, 50 ms windows, RMS over the windows within 30 dB of the
+  loudest): -43.7 .. -27.5 dBFS before, all brought to about -36 dBFS (birds 2.09, fire-crackle 2.2, fireplace-loop 0.77,
+  crackling-fire 0.8, goblin-cackle 0.68, goblin-death 0.38, hammer 1.43). Ears are the real test.
+- **Limits / risks**: no upload (the Assets manager part is not done); mp3 loops can have a tiny gap at the seam (mp3
+  encoder delay) - a gapless format (ogg / the files re-encoded with a loop-friendly cut) would fix it; **size**: birds-forest
+  is 5.8 MB (296 s) and fireplace-loop 5.6 MB (180 s), and Web Audio keeps the *decoded* PCM in memory (about 100 MB and 60 MB
+  at 44.1 kHz stereo float) - worth shortening to 20-40 s loops or re-encoding (mono, lower bitrate) later; crackling-fire is
+  69 s / 2.1 MB. The Pages first-play delay is the download of that file.
+
 ## Not done (on purpose)
 
-- Sound files / an asset manager for them (uploading, a library); only the two built-in kinds.
+- An asset manager for sounds (uploading, a library): the samples are built in. (Real recordings: see Samples above.)
 - Room acoustics (reverb zones, a different tone in a big hall): done later, see `NOTES-sound-zones.md`.
 - Event sounds: UI clicks, footsteps, doors, shots; NPC voices.
 - Occlusion by props, floors and ceilings: only the grid's walls and shut doors count (a high ledge or a pit does not

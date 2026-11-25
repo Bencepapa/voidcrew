@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { AlignJustify, ArrowUpFromLine, AudioWaveform, Ban, BrickWall, Cone, Dices, Fence, Eye, EyeOff, Flag, Footprints, House, Image, Layers, Library, Lock, LockOpen, LogOut, MessageSquare, Minus, Pyramid, Sprout, Store, Tent, Triangle, Volume2, Warehouse } from "lucide-react";
-import { NOISE_COLORS, SOUND_WAVES } from "../game/sounds";
+import { SAMPLES, SAMPLE_IDS, samplePatch } from "../audio/samples";
 import { ROOF_FORMS, type RoofForm } from "../game/roofAutotile";
 import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld, worldOfMap } from "../game/worlds";
@@ -111,11 +111,9 @@ export function AssetTree(p: EditorBarProps) {
     {id:"robot",label:t("assetManager.npcs"),entries:Object.entries(ACTOR_TYPES).filter(([id])=>assetInWorld(id)).map(([id,v])=>({id,label:assetName(v.name),search:v.name,kind:id,actor:v,active:p.robotChoice===id,pick:()=>choose("robot",()=>p.onRobotChoice(id)),manager:"actor"}))},
     {id:"light",label:t("assetTree.lights"),entries:(["ceiling","point"] as const).flatMap(place=>[undefined,"flicker","spark","pulse"].map(effect=>({id:`${place}:${effect??""}`,label:`${t(place==="ceiling"?"editorBar.ceilingLamp":"editorBar.pointLight")}${effect?` · ${t(`editorBar.${effect}` as "editorBar.flicker")}`:""}`,kind:t("assetTree.lights"),active:p.lightPlace===place && p.light?.effect===effect,pick:()=>choose("light",()=>{p.onLightPlace(place);p.onAssetEffect("light",effect);})})))},
     {id:"smoke",label:t("editorBar.particles"),entries:(["smoke","fire","mist","groundfog","motes","petals","fireflies"] as const).map(effect=>({id:effect,label:t(`effects.${effect}`),kind:t("editorBar.particles"),active:(p.smoke?.effect??"smoke")===effect,pick:()=>choose("smoke",()=>p.onAssetEffect("smoke",effect))}))},
-    // the sound emitters: a beep of each wave form, a noise of each colour (what the next one placed is made as)
-    {id:"sound",label:t("sound.group"),entries:[
-      ...SOUND_WAVES.map(wave=>({id:`tone:${wave}`,label:`${t("sound.kind.tone")} · ${t(`sound.wave.${wave}`)}`,kind:t("sound.group"),icon:<Volume2 size={28}/>,active:p.sound?.kind==="tone"&&p.sound.wave===wave,pick:()=>choose("sound",()=>p.onAssetSound({kind:"tone",wave:wave==="sine"?undefined:wave}))})),
-      ...NOISE_COLORS.map(color=>({id:`noise:${color}`,label:`${t("sound.kind.noise")} · ${t(`sound.noise.${color}`)}`,kind:t("sound.group"),icon:<AudioWaveform size={28}/>,active:p.sound?.kind==="noise"&&p.sound.noise===color,pick:()=>choose("sound",()=>p.onAssetSound({kind:"noise",noise:color==="white"?undefined:color}))})),
-    ]},
+    // the sound emitters: one entry for each built-in sample (what the next one placed is made as). The generated beeps and
+    // noises of older maps are still edited in the Inspector, but are no longer put down from here.
+    {id:"sound",label:t("sound.group"),entries:SAMPLE_IDS.map(id=>({id:`sample:${id}`,label:t(`sound.sample.${id}`),search:SAMPLES[id].name,kind:t(`sound.cat.${SAMPLES[id].category}`),icon:SAMPLES[id].loop?<Volume2 size={28}/>:<AudioWaveform size={28}/>,active:p.sound?.kind==="sample"&&p.sound.sample===id,pick:()=>choose("sound",()=>p.onAssetSound(samplePatch(id,p.sound?.interval)))}))},
     {id:"events",label:t("events.group"),entries:events,bare:true}
   ];
   const term=query.trim().toLocaleLowerCase();
