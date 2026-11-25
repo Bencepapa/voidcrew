@@ -1,4 +1,4 @@
-# Token-napló (ügynök-feladatok fogyasztása)
+﻿# Token-napló (ügynök-feladatok fogyasztása)
 
 Cél: lássuk, melyik munka mennyibe kerül, javul-e a fogyasztás a `GameViewport.tsx` szétszedése után, és megoldható-e ugyanaz kisebb modellel vagy kisebb erőfokozattal (effort). **Minden befejezett ügynök-feladat után egy sor.** A számok a befejezéskor kapott összesítésből vagy a Codex "tokens used" sorából jönnek; Claude és Codex számai **nem** hasonlíthatók össze közvetlenül (más modell, más tokenizáló, más gyorsítótár-számolás), csak az egy rendszeren belüli arányok.
 
@@ -25,6 +25,17 @@ Cél: lássuk, melyik munka mennyibe kerül, javul-e a fogyasztás a `GameViewpo
 1. **Szétszedés előtt-után**: ugyanaz a kis mérőfeladat (például: "új Debug csúszka a ködhöz i18n-nel és teszttel") egy ügynökkel, kétszer: a szétszedés előtti commiton (`1131987`) és a mostanin, azonos modellel és erőfokozattal; mérjük a tokent, az eszközhívásokat és hogy zöld-e az `npm run check`.
 2. **Modell és effort**: ugyanaz a mérőfeladat sonnet/high, sonnet/medium, sonnet/low, haiku mellett (vagy Codex kis erőfokozattal); a mérce: zöld-e a `npm run check`, és hány token/eszközhívás.
 3. Eredmény a fenti táblázatba, a "Megjegyzés" oszlopban a mérőfeladat nevével.
+
+## Mérés: szétválasztás előtt / félúton (2026-11-26)
+
+Mérőfeladat: "a nyomjelző vonal hossza legfeljebb 24 egység + TRACER_COLOR konstans" (semleges megfogalmazás, a gyökér .md fájlok törölve mindkét oldalon, a Codex keresi a kódot). Codex, effort low, 3 futás oldalanként, váltakozva.
+
+| Oldal | GameViewport sorok | Token (3 futás) | Átlag | Átlagos idő |
+|---|---:|---|---:|---:|
+| 1131987 (szétválasztás előtt) | 8 937 | 14 570 / 25 760 / 12 066 | 17 465 | 76 mp |
+| main f75096c (félúton) | 4 406 | 21 915 / 16 242 / 28 575 | 22 244 | 96 mp |
+
+Következtetés: a két sáv átfed, nincs kimutatható különbség. A Codex grep-pel keres, ezért egy kis, célzott feladaton a kisebb fájl nem takarít meg tokent; szélesebb áttekintést igénylő feladaton vagy sorokban olvasó ügynöknél (Claude) lehet különbség. Az első kísérlet érvénytelen volt (fegyveres megfogalmazást megtagadta, és az AGENTS.md miatt további fájlokhoz nyúlt).
 
 ## Szabályok a fogyasztás csökkentésére (2026-11-25-től)
 
