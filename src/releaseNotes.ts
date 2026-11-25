@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 2,
     date: "2026-11-25",
     items: [
+      { title: "Fű és búza a kerítéseken", text: "A fantasy kerítésekhez közepes fű, magas fű és búza választható, áttetsző hézagokkal és folytonosan illeszkedő szélekkel." },
       { title: "Hangzónák és visszhang", text: "A minitérképen Shift+kattintással kijelölt termekhez (szobák, folyosók, termek) hangzóna adható előbeállítással (folyosó, szoba, terem, barlang, szabadtér) és csúszkákkal (visszhang, lecsengés, puhaság, szigetelés): a játék ezek szerint ad a hangoknak teremhangzást, a zónák között átúszva, a vastag falú zónák pedig jobban tompítják a falon át érkező hangot; zóna nélkül a terem méretéből automatikus visszhang jár, a Debug panelben a Visszhang csúszka és kapcsoló állítja." },
       { title: "Hangelemek", text: "A térképre sípoló vagy zajos hangelem rakható (hullámforma, hangmagasság, hangerő, hatótáv, ismétlődés), amely a játékban 3D-ben szól: falon át tompítva, nyíláson át az ajtó felől érkezve, simán átúszó átmenetekkel, mindkét fülbe; a hangerő és a hátsó tompítás a Debug panelben állítható, a szerkesztőben hangszóró-jel mutatja, az impulzus felfutása és lecsengése állítható, és kar, gomb vagy nyomólap ki-be kapcsolhatja." },
       { title: "Színvilág (look)", text: "A pálya beállításaiban hangulat (hideg-misztikus, meleg-filmes, szürke-borús...) és haladó színcsúszkák egy színvilágba terelik a textúrákat; a look a pályával mentődik, és átmásolható másik pályára." },
