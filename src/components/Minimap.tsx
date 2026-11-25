@@ -11,6 +11,7 @@ import { CATEGORY_COLORS, type Category } from "../editor/categoryColors";
 import { PROP_TYPES } from "../game/props";
 import { operableLinks, operableSources } from "../game/operables";
 import { fenceFormOf, fenceIndex, fenceMarks } from "../game/fences";
+import { useSightCells } from "../render/sightStore";
 
 // the operable props' links by what they work: doors amber, wall traps red, emitters orange, NPCs purple, items green
 const LINK_COLORS: Record<string, string> = { door: "#fbbf24", trap: "#ff5a3c", emitter: "#ff9a3c", spawn: "#c084fc", item: "#4ade80" };
@@ -81,6 +82,9 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
   const uid = useId().replace(/:/g, "");
   // (the plain minimap stays the flat chart; textures are for the enlarged one, when textures are being set)
   const [textures, setTextures] = useState(false);
+  // the cells the engine counts as seen from the party, shown on the editing minimap (a button next to Floor / Ceiling)
+  const [showSight, setShowSight] = useState(false);
+  const sightCells = useSightCells();
   const textured = !!edit?.zoomed && textures;
   const patterns = new Map<string, string>();
   const textureFill = (x: number, y: number) => {
@@ -367,6 +371,7 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
               {s === "floor" ? t("minimap.floor") : t("minimap.ceiling")}
             </button>
           ))}
+          <button type="button" aria-pressed={showSight} onClick={() => setShowSight((v) => !v)} className={`border rounded-sm px-2 py-0.5 ${showSight ? "border-cyan-400 bg-cyan-400/20 text-cyan-200" : "border-neutral-600 text-neutral-300 hover:bg-neutral-800"}`} title={t("minimap.sightHint")}>{showSight ? t("minimap.sightCount", { n: sightCells.size }) : t("minimap.sight")}</button>
           {edit.zoomed && <button type="button" aria-pressed={textures} onClick={() => setTextures(v => !v)} className={`border rounded-sm px-2 py-0.5 ${textures ? "border-amber-400 bg-amber-400/20 text-amber-200" : "border-neutral-600 text-neutral-200"}`}>{t("minimap.textures")}</button>}
           <span className="text-neutral-500 ml-auto">{edit.selection ? t("minimap.selectionSize", { w: edit.selection.x1 - edit.selection.x0 + 1, h: edit.selection.y1 - edit.selection.y0 + 1, width: W, height: H }) : t("minimap.mapSize", { width: W, height: H })}</span>
           {edit.onZoom && (
@@ -408,6 +413,12 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
           {hatchedWalls}
           {visible("door") && doorBars}
           {restricted}
+          {showSight && [...sightCells].map((key) => {
+            const [x, y] = key.split(",").map(Number);
+            // (a wall cell counts as seen when a sight line reaches it: amber; floor and doors: cyan)
+            const wall = map.cells[y]?.[x] === "wall";
+            return <rect key={`s${key}`} x={x} y={y} width={1} height={1} fill={wall ? "rgba(251, 146, 60, 0.5)" : "rgba(34, 211, 238, 0.4)"} stroke="rgba(255, 255, 255, 0.35)" strokeWidth={0.04} pointerEvents="none" />;
+          })}
           {bridges}
           {ladders}
           {windows}
@@ -484,6 +495,12 @@ function MinimapImpl({ map, pos, dir, compact, loot, locked, showRestricted, edi
           {hatchedWalls}
           {visible("door") && doorBars}
           {restricted}
+          {showSight && [...sightCells].map((key) => {
+            const [x, y] = key.split(",").map(Number);
+            // (a wall cell counts as seen when a sight line reaches it: amber; floor and doors: cyan)
+            const wall = map.cells[y]?.[x] === "wall";
+            return <rect key={`s${key}`} x={x} y={y} width={1} height={1} fill={wall ? "rgba(251, 146, 60, 0.5)" : "rgba(34, 211, 238, 0.4)"} stroke="rgba(255, 255, 255, 0.35)" strokeWidth={0.04} pointerEvents="none" />;
+          })}
           {bridges}
           {ladders}
           {windows}

@@ -1,5 +1,8 @@
 // English strings for minimap.
 export const minimapEn = {
+  "minimap.sight": "Sight",
+  "minimap.sightCount": "Sight ({n})",
+  "minimap.sightHint": "Shows the cells the engine counts as seen from the party (cyan: floor, amber: a wall a sight line reaches). Only these are drawn.",
   "minimap.title": "Minimap",
   "minimap.collapse": "Collapse the minimap",
   "minimap.expand": "Expand the minimap",

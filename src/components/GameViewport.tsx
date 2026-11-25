@@ -94,6 +94,7 @@ import { isSharedSkyId, skySource } from "../game/skyImage";
 import { gameSound } from "../audio/gameSound";
 import { bakeCacheKey, createBakeCache } from "../render/lightBakeCache";
 import { loadPostSaved } from "../render/postSettingsStore";
+import { publishSight } from "../render/sightStore";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
@@ -5746,6 +5747,7 @@ export function GameViewport({
         const all = new Set<string>();
         for (let y = 0; y < liveMap.height; y++) for (let x = 0; x < liveMap.width; x++) all.add(cellKey(x, y));
         sight = { key: "topdown", cells: all };
+        publishSight(all);
         return true;
       }
       const doors = openDoorsRef.current;
@@ -5766,6 +5768,7 @@ export function GameViewport({
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) cells.add(cellKey(x + dx, y + dy));
       }
       sight = { key, cells };
+      publishSight(cells);
       return true;
     }
 

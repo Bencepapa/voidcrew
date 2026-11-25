@@ -1,5 +1,8 @@
 // Hungarian strings for minimap.
 export const minimapHu = {
+  "minimap.sight": "Látható",
+  "minimap.sightCount": "Látható ({n})",
+  "minimap.sightHint": "Megmutatja, mely cellákat tekinti a motor láthatónak a csapat helyéről (kék: padló, narancs: fal, amit eléri egy látóvonal). Csak ezek rajzolódnak ki.",
   "minimap.title": "Térkép",
   "minimap.collapse": "Térkép összecsukása",
   "minimap.expand": "Térkép kinyitása",
