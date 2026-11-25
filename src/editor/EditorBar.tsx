@@ -1,4 +1,5 @@
 import type { SmokeHarm, SmokeSpec, Weather } from "../game/types";
+import type { NoiseColor, SoundKind, SoundPulse, SoundSpec, SoundWave } from "../game/sounds";
 import type { MapFile } from "../game/mapFormat";
 import { t, type Key } from "../i18n";
 // The map editor's props and info types, the tool labels and the tool help
@@ -180,6 +181,14 @@ export interface EditorBarProps {
   ) => void;
   onSmokeDelete: () => void;
   onSmokeDeselect: () => void;
+  // the Sound tool: the picked sound emitter (or, with none picked, the settings of the next one), what the panel
+  // changes in it, what a palette entry sets for the next one, and the Listen button
+  sound: SoundInfo | null;
+  onSoundChange: (patch: SoundPatch, merge?: string) => void;
+  onAssetSound: (patch: SoundPatch) => void;
+  onSoundListen: (on: boolean) => void;
+  onSoundDelete: () => void;
+  onSoundDeselect: () => void;
   // the Exit tool: the picked exit's name and, if it is a gate, where it leads
   exit: { name: string; to?: MapLinkTarget } | null;
   onExitChange: (patch: { name?: string; to?: MapLinkTarget }, merge?: string) => void;
@@ -322,6 +331,27 @@ export interface SmokeInfo {
   jetYaw?: number;
 }
 
+// the selected sound emitter as the panel shows it: every setting spelled out (the defaults filled in)
+export interface SoundInfo {
+  kind: SoundKind;
+  wave: SoundWave;
+  pitch: number;
+  noise: NoiseColor;
+  volume: number;
+  // none: it sounds all the time
+  pulse?: SoundPulse;
+  range: number;
+  rolloff: number;
+  active: boolean;
+  // its spot in its cell: across, up (wall heights), along; and its cell's floor-to-ceiling height
+  pos: [number, number, number];
+  roomHeight: number;
+  // the Listen button is on
+  listening: boolean;
+}
+// what the panel can change in a sound (a key that is undefined goes back to its default)
+export type SoundPatch = Partial<Omit<SoundSpec, "x" | "y">>;
+
 // the selected loose item as the panel shows it
 export interface ItemInfo {
   item: string;
@@ -402,6 +432,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
   fenceedge: "fence.help.edge",
   fencemid: "fence.help.mid",
   smoke: "editorBar.clickAWallFloorOrAnythingSmoke",
+  sound: "sound.help",
   exit: "link.exitHelp",
   stairs: "link.stairsHelp",
   restricted: "editorBar.clickAFloorRestrictedShadedRedOn",
@@ -413,7 +444,7 @@ export const TOOL_HELP: Partial<Record<EditTool, Key>> = {
 const TOOL_LABELS: Partial<Record<EditTool, Key>> = {
   event: "events.group",
   ladder: "editorBar.ladder", bridge: "editorBar.bridge", door: "editorBar.door", prop: "editorBar.prop", roofauto: "roofauto.group", fenceblock: "fence.block", fenceedge: "fence.edge", fencemid: "fence.mid", decal: "editorBar.decal",
-  robot: "editorBar.npc", item: "editorBar.item", smoke: "editorBar.particles", exit: "editorBar.exit", stairs: "link.stairsTool", start: "editorBar.start",
+  robot: "editorBar.npc", item: "editorBar.item", smoke: "editorBar.particles", sound: "sound.tool", exit: "editorBar.exit", stairs: "link.stairsTool", start: "editorBar.start",
   restricted: "editorBar.restricted", wall: "editorBar.chanceWall", map: "editorBar.map",
 };
 export function editorToolLabel(tool: EditTool): string {

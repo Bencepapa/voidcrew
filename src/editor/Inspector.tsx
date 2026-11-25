@@ -11,6 +11,7 @@ import { DecalFields } from "./inspector/DecalFields";
 import { ItemFields } from "./inspector/ItemFields";
 import { LightFields } from "./inspector/LightFields";
 import { SmokeFields } from "./inspector/SmokeFields";
+import { SoundFields } from "./inspector/SoundFields";
 import { ExitFields } from "./inspector/ExitFields";
 import { StairsFields } from "./inspector/StairsFields";
 import { ChanceWallFields } from "./inspector/ChanceWallFields";
@@ -28,11 +29,11 @@ import { pickupTexture } from "../render/sharedImages";
 import { ITEM_TYPES } from "../game/items";
 import { t } from "../i18n";
 
-export type InspectedKind = "prop" | "decal" | "item" | "light" | "actor" | "smoke" | "exit" | "stairs" | "chanceWall" | "door";
+export type InspectedKind = "prop" | "decal" | "item" | "light" | "actor" | "smoke" | "sound" | "exit" | "stairs" | "chanceWall" | "door";
 // (placing: nothing is selected and a tool puts things in - what is shown is the settings of the next one)
 export interface Inspected { kind: InspectedKind; cell?: {x:number;y:number}; placing?: boolean }
-const fields = {prop:PropFields,decal:DecalFields,item:ItemFields,light:LightFields,actor:ActorFields,smoke:SmokeFields,exit:ExitFields,stairs:StairsFields,chanceWall:ChanceWallFields,door:DoorFields};
-const icons = {prop:"◇",decal:"▧",item:"◆",light:"☼",actor:"♙",smoke:"≋",exit:"↗",stairs:"⇅",chanceWall:"▦",door:"▯"};
+const fields = {prop:PropFields,decal:DecalFields,item:ItemFields,light:LightFields,actor:ActorFields,smoke:SmokeFields,sound:SoundFields,exit:ExitFields,stairs:StairsFields,chanceWall:ChanceWallFields,door:DoorFields};
+const icons = {prop:"◇",decal:"▧",item:"◆",light:"☼",actor:"♙",smoke:"≋",sound:"♪",exit:"↗",stairs:"⇅",chanceWall:"▦",door:"▯"};
 
 // This bridge keeps all existing App callbacks in one place while the toolbar
 // and inspector are portalled into their separate shell docks.
@@ -47,7 +48,7 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
  // Every gesture has a fresh merge suffix. All live updates during the gesture
  // retain App's existing per-object/per-field merge key and preview path.
  const merge = () => `inspector ${transaction.current}`;
- for(const name of ["onActorChange","onDoorChange","onPropChange","onDecalChange","onSmokeChange","onItemChange","onLightChange","onChanceWallChange","onExitChange","onStairsChange","onMapLook"] as const) {
+ for(const name of ["onActorChange","onDoorChange","onPropChange","onDecalChange","onSmokeChange","onSoundChange","onItemChange","onLightChange","onChanceWallChange","onExitChange","onStairsChange","onMapLook"] as const) {
   // Their patch types differ, but each wrapper forwards precisely its own patch.
   Object.assign(props,{[name]:(patch: never)=>p[name](patch,merge())});
  }
