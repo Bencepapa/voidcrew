@@ -373,6 +373,14 @@ export function DebugPanel({
       )}
 
       {section(
+        t("look.section"),
+        <>
+          <div className="text-[10px] text-neutral-300">{t("look.debugOffHint")}</div>
+          {check("postLookOff", t("look.debugOff"))}
+        </>,
+      )}
+
+      {section(
         t("debug.postDark"),
         <>
           <div className="text-[10px] text-neutral-300">{t("debug.postDarkHint")}</div>
@@ -412,7 +420,7 @@ export function DebugPanel({
                 )}
               <button
                 type="button"
-                onClick={() => onChange({ ...settings, ...defaultPostSettings(), postDark: settings.postDark })}
+                onClick={() => onChange({ ...settings, ...defaultPostSettings(), postDark: settings.postDark, postLookOff: settings.postLookOff })}
                 className={button}
               >
                 {t("debug.postReset")}

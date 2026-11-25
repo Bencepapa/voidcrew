@@ -2891,7 +2891,7 @@ export default function App() {
           onNewMap={newMap}
           onSaveMapAs={saveMapAs}
           onRenameMap={renameCurrentMap}
-          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle, loadingImage: map.loadingImage, pickup: map.pickup }}
+          mapLook={{ weather: map.weather, lightGridDensity: map.lightGridDensity, lightGridAmbient: map.lightGridAmbient, reliefDepth: map.reliefDepth, accent: map.accent, textures: map.textures, showTitle: map.showTitle, loadingImage: map.loadingImage, pickup: map.pickup, look: map.look }}
           onMapLook={changeMapLook}
           renderSettings={settings}
           onRenderSettings={setSettings}

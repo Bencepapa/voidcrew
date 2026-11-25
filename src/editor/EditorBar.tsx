@@ -1,5 +1,6 @@
 import type { SmokeHarm, SmokeSpec, Weather } from "../game/types";
 import type { MapFile } from "../game/mapFormat";
+import type { LookSpec } from "../game/look";
 import { t, type Key } from "../i18n";
 // The map editor's props and info types, the tool labels and the tool help
 // line. The old top bar is gone: tools live in the floating strip (FloatToolbar)
@@ -37,6 +38,8 @@ export interface MapLook {
   loadingImage?: string;
   // how loose items are picked up here (undefined: the viewer's choice, else the world's; see pickupMode.ts)
   pickup?: "auto" | "click";
+  // the map's colour look (undefined: its world's; see look.ts)
+  look?: LookSpec;
 }
 // what a prop can wear (see PropSpec.texture): the wall and prop face sets
 // (a box's top comes with its side)
