@@ -92,6 +92,7 @@ import { doorLeafMotion, type DoorType } from "../game/doorTypes";
 import { onSharedDecalsChanged, onSharedImagesChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
 import { isSharedSkyId, skySource } from "../game/skyImage";
 import { gameSound } from "../audio/gameSound";
+import { bakeCacheKey, createBakeCache } from "../render/lightBakeCache";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
 import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
@@ -694,6 +695,9 @@ const TOPDOWN_ZOOM_MAX = 60;
 
 const FOG_NEAR = 1.6;
 // (the fog ends this far short of the view distance)
+// the baked light grids of the last few scenes (see render/lightBakeCache.ts): a rebuild whose light inputs did not change
+// (a wall texture, say) reuses its grid instead of baking again
+const bakeCache = createBakeCache<{ data: LightBakeResult["data"]; ambient?: LightBakeResult["ambient"] }>(4);
 const FOG_FAR_MARGIN = 0.5;
 // The fog thickens over at most this many cells before its end: up to the
 // usual 7-cell view it starts at FOG_NEAR as ever, but a farther view moves
@@ -2355,9 +2359,8 @@ export function GameViewport({
     });
     // the bake (and a coarser one for the ambient part, if the map asks)
     let cancelBake: (() => void) | undefined;
-    const bake = (m: GameMap, quick = false): Promise<void> => {
-      cancelBake?.();
-      const bakeFrom = performance.now();
+    // what a bake is a function of (and its cache key)
+    const bakeInputs = (m: GameMap, quick: boolean) => {
       const options = bakeOptions(m, quick);
       const ambientDensity =
         !quick && options.mode === "directional" && liveMap === map && m.lightGridAmbient && m.lightGridAmbient !== options.perCell
@@ -2367,7 +2370,18 @@ export function GameViewport({
       const sharedPropTypes = Object.fromEntries((m.props ?? [])
         .filter(({ prop }) => isSharedPropId(prop) && PROP_TYPES[prop])
         .map(({ prop }) => [prop, PROP_TYPES[prop]]));
+      const cacheKey = bakeCacheKey({
+        width: m.width, height: m.height, cells: m.cells, floorHeights: m.floorHeights, ceilingHeights: m.ceilingHeights,
+        props: m.props, bridges: m.bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity,
+      });
+      return { options, ambientDensity, lights, sharedPropTypes, cacheKey };
+    };
+    const bake = (m: GameMap, quick = false): Promise<void> => {
+      cancelBake?.();
+      const bakeFrom = performance.now();
+      const { options, ambientDensity, lights, sharedPropTypes, cacheKey } = bakeInputs(m, quick);
       const applyBake = ({ data, ambient, timing }: LightBakeResult) => {
+        bakeCache.set(cacheKey, { data, ambient });
         const applyFrom = performance.now();
         if (timing) {
           const start = performance.timeOrigin + bakeFrom;
@@ -2385,6 +2399,12 @@ export function GameViewport({
         ambient: ambientDensity === undefined ? undefined
           : packLightGrid(bakeLightGrid({ ...m, sharedPropTypes }, lights, wallHeight, { ...options, perCell: ambientDensity }), true),
       });
+      // the same inputs as a bake before (a rebuild for a texture change, say): its result, at once
+      const cached = bakeCache.get(cacheKey);
+      if (cached) {
+        applyBake(cached);
+        return Promise.resolve();
+      }
       return new Promise<void>((resolve, reject) => {
         let worker: Worker;
         const recover = () => {
@@ -2436,7 +2456,18 @@ export function GameViewport({
         }
       }).catch((error) => console.error("Light bake failed:", error));
     };
-    track(bake(map));
+    // The scene is ready after a rough bake (a few samples a cell, see lightGridQuickDensity) and the real one follows in
+    // the background and replaces it: a big map no longer waits tens of seconds for its light. (Off, or no coarser than the
+    // real density: the real bake only; a bake cached from before is used at once.)
+    const quickFirst = settings.lightGridQuickDensity >= 1 && settings.lightGridQuickDensity < finalDensity(map);
+    if (quickFirst && !bakeCache.get(bakeInputs(map, false).cacheKey)) {
+      // (only the rough one holds the scene back; the real one is not tracked)
+      const rough = bake(map, true);
+      track(rough);
+      void rough.then(() => { if (!disposed) void bake(map); });
+    } else {
+      track(bake(map));
+    }
     // Light edits have a shorter idle window than geometry and prop edits.
     // Either bake uses the latest map, including edits queued on the other timer.
     let bakeTimer: ReturnType<typeof setTimeout> | undefined;
