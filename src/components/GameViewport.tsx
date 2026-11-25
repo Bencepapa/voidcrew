@@ -93,6 +93,7 @@ import { doorLeafMotion, type DoorType } from "../game/doorTypes";
 import { onSharedDecalsChanged, onSharedImagesChanged, onSharedPickupsChanged, pickupTexture, sharedImage, useSharedImages } from "../render/sharedImages";
 import { isSharedSkyId, skySource } from "../game/skyImage";
 import { gameSound } from "../audio/gameSound";
+import { soundsOn } from "../game/soundOperables";
 import { bakeCacheKey, createBakeCache } from "../render/lightBakeCache";
 import { loadPostSaved } from "../render/postSettingsStore";
 import { publishSight } from "../render/sightStore";
@@ -1990,8 +1991,11 @@ export function GameViewport({
       },
       floorHeight: (x, y) => floorHeight(map, x, y),
       wallHeight: soundWallHeight,
+      // (a lever, button or plate can switch a sound on or off: see game/soundOperables.ts)
+      isOn: soundsOn(map),
     });
   }, [map, soundWallHeight, doorPreview]);
+  useEffect(() => (doorPreview ? undefined : emitterView.subscribe(() => gameSound.invalidate())), [doorPreview]);
   useEffect(() => {
     if (!doorPreview) gameSound.invalidate();
   }, [openDoors, doorPreview]);
@@ -7832,7 +7836,7 @@ export function GameViewport({
       }
       // the Sound tool: a sound emitter's marker pointed at
       // (as near as the nearest thing: a marker behind a wall is not the one a click is meant for)
-      if (editToolRef.current === "sound" || selecting) {
+      if (editToolRef.current === "sound" || selecting || operableLink.active()) {
         const at = hits.find((h) => h.object.userData.soundIndex !== undefined && h.distance <= hit.distance + 0.25);
         const spec = at && latestMapRef.current.sounds?.[at.object.userData.soundIndex as number];
         if (at && spec) return { kind: "floor", cell: { x: spec.x, y: spec.y }, sound: at.object.userData.soundIndex as number };

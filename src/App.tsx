@@ -1125,7 +1125,7 @@ export default function App() {
       operableLink.cancel();
       return true;
     }
-    const to = linkTargetFor(map, { door: target.door, prop: target.prop, cell: target.cell, smoke: target.smoke, actor: target.actor, item: target.item });
+    const to = linkTargetFor(map, { door: target.door, prop: target.prop, cell: target.cell, smoke: target.smoke, sound: target.sound, actor: target.actor, item: target.item });
     if (!to) {
       pushLog(t("operable.link.nothing"), "editor");
       return true;

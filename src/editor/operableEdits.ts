@@ -1,4 +1,5 @@
 import type { MapFile } from "../game/mapFormat";
+import { soundEntries } from "../game/soundOperables";
 import { indexInCell, resolveAddress, type Area } from "../game/emitters";
 import {
   OPERABLE_PROPS, emittersAt, isAddressed, operableSources, readOperable,
@@ -64,7 +65,7 @@ export function updateTarget(file: MapFile, ref: SourceRef, index: number, patch
 }
 
 // An area (a block of cells picked in the zoomed minimap) as a target: all the emitters / dormant NPCs / dormant items in it.
-export function areaTarget(kind: "emitter" | "spawn" | "item", area: Area): OperableTarget {
+export function areaTarget(kind: "emitter" | "sound" | "spawn" | "item", area: Area): OperableTarget {
   return { kind, area: { ...area } };
 }
 
@@ -82,21 +83,22 @@ export interface LinkHit {
   prop?: number;
   cell: Vec2;
   smoke?: number;
+  sound?: number;
   actor?: number;
   item?: number;
 }
 export function linkTargetFor(map: OperableMap, hit: LinkHit): OperableTarget | undefined {
   const cellIs = (c: Vec2) => map.cells[c.y]?.[c.x] === "door";
   if (hit.door && cellIs(hit.door)) return { kind: "door", x: hit.door.x, y: hit.door.y };
-  const at = (list: { cell: Vec2; dormant?: boolean }[] | undefined, i: number | undefined, kind: "emitter" | "spawn" | "item"): OperableTarget | undefined => {
+  const at = (list: { cell: Vec2; dormant?: boolean }[] | undefined, i: number | undefined, kind: "emitter" | "sound" | "spawn" | "item"): OperableTarget | undefined => {
     const spec = i === undefined ? undefined : list?.[i];
-    if (!spec || (kind !== "emitter" && !spec.dormant)) return undefined;
+    if (!spec || (kind !== "emitter" && kind !== "sound" && !spec.dormant)) return undefined;
     const index = indexInCell(list, i!);
     return { kind, x: spec.cell.x, y: spec.cell.y, ...(index !== undefined ? { index } : {}) };
   };
-  const picked = at(map.smokes, hit.smoke, "emitter") ?? at(map.actors, hit.actor, "spawn") ?? at(map.items, hit.item, "item");
+  const picked = at(map.smokes, hit.smoke, "emitter") ?? at(soundEntries(map.sounds), hit.sound, "sound") ?? at(map.actors, hit.actor, "spawn") ?? at(map.items, hit.item, "item");
   if (picked) return picked;
-  if (hit.smoke !== undefined || hit.actor !== undefined || hit.item !== undefined) return undefined;
+  if (hit.smoke !== undefined || hit.sound !== undefined || hit.actor !== undefined || hit.item !== undefined) return undefined;
   if (hit.prop !== undefined) {
     const spec = map.props?.[hit.prop];
     if (spec && OPERABLE_PROPS[spec.prop]?.kind === "emitter") return { kind: "trap", x: spec.cell.x, y: spec.cell.y, ...(["N", "E", "S", "W"].includes(spec.at) ? { side: spec.at as "N" | "E" | "S" | "W" } : {}) };
@@ -110,8 +112,8 @@ export function linkTargetFor(map: OperableMap, hit: LinkHit): OperableTarget | 
 
 // ---- keeping the targets right when something they address is taken out
 
-type Addressable = "emitter" | "spawn" | "item";
-const LIST_OF = { emitter: "smokes", spawn: "actors", item: "items" } as const;
+type Addressable = "emitter" | "sound" | "spawn" | "item";
+const LIST_OF = { emitter: "smokes", sound: "sounds", spawn: "actors", item: "items" } as const;
 
 // An emitter, NPC or item is about to be removed from the file (call it BEFORE the splice): the targets that named it by
 // its place in its cell (`index`) are fixed - the one that pointed at it is dropped, the ones after it move up. Targets by
@@ -148,6 +150,7 @@ export function fixTargetsBeforeRemove(file: MapFile, kind: Addressable, removed
 // which of a map's targets address anything (for the panel: a hint on the ones that point nowhere)
 export const targetFound = (map: OperableMap, t: OperableTarget): boolean => {
   if (t.kind === "emitter") return resolveAddress(map.smokes, t).length > 0;
+  if (t.kind === "sound") return resolveAddress(soundEntries(map.sounds), t).length > 0;
   if (t.kind === "spawn") return resolveAddress(map.actors, t, (a) => a.dormant === true).length > 0;
   if (t.kind === "item") return resolveAddress(map.items, t, (it) => it.dormant === true).length > 0;
   return true;

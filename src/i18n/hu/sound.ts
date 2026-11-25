@@ -50,6 +50,11 @@ export const soundHu = {
   "sound.height": "Magasság",
   "sound.across": "Keresztben",
   "sound.along": "Hosszában",
+  // a hangot kapcsoló karok, gombok és nyomólapok (az operable panel céljai és a problémalista)
+  "operable.target.sound": "Hang {at}",
+  "operable.area.add.sound": "minden hang benne",
+  "minimap.problem.operableSoundMissing": "Nincs hangelem itt: {at} (cél).",
+  "minimap.problem.operableSoundInactiveUnused": "Ez a hang induláskor ki van kapcsolva, és semmi nem kapcsolja be.",
   "minimap.problem.soundSilent": "A(z) {index}. hangnak nincs hangereje.",
   "minimap.problem.soundNoRange": "A(z) {index}. hang hatótávja egy cellánál is kisebb: alig hallatszik.",
   "minimap.problem.soundPulseZero": "A(z) {index}. hang impulzusának 0 másodperces az ideje.",

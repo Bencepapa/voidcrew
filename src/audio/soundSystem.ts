@@ -49,6 +49,9 @@ export interface SoundScene {
   floorHeight: (x: number, y: number) => number;
   // the world's height of a wall (world units); the sounds' heights are in wall heights
   wallHeight: number;
+  // whether a sound (its index) is on now, as the levers, buttons and plates left it (see game/soundOperables.ts); asked
+  // when the emitters are made, which `invalidate` brings about. Unset: each sound's own `active`.
+  isOn?: (index: number) => boolean;
 }
 
 export interface SoundSystemOptions {
@@ -108,13 +111,13 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
   // the emitters that may sound now, in the world
   const emitters = (): Emitter[] => {
     if (!scene) return [];
-    const { sounds, floorHeight, wallHeight } = scene;
+    const { sounds, floorHeight, wallHeight, isOn } = scene;
     const out: Emitter[] = [];
     sounds.forEach((spec, id) => {
       if (editing && id !== preview) return;
       const sound = resolveSound(spec);
       // (the preview sounds whether the emitter is on or not)
-      if (!sound.active && !(editing && id === preview)) return;
+      if (!(isOn ? isOn(id) : sound.active) && !(editing && id === preview)) return;
       out.push({
         id,
         sound,

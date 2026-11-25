@@ -50,6 +50,11 @@ export const soundEn = {
   "sound.height": "Height",
   "sound.across": "Across",
   "sound.along": "Along",
+  // the levers, buttons and plates that switch a sound (the operable panel's targets and the problems list)
+  "operable.target.sound": "Sound {at}",
+  "operable.area.add.sound": "all sounds in it",
+  "minimap.problem.operableSoundMissing": "No sound emitter at {at} (target).",
+  "minimap.problem.operableSoundInactiveUnused": "This sound is off from the start and nothing switches it on.",
   "minimap.problem.soundSilent": "Sound {index} has no volume.",
   "minimap.problem.soundNoRange": "Sound {index} reaches less than a cell: it is hardly heard.",
   "minimap.problem.soundPulseZero": "Sound {index} pulses with a time of 0 seconds.",

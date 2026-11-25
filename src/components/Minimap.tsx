@@ -15,7 +15,7 @@ import { useSightCells } from "../render/sightStore";
 import { SPEAKER_PATH, WAVES_PATH } from "../render/soundGlyph";
 
 // the operable props' links by what they work: doors amber, wall traps red, emitters orange, NPCs purple, items green
-const LINK_COLORS: Record<string, string> = { door: "#fbbf24", trap: "#ff5a3c", emitter: "#ff9a3c", spawn: "#c084fc", item: "#4ade80" };
+const LINK_COLORS: Record<string, string> = { door: "#fbbf24", trap: "#ff5a3c", emitter: "#ff9a3c", sound: "#2dd4bf", spawn: "#c084fc", item: "#4ade80" };
 
 interface MinimapProps {
   map: GameMap;
