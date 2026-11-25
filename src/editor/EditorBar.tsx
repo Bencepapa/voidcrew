@@ -343,6 +343,10 @@ export interface SoundInfo {
   wave: SoundWave;
   pitch: number;
   noise: NoiseColor;
+  // a sample's id ("" for the generated kinds), its speed, and the pause between a one-shot's plays (unset: once)
+  sample: string;
+  rate: number;
+  interval?: { min: number; max: number };
   volume: number;
   // none: it sounds all the time
   pulse?: SoundPulse;

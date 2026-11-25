@@ -44,6 +44,16 @@ const tone = { x: 4, y: 4, kind: "tone" as const, volume: 0.5, range: 10 };
   updateSound(file, 1, { kind: "tone", wave: "square", pitch: 300 });
   assert.equal("noise" in file.sounds![1], false);
   assert.equal(file.sounds![1].wave, "square");
+  // to a sample (the Inspector's kind switch) and back: the pulse and the generated fields go, the sample's with the way back
+  updateSound(file, 1, { pulse: { on: 1, off: 1 } });
+  updateSound(file, 1, { kind: "sample", sample: "goblin-cackle", interval: { min: 3, max: 8 } });
+  assert.deepEqual(["wave", "pitch", "noise", "pulse"].filter((k) => k in file.sounds![1]), []);
+  updateSound(file, 1, { rate: 1.5 });
+  assert.deepEqual([file.sounds![1].sample, file.sounds![1].rate, file.sounds![1].interval], ["goblin-cackle", 1.5, { min: 3, max: 8 }]);
+  updateSound(file, 1, { interval: undefined });
+  assert.equal("interval" in file.sounds![1], false);
+  updateSound(file, 1, { kind: "tone" });
+  assert.deepEqual(["sample", "rate", "interval"].filter((k) => k in file.sounds![1]), []);
   updateSound(file, 5, { volume: 0 });
   assert.equal(file.sounds!.length, 2, "a sound that isn't there: nothing");
   removeSound(file, 0);

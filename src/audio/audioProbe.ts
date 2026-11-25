@@ -1,5 +1,5 @@
-// The Debug panel's sound test buttons (the "Sound (probe)" section): beeps and noise bursts put at places round the
-// listener, to hear the 3D sound by hand - panning as the party turns, the highs lost behind and through walls, many
+// The Debug panel's sound test buttons (the "Sound (probe)" section): samples (a fire crackle, a goblin's cackle) put at
+// places round the listener, to hear the 3D sound by hand - panning as the party turns, the highs lost behind and through walls, many
 // voices at once. They play through the same engine as the map's sound emitters (engine.ts) and take the same maths
 // (soundField.ts): only the places and the lengths are made up here. Nothing is saved.
 import { currentRoom, engine, engineStatus, getListener, type Voice } from "./engine";
@@ -8,8 +8,9 @@ import { attenuation, distanceTo, muffle } from "./soundField";
 import { stereoPan } from "./stereo";
 import type { VoiceState, WaveSpec } from "./soundSystem";
 
-const BEEP: WaveSpec = { kind: "tone", wave: "saw", pitch: 440, noise: "white" };
-const HISS: WaveSpec = { kind: "noise", wave: "sine", pitch: 440, noise: "pink" };
+// the looping test sample, and the one-shot one
+const FIRE: WaveSpec = { kind: "sample", wave: "sine", pitch: 440, noise: "white", sample: "fire-crackle", rate: 1 };
+const CACKLE: WaveSpec = { kind: "sample", wave: "sine", pitch: 440, noise: "white", sample: "goblin-cackle", rate: 1 };
 // how far a test sound reaches (cells)
 const RANGE = 40;
 
@@ -18,8 +19,8 @@ export interface ProbeSource {
   x: number; y: number; z: number;
   /** how many walls are taken to be in the way (0..3): the muffling of a house */
   walls?: number;
-  /** the noise test sound instead of the beep */
-  noise?: boolean;
+  /** the goblin's cackle (a one-shot) instead of the fire's crackle (a loop) */
+  cackle?: boolean;
   /** 0..1 (default 1) */
   volume?: number;
 }
@@ -39,8 +40,8 @@ function stateOf(source: ProbeSource): VoiceState {
 }
 
 /** Plays one voice of the test sound at a world position for a moment (it stays there while the listener turns and walks). */
-export function playAt(source: ProbeSource, ms = 700): void {
-  const voice = engine.start(source.noise ? HISS : BEEP);
+export function playAt(source: ProbeSource, ms = 3000): void {
+  const voice = engine.start(source.cackle ? CACKLE : FIRE);
   if (!voice) return;
   engine.set(voice, stateOf(source));
   probeVoices.add(voice);
@@ -72,7 +73,7 @@ let orbit: { timer: ReturnType<typeof setInterval>; voice: Voice } | undefined;
 /** One voice circling the listener's spot for about six seconds, to hear the panning move. */
 export function playOrbit(): void {
   stopOrbit();
-  const voice = engine.start({ ...BEEP, wave: "triangle", pitch: 330 });
+  const voice = engine.start(FIRE);
   if (!voice) return;
   const centre = { ...getListener() };
   const began = performance.now();

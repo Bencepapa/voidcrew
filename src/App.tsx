@@ -83,6 +83,7 @@ import { PROP_TYPES, flamePosition, isSharedPropId, propBlocks, propPlacement, p
 import { MIN_HEADROOM } from "./game/heights";
 import type { ActorInfo, DecalChoice, DecalInfo, DoorInfo, LightInfo, LightPlace, MapLook, PropInfo, ItemInfo, SmokeInfo, SoundInfo } from "./editor/EditorBar";
 import { newSound, resolveSound, type SoundSpec } from "./game/sounds";
+import { DEFAULT_SAMPLE } from "./audio/samples";
 import { useGameAcoustics } from "./audio/useGameAcoustics";
 import { useAcousticsEditor } from "./editor/useAcousticsEditor";
 import { accentOf, moodOf, moodText, newSeed } from "./game/variation";
@@ -679,9 +680,9 @@ export default function App() {
   // The settings of the last thing of each kind that was set up (a slider moved, a colour picked): the next of
   // that kind is put in with them - a row of the same torch, many alike. Where a tool puts things in and nothing
   // is selected, the inspector shows and changes these (see placingKind).
-  const templates = useRef<Record<"smoke" | "sound" | "light" | "prop" | "item" | "actor", Record<string, unknown>>>({ smoke: {}, sound: {}, light: {}, prop: {}, item: {}, actor: {} });
+  const templates = useRef<Record<"smoke" | "sound" | "light" | "prop" | "item" | "actor", Record<string, unknown>>>({ smoke: {}, sound: { kind: "sample", sample: DEFAULT_SAMPLE }, light: {}, prop: {}, item: {}, actor: {} });
   const TEMPLATE_KEYS = {
-    sound: ["kind", "wave", "pitch", "noise", "volume", "pulse", "range", "rolloff", "active"],
+    sound: ["kind", "wave", "pitch", "noise", "sample", "rate", "interval", "volume", "pulse", "range", "rolloff", "active"],
     smoke: ["effect", "mistStyle", "sprite", "spread", "height", "density", "size", "color", "blow", "chance", "decorative", "opacity", "opacityDark", "lightColor", "lightIntensity", "lightReach", "active", "harm"],
     light: ["color", "intensity", "range", "effect", "bulb", "chance"],
     prop: ["texture", "scale", "chance"],
@@ -2064,7 +2065,7 @@ export default function App() {
   const soundInfoOf = (spec: SoundSpec, listening: boolean): SoundInfo => {
     const sound = resolveSound(spec);
     return {
-      kind: sound.kind, wave: sound.wave, pitch: sound.pitch, noise: sound.noise, volume: sound.volume,
+      kind: sound.kind, wave: sound.wave, pitch: sound.pitch, noise: sound.noise, sample: sound.sample, rate: sound.rate, interval: spec.interval, volume: sound.volume,
       pulse: sound.pulse ?? spec.pulse, range: sound.range, rolloff: sound.rolloff, active: sound.active, id: spec.id,
       pos: sound.pos, roomHeight: ceilingHeight(map, spec.x, spec.y) - floorHeight(map, spec.x, spec.y), listening,
     };

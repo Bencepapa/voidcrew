@@ -237,6 +237,98 @@ const ears = (x: number, z: number, fx = 1, fz = 0) => ({ x, y: 0.5, z, fx, fz }
   assert.ok(blockedCalls > again, "a new cell: again");
 }
 
+// ---- samples: a loop just keeps sounding; a one-shot with a pause plays out, waits, and plays again
+{
+  interface SampleVoice extends FakeVoice {
+    ended: boolean;
+    replays: number;
+  }
+  const voices: SampleVoice[] = [];
+  const backend: SoundBackend<SampleVoice> = {
+    start: (wave, options) => {
+      const voice: SampleVoice = { id: voices.length, wave, state: null, stopped: false, sets: 0, portal: options?.portal === true, ended: false, replays: 0 };
+      voices.push(voice);
+      return voice;
+    },
+    set: (voice, state) => {
+      voice.state = state;
+    },
+    stop: (voice) => {
+      voice.stopped = true;
+    },
+    setListener: () => {},
+    finished: (voice) => voice.ended,
+    replay: (voice) => {
+      voice.ended = false;
+      voice.replays++;
+    },
+  };
+  let now = 0;
+  const system = createSoundSystem(backend, { now: () => now, random: () => 0.5 });
+  const at = { x: 3, y: 3, volume: 1, range: 20 } as const;
+  system.setScene(
+    scene([
+      { ...at, kind: "sample", sample: "fire-crackle", rate: 1.5 },
+      { ...at, x: 4, kind: "sample", sample: "goblin-cackle", interval: { min: 2, max: 4 } },
+      { ...at, x: 5, kind: "sample", sample: "hammer" },
+      { ...at, x: 6, kind: "sample", sample: "no-such-sample" },
+    ]),
+  );
+  system.frame(ears(1, 3));
+  const live = () => voices.filter((v) => !v.stopped);
+  assert.equal(live().length, 3, "the unknown sample makes no voice");
+  const fire = live().find((v) => v.wave.sample === "fire-crackle")!;
+  const cackle = live().find((v) => v.wave.sample === "goblin-cackle")!;
+  const hammer = live().find((v) => v.wave.sample === "hammer")!;
+  assert.equal(fire.wave.kind, "sample");
+  assert.equal(fire.wave.rate, 1.5, "the speed goes to the backend");
+  assert.equal(fire.state!.gate, 1, "a sample is never gated by a pulse");
+  // the one-shot ends: a pause of min + (max - min) * 0.5 = 3 s, then it plays again
+  now = 1;
+  cackle.ended = true;
+  hammer.ended = true;
+  fire.ended = true;
+  system.frame(ears(1, 3));
+  assert.equal(cackle.replays, 0);
+  now = 3.9;
+  system.frame(ears(1, 3));
+  assert.equal(cackle.replays, 0, "still waiting");
+  now = 4;
+  system.frame(ears(1, 3));
+  assert.equal(cackle.replays, 1, "and again");
+  assert.equal(cackle.ended, false);
+  // the next round: another pause
+  now = 5;
+  cackle.ended = true;
+  system.frame(ears(1, 3));
+  now = 7.9;
+  system.frame(ears(1, 3));
+  assert.equal(cackle.replays, 1);
+  now = 8;
+  system.frame(ears(1, 3));
+  assert.equal(cackle.replays, 2);
+  assert.equal(hammer.replays, 0, "no interval: it plays once");
+  assert.equal(fire.replays, 0, "a loop has no pause");
+  // out of range: the voices go
+  system.setScene(scene([{ ...at, x: 4, kind: "sample", sample: "goblin-cackle", range: 2, interval: { min: 2, max: 4 } }]));
+  system.frame(ears(11, 3));
+  assert.equal(live().length, 0);
+  // the doorway's voice and the direct one are replayed together
+  doorOpen = true;
+  system.setScene(scene([{ x: 9, y: 1, volume: 1, range: 30, kind: "sample", sample: "hammer", interval: { min: 1, max: 1 } }]));
+  now = 20;
+  system.frame(ears(3, 3));
+  const pair = voices.filter((v) => !v.stopped && v.wave.sample === "hammer");
+  assert.equal(pair.length, 1 + voices.filter((v) => !v.stopped && v.portal).length, "the direct voice and the doorway's, if there is one");
+  for (const v of pair) v.ended = true;
+  now = 20.1;
+  system.frame(ears(3, 3));
+  now = 21.2;
+  system.frame(ears(3, 3));
+  assert.ok(pair.every((v) => v.replays === 1), "all of an emitter's voices are replayed together");
+  doorOpen = false;
+}
+
 // ---- the layout of the fixture is what the tests say it is
 assert.equal(FIXTURE_LAYOUT[3][6], "D");
 

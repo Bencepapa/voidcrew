@@ -33,6 +33,7 @@ import type { Place } from "./acoustics";
 import type { Listener } from "./soundField";
 import type { SoundBackend, StartOptions, VoiceState, WaveSpec } from "./soundSystem";
 import { waveKey } from "../game/sounds";
+import { SAMPLES, isSampleId, sampleUrl, type SampleId } from "./samples";
 
 // ---- the master: volume and mute, kept between sessions
 
@@ -181,10 +182,30 @@ const reverbGain = () => masterSend(settings.reverbAmount, settings.reverbOn);
 export const currentRoom = (): Place | null => room;
 export const wetLevel = (): number => bus?.level() ?? 0;
 export const echoImpulse = () => bus?.current() ?? null;
-// ---- the sounds: one Howl for each wave, made once (the sample buffer is generated once, never a file)
+// ---- the sounds: one Howl for each generated wave (its buffer is made once) and for each sample file (loaded lazily)
 
 const howls = new Map<string, Howl>();
+// the samples' Howls that could not be loaded: their voices stay silent (and the file is not asked for again)
+const failedHowls = new WeakSet<Howl>();
+// One Howl for each sample file, made lazily and loaded at the first voice that needs it (a sound out of range never
+// loads its file): Web Audio decoding (not html5), the registry says whether it loops. Its rate is set per voice.
+function sampleHowl(id: SampleId): Howl {
+  const key = `sample:${id}`;
+  let howl = howls.get(key);
+  if (!howl) {
+    const url = sampleUrl(id, import.meta.env.BASE_URL);
+    howl = new Howl({ src: [url], format: ["mp3"], loop: SAMPLES[id].loop, volume: 1, preload: false, html5: false });
+    const made = howl;
+    made.once("loaderror", (_id, error) => {
+      failedHowls.add(made);
+      console.warn(`[sound] could not load ${url}`, error);
+    });
+    howls.set(key, howl);
+  }
+  return howl;
+}
 function howlFor(spec: WaveSpec): Howl {
+  if (spec.kind === "sample" && isSampleId(spec.sample)) return sampleHowl(spec.sample);
   const key = waveKey(spec);
   let howl = howls.get(key);
   if (!howl) {
@@ -287,6 +308,12 @@ export interface Voice {
   gateTarget: number | null;
   // whether a state has been put in on the current chain (the first goes in at once)
   applied: boolean;
+  // a sample: its speed, the loudness evening-out of the recording (the registry's gain, times the level), and for a
+  // one-shot whether it has played to its end (it is silent then, unwired, and waits for `replay`)
+  rate: number;
+  gain: number;
+  oneShot: boolean;
+  finished: boolean;
 }
 const voices = new Set<Voice>();
 
@@ -390,6 +417,15 @@ function rebuild(voice: Voice) {
   }
 }
 
+function ended(voice: Voice) {
+  if (voice.stopping || !voice.ready) return;
+  unwire(voice);
+  voice.ready = false;
+  voice.finished = true;
+  voice.gateTarget = null;
+  voice.applied = false;
+}
+
 function attach(voice: Voice) {
   if (voice.stopping) {
     voices.delete(voice);
@@ -400,6 +436,9 @@ function attach(voice: Voice) {
     const { howl } = voice;
     voice.id = howl.play();
     howl.volume(1, voice.id);
+    if (voice.rate !== 1) howl.rate(voice.rate, voice.id);
+    // (a one-shot's end: the chain is taken out at once, before Howler can hand the sound on to another voice)
+    if (voice.oneShot) howl.once("end", () => ended(voice), voice.id);
     makePanner(voice);
     if (!wire(voice)) throw new Error("no panner");
     voice.ready = true;
@@ -453,7 +492,7 @@ function apply(voice: Voice, state: VoiceState, fresh = !voice.applied) {
   to(chain.muffleA.frequency, now.cutoff);
   to(chain.muffleB.frequency, now.cutoff);
   to(chain.wallLevel.gain, now.wallGain);
-  to(chain.level.gain, now.level);
+  to(chain.level.gain, now.level * voice.gain);
   if (chain.send) to(chain.send.gain, now.send);
   // the pulse's gate: the edge follows the attack (opening) or the release (closing)
   if (fresh) {
@@ -469,7 +508,12 @@ function apply(voice: Voice, state: VoiceState, fresh = !voice.applied) {
 function start(spec: WaveSpec, options: StartOptions = {}): Voice | null {
   try {
     const howl = howlFor(spec);
+    const def = spec.kind === "sample" && isSampleId(spec.sample) ? SAMPLES[spec.sample] : undefined;
     const voice: Voice = {
+      rate: spec.rate ?? 1,
+      gain: def?.gain ?? 1,
+      oneShot: def ? !def.loop : false,
+      finished: false,
       howl,
       id: -1,
       ready: false,
@@ -485,7 +529,11 @@ function start(spec: WaveSpec, options: StartOptions = {}): Voice | null {
     };
     voices.add(voice);
     if (howl.state() === "loaded") attach(voice);
-    else howl.once("load", () => attach(voice));
+    else if (!failedHowls.has(howl)) {
+      // (a sample is loaded now, at its first voice; until it is, the voice waits silently; a failed one never plays)
+      howl.once("load", () => attach(voice));
+      if (howl.state() === "unloaded") howl.load();
+    }
     return voice;
   } catch (error) {
     console.warn("[sound] could not start a voice", error);
@@ -522,7 +570,14 @@ function stop(voice: Voice) {
   }, Math.ceil(tau * 7000) + 40);
 }
 
-export const engine: SoundBackend<Voice> = { start, set, stop, setListener, setRoom };
+// a one-shot sample plays again from its start (the sound system's pause between plays is over)
+function replay(voice: Voice) {
+  if (!voice.finished || voice.stopping) return;
+  voice.finished = false;
+  attach(voice);
+}
+
+export const engine: SoundBackend<Voice> = { start, set, stop, setListener, setRoom, finished: (voice) => voice.finished && !voice.stopping, replay };
 
 // the context's state, its rate, and how many voices there are (the Debug panel's line)
 export function engineStatus(): { state: string; sampleRate: number; voices: number } {

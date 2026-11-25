@@ -155,6 +155,62 @@ assert.deepEqual(
 );
 assert.deepEqual(soundProblems([{ x: 0, y: 0, kind: "tone", volume: 0, range: 0.5, pulse: { on: 0, off: 0 } }]).map((p) => p.code), ["soundSilent", "soundNoRange", "soundPulseZero"], "all three at once");
 
+// ---- samples
+{
+  const base = { x: 1, y: 2, kind: "sample" } as const;
+  assert.deepEqual(readSound({ ...base, sample: "hammer" }), { ...base, sample: "hammer", volume: SOUND_LIMITS.volume.default, range: SOUND_LIMITS.range.default });
+  // a rate and a pause belong to a sample, limited; a rate of 1 is the default and not written
+  assert.equal(readSound({ ...base, sample: "hammer", rate: 9 })!.rate, 2);
+  assert.equal(readSound({ ...base, sample: "hammer", rate: 0.1 })!.rate, 0.5);
+  assert.equal(readSound({ ...base, sample: "hammer", rate: 1 })!.rate, undefined);
+  assert.equal(readSound({ ...base, sample: "hammer", rate: "fast" })!.rate, undefined);
+  assert.deepEqual(readSound({ ...base, sample: "hammer", interval: { min: 3, max: 8 } })!.interval, { min: 3, max: 8 });
+  assert.deepEqual(readSound({ ...base, sample: "hammer", interval: { min: -3, max: 9999 } })!.interval, { min: 0, max: 600 });
+  assert.equal(readSound({ ...base, sample: "hammer", interval: { min: 3 } })!.interval, undefined);
+  assert.deepEqual(readSound({ ...base, sample: "hammer", interval: { min: 8, max: 3 } })!.interval, { min: 8, max: 3 }, "kept as written: the problems list shows it");
+  // a loop has no pause; a pulse is not for samples; tone and noise fields do not belong to a sample
+  assert.equal(readSound({ ...base, sample: "fire-crackle", interval: { min: 3, max: 8 } })!.interval, undefined);
+  const mixed = readSound({ ...base, sample: "hammer", pulse: { on: 1, off: 1 }, wave: "saw", pitch: 800, noise: "pink" })!;
+  assert.deepEqual([mixed.pulse, mixed.wave, mixed.pitch, mixed.noise], [undefined, undefined, undefined, undefined]);
+  // rate / interval / sample do not belong to a tone
+  assert.deepEqual(readSound({ x: 1, y: 2, kind: "tone", sample: "hammer", rate: 2, interval: { min: 1, max: 2 } }), { x: 1, y: 2, kind: "tone", volume: SOUND_LIMITS.volume.default, range: SOUND_LIMITS.range.default });
+  // an unknown id is kept (the file is not damaged for it) but warned of, and it does not sound; none at all, too
+  assert.equal(readSound({ ...base, sample: "gong" })!.sample, "gong");
+  assert.equal(readSound({ ...base })!.sample, undefined);
+  assert.equal(readSound({ ...base, sample: 5 })!.sample, undefined);
+  // a clean round trip
+  const spec = readSound({ ...base, sample: "goblin-cackle", rate: 1.25, interval: { min: 3, max: 8 }, volume: 0.4, id: "g", active: false })!;
+  assert.deepEqual(readSound(JSON.parse(JSON.stringify(spec))), spec);
+  // resolved: defaults filled in; a loop's interval and a sample's pulse are not there
+  const cackle = resolveSound(readSound({ ...base, sample: "goblin-cackle", interval: { min: 8, max: 3 } })!);
+  assert.deepEqual([cackle.kind, cackle.sample, cackle.rate, cackle.interval, cackle.pulse], ["sample", "goblin-cackle", 1, { min: 3, max: 8 }, undefined], "min and max put in order");
+  assert.equal(resolveSound({ ...base, sample: "hammer", volume: 1, range: 4 }).interval, undefined, "no interval: once");
+  assert.equal(resolveSound({ ...base, sample: "fire-crackle", volume: 1, range: 4, interval: { min: 1, max: 2 } }).interval, undefined, "a loop never pauses");
+  assert.equal(resolveSound({ ...base, sample: "fire-crackle", volume: 1, range: 4, pulse: { on: 1, off: 1 } }).pulse, undefined, "no pulse on a sample");
+  assert.equal(resolveSound({ x: 0, y: 0, kind: "tone", volume: 1, range: 4 }).sample, "");
+  assert.equal(resolveSound({ x: 0, y: 0, kind: "tone", volume: 1, range: 4 }).rate, 1);
+  // what makes two samples the same voice: the file and the speed
+  const key = (sample: string, rate?: number) => waveKey(resolveSound({ ...base, sample, volume: 1, range: 4, rate }));
+  assert.equal(key("hammer"), key("hammer", 1));
+  assert.notEqual(key("hammer"), key("hammer", 1.5));
+  assert.notEqual(key("hammer"), key("goblin-death"));
+  assert.notEqual(key("hammer"), waveKey({ kind: "noise", wave: "sine", pitch: 440, noise: "white" }));
+  // the problems
+  assert.deepEqual(
+    soundProblems([
+      { ...base, volume: 0.5, range: 5, sample: "hammer", interval: { min: 3, max: 8 } },
+      { ...base, volume: 0.5, range: 5, sample: "gong" },
+      { ...base, volume: 0.5, range: 5 },
+      { ...base, volume: 0.5, range: 5, sample: "hammer", interval: { min: 8, max: 3 } },
+    ]).map((p) => `${p.code}#${p.index}`),
+    ["soundSampleUnknown#1", "soundSampleUnknown#2", "soundIntervalOrder#3"],
+  );
+  // a new sound from the editor's template
+  assert.deepEqual(newSound(2, 2, { kind: "sample", sample: "hammer", interval: { min: 3, max: 8 } }), { x: 2, y: 2, kind: "sample", sample: "hammer", interval: { min: 3, max: 8 }, volume: SOUND_LIMITS.volume.default, range: SOUND_LIMITS.range.default });
+  // (switching a template from a tone to a sample leaves its wave behind)
+  assert.equal(newSound(2, 2, { kind: "sample", sample: "hammer", wave: "saw", pulse: { on: 1, off: 1 } }).pulse, undefined);
+}
+
 // ---- in a map file: parsed and cleaned
 {
   const map = parseMap("t", fixtureFile([
