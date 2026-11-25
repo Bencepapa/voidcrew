@@ -1,5 +1,6 @@
 import type { Lock, Terminal, Trigger } from "./story";
 import type { RenderLook } from "./renderLook";
+import type { LookSpec } from "./look";
 import type { WorldId } from "./worlds";
 import type { Interaction, WallInteractionTarget } from "./interactions";
 import type { FenceStyle } from "./fences";
@@ -98,6 +99,8 @@ export interface GameMap {
   reliefDepth?: number;
   // the deck's render values (see renderLook.ts)
   render?: RenderLook;
+  // the deck's colour look (see look.ts); undefined: its world's default, if any
+  look?: LookSpec;
   decals?: DecalSpec[];
   // door cells that aren't plain standard doors
   doors?: DoorSpec[];

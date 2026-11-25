@@ -63,12 +63,14 @@ import { emitterTrapsEn } from "./en/emitterTraps";
 import { emitterTrapsHu } from "./hu/emitterTraps";
 import { lockEn } from "./en/lock";
 import { lockHu } from "./hu/lock";
+import { lookEn } from "./en/look";
+import { lookHu } from "./hu/look";
 
 import { soundEn } from "./en/sound";
 import { soundHu } from "./hu/sound";
 
-const en = { ...soundEn, ...lockEn, ...emitterTrapsEn, ...skyEn, ...operableEn, ...areaEn, ...pickupEn, ...fenceEn, ...linksEn, ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...dialogueEn, ...minimapEn, ...inventoryEn, ...itemInfoEn, ...shopEn, ...shopEditorEn };
-const hu: Partial<Record<Key, string>> = { ...soundHu, ...lockHu, ...emitterTrapsHu, ...skyHu, ...operableHu, ...areaHu, ...pickupHu, ...fenceHu, ...linksHu, ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...dialogueHu, ...minimapHu, ...inventoryHu, ...itemInfoHu, ...shopHu, ...shopEditorHu };
+const en = { ...lookEn, ...soundEn, ...lockEn, ...emitterTrapsEn, ...skyEn, ...operableEn, ...areaEn, ...pickupEn, ...fenceEn, ...linksEn, ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...dialogueEn, ...minimapEn, ...inventoryEn, ...itemInfoEn, ...shopEn, ...shopEditorEn };
+const hu: Partial<Record<Key, string>> = { ...lookHu, ...soundHu, ...lockHu, ...emitterTrapsHu, ...skyHu, ...operableHu, ...areaHu, ...pickupHu, ...fenceHu, ...linksHu, ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...dialogueHu, ...minimapHu, ...inventoryHu, ...itemInfoHu, ...shopHu, ...shopEditorHu };
 
 export type Key = keyof typeof en;
 // whether a key has a string (for optional, data-driven names)

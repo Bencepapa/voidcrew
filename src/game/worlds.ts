@@ -3,6 +3,8 @@
 // a derelict, back; Void Fantasy is open: you start in its first map and,
 // when the party falls, wake again there. The engine is the same.
 
+import type { LookSpec } from "./look";
+
 export type WorldId = "scifi" | "fantasy";
 
 export interface WorldDef {
@@ -13,6 +15,9 @@ export interface WorldDef {
   startMap: string;
   // "ship": the base / scan / derelict loop; "open": no base, you respawn
   loop: "ship" | "open";
+  // the colour look of the world's maps that have none of their own (see look.ts); none by default.
+  // A map's own look, { "preset": "none" } too, replaces it.
+  defaultLook?: LookSpec;
 }
 
 export const WORLDS: Record<WorldId, WorldDef> = {

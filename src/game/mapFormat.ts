@@ -14,6 +14,7 @@ import { readOperable, type OperableSpec } from "./operables";
 import { readPropLock, type PropLock } from "./propLocks";
 import type { Lock, Terminal, Trigger } from "./story";
 import { cleanRenderLook } from "./renderLook";
+import { cleanLook, type LookSpec } from "./look";
 import { cleanSkyGradient, type SkyGradient } from "./skyGradient";
 import { worldOfMap } from "./worlds";
 import { parsePickupMode } from "./pickupMode";
@@ -91,6 +92,8 @@ export interface MapFile {
   // render values saved with the deck: material, AO, relief, wall height,
   // ambient light... (see renderLook.ts)
   render?: RenderLook;
+  // the deck's colour look (see look.ts); cleaned in parseMap
+  look?: LookSpec;
   start: { x: number; y: number; facing: Direction };
   layout: string[];
   layers?: {
@@ -390,6 +393,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
     lightGridAmbient: file.lightGridAmbient,
     reliefDepth: file.reliefDepth,
     render: cleanRenderLook(file.render),
+    look: cleanLook(file.look),
     name: file.name,
     place: file.place?.trim() || prettifyId(id),
     hasPlace: !!file.place?.trim(),
@@ -453,6 +457,8 @@ export function parseMap(id: string, file: MapFile): GameMap {
       doors: file.doors?.map(({ interaction: _interaction, ...door }) => door),
       items: undefined,
       render: undefined,
+      // (the colour look is a pass over the finished picture: no scene change)
+      look: undefined,
       // (only where an exit's plate stands, and whether it's a gate, matters to the scene - not its name or target)
       exits: file.exits?.map(({ x, y, to }) => ({ x, y, gate: !!readLinkTarget(to) })),
       // (a staircase's plate: where it is and how it looks)
