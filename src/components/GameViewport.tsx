@@ -1,5 +1,4 @@
 import { isTextEntry } from "../keyboardFocus";
-import { cleanSkyGradient } from "../game/skyGradient";
 import { createWeather } from "../render/weather";
 import { createGroundFog } from "../render/groundFog";
 import { createFireflies } from "../render/fireflies";
@@ -8,13 +7,6 @@ import { createMotes } from "../render/motes";
 import type { SpriteEmitter } from "../render/spriteCloud";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { DarkFantasyShader, updateDarkFantasyUniforms } from "../render/darkFantasyShader";
-import { createColorLookPass, type ColorLookPass } from "../render/colorLookPass";
-import { createLookResolver, type ResolvedLook } from "../game/look";
 import { prepareRaycastsGradually } from "../render/bvh";
 import { createSmoke, type SmokeBody, type SmokeEmitter, type SmokeWorld } from "../render/smoke";
 import { createPetals, type PetalEmitter } from "../render/petals";
@@ -37,18 +29,14 @@ import { wallFaceSpans, type WallFacePart } from "../game/mapGeometry";
 import type { LootSpill } from "../game/items";
 import { lightLevel } from "../game/lightEffects";
 import {
-  bakeLightGrid,
-  packLightGrid,
   propCastsBakedShadow,
   createLightGridUniforms,
   createLightReach,
   disposeLightGrid,
   POOL_DECAY,
   POOL_DECAY_TAG,
-  setLightGrid,
   useLightGrid,
 } from "../render/lightGrid";
-import type { LightBakeRequest, LightBakeResult } from "../render/lightBake.worker";
 import {
   DOOR_EDGE_OFFSET,
   bridgeAt,
@@ -89,7 +77,6 @@ import { hasClickables, sourceKeys } from "../game/operables";
 import {
   PROP_TYPES,
   PROP_RELIEF_SCALE,
-  isSharedPropId,
   propPlacement,
   propHeight,
   propReliefAmount,
@@ -122,14 +109,11 @@ import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import { doorLeafMotion, type DoorType } from "../game/doorTypes";
 import {
   onSharedDecalsChanged,
-  onSharedImagesChanged,
   onSharedPickupsChanged,
   pickupTexture,
   sharedImage,
 } from "../render/sharedImages";
-import { isSharedSkyId, skySource } from "../game/skyImage";
 import { gameSound } from "../audio/gameSound";
-import { bakeCacheKey } from "../render/lightBakeCache";
 import { publishSight } from "../render/sightStore";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import type { EditTool } from "../editor/mapEdits";
@@ -137,7 +121,7 @@ import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
 
 export { DEFAULT_SETTINGS } from "../render/viewport/settings";
 
-import type { GeometryViewId, ViewportSettings } from "../render/viewport/settings";
+import type { ViewportSettings } from "../render/viewport/settings";
 import {
   createBeveledWallGeometry,
   LIGHT_PANEL_INTENSITY,
@@ -162,7 +146,6 @@ import {
 import {
   TEXTURE_CHANGED_EVENT,
   EDIT_SETTLE_MS,
-  LIGHT_EDIT_SETTLE_MS,
   ORIGIN_NDC,
   CULL_MAX_SIZE,
   DOOR_FRAME_SET,
@@ -202,7 +185,7 @@ import {
   BRIDGE_KICK,
   BRIDGE_STRINGER,
 } from "../render/viewport/constants";
-import { bakeCache, type SceneCache, clearSceneCache, renderedSpecs } from "../render/viewport/sceneCache";
+import { type SceneCache, clearSceneCache, renderedSpecs } from "../render/viewport/sceneCache";
 import { fogRange } from "../render/viewport/fog";
 import {
   LIGHT_POOL_SIZE,
@@ -270,7 +253,7 @@ import {
   STROKE_TOOLS,
   EDIT_LIGHT_REMOVE_COLOR,
 } from "../render/viewport/editor";
-import { addDirectLightOcclusion, geometryViewMaterial } from "../render/viewport/materials";
+import { addDirectLightOcclusion } from "../render/viewport/materials";
 import {
   PARTY_COVER_REFRESH_MS,
   PARTY_BODY_HEIGHTS,
@@ -292,7 +275,9 @@ import {
   type PartHighlight,
   highlightMaterial,
 } from "../render/viewport/actors";
-import { makeSkyGradientTexture, makeSkyMaterial } from "../render/viewport/sky";
+import { createPostPipeline } from "../render/viewport/postPipeline";
+import { createBakeRuntime } from "../render/viewport/bakeRuntime";
+import { createSkySurface } from "../render/viewport/skySurface";
 import {
   jumpPose,
   FALL_GRAVITY,
@@ -1055,158 +1040,14 @@ export function GameViewport({
     const lightGrid = createLightGridUniforms();
     // the map as edited since the scene was built (see applyStructure): what the quick preview of an edit shows
     let liveMap = map;
-    // the map's own density, else the settings'
-    const finalDensity = (m: GameMap) => m.lightGridDensity ?? settingsRef.current.lightGridDensity;
-    const bakeOptions = (m: GameMap, quick = false) => ({
-      // (a rough bake while the quick preview of an edit shows - see applyStructure - or the first, quick one after an
-      // edit, see bakeLatest)
-      perCell: liveMap !== map ? 1 : quick ? Math.max(1, settingsRef.current.lightGridQuickDensity) : finalDensity(m),
-      mode: settingsRef.current.lightGridMode,
-      bounce: settingsRef.current.lightBounce,
+    const bakeRuntime = createBakeRuntime({
+      map, settingsRef, latestMapRef, rebakeRef, lightGrid, wallHeight, track, tick,
+      getLiveMap: () => liveMap,
+      getMapLights: () => mapLights,
+      isDisposed: () => disposed,
     });
-    // the bake (and a coarser one for the ambient part, if the map asks)
-    let cancelBake: (() => void) | undefined;
-    // what a bake is a function of (and its cache key)
-    const bakeInputs = (m: GameMap, quick: boolean) => {
-      const options = bakeOptions(m, quick);
-      const ambientDensity =
-        !quick && options.mode === "directional" && liveMap === map && m.lightGridAmbient && m.lightGridAmbient !== options.perCell
-          ? m.lightGridAmbient
-          : undefined;
-      const lights = mapLights;
-      const sharedPropTypes = Object.fromEntries((m.props ?? [])
-        .filter(({ prop }) => isSharedPropId(prop) && PROP_TYPES[prop])
-        .map(({ prop }) => [prop, PROP_TYPES[prop]]));
-      const cacheKey = bakeCacheKey({
-        width: m.width, height: m.height, cells: m.cells, floorHeights: m.floorHeights, ceilingHeights: m.ceilingHeights,
-        props: m.props, bridges: m.bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity,
-      });
-      return { options, ambientDensity, lights, sharedPropTypes, cacheKey };
-    };
-    const bake = (m: GameMap, quick = false): Promise<void> => {
-      cancelBake?.();
-      const bakeFrom = performance.now();
-      const { options, ambientDensity, lights, sharedPropTypes, cacheKey } = bakeInputs(m, quick);
-      const applyBake = ({ data, ambient, timing }: LightBakeResult) => {
-        bakeCache.set(cacheKey, { data, ambient });
-        const applyFrom = performance.now();
-        if (timing) {
-          const start = performance.timeOrigin + bakeFrom;
-          tick("light worker startup and request", start, timing.receivedAt);
-          tick("light grid computation", timing.receivedAt, timing.computedAt);
-          tick("light grid packing", timing.computedAt, timing.packedAt);
-          tick("light worker response", timing.packedAt, performance.timeOrigin + applyFrom);
-        }
-        setLightGrid(lightGrid, data, ambient);
-        tick("light grid texture setup", applyFrom);
-        tick("light bake", bakeFrom);
-      };
-      const fallback = () => applyBake({
-        data: packLightGrid(bakeLightGrid({ ...m, sharedPropTypes }, lights, wallHeight, options)),
-        ambient: ambientDensity === undefined ? undefined
-          : packLightGrid(bakeLightGrid({ ...m, sharedPropTypes }, lights, wallHeight, { ...options, perCell: ambientDensity }), true),
-      });
-      // the same inputs as a bake before (a rebuild for a texture change, say): its result, at once
-      const cached = bakeCache.get(cacheKey);
-      if (cached) {
-        applyBake(cached);
-        return Promise.resolve();
-      }
-      return new Promise<void>((resolve, reject) => {
-        let worker: Worker;
-        const recover = () => {
-          try {
-            fallback();
-            resolve();
-          } catch (error) {
-            reject(error);
-          }
-        };
-        try {
-          worker = new Worker(new URL("../render/lightBake.worker.ts", import.meta.url), { type: "module" });
-        } catch {
-          recover();
-          return;
-        }
-        const finish = () => {
-          worker.terminate();
-          cancelBake = undefined;
-        };
-        cancelBake = () => {
-          finish();
-          resolve();
-        };
-        worker.onmessage = ({ data }: MessageEvent<LightBakeResult>) => {
-          finish();
-          try {
-            applyBake(data);
-            resolve();
-          } catch (error) {
-            reject(error);
-          }
-        };
-        worker.onerror = (event) => {
-          event.preventDefault();
-          finish();
-          recover();
-        };
-        const { width, height, cells, floorHeights, ceilingHeights, props, bridges } = m;
-        const request: LightBakeRequest = {
-          map: { width, height, cells, floorHeights, ceilingHeights, props, bridges, sharedPropTypes },
-          lights, wallHeight, options, ambientDensity,
-        };
-        try {
-          worker.postMessage(request);
-        } catch {
-          finish();
-          recover();
-        }
-      }).catch((error) => console.error("Light bake failed:", error));
-    };
-    // The scene is ready after a rough bake (a few samples a cell, see lightGridQuickDensity) and the real one follows in
-    // the background and replaces it: a big map no longer waits tens of seconds for its light. (Off, or no coarser than the
-    // real density: the real bake only; a bake cached from before is used at once.)
-    const quickFirst = settings.lightGridQuickDensity >= 1 && settings.lightGridQuickDensity < finalDensity(map);
-    if (quickFirst && !bakeCache.get(bakeInputs(map, false).cacheKey)) {
-      // (only the rough one holds the scene back; the real one is not tracked)
-      const rough = bake(map, true);
-      track(rough);
-      void rough.then(() => { if (!disposed) void bake(map); });
-    } else {
-      track(bake(map));
-    }
-    // Light edits have a shorter idle window than geometry and prop edits.
-    // Either bake uses the latest map, including edits queued on the other timer.
-    let bakeTimer: ReturnType<typeof setTimeout> | undefined;
-    let lightEditTimer: ReturnType<typeof setTimeout> | undefined;
-    const clearBakeTimers = () => {
-      clearTimeout(bakeTimer);
-      clearTimeout(lightEditTimer);
-    };
-    // After an edit: a rough bake first (a few samples per cell, on the worker like the real one), so the change shows
-    // within moments, then the real one replaces it. A newer edit cancels whichever is running.
-    let bakeRun = 0;
-    const bakeLatest = () => {
-      clearBakeTimers();
-      if (disposed) return;
-      const run = ++bakeRun;
-      const m = latestMapRef.current;
-      const quickDensity = settingsRef.current.lightGridQuickDensity;
-      const rough = quickDensity >= 1 && quickDensity < finalDensity(m) && liveMap === map;
-      if (!rough) {
-        void bake(m);
-        return;
-      }
-      void bake(m, true).then(() => {
-        if (!disposed && run === bakeRun) void bake(latestMapRef.current);
-      });
-    };
-    const bakeSoon = () => {
-      clearTimeout(bakeTimer);
-      bakeTimer = setTimeout(bakeLatest, EDIT_SETTLE_MS);
-    };
-    // baked again when its settings change (see the effect on them)
-    rebakeRef.current = bakeLatest;
+    bakeRuntime.start(settings);
+    bakeRuntime.bindRebake();
     const ceilingLightCells = (lights: LightSpec[]) =>
       new Set(lights.filter((l) => l.kind === "ceiling").map((l) => `${Math.round(l.x)},${Math.round(l.z)}`));
     let litCells = ceilingLightCells(mapLights);
@@ -1415,103 +1256,7 @@ export function GameViewport({
     >();
     let materialViewApplied = "";
     let materialViewTick = 0;
-    const cutoutFaceMaterials = new Map<THREE.Material, THREE.MeshNormalMaterial>();
-    function cutoutFaceMaterial(material: THREE.Material): THREE.Material {
-      const { map } = material as THREE.MeshStandardMaterial;
-      if (!map || !material.alphaTest) return material;
-      let faces = cutoutFaceMaterials.get(material);
-      if (!faces) {
-        // MeshNormalMaterial has no diffuse map. Keep just the alpha mask so
-        // the geometry view shows the same silhouette as the textured view.
-        faces = new THREE.MeshNormalMaterial({ side: material.side });
-        faces.allowOverride = false;
-        faces.onBeforeCompile = (shader) => {
-          if (map.matrixAutoUpdate) map.updateMatrix();
-          shader.uniforms.cutoutMap = { value: map };
-          shader.uniforms.cutoutTransform = { value: map.matrix };
-          shader.uniforms.cutoutThreshold = { value: material.alphaTest };
-          shader.vertexShader = shader.vertexShader
-            .replace("#include <uv_pars_vertex>", "#include <uv_pars_vertex>\nvarying vec2 cutoutUv;\nuniform mat3 cutoutTransform;")
-            .replace("#include <uv_vertex>", "#include <uv_vertex>\ncutoutUv = (cutoutTransform * vec3(uv, 1.0)).xy;");
-          shader.fragmentShader = shader.fragmentShader
-            .replace("#include <uv_pars_fragment>", "#include <uv_pars_fragment>\nvarying vec2 cutoutUv;\nuniform sampler2D cutoutMap;\nuniform float cutoutThreshold;")
-            .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (texture2D(cutoutMap, cutoutUv).a < cutoutThreshold) discard;");
-        };
-        cutoutFaceMaterials.set(material, faces);
-      }
-      return faces;
-    }
-    // The optional post-processes: the scene into a half-float target (MSAA when antialiasing is on), the
-    // output pass (tone mapping, sRGB), then the map's colour look (a LUT, see colorLookPass.ts), then the
-    // dark fantasy colour pass last, to the screen; a pass that isn't on is skipped. Textured view only, and
-    // only when one of the two is on: otherwise the scene is drawn straight to the screen as ever.
-    let post: { composer: EffectComposer; pass: ShaderPass; look: ColorLookPass; ratio: number; w: number; h: number } | null = null;
-    const resolveLook = createLookResolver();
-    // the colour look to draw now: the map's own, else its world's default (null: none, or switched off)
-    function currentLook(s: ViewportSettings): ResolvedLook | null {
-      if (s.postLookOff) return null;
-      const m = latestMapRef.current;
-      return resolveLook(m.look, WORLDS[m.world]?.defaultLook);
-    }
-    function renderPost(s: ViewportSettings, look: ResolvedLook | null) {
-      const size = renderer.getSize(new THREE.Vector2());
-      const ratio = renderer.getPixelRatio();
-      if (!post) {
-        const target = new THREE.WebGLRenderTarget(size.x * ratio, size.y * ratio, { type: THREE.HalfFloatType, samples: s.antialias ? 4 : 0 });
-        const composer = new EffectComposer(renderer, target);
-        composer.setPixelRatio(ratio);
-        composer.setSize(size.x, size.y);
-        composer.addPass(new RenderPass(scene, camera));
-        composer.addPass(new OutputPass());
-        const lookPass = createColorLookPass();
-        composer.addPass(lookPass.pass);
-        const pass = new ShaderPass(DarkFantasyShader);
-        composer.addPass(pass);
-        post = { composer, pass, look: lookPass, ratio, w: size.x, h: size.y };
-      } else if (post.ratio !== ratio || post.w !== size.x || post.h !== size.y) {
-        post.composer.setPixelRatio(ratio);
-        post.composer.setSize(size.x, size.y);
-        post.ratio = ratio;
-        post.w = size.x;
-        post.h = size.y;
-      }
-      const u = post.pass.uniforms;
-      updateDarkFantasyUniforms(u, s);
-      post.pass.enabled = s.postDark;
-      post.look.apply(look);
-      post.composer.render();
-    }
-    function renderGeometryView(view: GeometryViewId) {
-      scene.overrideMaterial = geometryViewMaterial(view);
-      if (view === "textured") {
-        const look = currentLook(settingsRef.current);
-        if (settingsRef.current.postDark || look) {
-          renderPost(settingsRef.current, look);
-          return;
-        }
-      }
-      if (view !== "faces") {
-        renderer.render(scene, camera);
-        return;
-      }
-      const originals: { mesh: THREE.Mesh; material: THREE.Mesh["material"] }[] = [];
-      scene.traverseVisible((object) => {
-        const mesh = object as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const material = mesh.material;
-        const replacement = Array.isArray(material)
-          ? material.some((face) => face.alphaTest) ? material.map(cutoutFaceMaterial) : material
-          : cutoutFaceMaterial(material);
-        if (replacement === material) return;
-        originals.push({ mesh, material });
-        mesh.material = replacement;
-      });
-      try {
-        renderer.render(scene, camera);
-      } finally {
-        for (const { mesh, material } of originals) mesh.material = material;
-      }
-    }
+    const postPipeline = createPostPipeline({ renderer, scene, camera, settingsRef, latestMapRef });
     function applyMaterialViews(s: ViewportSettings) {
       const mapView = s.geometryView === "normals" || s.geometryView === "depth";
       const active = mapView || !s.showNormals || !s.showMetal;
@@ -1556,9 +1301,6 @@ export function GameViewport({
     }
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 1 });
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 1 });
-    // the open sky: walls and ceilings of the "sky" set are panes that show the
-    // starry sky (looked at from the camera, as if far away) - nothing else is
-    // sky, so gaps between walls and the far distance stay black
     // black backing behind every relief wall face, a little behind the deepest
     // recess: a height map that doesn't tile exactly leaves slivers between
     // panels that would show what's behind the wall (the next room, the floor)
@@ -1571,57 +1313,11 @@ export function GameViewport({
     // Stable during inspection: adjacent faces get widely separated hues.
     const backingColor = () => new THREE.Color().setHSL((0.13 + backingColorSerial++ * 0.61803398875) % 1, 0.85, 0.55);
     const backingColors: number[] = [];
-    let skyMat: THREE.ShaderMaterial | null = null;
-    // (a shared sky's picture that is not registered yet: this stops waiting for it)
-    let stopSkyWait: (() => void) | null = null;
-    const skySurface = () => {
-      if (!skyMat) {
-        const material = makeSkyMaterial();
-        skyMat = material;
-        // a gradient wins over the image name (the starry sky shows till one is in)
-        const gradient = cleanSkyGradient(map.textures?.skyGradient);
-        if (gradient) {
-          const tex = makeSkyGradientTexture(gradient);
-          (material.uniforms.map.value as THREE.Texture).dispose();
-          material.uniforms.map.value = tex;
-          material.uniforms.gradientMode.value = 1;
-          decals.setWaterSky(tex);
-        }
-        const name = gradient ? undefined : map.textures?.sky;
-        if (name) {
-          const loadSky = (url: string) => loader.load(
-            url,
-            (tex) => {
-              if (disposed) {
-                tex.dispose();
-                return;
-              }
-              tex.colorSpace = THREE.NoColorSpace;
-              tex.wrapS = THREE.RepeatWrapping;
-              (material.uniforms.map.value as THREE.Texture).dispose();
-              material.uniforms.map.value = tex;
-              decals.setWaterSky(tex);
-            },
-            undefined,
-            () => console.warn(`Sky "${name}" could not be loaded (${isSharedSkyId(name) ? "shared sky" : "public/skies/"})`),
-          );
-          // a built-in name is a file in public/skies/; a shared sky is its registered (or bundled) picture, which may
-          // still be on its way: the starry sky shows till it is in (see game/skyImage.ts)
-          const source = skySource(name, import.meta.env.BASE_URL, bust, (id) => sharedImage(id)?.url);
-          if (source.kind === "url") loadSky(source.url);
-          else {
-            stopSkyWait = onSharedImagesChanged(() => {
-              const url = sharedImage(source.id)?.url;
-              if (!url || disposed) return;
-              stopSkyWait?.();
-              stopSkyWait = null;
-              loadSky(url);
-            });
-          }
-        }
-      }
-      return skyMat;
-    };
+    const sky = createSkySurface({
+      map, loader, bust,
+      setWaterSky: (texture) => decals.setWaterSky(texture),
+      isDisposed: () => disposed,
+    });
 
     const WALL_SUBDIVISIONS = 10;
     // relief geometry needs the height map's pixels, so it's built once the
@@ -1872,7 +1568,7 @@ export function GameViewport({
         const ceilingId = map.ceilingTextureAt?.(x, y) ?? map.textures?.ceiling;
         const ceilingKit = ceilingId === "sky" ? null : ceilingKitAt(x, y);
         if (ceilingId === "sky") {
-          const pane = new THREE.Mesh(floorGeo, skySurface());
+          const pane = new THREE.Mesh(floorGeo, sky.skySurface());
           pane.userData.skyCeiling = true;
           pane.rotation.x = Math.PI / 2;
           pane.position.set(x, ceiling * wallHeight, y);
@@ -1925,7 +1621,7 @@ export function GameViewport({
             for (const span of spans) {
               const geo = new THREE.PlaneGeometry(1, (span.top - span.bottom) * wallHeight);
               geometries.push(geo);
-              const pane = new THREE.Mesh(geo, skySurface());
+              const pane = new THREE.Mesh(geo, sky.skySurface());
               pane.position.set(face.x, ((span.bottom + span.top) / 2) * wallHeight, face.z);
               pane.rotation.y = face.rotY;
               group.add(pane);
@@ -1975,7 +1671,7 @@ export function GameViewport({
     }
     const kits = [...wallKits.values()];
     // standing water mirrors the open sky, when there is one
-    decals.setWaterSky((skyMat as THREE.ShaderMaterial | null)?.uniforms.map.value ?? null);
+    decals.setWaterSky(sky.getTexture());
     // (the black backing itself is built once the height maps are loaded: see buildBacking below)
     const buildBacking = async () => {
     if (!backingPanels.length) return;
@@ -4663,7 +4359,7 @@ export function GameViewport({
         const built = buildEditPreview(next, changed, wallHeight, {
           floor: (x, y) => lit(floorKitAt(x, y, next)?.wallMat ?? floorMat),
           ceiling: (x, y) => {
-            if ((next.ceilingTextureAt?.(x, y) ?? next.textures?.ceiling) === "sky") return skySurface();
+            if ((next.ceilingTextureAt?.(x, y) ?? next.textures?.ceiling) === "sky") return sky.skySurface();
             return lit(ceilingKitAt(x, y, next)?.wallMat ?? ceilMat);
           },
           wall: (x, y, side) => {
@@ -4677,7 +4373,7 @@ export function GameViewport({
               : accentKit && wallVariantRoll(x + v.x * 0.5, y + v.y * 0.5) < settings.accentRatio
                 ? accentSet
                 : primarySet;
-            if (faceSet === "sky") return skySurface();
+            if (faceSet === "sky") return sky.skySurface();
             return lit(wallKitFor(faceSet as TextureSetId).wallMat);
           },
         });
@@ -4695,7 +4391,7 @@ export function GameViewport({
       culledCount = -1;
       sceneVersion++;
       // the light grid, roughly: the full bake comes with the rebuild
-      bakeSoon();
+      bakeRuntime.bakeSoon();
       // dev: what the quick preview holds (flat quads drawn, old surfaces taken off)
       if (import.meta.env.DEV && !doorPreview) {
         Object.assign(window, { __voidcrewPreview: { changed: changed.size, quads: previewObjects.length, hidden: facingSurfaces.filter((o) => o.userData.editHidden).length } });
@@ -4737,13 +4433,10 @@ export function GameViewport({
       if (renderedSpecs(next.props) !== renderedSpecs(applied.props)) {
         applyProps(next, applied);
         const shadowProps = (m: GameMap) => renderedSpecs((m.props ?? []).filter(propCastsBakedShadow));
-        if (shadowProps(next) !== shadowProps(applied)) bakeSoon();
+        if (shadowProps(next) !== shadowProps(applied)) bakeRuntime.bakeSoon();
       }
       if (lightsChanged) {
-        // A dragged light or slider restarts its own idle window.
-        clearTimeout(bakeTimer);
-        clearTimeout(lightEditTimer);
-        lightEditTimer = setTimeout(bakeLatest, LIGHT_EDIT_SETTLE_MS);
+        bakeRuntime.bakeAfterLightEdit();
       }
       applied = next;
     };
@@ -7550,7 +7243,7 @@ export function GameViewport({
       }
       layFlatSprites();
       applyMaterialViews(s);
-      renderGeometryView(s.geometryView);
+      postPipeline.renderGeometryView(s.geometryView);
 
       fpsFrames++;
       if (now - lastStatsAt > 500) {
@@ -7653,12 +7346,8 @@ export function GameViewport({
 
     return () => {
       disposed = true;
-      post?.composer.dispose();
-      post?.look.dispose();
-      post = null;
-      clearBakeTimers();
-      cancelBake?.();
-      rebakeRef.current = null;
+      postPipeline.dispose();
+      bakeRuntime.dispose();
       stopRaycastPrep?.();
       if (applyLightsRef.current === applyChanges) applyLightsRef.current = null;
       const w = window as { __voidcrewSnapshot?: () => string };
@@ -7696,7 +7385,7 @@ export function GameViewport({
         material.map?.dispose();
         material.dispose();
       }
-      for (const mat of cutoutFaceMaterials.values()) mat.dispose();
+      postPipeline.disposeFaceMaterials();
       offOperables();
       offEmitters();
       if (propWiresRef.current === refreshPropWires) propWiresRef.current = null;
@@ -7720,7 +7409,7 @@ export function GameViewport({
       for (const mat of fixtureMats.values()) mat.dispose();
       (selectBox.material as THREE.Material).dispose();
       stopSharedDecals();
-      stopSkyWait?.();
+      sky.stopWaiting();
       decals.dispose();
       disposeLightGrid(lightGrid);
       fenceMarkTexture.dispose();
@@ -7748,8 +7437,7 @@ export function GameViewport({
       smokeBlowMat.dispose();
       backingMat.dispose();
       for (const mat of billboardMaterials) mat.dispose();
-      skyMat?.uniforms.map.value.dispose();
-      skyMat?.dispose();
+      sky.dispose();
       // the renderer stays for the next build (see SceneCache)
       renderer.renderLists.dispose();
     };
