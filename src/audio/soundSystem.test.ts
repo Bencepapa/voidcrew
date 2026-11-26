@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import type { SoundSpec } from "../game/sounds";
 import { FIXTURE_LAYOUT, FIXTURE_LISTENER, FIXTURE_SOUND, fixtureBlocked } from "./soundFixture";
+import { registerSharedSamples } from "./sharedSamples";
 import { createSoundSystem, type SoundBackend, type SoundScene, type VoiceState, type WaveSpec } from "./soundSystem";
 
 // a stand-in for the engine: it keeps what the system tells it
@@ -41,6 +42,27 @@ const scene = (sounds: SoundSpec[]): SoundScene => ({
   wallHeight: 1,
 });
 const ears = (x: number, z: number, fx = 1, fz = 0) => ({ x, y: 0.5, z, fx, fz });
+
+// A shared map can reach the audio system before the guest download registers its sample.
+{
+  const { backend, voices } = fakeBackend();
+  const system = createSoundSystem(backend, { now: () => 0 });
+  const id = "fantasy_sound_00000000-0000-4000-8000-000000000001";
+  system.setScene(scene([{ ...FIXTURE_SOUND, kind: "sample", sample: id, interval: { min: 3, max: 8 } }]));
+  system.frame(ears(3, 3));
+  assert.equal(voices.length, 0);
+  const asset = {
+    id, world: "fantasy", name: "Bell", category: "effect", format: "wav", bytes: 2000, duration: 1, volume: 0.6, rate: 1,
+  } as const;
+  registerSharedSamples([{ ...asset, url: "https://example.test/r1/sound.wav" }]);
+  system.frame(ears(3, 3));
+  assert.equal(voices.length, 1);
+  assert.equal(voices[0].wave.sample, id);
+  registerSharedSamples([{ ...asset, url: "https://example.test/r2/sound.wav" }]);
+  system.frame(ears(3, 3));
+  assert.equal(voices.length, 2);
+  assert.equal(voices[0].stopped, true);
+}
 
 // ---- nothing before a scene; the editor is silent
 {

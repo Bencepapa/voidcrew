@@ -11,6 +11,9 @@ Pipálható lista: húzd ki, ami rendben van; ami nem, azt írd le (melyik lép�
 - [ ] **NPC WebP (KÉSŐBB tesztelem, a felhasználó jelezte)** (a `shared-webp-mime.sql` lefutott): NPC közzététele → a revízió mappájában `diffuse.webp` vagy `diffuse.png` (a kisebb) + `normal.png` + `meta.json` (`definition.diffuseFile`); újratöltés, vendégnézet, módosítás + újraközzététel.
 
 ## Szerkesztő
+
+- [x] **Hangfeltöltés próbája Edge-ben, próbatárhellyel.** Asset Manager → Hang → GUI hang → + Új → WAV. A fájlméret és az időtartam látszik, a hang lejátszható és tekerhető. A hangerő és a sebesség oldalfrissítés után megmarad a piszkozatban. Közzététel után az Assetfában kiválasztható, az előnézet pedig átveszi az alapértékeket.
+- [ ] **Hangfeltöltés éles tárhelyre.** Tegyél közzé egy hangot az Asset Managerből, helyezd el a pályán és ellenőrizd a térbeli lejátszást. Megosztott pályán jelentkezz ki, majd töltsd be újra a pályát. A hang vendégként is hallatszódjon.
 - [x] **AI mélység** egy valódi textúrán (Assets → új textúra → AI mélység szakasz): az előnézet a helyes irányú reliefet mutatja (ha kifordított: Invertálás), a normal-jelölő, a Mégse gomb, oldalfrissítés után „Modell gyorsítótárban: gyors”.
 - [x] **Frissítés gomb** az Assets fejlécében: üzenetet ad (nincs beállítva / frissítve / bejelentkezés kell).
 - [x] **Sárga sáv:** a közzé nem tett képek listája, kattintásra a piszkozatra ugrik, a × elvet.

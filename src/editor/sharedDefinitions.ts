@@ -2,7 +2,7 @@ import type { WorldId } from "../game/worlds";
 import { listSharedObjects, sharedAssetBase } from "./sharedTextures";
 import { sharedUpload } from "./sharedAuth";
 
-type Kind = "prop" | "door" | "actor";
+type Kind = "prop" | "door" | "actor" | "sound";
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const revisions = (rows: { name: string }[]) => rows.flatMap(({ name }) =>
   /^r[1-9]\d*$/.test(name) ? [Number(name.slice(1))] : []).filter(Number.isSafeInteger).sort((a, b) => b - a);

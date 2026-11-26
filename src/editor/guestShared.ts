@@ -8,6 +8,7 @@
 // id in a story text names.
 
 import { ACTOR_TYPES } from "../game/actors";
+import { isSharedSampleId, sharedSample } from "../audio/sharedSamples";
 import { isSharedDefinitionId, isSharedImageId, isSharedTextureId, mapSharedRefs, worldOfAssetId } from "../game/mapSharedRefs";
 import { PROP_TYPES } from "../game/props";
 import type { GameMap } from "../game/types";
@@ -20,6 +21,7 @@ import { doorType, loadSharedDoorsById } from "./sharedDoorTypes";
 import { loadSharedImagesById } from "./sharedImages";
 import { loadSharedPropsById } from "./sharedProps";
 import { loadSharedTexturesById } from "./sharedTextures";
+import { loadSharedSounds } from "./sharedSounds";
 
 const MAX_ROUNDS = 3;
 // ids asked for in this page load, found or not: a missing one is not asked again
@@ -49,6 +51,7 @@ function missing(map: GameMap, extraImages: readonly string[]) {
     props: fresh(refs.props, id => !!PROP_TYPES[id]),
     doors: fresh(refs.doors, id => !!doorType(id)),
     actors: fresh(refs.actors, id => !!ACTOR_TYPES[id]),
+    sounds: fresh(new Set(map.sounds?.map(sound => sound.sample).filter(isSharedSampleId)), id => !!sharedSample(id)),
   };
 }
 
@@ -60,7 +63,7 @@ export async function loadSharedForMap(map: GameMap, extraImages: readonly strin
   if (!sharedConfigured) return;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const need = missing(map, extraImages);
-    const all = [...need.textures, ...need.images, ...need.props, ...need.doors, ...need.actors];
+    const all = [...need.textures, ...need.images, ...need.props, ...need.doors, ...need.actors, ...need.sounds];
     if (!all.length) return;
     for (const id of all) asked.add(id);
     const settle = (work: Promise<unknown>) => work.catch((error) => console.warn("[shared] could not load what the map references:", error));
@@ -72,6 +75,7 @@ export async function loadSharedForMap(map: GameMap, extraImages: readonly strin
       ...definitions(need.props.filter(isSharedDefinitionId), loadSharedPropsById),
       ...definitions(need.doors.filter(isSharedDefinitionId), loadSharedDoorsById),
       ...definitions(need.actors.filter(isSharedDefinitionId), loadSharedActorsById),
+      ...definitions(need.sounds, (world, ids) => loadSharedSounds(world, undefined, ids)),
     ]);
   }
 }

@@ -3,7 +3,10 @@ import { t } from "../../i18n";
 import type { EditorBarProps } from "../EditorBar";
 import { NumberField } from "../NumberField";
 import { CommitContext, KindChoice, Section, BUTTON, idle, active } from "./parts";
-import { DEFAULT_INTERVAL, DEFAULT_SAMPLE, SAMPLES, SAMPLE_IDS, isSampleId, samplePatch, type SampleId } from "../../audio/samples";
+import { DEFAULT_INTERVAL, DEFAULT_SAMPLE, SAMPLE_IDS, samplePatch, sampleSource } from "../../audio/samples";
+import { activeWorld } from "../../game/worlds";
+import { useSharedSounds } from "../sharedSounds";
+import { SoundPreview } from "../SoundPreview";
 import { NOISE_COLORS, SOUND_KINDS, SOUND_LIMITS, SOUND_WAVES, changePulse, type NoiseColor, type SoundKind, type SoundWave } from "../../game/sounds";
 
 // a pitch is felt in octaves: the slider runs along the logarithm of the frequency
@@ -15,8 +18,10 @@ const sliderToPitch = (v: number) => PITCH_MIN * (PITCH_MAX / PITCH_MIN) ** v;
 // settings are open all the time - there are few of them; the spot in the cell is a section of its own.
 export function SoundFields(p: EditorBarProps & { placing?: boolean }) {
   const commit = useContext(CommitContext);
+  const sharedSounds = useSharedSounds().filter(sound => sound.world === activeWorld() || sound.id === p.sound?.sample);
   const s = p.sound;
   if (!s) return null;
+  const source = sampleSource(s.sample, import.meta.env.BASE_URL);
   const change = p.onSoundChange;
   const num = (label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void, options: { title?: string; unit?: string; defaultValue?: number } = {}) => (
     <NumberField label={label} value={value} min={min} max={max} step={step} slider title={options.title} unit={options.unit} defaultValue={options.defaultValue} onChange={onChange} onCommit={commit} />
@@ -28,7 +33,7 @@ export function SoundFields(p: EditorBarProps & { placing?: boolean }) {
           label={t("sound.kind")}
           value={s.kind}
           options={SOUND_KINDS.map((value) => ({ value, label: t(`sound.kind.${value}`) }))}
-          onChange={(kind) => change(kind === "sample" ? samplePatch(isSampleId(s.sample) ? s.sample : DEFAULT_SAMPLE, s.interval) : { kind: kind as SoundKind })}
+          onChange={(kind) => change(kind === "sample" ? samplePatch(source ? s.sample : DEFAULT_SAMPLE, s.interval) : { kind: kind as SoundKind })}
         />
         {s.kind === "sample" ? (
           <>
@@ -37,18 +42,23 @@ export function SoundFields(p: EditorBarProps & { placing?: boolean }) {
               <select
                 aria-label={t("sound.sample")}
                 value={s.sample}
-                onChange={(e) => change(samplePatch(e.target.value as SampleId, s.interval))}
+                onChange={(e) => change(samplePatch(e.target.value, s.interval))}
                 onBlur={commit}
                 className="min-w-0 flex-1 bg-neutral-800 border border-neutral-700 px-1"
               >
-                {!isSampleId(s.sample) && <option value={s.sample}>{t("sound.sampleUnknown", { id: s.sample || "-" })}</option>}
+                {!source && <option value={s.sample}>{t("sound.sampleUnknown", { id: s.sample || "-" })}</option>}
                 {SAMPLE_IDS.map((id) => (
                   <option key={id} value={id}>{t(`sound.sample.${id}`)}</option>
                 ))}
+                {sharedSounds.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
               </select>
             </label>
+            {p.placing && source && <div className="flex flex-col gap-1">
+              <span>{t("sound.assets.preview2d")}</span>
+              <SoundPreview src={source.url} volume={s.volume} rate={s.rate} label={t("sound.assets.preview2d")} />
+            </div>}
             {num(t("sound.rate"), s.rate, SOUND_LIMITS.rate.min, SOUND_LIMITS.rate.max, 0.05, (rate) => change({ rate: rate === SOUND_LIMITS.rate.default ? undefined : rate }), { title: t("sound.rateHint"), defaultValue: SOUND_LIMITS.rate.default })}
-            {isSampleId(s.sample) && SAMPLES[s.sample].loop ? (
+            {source?.loop ? (
               <span className="text-neutral-500">{t("sound.loopsHint")}</span>
             ) : (
               <>

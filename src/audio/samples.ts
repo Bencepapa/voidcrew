@@ -7,6 +7,8 @@
 // multiplies the voice's level by it. Measured in the browser (decoded, mono mix, 50 ms windows, the RMS over the windows
 // within 30 dB of the loudest): the recordings sat between -43.7 and -27.5 dBFS; the gains bring each to about -36 dBFS,
 // and none is raised past a peak of about -1 dBFS (fire-crackle: its RMS asks for 2.43, 2.2 is kept).
+import { sharedSample } from "./sharedSamples";
+
 export type SampleCategory = "nature" | "fire" | "creature" | "craft";
 
 export interface SampleDef {
@@ -42,6 +44,12 @@ export function sampleUrl(id: SampleId, baseUrl: string): string {
   return `${base}sounds/${SAMPLES[id].file}`;
 }
 
+export function sampleSource(id: unknown, baseUrl: string) {
+  if (isSampleId(id)) return { url: sampleUrl(id, baseUrl), format: "mp3", loop: SAMPLES[id].loop, gain: SAMPLES[id].gain };
+  const shared = sharedSample(id);
+  if (shared) return { url: shared.url, format: shared.format, loop: false, gain: 1 };
+}
+
 // The sample a new one-shot emitter starts with: pause between plays (seconds), as the editor puts it.
 export const DEFAULT_INTERVAL = { min: 3, max: 8 } as const;
 // The sample a new emitter is made from.
@@ -49,6 +57,11 @@ export const DEFAULT_SAMPLE: SampleId = "fire-crackle";
 
 // What choosing a sample changes in an emitter (the editor's patch): its kind and id; a one-shot gets a pause (the one
 // it has, else the default), a loop none. The speed is left as it is.
-export function samplePatch(id: SampleId, current?: { min: number; max: number }): { kind: "sample"; sample: SampleId; interval: { min: number; max: number } | undefined } {
-  return { kind: "sample", sample: id, interval: SAMPLES[id].loop ? undefined : current ? { ...current } : { ...DEFAULT_INTERVAL } };
+export function samplePatch(id: string, current?: { min: number; max: number }) {
+  const shared = sharedSample(id);
+  return {
+    kind: "sample" as const, sample: id,
+    interval: isSampleId(id) && SAMPLES[id].loop ? undefined : { ...(current ?? DEFAULT_INTERVAL) },
+    ...(shared ? { volume: shared.volume, rate: shared.rate } : {}),
+  };
 }

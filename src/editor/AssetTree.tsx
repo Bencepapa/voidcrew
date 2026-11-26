@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { AlignJustify, ArrowUpFromLine, AudioWaveform, Ban, BrickWall, Cone, Dices, Fence, Eye, EyeOff, Flag, Footprints, House, Image, Layers, Library, Lock, LockOpen, LogOut, MessageSquare, Minus, Pyramid, Sprout, Store, Tent, Triangle, Volume2, Warehouse } from "lucide-react";
 import { SAMPLES, SAMPLE_IDS, samplePatch } from "../audio/samples";
+import { useSharedSounds } from "./sharedSounds";
 import { ROOF_FORMS, type RoofForm } from "../game/roofAutotile";
 import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld, worldOfMap } from "../game/worlds";
@@ -37,6 +38,7 @@ export function AssetTree(p: EditorBarProps) {
   const [decals, setDecals] = useState<string[]>([]);
   const [error, setError] = useState(false);
   const sharedImages = useSharedImages();
+  const sharedSounds = useSharedSounds().filter(sound => sound.world === worldOfMap(p.mapId));
   useSharedPropVersion();
   const doorTypes = useDoorCatalog().filter(type => type.world === p.doorWorld);
   useEffect(() => { let live = true; fetchDecalManifest(import.meta.env.BASE_URL, "").then(m => {if(live)setDecals(Object.keys(m));}).catch(() => {if(live)setError(true);}); return () => {live = false;}; }, []);
@@ -113,7 +115,14 @@ export function AssetTree(p: EditorBarProps) {
     {id:"smoke",label:t("editorBar.particles"),entries:(["smoke","fire","mist","groundfog","motes","petals","fireflies"] as const).map(effect=>({id:effect,label:t(`effects.${effect}`),kind:t("editorBar.particles"),active:(p.smoke?.effect??"smoke")===effect,pick:()=>choose("smoke",()=>p.onAssetEffect("smoke",effect))}))},
     // the sound emitters: one entry for each built-in sample (what the next one placed is made as). The generated beeps and
     // noises of older maps are still edited in the Inspector, but are no longer put down from here.
-    {id:"sound",label:t("sound.group"),entries:SAMPLE_IDS.map(id=>({id:`sample:${id}`,label:t(`sound.sample.${id}`),search:SAMPLES[id].name,kind:t(`sound.cat.${SAMPLES[id].category}`),icon:SAMPLES[id].loop?<Volume2 size={28}/>:<AudioWaveform size={28}/>,active:p.sound?.kind==="sample"&&p.sound.sample===id,pick:()=>choose("sound",()=>p.onAssetSound(samplePatch(id,p.sound?.interval)))}))},
+    {id:"sound",label:t("sound.group"),entries:[
+      ...SAMPLE_IDS.map(id=>({id:`sample:${id}`,label:t(`sound.sample.${id}`),search:SAMPLES[id].name,kind:t(`sound.cat.${SAMPLES[id].category}`),icon:SAMPLES[id].loop?<Volume2 size={28}/>:<AudioWaveform size={28}/>,active:p.sound?.kind==="sample"&&p.sound.sample===id,pick:()=>choose("sound",()=>p.onAssetSound(samplePatch(id,p.sound?.interval)))})),
+      ...sharedSounds.map(({ id, name, category }) => ({
+        id, label: name, kind: t(`sound.assets.category.${category}`), icon: <AudioWaveform size={28}/>,
+        active: p.sound?.kind==="sample" && p.sound.sample===id, manager: "sound" as const,
+        pick: () => choose("sound", () => p.onAssetSound(samplePatch(id, p.sound?.interval))),
+      })),
+    ]},
     {id:"events",label:t("events.group"),entries:events,bare:true}
   ];
   const term=query.trim().toLocaleLowerCase();

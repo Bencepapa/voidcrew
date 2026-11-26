@@ -6,6 +6,7 @@
 import { pulseOn, resolveSound, waveKey, type SoundSpec, type ResolvedSound } from "../game/sounds";
 import { stereoPan } from "./stereo";
 import { isSampleId } from "./samples";
+import { sharedSample, sharedSamples } from "./sharedSamples";
 import { NO_PLACE, type Place } from "./acoustics";
 import { createRoomTracker, wallInsulation, wetSend } from "./roomMix";
 import { MAX_SOURCES, planSources, voiceTargets, type Blocked, type Emitter, type Listener, type SourcePlan } from "./soundField";
@@ -142,6 +143,7 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
   };
 
   // the emitters that may sound now, in the world
+  let knownSamples = sharedSamples();
   const emitters = (): Emitter[] => {
     if (!scene) return [];
     const { sounds, floorHeight, wallHeight, isOn } = scene;
@@ -150,7 +152,7 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
       if (editing && id !== preview) return;
       const sound = resolveSound(spec);
       // (a sample the registry does not know makes no sound; the problems list says so)
-      if (sound.kind === "sample" && !isSampleId(sound.sample)) return;
+      if (sound.kind === "sample" && !isSampleId(sound.sample) && !sharedSample(sound.sample)) return;
       // (the preview sounds whether the emitter is on or not)
       if (!(isOn ? isOn(id) : sound.active) && !(editing && id === preview)) return;
       out.push({
@@ -195,6 +197,11 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
     frame(listener) {
       backend.setListener(listener);
       if (!scene) return;
+      const registered = sharedSamples();
+      if (registered !== knownSamples) {
+        knownSamples = registered;
+        dirty = true;
+      }
       const t = now();
       const cell = `${Math.round(listener.x)},${Math.round(listener.z)}`;
       // the listener's room: looked up when the cell changes (a zone being edited sets the acoustics again), then held
@@ -239,7 +246,9 @@ export function createSoundSystem<H>(backend: SoundBackend<H>, options: SoundSys
         for (const target of voiceTargets(listener, emitter, plan)) {
           const key = `${plan.id}:${target.role}`;
           wanted.add(key);
-          const wave = waveKey(emitter.sound);
+          const wave = emitter.sound.kind === "sample"
+            ? `${waveKey(emitter.sound)}:${sharedSample(emitter.sound.sample)?.url ?? ""}`
+            : waveKey(emitter.sound);
           let voice = voices.get(key);
           // (a changed pitch or wave: a new voice, the old one fades out)
           if (voice && voice.wave !== wave) {

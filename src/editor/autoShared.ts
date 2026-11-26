@@ -13,6 +13,7 @@ import { loadSharedImages } from "./sharedImages";
 import { loadSharedProps } from "./sharedProps";
 import { loadSharedDoors } from "./sharedDoorTypes";
 import { loadSharedActors } from "./sharedActors";
+import { loadSharedSounds } from "./sharedSounds";
 import { loadSharedDialogues, loadSharedShops } from "./sharedCommon";
 import { loadOnce } from "./loadGate";
 
@@ -110,6 +111,7 @@ async function execute(forGeneration: number) {
       loadOnce("props", activeWorld, () => loadSharedProps(activeWorld, init)),
       loadOnce("doors", activeWorld, () => loadSharedDoors(activeWorld, init)),
       loadOnce("actors", activeWorld, () => loadSharedActors(activeWorld, init)),
+      loadOnce("sounds", activeWorld, () => loadSharedSounds(activeWorld, init)),
       loadOnce("shops", "common", () => loadSharedShops(init)),
       loadOnce("dialogues", "common", () => loadSharedDialogues(init)),
     ]);

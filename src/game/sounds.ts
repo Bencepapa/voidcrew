@@ -8,6 +8,7 @@
 // `pos` from the cell's middle and floor: across, up in wall heights, along), the same as a smoke emitter's.
 import type { Vec2 } from "./types";
 import { SAMPLES, isSampleId } from "../audio/samples";
+import { isSharedSampleId } from "../audio/sharedSamples";
 
 // "sample": a real recording from the built-in registry (audio/samples.ts); "tone" and "noise" are the generated sounds
 // the first version had (old maps keep them and they play as ever; the editor no longer puts new ones down).
@@ -178,7 +179,7 @@ export interface ResolvedSound {
 
 export function resolveSound(spec: SoundSpec): ResolvedSound {
   const sample = spec.kind === "sample" ? spec.sample ?? "" : "";
-  const oneShot = isSampleId(sample) && !SAMPLES[sample].loop;
+  const oneShot = isSampleId(sample) ? !SAMPLES[sample].loop : isSharedSampleId(sample);
   return {
     kind: spec.kind,
     wave: spec.wave ?? "sine",
@@ -239,7 +240,7 @@ export function soundProblems(sounds: readonly (Pick<SoundSpec, "x" | "y" | "kin
     if (s.volume <= 0) out.push({ code: "soundSilent", cell, index });
     if (s.range < 1) out.push({ code: "soundNoRange", cell, index });
     if (s.pulse && (s.pulse.on <= 0 || s.pulse.off <= 0)) out.push({ code: "soundPulseZero", cell, index });
-    if (s.kind === "sample" && !isSampleId(s.sample)) out.push({ code: "soundSampleUnknown", cell, index });
+    if (s.kind === "sample" && !isSampleId(s.sample) && !isSharedSampleId(s.sample)) out.push({ code: "soundSampleUnknown", cell, index });
     if (s.interval && s.interval.min > s.interval.max) out.push({ code: "soundIntervalOrder", cell, index });
   });
   return out;

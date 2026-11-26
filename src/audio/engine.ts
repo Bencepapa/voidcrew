@@ -33,7 +33,7 @@ import type { Place } from "./acoustics";
 import type { Listener } from "./soundField";
 import type { SoundBackend, StartOptions, VoiceState, WaveSpec } from "./soundSystem";
 import { waveKey } from "../game/sounds";
-import { SAMPLES, isSampleId, sampleUrl, type SampleId } from "./samples";
+import { sampleSource } from "./samples";
 
 // ---- the master: volume and mute, kept between sessions
 
@@ -189,12 +189,11 @@ const howls = new Map<string, Howl>();
 const failedHowls = new WeakSet<Howl>();
 // One Howl for each sample file, made lazily and loaded at the first voice that needs it (a sound out of range never
 // loads its file): Web Audio decoding (not html5), the registry says whether it loops. Its rate is set per voice.
-function sampleHowl(id: SampleId): Howl {
-  const key = `sample:${id}`;
+function sampleHowl({ url, format, loop }: NonNullable<ReturnType<typeof sampleSource>>): Howl {
+  const key = `sample:${url}`;
   let howl = howls.get(key);
   if (!howl) {
-    const url = sampleUrl(id, import.meta.env.BASE_URL);
-    howl = new Howl({ src: [url], format: ["mp3"], loop: SAMPLES[id].loop, volume: 1, preload: false, html5: false });
+    howl = new Howl({ src: [url], format: [format], loop, volume: 1, preload: false, html5: false });
     const made = howl;
     made.once("loaderror", (_id, error) => {
       failedHowls.add(made);
@@ -205,7 +204,8 @@ function sampleHowl(id: SampleId): Howl {
   return howl;
 }
 function howlFor(spec: WaveSpec): Howl {
-  if (spec.kind === "sample" && isSampleId(spec.sample)) return sampleHowl(spec.sample);
+  const sample = spec.kind === "sample" && sampleSource(spec.sample, import.meta.env.BASE_URL);
+  if (sample) return sampleHowl(sample);
   const key = waveKey(spec);
   let howl = howls.get(key);
   if (!howl) {
@@ -508,7 +508,7 @@ function apply(voice: Voice, state: VoiceState, fresh = !voice.applied) {
 function start(spec: WaveSpec, options: StartOptions = {}): Voice | null {
   try {
     const howl = howlFor(spec);
-    const def = spec.kind === "sample" && isSampleId(spec.sample) ? SAMPLES[spec.sample] : undefined;
+    const def = spec.kind === "sample" ? sampleSource(spec.sample, import.meta.env.BASE_URL) : undefined;
     const voice: Voice = {
       rate: spec.rate ?? 1,
       gain: def?.gain ?? 1,

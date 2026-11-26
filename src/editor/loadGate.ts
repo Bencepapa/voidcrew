@@ -3,7 +3,7 @@
 // registered" effects and the background loader all ask through here; only an explicit Refresh forces a reload.
 // Pure (no storage, no network of its own), so it can be tested.
 
-export type LoadKind = "textures" | "images" | "props" | "doors" | "actors" | "shops" | "dialogues" | "heads";
+export type LoadKind = "textures" | "images" | "props" | "doors" | "actors" | "sounds" | "shops" | "dialogues" | "heads";
 
 const done = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
