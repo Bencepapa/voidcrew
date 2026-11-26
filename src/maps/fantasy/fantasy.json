@@ -20,7 +20,7 @@
     "W...............",
     "D............WWW"
   ],
-  "lights": [{ "x": 3, "y": 3, "color": "#3700ff", "intensity": 1.15 }, { "x": 2, "y": 3, "color": "#0011ff" }, { "x": 5, "y": 5, "color": "#4d9900" }, { "x": 7, "y": 8, "color": "#a30f17", "intensity": 0.45 }, { "x": 3, "y": 10, "color": "#27449b", "intensity": 3.45, "pos": [-0.44, 2.63, 0.21], "range": 6 }, { "x": 3, "y": 8, "pos": [-0.45, 2.38, -0.02], "color": "#2458c2", "intensity": 4, "range": 6 }, { "x": 2, "y": 1, "pos": [-0.2, 3.13, -0.13], "color": "#0414f6", "intensity": 2.15, "range": 2.8 }, { "x": 7, "y": 13, "pos": [-0.05, 2.13, 0.32], "color": "#0181f9" }, { "x": 4, "y": 13, "pos": [0.09, 2.38, 0.19], "color": "#0059ff" }, { "x": 1, "y": 13, "pos": [0.14, 2.38, 0.08], "color": "#009dff" }],
+  "lights": [{ "x": 3, "y": 3, "color": "#3700ff", "intensity": 1.15 }, { "x": 2, "y": 3, "color": "#0011ff" }, { "x": 5, "y": 5, "color": "#4d9900" }, { "x": 7, "y": 8, "color": "#a30f17", "intensity": 0.45 }, { "x": 3, "y": 10, "color": "#27449b", "intensity": 3.45, "pos": [-0.44, 2.63, 0.21], "range": 6 }, { "x": 3, "y": 8, "pos": [-0.45, 2.38, -0.02], "color": "#2458c2", "intensity": 4, "range": 6 }, { "x": 2, "y": 1, "pos": [-0.2, 3.13, -0.13], "color": "#0414f6", "intensity": 2.15, "range": 2.8 }, { "x": 7, "y": 13, "pos": [-0.05, 2.13, 0.32], "color": "#0181f9" }, { "x": 4, "y": 13, "pos": [0.09, 2.38, 0.19], "color": "#0059ff" }, { "x": 1, "y": 13, "pos": [0.14, 2.38, 0.08], "color": "#009dff" }, { "x": 9, "y": 14, "pos": [-0.15, 1.63, 0.35] }],
   "layers": {
     "wallTexture": {
       "legend": { "a": "fantasywall1", "b": "sky" },
@@ -171,7 +171,169 @@
     { "prop": "bush1", "x": 13, "y": 14, "at": "E", "offset": [0.2, -0.1] },
     { "prop": "bush1", "x": 8, "y": 3, "at": "NW" },
     { "prop": "bush2", "x": 8, "y": 3, "at": "SW" },
-    { "prop": "bush1", "x": 8, "y": 3, "at": "NE", "offset": [0.35, 0] }
+    { "prop": "bush1", "x": 8, "y": 3, "at": "NE", "offset": [0.35, 0] },
+    { "prop": "fantasy_prop_37e6eef5-9880-4186-b6b0-1ae3c29cfcee", "x": 3, "y": 3, "at": "NE" },
+    {
+      "prop": "fantasy_prop_392a5d90-b4c2-4d6c-b7c3-51761032fb29",
+      "x": 2,
+      "y": 3,
+      "at": "center",
+      "offset": [0.37, 0.08]
+    },
+    { "prop": "fantasy_prop_b7b474ab-f80c-4f2c-b5af-40d149af56d7", "x": 2, "y": 3, "at": "SE" },
+    { "prop": "fantasy_prop_b7b474ab-f80c-4f2c-b5af-40d149af56d7", "x": 3, "y": 3, "at": "SW" },
+    {
+      "prop": "fence_mid",
+      "x": 7,
+      "y": 14,
+      "at": "center",
+      "fence": { "layers": 3, "cross": "axes", "solid": false },
+      "texture": "fantasygrass_mid"
+    },
+    {
+      "prop": "fence_mid",
+      "x": 8,
+      "y": 14,
+      "at": "center",
+      "texture": "fantasygrass_mid",
+      "fence": { "layers": 3, "cross": "axes", "solid": false }
+    },
+    {
+      "prop": "fence_mid",
+      "x": 8,
+      "y": 13,
+      "at": "center",
+      "texture": "fantasygrass_mid",
+      "fence": { "layers": 3, "cross": "axes", "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 7,
+      "y": 15,
+      "at": "W",
+      "texture": "fantasygrass_mid",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 7,
+      "y": 15,
+      "at": "E",
+      "texture": "fantasygrass_mid",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 11,
+      "y": 14,
+      "at": "S",
+      "texture": "fantasygrass_mid",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 10,
+      "y": 13,
+      "at": "S",
+      "texture": "fantasygrass_tall",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 9,
+      "y": 13,
+      "at": "S",
+      "texture": "fantasygrass_tall",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 9,
+      "y": 14,
+      "at": "W",
+      "texture": "fantasygrass_tall",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_mid",
+      "x": 10,
+      "y": 15,
+      "at": "center",
+      "texture": "fantasywheat",
+      "fence": { "layers": 3, "cross": "axes", "solid": false }
+    },
+    {
+      "prop": "fence_mid",
+      "x": 11,
+      "y": 15,
+      "at": "center",
+      "texture": "fantasywheat",
+      "fence": { "layers": 3, "cross": "axes", "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 13,
+      "y": 5,
+      "at": "N",
+      "texture": "fantasywheat",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 12,
+      "y": 5,
+      "at": "N",
+      "texture": "fantasywheat",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 13,
+      "y": 5,
+      "at": "S",
+      "texture": "fantasywheat",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 12,
+      "y": 5,
+      "at": "S",
+      "texture": "fantasywheat",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 13,
+      "y": 6,
+      "at": "E",
+      "texture": "fantasygrass_mid",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 13,
+      "y": 6,
+      "at": "W",
+      "texture": "fantasygrass_mid",
+      "fence": { "layers": 3, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 9,
+      "y": 3,
+      "at": "E",
+      "texture": "fantasygrass_mid",
+      "fence": { "layers": 6, "spacing": 0.2, "solid": false }
+    },
+    {
+      "prop": "fence_edge",
+      "x": 10,
+      "y": 3,
+      "at": "N",
+      "texture": "fantasygrass_mid",
+      "fence": { "layers": 6, "spacing": 0.2, "solid": false }
+    }
   ],
   "smokes": [
     { "x": 3, "y": 3, "pos": [0.43, 0.82, -0.01], "fire": true, "decorative": true },
@@ -223,7 +385,9 @@
       "color": "#ff7300",
       "blow": { "speed": 4, "yaw": 120, "pitch": -30 }
     },
-    { "x": 5, "y": 14, "pos": [-0.5, 1.81, 0], "petals": true, "color": "#f98806" }
+    { "x": 5, "y": 14, "pos": [-0.5, 1.81, 0], "petals": true, "color": "#f98806" },
+    { "effect": "fireflies", "x": 12, "y": 5, "pos": [0.38, 0.73, 0.47] },
+    { "effect": "fireflies", "x": 13, "y": 4, "pos": [0.2, 0.5, 0.38] }
   ],
   "actors": [{ "actor": "alien1", "x": 6, "y": 6, "facing": "S", "chance": 0.1 }, { "actor": "alien2", "x": 9, "y": 9, "facing": "N", "chance": 0.2 }, { "actor": "alien2", "x": 8, "y": 9, "facing": "N", "chance": 0.3 }, { "actor": "alien2", "x": 8, "y": 7, "facing": "S", "chance": 0.3 }, { "actor": "alien2", "x": 9, "y": 7, "facing": "S", "chance": 0.2 }, { "actor": "ogre1", "x": 3, "y": 11, "facing": "N", "chance": 0.45 }, { "actor": "zombie1", "x": 5, "y": 5, "facing": "N", "chance": 0.35 }, { "actor": "goblin1", "x": 8, "y": 3, "facing": "E", "chance": 0.5 }, { "actor": "mage1", "x": 14, "y": 14, "facing": "N", "chance": 0.5 }, { "actor": "thief1", "x": 0, "y": 13, "facing": "E", "chance": 0.45 }, { "actor": "skeleton1", "x": 12, "y": 11, "facing": "N", "chance": 0.3 }],
   "bridges": [
@@ -392,6 +556,179 @@
     { "decal": "footpath", "x": 9, "y": 15, "surface": "floor", "px": -113, "py": 112 },
     { "decal": "footpath", "x": 8, "y": 15, "surface": "floor", "px": 89, "py": 111 },
     { "decal": "footpath", "x": 7, "y": 15, "surface": "floor", "px": 126, "py": 109 },
-    { "decal": "footpath", "x": 7, "y": 15, "surface": "floor", "px": -87, "py": 106 }
+    { "decal": "footpath", "x": 7, "y": 15, "surface": "floor", "px": -87, "py": 106 },
+    {
+      "decal": "fantasy_decal_4401676d-3dcd-477e-b741-74ffcb1b8800",
+      "x": 11,
+      "y": 4,
+      "surface": "S",
+      "px": -75,
+      "py": -33
+    },
+    {
+      "decal": "fantasy_decal_4401676d-3dcd-477e-b741-74ffcb1b8800",
+      "x": 11,
+      "y": 4,
+      "surface": "W",
+      "px": -101,
+      "py": -111
+    },
+    {
+      "decal": "fantasy_decal_d835de69-ebba-4410-bfd3-ec858cb23ddc",
+      "x": 10,
+      "y": 2,
+      "surface": "W",
+      "px": -96,
+      "py": -183
+    },
+    {
+      "decal": "fantasy_decal_76834ccb-aa17-4b74-ba91-c2b6276a66e9",
+      "x": 11,
+      "y": 12,
+      "surface": "S",
+      "px": -164,
+      "py": -182
+    },
+    { "decal": "grass_blades", "x": 10, "y": 11, "surface": "floor", "px": 160, "py": 143, "scale": 2.9 },
+    { "decal": "grass_blades", "x": 10, "y": 11, "surface": "S", "px": 143, "py": 198 },
+    {
+      "decal": "fantasy_decal_76834ccb-aa17-4b74-ba91-c2b6276a66e9",
+      "x": 15,
+      "y": 6,
+      "surface": "E",
+      "px": -128,
+      "py": -78
+    },
+    {
+      "decal": "fantasy_decal_76834ccb-aa17-4b74-ba91-c2b6276a66e9",
+      "x": 15,
+      "y": 6,
+      "surface": "E",
+      "px": -120,
+      "py": -527
+    }
+  ],
+  "sounds": [
+    { "x": 3, "y": 3, "kind": "sample", "volume": 0.3, "range": 2.5, "sample": "fire-crackle", "rolloff": 2 },
+    { "x": 2, "y": 4, "kind": "sample", "volume": 0.3, "range": 2.5, "sample": "fire-crackle", "rolloff": 2 },
+    { "x": 3, "y": 3, "kind": "sample", "volume": 0.4, "range": 2.5, "sample": "fire-crackle", "rolloff": 2 },
+    { "x": 3, "y": 3, "kind": "sample", "volume": 0.4, "range": 2.5, "sample": "fire-crackle", "rolloff": 2 },
+    { "x": 1, "y": 8, "kind": "sample", "volume": 0.4, "range": 2.5, "sample": "crackling-fire", "rolloff": 2 },
+    { "x": 4, "y": 14, "kind": "sample", "volume": 0.6, "range": 6, "sample": "birds-forest" },
+    { "x": 7, "y": 13, "kind": "sample", "volume": 0.5, "range": 4, "sample": "birds-forest" },
+    { "x": 14, "y": 10, "kind": "sample", "volume": 0.5, "range": 6, "sample": "fireplace-loop" },
+    { "x": 15, "y": 7, "kind": "sample", "volume": 0.4, "range": 2.5, "sample": "fire-crackle", "rolloff": 2 },
+    { "x": 15, "y": 4, "kind": "sample", "volume": 0.4, "range": 2.5, "sample": "fire-crackle", "rolloff": 2 },
+    { "x": 11, "y": 4, "kind": "sample", "volume": 0.4, "range": 2.5, "sample": "fire-crackle", "rolloff": 2 },
+    { "x": 11, "y": 9, "kind": "sample", "volume": 0.4, "range": 2.5, "sample": "fire-crackle", "rolloff": 2 },
+    {
+      "x": 8,
+      "y": 3,
+      "kind": "sample",
+      "volume": 0.4,
+      "range": 2.5,
+      "sample": "goblin-cackle",
+      "interval": { "min": 3, "max": 8 },
+      "rolloff": 2
+    },
+    {
+      "x": 8,
+      "y": 8,
+      "kind": "sample",
+      "volume": 0.4,
+      "range": 4.5,
+      "sample": "hammer",
+      "interval": { "min": 3, "max": 8 },
+      "rolloff": 1.5
+    },
+    { "x": 7, "y": 0, "kind": "sample", "volume": 0.4, "range": 4.5, "sample": "fire-crackle", "rolloff": 2.1 }
+  ],
+  "acoustics": [
+    { "cells": [[0, 2, 3], [1, 2, 3], [2, 2, 3], [3, 2, 3], [4, 2, 3]], "preset": "room" },
+    {
+      "cells": [
+        [0, 4, 7],
+        [0, 9, 9],
+        [1, 5, 5],
+        [2, 4, 5],
+        [3, 5, 5],
+        [3, 8, 9],
+        [4, 5, 5],
+        [4, 9, 9],
+        [5, 5, 6],
+        [5, 9, 9],
+        [6, 6, 6],
+        [7, 6, 6],
+        [7, 8, 9],
+        [8, 6, 9],
+        [9, 6, 6],
+        [9, 8, 9],
+        [10, 6, 6],
+        [11, 6, 6],
+        [12, 8, 9]
+      ],
+      "preset": "corridor",
+      "reverb": 0.35,
+      "decay": 0.6,
+      "softness": 0.3,
+      "insulation": 0.2
+    },
+    {
+      "cells": [
+        [0, 10, 15],
+        [1, 10, 15],
+        [2, 10, 15],
+        [3, 10, 15],
+        [4, 11, 15],
+        [5, 10, 15],
+        [6, 11, 15],
+        [7, 11, 15],
+        [8, 10, 15],
+        [9, 11, 15],
+        [10, 10, 15],
+        [11, 10, 15],
+        [12, 11, 15],
+        [13, 13, 15],
+        [14, 11, 15],
+        [15, 11, 12]
+      ],
+      "preset": "outdoor",
+      "reverb": 0,
+      "decay": 0.1,
+      "softness": 0,
+      "insulation": 0
+    },
+    {
+      "cells": [[13, 0, 10], [14, 1, 10], [15, 1, 10]],
+      "preset": "outdoor",
+      "reverb": 0,
+      "decay": 0.1,
+      "softness": 0,
+      "insulation": 0
+    },
+    {
+      "cells": [[8, 2, 3], [9, 2, 3], [10, 2, 3], [11, 2, 3]],
+      "preset": "cave",
+      "reverb": 0.7,
+      "decay": 3.5,
+      "softness": 0.75,
+      "insulation": 0.1
+    },
+    {
+      "cells": [[7, 0, 1], [8, 0, 1], [9, 0, 0], [10, 0, 0], [11, 0, 1]],
+      "preset": "cave",
+      "reverb": 0.7,
+      "decay": 3.5,
+      "softness": 0.75,
+      "insulation": 0.1
+    },
+    {
+      "cells": [[6, 2, 3], [7, 2, 3]],
+      "preset": "hall",
+      "reverb": 0.6,
+      "decay": 2.2,
+      "softness": 0.3,
+      "insulation": 0.2
+    }
   ]
 }
