@@ -3,7 +3,7 @@ import { createLightPool } from "../render/viewport/lightPool";
 import { createActorRendering } from "../render/viewport/actorRendering";
 import { createInteractionRaycasts } from "../render/viewport/interactionRaycasts";
 import { createCombatAiming } from "../render/viewport/combatAiming";
-import { drawnChain, seeThrough, isItemObject } from "../render/viewport/raycastObjects";
+import { drawnChain, raycastDrawn, seeThrough, isItemObject } from "../render/viewport/raycastObjects";
 import { isTextEntry } from "../keyboardFocus";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
@@ -2783,7 +2783,7 @@ export function GameViewport({
     // the loose item (not taken yet) the nearest thing under a point of the view is, with what it is
     function pressedItem(ndc: THREE.Vector2): { index: number; slot: { item: string; qty: number } } | null {
       raycaster.setFromCamera(ndc, camera);
-      const hits = raycaster.intersectObjects(group.children, true);
+      const hits = raycastDrawn(raycaster, group.children);
       if (!hits.length) return null;
       // (a decal on a wall counts if it is as near as the nearest hit: that is its click)
       if (hits.some((h) => h.object.userData.action && h.distance <= hits[0].distance + 0.02)) return null;
@@ -3061,7 +3061,7 @@ export function GameViewport({
       if (interactionCallbacks.current.interactionOpen) return;
       if (e.button === 0 && activateInteraction(p.ndc, "pointer")) return;
       raycaster.setFromCamera(ndc, camera);
-      const hits = raycaster.intersectObjects(group.children, true);
+      const hits = raycastDrawn(raycaster, group.children);
       if (!hits.length) return;
       // a decal lies on its wall: count it if it's as near as the nearest hit
       const touched = hits.find((h) => h.object.userData.action && h.distance <= hits[0].distance + 0.02);

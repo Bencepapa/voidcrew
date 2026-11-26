@@ -46,14 +46,12 @@ Stop when the component is mostly wiring (target: under ~1,500 lines); do not sp
   (headless Edge; for bigger steps run `npm run smoke` for all maps).
 - Do not commit, push or merge unless the maintainer says so; report the files created and the new line count.
 
-## Open bug to fix first (reported 2026-11-26)
+## Mouse pickup regression (fixed 2026-11-26)
 
-Picking up items with the mouse is broken in play mode: neither a click on an item nor dragging it to the backpack picks it up.
-Possibly a conflict with click+drag mouselook (the press may be taken as the start of a look drag, or the click threshold/handler
-order changed during the split steps 4-5: `interactionRaycasts.ts`, `raycastObjects.ts`, `itemsLoot.ts` and the pointer handlers
-`onPress` / `onRelease` in `GameViewport.tsx`). Check with `git log` / `git bisect` against the commits before the split steps 4-5
-(`52d3f59`, `441c4f5`) whether the split caused it. Fix it (with a test for any pure click-vs-drag decision logic), add a Hungarian
-manual check to `concept/verification-checklist.md`, and do it before or together with the input/picking step below.
+Hidden smoke markers intercepted both the press that starts a world-item drag and the release that picks up a loose item.
+The affected raycasts were unchanged across split steps 4 and 5 (`52d3f59`, `441c4f5`).
+Both paths now filter intersections through the same visibility check in `raycastObjects.ts`.
+The regression test covers a hidden marker group and its raycastable child. The click and drag thresholds are unchanged.
 
 ## Pitfalls seen so far
 

@@ -5,6 +5,11 @@ export const drawnChain = (obj: THREE.Object3D | null) => {
   return true;
 };
 
+// Three.js raycasts hidden objects too, including descendants of hidden editor markers.
+export function raycastDrawn(ray: THREE.Raycaster, objects: THREE.Object3D[]) {
+  return ray.intersectObjects(objects, true).filter(hit => drawnChain(hit.object));
+}
+
 export const seeThrough = (obj: THREE.Object3D) => {
   const mat = (obj as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
   const first = Array.isArray(mat) ? mat[0] : mat;

@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 3,
     date: "2026-11-25",
     items: [
+      { title: "Tárgyfelvétel egérrel", text: "A rejtett szerkesztői jelölők mellett is működik a földön fekvő tárgyak felvétele kattintással vagy a hátizsákra húzással." },
       { title: "Fényprobe-ok megjelenítése", text: "A Hibakeresés panelen bekapcsolhatók az előszámított fénymintákat mutató színes gömbök és az irányított fény irányjelzői." },
       { title: "Nap és égbolt fény", text: "A nap irányított árnyékot vet, az árnyékos kültéri részeket pedig állítható, szórt égboltfény deríti." },
       { title: "Pálya közzététele újabb változat fölé", text: "Ütközéskor jóváhagyhatod a saját pályád közzétételét a legfrissebb változat után, a korábbi változatok megőrzésével." },

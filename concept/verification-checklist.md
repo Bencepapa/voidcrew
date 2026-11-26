@@ -20,6 +20,7 @@ Pipálható lista: húzd ki, ami rendben van; ami nem, azt írd le (melyik lép�
 - [x] **Sötét fantasy utófeldolgozás** (Debug panel) a hue-szabályokkal, a maszk-nézettel; a teljesítménye.
 
 ## Játék
+- [x] **Tárgyfelvétel egérrel.** Játék módban állj egy füstforrás közelében fekvő tárgy mellé. Kattints az egyik tárgyra, egy másikat húzz a hátizsák gombjára. Mindkettő eltűnik a földről és megjelenik a hátizsákban. A tárgy mellől indított húzás továbbra is mozgatja a nézetet. Ellenőrizve headless Edge-ben a Fantasy pályán.
 - [x] **Esemény aktiválása Space-szel** (üzenet, boltablak, ajtó „Zárva”): normál játékban, 1–2 cellányira, a célkereszt az elemen (a CPU-terhelés miatti előző kudarc újrapróbálása).
 - [x] **Beszélgetés (H2):** Assets → Párbeszédek → minta importja + tesztablak; NPC-eszköz `smith1` (Inspector „Beszélgetés”: `void-fantasy`, `Start Smith`); játékban 1,8 egységen belül Space/kattintás: megfordul, a világ megáll, 1–9/fel-le+Enter/Esc.
 - [x] **Hátizsák és kezek (H3):** `I` nyit/zár; húzás hátizsák ↔ kéz ↔ kéz, kattintás-kattintás, nyilak+Enter; kétkezes fegyver (számszeríj, puskák) mindkét kezet foglalja; a `[n]` gomb a jobb kéz fegyverét süti; tele hátizsák → a többlet a rács alatt; futás vége: zsákmány eladása a bázison.
