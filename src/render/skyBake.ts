@@ -1,4 +1,5 @@
 import { createSkyRayTest, SKY_CEILING, type LightBakeMap, type Occluders } from "./bakeOcclusion";
+import { createSkyProbeOrigins } from "./skyProbeOrigins";
 import { QUICK_SKY_DOME_DIRECTIONS, SKY_DOME_DIRECTIONS, sampleSkyDome, sunDirection, type SkyLight } from "./skySampling";
 
 export const AMBIENT_SHARE = 0.3;
@@ -15,6 +16,7 @@ export function createSkyBake(
   bounce: boolean,
 ) {
   const clearSkyLine = createSkyRayTest(map, occluders);
+  const probeOrigin = createSkyProbeOrigins(map, occluders);
   const [dx, dy, dz] = sunDirection(sky.azimuth, sky.elevation);
   const sunRay = [dx, dy / wallHeight, dz] as const;
   const domeDirections = sky.domeIntensity <= 0 ? [] : sky.quick ? QUICK_SKY_DOME_DIRECTIONS : SKY_DOME_DIRECTIONS;
@@ -30,10 +32,11 @@ export function createSkyBake(
     face[n * 3 + 2] += b * strength;
   }
 
-  function sample(n: number, x: number, y: number, z: number) {
+  function sample(n: number, x: number, y: number, z: number, roomProbe = true) {
     const cell = Math.round(z) * map.width + Math.round(x);
-    if (!((map.skySurfaces?.[cell] ?? 0) & SKY_CEILING)) return;
-    const sun = sky.intensity > 0 && clearSkyLine(x, y, z, sunRay) ? sky.intensity : 0;
+    const origin = probeOrigin(cell, x, y, z);
+    if (origin === undefined) return false;
+    const sun = sky.intensity > 0 && clearSkyLine(x, origin, z, sunRay) ? sky.intensity : 0;
     if (sun > 0) {
       if (mainDir && sunlight) {
         sunlight[n] = 1;
@@ -51,7 +54,7 @@ export function createSkyBake(
 
     let dome = 0;
     if (domeRays.length) {
-      const visible = sampleSkyDome(domeDirections, (i) => clearSkyLine(x, y, z, domeRays[i]));
+      const visible = sampleSkyDome(domeDirections, (i) => clearSkyLine(x, origin, z, domeRays[i]));
       const strength = sky.domeIntensity * visible.fraction;
       dome = strength * (0.5 + visible.y);
       if (mainDir) {
@@ -67,10 +70,11 @@ export function createSkyBake(
         }
       }
     }
-    if (incident && probes) {
+    if (incident && probes && roomProbe && ((map.skySurfaces?.[cell] ?? 0) & SKY_CEILING)) {
       incident[cell] += sun * dy + dome;
       probes[cell]++;
     }
+    return true;
   }
 
   function applySun() {
