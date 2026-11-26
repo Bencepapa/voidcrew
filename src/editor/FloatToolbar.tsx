@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUpDown, Bug, Download, FilePlus, FolderOpen, HelpCircle, LogOut, MousePointer2, Pickaxe, Redo2, Save, SlidersHorizontal, Undo2 } from "lucide-react";
+import { ArrowUpDown, Bug, Download, FilePlus, FolderOpen, HelpCircle, LogOut, MousePointer2, Pickaxe, Redo2, Save, Search, SlidersHorizontal, Undo2 } from "lucide-react";
 import { t } from "../i18n";
 import { TOOL_HELP } from "./EditorBar";
 import type { EditTool } from "./mapEdits";
@@ -15,6 +15,7 @@ export interface FloatToolbarProps {
   view: ViewportSettings["geometryView"];
   onView: (view: ViewportSettings["geometryView"]) => void;
   onHelp: () => void;
+  onSearch: (trigger: HTMLButtonElement) => void;
   debugOpen: boolean;
   onDebug: () => void;
   tool: EditTool;
@@ -93,6 +94,7 @@ export function FloatToolbar(p: FloatToolbarProps) {
       onPointerUp={(e) => { if (e.currentTarget.contains(e.target as Node)) e.stopPropagation(); }}
       onWheel={(e) => e.stopPropagation()}
     >
+      <button type="button" className={`${BTN} ${idle}`} title={t("editorSearch.shortcut")} aria-label={t("editorSearch.title")} aria-haspopup="dialog" aria-keyshortcuts="Control+p Control+k" onClick={e => p.onSearch(e.currentTarget)}><Search size={16} aria-hidden="true" /></button>
       <div ref={menuRef} className="relative">
         <button type="button" className={`${BTN} ${open ? active : idle}`} aria-haspopup="menu" aria-expanded={open} title={t("floatBar.fileMenu")} aria-label={t("floatBar.fileMenu")} onClick={(e) => { setOpen(!open); e.currentTarget.blur(); }}>
           <FolderOpen size={16} aria-hidden="true" />

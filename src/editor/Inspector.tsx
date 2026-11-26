@@ -1,4 +1,5 @@
 import { AssetTree } from "./AssetTree";
+import type { AssetSearchRequest } from "../search/useEditorSearch";
 import { isTextEntry } from "../keyboardFocus";
 import { createPortal } from "react-dom";
 import { useCallback, useRef } from "react";
@@ -38,7 +39,7 @@ const icons = {prop:"◇",decal:"▧",item:"◆",light:"☼",actor:"♙",smoke:"
 
 // This bridge keeps all existing App callbacks in one place while the toolbar
 // and inspector are portalled into their separate shell docks.
-export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
+export function Inspector(p: EditorBarProps & {inspected: Inspected | null; assetSearchRequest?: AssetSearchRequest | null}) {
  useSharedActorVersion();
  const transaction=useRef(Date.now());
  const commit=useCallback(()=>{transaction.current++;},[]);
@@ -72,5 +73,5 @@ export function Inspector(p: EditorBarProps & {inspected: Inspected | null}) {
   </header>
   <CommitContext.Provider value={commit}><div key={`${p.mapId}:${kind??"map"}`}>{roofing?<RoofFields {...p}/>:fencing?<FenceToolFields {...p}/>:p.tool==="event"?<EventFields {...p} onEventChange={event=>p.onEventChange(event,merge())}/>:<Fields {...props}/>}</div></CommitContext.Provider>
  </aside>;
- return <>{p.assetDock && createPortal(<AssetTree {...p}/>, p.assetDock)}{p.dock ? createPortal(panel,p.dock) : panel}</>;
+ return <>{p.assetDock && createPortal(<AssetTree {...p} searchRequest={p.assetSearchRequest}/>, p.assetDock)}{p.dock ? createPortal(panel,p.dock) : panel}</>;
 }

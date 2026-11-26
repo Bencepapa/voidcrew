@@ -12,6 +12,8 @@ Pipálható lista: húzd ki, ami rendben van; ami nem, azt írd le (melyik lép�
 
 ## Szerkesztő
 
+- [ ] **Kereső a szerkesztőben.** Edge-ben és Chrome-ban nyisd meg a nagyítóval, majd Ctrl+P-vel és Ctrl+K-val. Az Esc adja vissza a fókuszt. Keress `teto` vagy `auto roof` kifejezésre, válassz Enterrel, és ellenőrizd, hogy az Eszközfában megnyílik a Tető (automata) csoport, a kiválasztott forma fókuszt kap, és az eszköz tippje megmutatja a Shift+kattintást. Egy megemelt tömbön a Shift+kattintás fedje le az egész tömböt. Ezután keress `napszak`, majd `time of day` kifejezésre. Mindkettő ugyanarra a Napszak mezőre ugorjon, amely rövid kiemelést és fókuszt kap. Nyisd meg újra a keresőt, és üres mezőből Enterrel ismét nyisd meg a legutóbbi találatot.
+
 - [x] **Kiadási jegyzetek.** Nyisd meg a Kiadási jegyzeteket asztali és mobil nézetben a menüből. A korábbi verziók is olvashatók, az ablak bezárható. Asztali nézetben Esc is bezárja, és egy korábbi olvasott verzióval frissítve megjelenik az Újdonságok ablak.
 - [x] **Sokszög és csillag, próbatárhellyel.** Az Asset Managerben hozz létre Sokszög / csillag formájú tárgyat. Próbáld ki a 3 és 12 oldalas beállítást, a 45%-os behúzást és két textúrát. A drótváz-előnézet megnyílik, a közzétett definícióba mindkét textúra és a forma értékei bekerülnek, a tárgy megjelenik az Assetfában.
 - [ ] **Sokszög és csillag megosztott pályán.** Helyezz le egy éles tárhelyen közzétett, két átlátszó textúrát váltogató propot. Körbejárva látszódjanak az A/B oldallapok és a kivágások. A pályát vendégként megnyitva mindkét textúra töltődjön be.

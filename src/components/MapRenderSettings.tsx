@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { ViewportSettings, WallProfileId } from "./GameViewport";
 import { t, formatNumber, type Key } from "../i18n";
+import { searchAnchor } from "../search/searchAnchor";
 
 interface MapRenderSettingsProps {
   settings: ViewportSettings;
@@ -24,6 +25,7 @@ interface SliderConfig {
   min: number;
   max: number;
   step: number;
+  anchor?: ReturnType<typeof searchAnchor>;
 }
 
 const LIGHT_SLIDERS: SliderConfig[] = [
@@ -106,6 +108,8 @@ export function MapRenderSettings({
         </div>
         <input
           type="range"
+          {...s.anchor}
+          aria-label={t(s.label)}
           min={s.min}
           max={s.max}
           step={s.step}
@@ -214,6 +218,7 @@ export function MapRenderSettings({
           {select(
             t("debug.timeOfDay"),
             <select
+              {...searchAnchor("setting.sky.timeOfDay")}
               value=""
               onChange={(e) => {
                 const p = SKY_PRESETS[e.target.value];
@@ -229,12 +234,13 @@ export function MapRenderSettings({
               ))}
             </select>,
           )}
-          {slider({ key: "skyLightIntensity", label: "debug.skyLightStrength0None", min: 0, max: 3, step: 0.05 })}
-          {slider({ key: "skyDomeIntensity", label: "debug.skyDomeStrength0None", min: 0, max: 3, step: 0.05 })}
-          {slider({ key: "skyLightAzimuth", label: "debug.skyLightFromCompass0North", min: 0, max: 359, step: 1 })}
-          {slider({ key: "skyLightElevation", label: "debug.skyLightHeightDegrees", min: 5, max: 90, step: 1 })}
+          {slider({ key: "skyLightIntensity", label: "debug.skyLightStrength0None", min: 0, max: 3, step: 0.05, anchor: searchAnchor("setting.sky.sunStrength") })}
+          {slider({ key: "skyDomeIntensity", label: "debug.skyDomeStrength0None", min: 0, max: 3, step: 0.05, anchor: searchAnchor("setting.sky.dome") })}
+          {slider({ key: "skyLightAzimuth", label: "debug.skyLightFromCompass0North", min: 0, max: 359, step: 1, anchor: searchAnchor("setting.sky.sunAzimuth") })}
+          {slider({ key: "skyLightElevation", label: "debug.skyLightHeightDegrees", min: 5, max: 90, step: 1, anchor: searchAnchor("setting.sky.sunElevation") })}
           <label className="flex items-center justify-between gap-2 text-[11px]">
             {t("debug.skyLightColour")}<input
+              {...searchAnchor("setting.sky.sunColor")}
               type="color"
               value={settings.skyLightColor}
               onChange={(e) => set("skyLightColor", e.target.value)}

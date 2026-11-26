@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { isTextEntry } from "../../keyboardFocus";
+import { isSearchControl } from "../../search/searchKeyboard";
 import { TOPDOWN_FOV, TOPDOWN_ZOOM_MIN, TOPDOWN_ZOOM_MAX } from "./camera";
 import type { ViewportRef } from "./contracts";
 
@@ -19,7 +20,7 @@ export function createTopdownControls({ canvas, topdown, editModeRef, setTopdown
   const topdownKeys = new Set<string>();
   const typingIn = isTextEntry;
   const onTopdownKey = (e: KeyboardEvent) => {
-    if (typingIn(e.target) || e.ctrlKey || e.altKey || e.metaKey) return;
+    if ((e.type === "keydown" && isSearchControl(e.target)) || typingIn(e.target) || e.ctrlKey || e.altKey || e.metaKey) return;
     const key = e.key.toLowerCase();
     if (e.type === "keydown" && key === "o" && editModeRef.current && !e.repeat) {
       e.preventDefault();

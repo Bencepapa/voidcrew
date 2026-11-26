@@ -2,6 +2,8 @@ import { assetTreeEn } from "./en/assetTree";
 import { assetTreeHu } from "./hu/assetTree";
 import { inspectorEn } from "./en/inspector";
 import { inspectorHu } from "./hu/inspector";
+import { editorSearchEn } from "./en/editorSearch";
+import { editorSearchHu } from "./hu/editorSearch";
 import { editorShellEn } from "./en/editorShell";
 import { editorShellHu } from "./hu/editorShell";
 import { effectsEn } from "./en/effects";
@@ -71,8 +73,8 @@ import { soundHu } from "./hu/sound";
 import { acousticsEn } from "./en/acoustics";
 import { acousticsHu } from "./hu/acoustics";
 
-const en = { ...lookEn, ...soundEn, ...acousticsEn, ...lockEn, ...emitterTrapsEn, ...skyEn, ...operableEn, ...areaEn, ...pickupEn, ...fenceEn, ...linksEn, ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...dialogueEn, ...minimapEn, ...inventoryEn, ...itemInfoEn, ...shopEn, ...shopEditorEn };
-const hu: Partial<Record<Key, string>> = { ...lookHu, ...soundHu, ...acousticsHu, ...lockHu, ...emitterTrapsHu, ...skyHu, ...operableHu, ...areaHu, ...pickupHu, ...fenceHu, ...linksHu, ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...dialogueHu, ...minimapHu, ...inventoryHu, ...itemInfoHu, ...shopHu, ...shopEditorHu };
+const en = { ...lookEn, ...soundEn, ...acousticsEn, ...lockEn, ...emitterTrapsEn, ...skyEn, ...operableEn, ...areaEn, ...pickupEn, ...fenceEn, ...linksEn, ...mapDialogEn, ...assetTreeEn, ...inspectorEn, ...editorShellEn, ...editorSearchEn, ...effectsEn, ...commonEn, ...editorBarEn, ...debugEn, ...appEn, ...assetManagerEn, ...imageAssetsEn, ...dialogueEn, ...minimapEn, ...inventoryEn, ...itemInfoEn, ...shopEn, ...shopEditorEn };
+const hu: Partial<Record<Key, string>> = { ...lookHu, ...soundHu, ...acousticsHu, ...lockHu, ...emitterTrapsHu, ...skyHu, ...operableHu, ...areaHu, ...pickupHu, ...fenceHu, ...linksHu, ...mapDialogHu, ...assetTreeHu, ...inspectorHu, ...editorShellHu, ...editorSearchHu, ...effectsHu, ...commonHu, ...editorBarHu, ...debugHu, ...appHu, ...assetManagerHu, ...imageAssetsHu, ...dialogueHu, ...minimapHu, ...inventoryHu, ...itemInfoHu, ...shopHu, ...shopEditorHu };
 
 export type Key = keyof typeof en;
 // whether a key has a string (for optional, data-driven names)

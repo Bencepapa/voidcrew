@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { AlignJustify, ArrowUpFromLine, AudioWaveform, Ban, BrickWall, Cone, Dices, Fence, Eye, EyeOff, Flag, Footprints, House, Image, Layers, Library, Lock, LockOpen, LogOut, MessageSquare, Minus, Pyramid, Sprout, Store, Tent, Triangle, Volume2, Warehouse } from "lucide-react";
 import { SAMPLES, SAMPLE_IDS, samplePatch } from "../audio/samples";
 import { useSharedSounds } from "./sharedSounds";
@@ -21,6 +21,8 @@ import { operableEntries } from "./operableEntries";
 import { useTextureVersion } from "./textureLibrary";
 import type { EditorBarProps } from "./EditorBar";
 import type { EditSurface, EditTool } from "./mapEdits";
+import { searchAnchor } from "../search/searchAnchor";
+import type { AssetSearchRequest } from "../search/useEditorSearch";
 
 // (a shared texture has no translated name: its own name shows)
 const assetName = (name: string) => t(("assetTree.name."+name) as Key) ?? name;
@@ -28,7 +30,7 @@ const assetName = (name: string) => t(("assetTree.name."+name) as Key) ?? name;
 const propName = (id: string) => hasKey("assetTree.name."+id) ? assetName(id) : id;
 
 type Entry = {search?: string; id: string; label: string; kind: string; image?: string; icon?: ReactNode; tool?: EditTool; style?: CSSProperties; actor?: ActorType; active?: boolean; pick: (button: HTMLButtonElement) => void; manager?: Sample; managerId?: string};
-export function AssetTree(p: EditorBarProps) {
+export function AssetTree(p: EditorBarProps & { searchRequest?: AssetSearchRequest | null }) {
   useTextureVersion();
   useSharedActorVersion();
   const [query, search] = useState("");
@@ -37,6 +39,16 @@ export function AssetTree(p: EditorBarProps) {
   const [collapsed, collapse] = useState<Set<string>>(() => new Set());
   const [decals, setDecals] = useState<string[]>([]);
   const [error, setError] = useState(false);
+  useLayoutEffect(() => {
+    if (p.searchRequest?.id !== "tool.roofAuto") return;
+    search("");
+    collapse(previous => {
+      const next = new Set(previous);
+      next.delete("panel");
+      next.delete("roof");
+      return next;
+    });
+  }, [p.searchRequest]);
   const sharedImages = useSharedImages();
   const sharedSounds = useSharedSounds().filter(sound => sound.world === worldOfMap(p.mapId));
   useSharedPropVersion();
@@ -144,7 +156,7 @@ export function AssetTree(p: EditorBarProps) {
         {(!collapsed.has(group.id)||!!term)&&<>
           {group.id==="texture"&&<div className="flex flex-wrap gap-1 p-1">{(["wall","floor","ceiling"] as const).map(s=><button type="button" key={s} aria-pressed={surface===s} className="border border-neutral-600 px-1 aria-pressed:bg-neutral-700" onClick={()=>setSurface(s)}>{t(`editorBar.${s}`)}</button>)}</div>}
           {group.id==="prop"&&<div className="flex flex-wrap gap-1 p-1">{["3D","billboard","pillar"].map(k=><button type="button" key={k} aria-pressed={propTab===k} className="border border-neutral-600 px-1 aria-pressed:bg-neutral-700" onClick={()=>setPropTab(k)}>{t(k==="3D"?"assetManager.threeD":k==="billboard"?"assetManager.billboard":"assetTree.pillar")}</button>)}</div>}
-          {entries.map(e=><button key={e.id} type="button" title={e.id.includes("_shared_") ? e.label : `${e.label} (${e.id})`} aria-pressed={p.tool===(e.tool??group.id)&&!!e.active} className="flex w-full items-center gap-1 border border-transparent p-1 text-left hover:bg-neutral-800 aria-pressed:border-amber-400" onClick={event=>e.pick(event.currentTarget)} onDoubleClick={()=>{if(e.manager)openAssetManager(e.manager,e.managerId??e.id);}}>
+          {entries.map(e=><button key={e.id} type="button" {...(group.id === "roof" && e.active ? searchAnchor("tool.roofAuto") : {})} title={e.id.includes("_shared_") ? e.label : `${e.label} (${e.id})`} aria-pressed={p.tool===(e.tool??group.id)&&!!e.active} className="flex w-full items-center gap-1 border border-transparent p-1 text-left hover:bg-neutral-800 aria-pressed:border-amber-400" onClick={event=>e.pick(event.currentTarget)} onDoubleClick={()=>{if(e.manager)openAssetManager(e.manager,e.managerId??e.id);}}>
             {e.actor?<ActorThumb type={e.actor} className="block h-12 w-12 shrink-0"/>:(e.image||e.style||e.icon)&&<span className="flex h-12 w-12 shrink-0 items-center justify-center bg-contain bg-center bg-no-repeat" style={{...e.style,imageRendering:"auto"}}>{e.icon}{e.image&&<Thumb src={e.image} className="h-full w-full object-contain"/>}</span>}<span className="min-w-0 break-words">{e.label}</span>
           </button>)}
           {!entries.length&&<p className="p-1 text-neutral-500">{t("assetTree.empty")}</p>}
