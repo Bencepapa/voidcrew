@@ -59,13 +59,13 @@ Approximate line ranges. Search for the named functions as the file moves.
 
 | Lines | Subsystem and anchors |
 | --- | --- |
-| 213–595 | `GameViewport` props, refs, subscriptions and selection of the settled scene map. |
-| 596–1211 | Main scene effect, renderer, textures/materials and subsystem setup. See `createWallKit`, `createBakeRuntime`, `createPostPipeline`, `createSkySurface` and `applyMaterialViews`. |
-| 1212–2262 | Structural geometry, props, operables, particles, markers, items and trim. See `createStructuralSurfaces`, `buildProps`, `createSmokeFire` and `createItemsLoot`. |
-| 2263–2604 | Fixture and light pool setup, top-down mode, visibility and live map edits. See `createLightFixtures`, `createLightPool`, `setTopdown`, `applySight` and `applyStructure`. |
-| 2605–2624 | Actor rendering, interaction raycast and combat aiming setup. See `createActorRendering`, `createInteractionRaycasts` and `createCombatAiming`. |
-| 2625–2652 | Resize, pointer input, top-down controls, picking and selection setup. See `createPointerInput`, `createEditPicking` and `createSelectionBox`. |
-| 2653–3307 | Per-frame camera and rendering, animation loop and effect cleanup. See `renderFrame` and `animate`. |
+| 171–553 | `GameViewport` props, refs, subscriptions and selection of the settled scene map. |
+| 554–1192 | Main scene effect, renderer, textures/materials and surface setup. See `createWallKit`, `createBakeRuntime`, `createPostPipeline` and `createSkySurface`. |
+| 1193–2238 | Structural geometry, props, operables, particles, markers, items and trim. See `createStructuralSurfaces`, `buildProps`, `createSmokeFire` and `createItemsLoot`. |
+| 2239–2264 | Fixtures, light pool, visibility and live edit wiring. See `createLightFixtures`, `createLightPool`, `createSightView` and `createLiveEdits`. |
+| 2265–2284 | Actor rendering, interaction raycasts and combat aiming. See `createActorRendering`, `createInteractionRaycasts` and `createCombatAiming`. |
+| 2285–2312 | Resize, pointer input, top-down controls, picking and selection wiring. |
+| 2313–2424 | Frame loop, debug capture and scene cleanup. See `createFrameLoop` and `createFrameDebug`. |
 
 ## `src/render/viewport/`
 
@@ -94,6 +94,10 @@ Approximate line ranges. Search for the named functions as the file moves.
 - `topdownControls.ts` - Top-down input listeners, keyboard state, wheel zoom and tilt, middle-button pan.
 - `editPicking.ts` - Editor raycasts, drag-plane intersections and cached hover targets.
 - `selectionBox.ts` - Selection and hover outlines, cursor light and surface reporting.
+- `frameLoop.ts` - Camera updates, per-frame rendering, stats and animation scheduling.
+- `frameDebug.ts` - On-demand capture, render diagnostics and smoke benchmarking.
+- `sightView.ts` - Top-down view, sight cells and object and surface culling.
+- `liveEdits.ts` - In-place map updates, structural previews and bake scheduling.
 - `viewportResize.ts` - Canvas sizing, camera projection and resize observer.
 - `combatAiming.ts` - Aim overlay hit chances, party cover, shots and tracers.
 - `aimHitPart.ts` and `aimHitPart.test.ts` - Body-part selection and assertions.
@@ -152,7 +156,7 @@ Line counts at the time of writing.
 
 | File | Lines | Editing risk |
 | --- | ---: | --- |
-| `src/components/GameViewport.tsx` | 4,406 | Scene lifetimes, live refs and per-frame performance. Preserve teardown symmetry and check rebuilds versus in-place edits. |
+| `src/components/GameViewport.tsx` | 2,447 | Scene lifetimes, live refs and per-frame performance. Preserve teardown symmetry and check rebuilds versus in-place edits. |
 | `src/App.tsx` | 3,420 | Shared game/editor state and two UI layouts. Trace the action through its normal entry points. |
 | `src/game/useGameState.ts` | 2,183 | Gameplay orchestration. Keep state transitions and side effects in their existing order. |
 | `src/game/actors.ts` | 1,815 | Actor behavior and state. Exercise the affected actor paths. |
