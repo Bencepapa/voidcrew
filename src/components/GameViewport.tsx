@@ -3,8 +3,11 @@ import { createLightPool } from "../render/viewport/lightPool";
 import { createActorRendering } from "../render/viewport/actorRendering";
 import { createInteractionRaycasts } from "../render/viewport/interactionRaycasts";
 import { createCombatAiming } from "../render/viewport/combatAiming";
-import { drawnChain, raycastDrawn, seeThrough, isItemObject } from "../render/viewport/raycastObjects";
-import { isTextEntry } from "../keyboardFocus";
+import { createEditPicking, objectLayer } from "../render/viewport/editPicking";
+import { createPointerInput } from "../render/viewport/pointerInput";
+import { createSelectionBox } from "../render/viewport/selectionBox";
+import { createTopdownControls } from "../render/viewport/topdownControls";
+import { observeViewportSize } from "../render/viewport/viewportResize";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { prepareRaycastsGradually } from "../render/bvh";
@@ -13,7 +16,6 @@ import { effectiveViewDistance } from "../render/graphics";
 import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, isSharedPickupId } from "../game/items";
-import type { InteractionTarget } from "../game/interactions";
 import {
   propCastsBakedShadow,
   createLightGridUniforms,
@@ -21,13 +23,9 @@ import {
   useLightGrid,
 } from "../render/lightGrid";
 import {
-  DOOR_EDGE_OFFSET,
   bridgeAt,
   cellAt,
   ceilingHeight,
-  doorAt,
-  doorFacingAt,
-  doorFits,
   floorHeight,
   ladderBetween,
   liftDoorOf,
@@ -36,7 +34,7 @@ import {
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
-import type { Direction, DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
+import type { DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
 import { buildRoofGeometry } from "../render/roofMesh";
 import {
   fenceFaces,
@@ -44,16 +42,14 @@ import {
   fenceIndex,
   fenceModelSpec,
   isFoliageSpec,
-  sideFromPoint,
   type FenceModelSpec,
 } from "../game/fences";
 import type { JoinedStrips } from "../render/cornerJoins";
-import { lampColor, ownCeilingLight } from "../game/lights";
+import { lampColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
 import { buildOperableModel, setOperablePose } from "../render/operableModel";
 import { operableView } from "../game/operableStore";
 import { emitterView } from "../game/emitterStore";
-import { operableLink } from "../editor/operableLink";
 import { sourceKeys } from "../game/operables";
 import {
   PROP_TYPES,
@@ -70,7 +66,7 @@ import { gameClock } from "../game/clock";
 import { cellKey, visibleCells } from "../game/visibility";
 import type { PropFace, PropPart, PropType, PropView } from "../game/props";
 import { forwardOf } from "../game/freeMovement";
-import { WALL_ROTATION, surfaceFrame, surfaceKey } from "../render/surfaces";
+import { WALL_ROTATION, surfaceKey } from "../render/surfaces";
 import { DecalLibrary, fetchDecalManifest } from "../render/decals";
 import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
@@ -86,8 +82,7 @@ import { gameSound } from "../audio/gameSound";
 import { soundsOn } from "../game/soundOperables";
 import { publishSight } from "../render/sightStore";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
-import type { EditTool } from "../editor/mapEdits";
-import { beginWorldDrag, draggedWorldItem, justDragged } from "./slotDrag";
+import { draggedWorldItem } from "./slotDrag";
 
 export { DEFAULT_SETTINGS } from "../render/viewport/settings";
 
@@ -104,17 +99,12 @@ import {
 import {
   TEXTURE_CHANGED_EVENT,
   EDIT_SETTLE_MS,
-  ORIGIN_NDC,
   CULL_MAX_SIZE,
   WINDOW_SET,
   NO_LAYERS,
   PROP_COARSE,
-  TOUCH_REACH,
-  LIGHT_SPOT_GAP,
-  SURFACE_PIXELS,
   SURFACE_GLOW,
   DOOR_PANEL_SETS,
-  FACING_ROTATION,
   DOOR_LABEL_AREA,
   DOOR_LABEL_MAX_SCALE,
   DOOR_NUMBER_GAP,
@@ -143,8 +133,6 @@ import {
 import {
   TOPDOWN_FOV,
   TOPDOWN_REACH,
-  TOPDOWN_ZOOM_MIN,
-  TOPDOWN_ZOOM_MAX,
   AIM_FRAMING,
   AIM_MIN_FOV,
   AIM_CAMERA_TAU,
@@ -168,17 +156,6 @@ import {
   verticalFov,
 } from "../render/viewport/camera";
 import { ITEM_TOPDOWN_GROW } from "../render/viewport/loot";
-import {
-  EDIT_REACH,
-  EDIT_DIG_COLOR,
-  EDIT_FILL_COLOR,
-  EDIT_PAINT_COLOR,
-  EDIT_LIGHT_ADD_COLOR,
-  EDIT_SELECT_COLOR,
-  TOOL_LAYER,
-  STROKE_TOOLS,
-  EDIT_LIGHT_REMOVE_COLOR,
-} from "../render/viewport/editor";
 import { addDirectLightOcclusion } from "../render/viewport/materials";
 import { createPostPipeline } from "../render/viewport/postPipeline";
 import { createBakeRuntime } from "../render/viewport/bakeRuntime";
@@ -196,7 +173,7 @@ import {
 import { drawChalkCross } from "../render/viewport/markers";
 import { createSmokeFire } from "../render/viewport/smokeFire";
 import { createItemsLoot } from "../render/viewport/itemsLoot";
-import { createEditorMarkers, SOUND_ICON_SIZE } from "../render/viewport/editorMarkers";
+import { createEditorMarkers } from "../render/viewport/editorMarkers";
 import { createEventMarkers } from "../render/viewport/eventMarkers";
 import { createFenceMarkers } from "../render/viewport/fenceMarkers";
 import { buildFoliage } from "../render/viewport/foliageMesh";
@@ -205,8 +182,6 @@ import type {
   ReliefStats,
   AimFrame,
   AimFocus,
-  EditDragKind,
-  EditTarget,
   GameViewportProps,
 } from "../render/viewport/contracts";
 import { createBaseGeometry } from "../render/viewport/baseGeometry";
@@ -2634,11 +2609,12 @@ export function GameViewport({
       settingsRef, actorsRef, addFlash,
     });
     const { actorMeshes, updateActors, alphaAt } = actorRendering;
-    const { findInteractionHit, activateInteraction, useInteraction, pickEventMarker, interactionWallCenter } = createInteractionRaycasts({
+    const interactionRaycasts = createInteractionRaycasts({
       group, camera, topdown, latestMapRef, lockedLayersRef, editModeRef, interactionCallbacks,
-      objectLayer: (obj) => objectLayer(obj), propObjects, looseItems, decals, getEventMarkers: () => eventMarkers,
+      objectLayer, propObjects, looseItems, decals, getEventMarkers: () => eventMarkers,
       wallHeight, actorsRef, actorMeshes, alphaAt,
     });
+    const { useInteraction, interactionWallCenter } = interactionRaycasts;
     if (interactionUseRef) interactionUseRef.current = useInteraction;
     const combatAiming = createCombatAiming({
       container, scene, group, camera, wallHeight, doorPreview: !!doorPreview, aimFrameRef, partyCoverRef,
@@ -2646,1096 +2622,33 @@ export function GameViewport({
     });
     const { updateAimFrame, updatePartyCover, updateTracers } = combatAiming;
 
-    function resize() {
-      const w = container!.clientWidth || 1;
-      const h = container!.clientHeight || 1;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.fov = verticalFov(settingsRef.current.fov, camera.aspect);
-      camera.updateProjectionMatrix();
-    }
-    resize();
-    const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(container);
+    const stopResize = observeViewportSize(container, renderer, camera, () => settingsRef.current.fov);
     // everything to wait for is queued by now: nothing may be pending at all
     checkReady();
 
-    // Touching an interactive decal: a click or tap (not a drag) whose ray
-    // meets one within reach, in front of whatever else it meets. The press
-    // starts on the canvas; the release is heard on the window, since the
-    // view controls capture the pointer.
-    const raycaster = new THREE.Raycaster();
-    raycaster.far = TOUCH_REACH + settings.cameraPullback;
-    let press: { id: number; x: number; y: number; at: number; ndc: THREE.Vector2 } | null = null;
-    // Something grabbed in the editor and dragged. Props, lights, robots and
-    // doors slide over the level they stand on (their floor; a ceiling lamp's
-    // or a hung robot's ceiling), their spot there kept where it was on the
-    // screen from the pointer (`grab`): moved by as much as the pointer moves,
-    // wherever on the thing it was grabbed (a pillar by its head as by its
-    // foot) - not put where the pointer meets whatever surface is under it,
-    // which is often the thing itself (a pillar's side put it back in its
-    // cell's middle every other step). (Not the point grabbed slid on its own
-    // level either: near eye height that level is seen edge on, and the
-    // slightest move threw the thing far off.)
-    // Decals, items, smoke and wall-hung props go over the surfaces pointed
-    // at, the dragged one itself looked through. A door slides along its
-    // passage inside its cell (its offset); with Shift or Ctrl (a copy) it's
-    // moved to another cell.
-    let dragItem: {
-      kind: EditDragKind;
-      index: number;
-      door?: Vec2;
-      copy: boolean;
-      first: boolean;
-      x: number;
-      y: number;
-      moved: boolean;
-      // (one undo step per drag)
-      id: number;
-      // the thing's spot (world x, z) and the level it slides on; null: it
-      // goes over surfaces
-      anchor: [number, number] | null;
-      planeY: number;
-      // how the level follows the floor (or ceiling) it is over: its height above it, so the
-      // plane the pointer is taken to stays at the thing's height when it moves to a cell of
-      // another height; null: it does not follow
-      level: { base: "floor" | "ceiling"; offset: number } | null;
-      // from the pointer to the thing's spot on the screen (view coordinates)
-      grab: THREE.Vector2 | null;
-      // a door: where it's shown while dragged (moved into the map on release)
-      // and where it stood
-      doorTo?: Vec2;
-      doorAcross?: boolean;
-      doorOffset?: number;
-      doorHome?: { position: THREE.Vector3; rotation: number };
-    } | null = null;
-    let dragSerial = 0;
-    // The Roof tool's stroke: cells painted (or, the right button, taken off) as the pointer
-    // moves over them with a button held; `last` is the cell it reached last
-    let roofStroke: { pointer: number; id: number; erase: boolean; last: string; shift: boolean; ctrl: boolean } | null = null;
-    const dragPlane = new THREE.Plane();
-    const dragPoint = new THREE.Vector3();
-    // whether a hit is on the thing being dragged (looked through while it is)
-    function dragOwn(o: THREE.Object3D): boolean {
-      const d = dragItem;
-      if (!d) return false;
-      const u = o.userData;
-      switch (d.kind) {
-        case "prop":
-          return u.propIndex === d.index;
-        case "item":
-          return u.itemIndex === d.index;
-        case "smoke":
-          return u.smokeIndex === d.index;
-        case "sound":
-          return u.soundIndex === d.index;
-        case "light":
-          return u.mapLight === d.index;
-        case "actor":
-          return u.actorId === d.index;
-        case "door":
-          return !!u.doorCell && u.doorCell.x === d.door?.x && u.doorCell.y === d.door?.y;
-        default:
-          return false;
-      }
-    }
-    // the spot of the thing grabbed that the drag moves (world x, z) and the
-    // height of the level it slides on - null for the ones dragged over
-    // surfaces
-    function dragAnchor(kind: EditDragKind, index: number, door?: Vec2): [number, number, number] | null {
-      if (kind === "prop") {
-        const spec = latestMapRef.current.props?.[index];
-        const obj = propObjects.get(index);
-        return spec && obj && !PROP_TYPES[spec.prop]?.wall ? [obj.position.x, obj.position.z, obj.position.y] : null;
-      }
-      if (kind === "light") {
-        const l = mapLightState.mapLights.find((m) => m.source === index);
-        if (!l) return null;
-        const cx = Math.round(l.x);
-        const cz = Math.round(l.z);
-        // (a free-standing light slides on its own level: the pointer's ray meets that, not the floor under it)
-        return [l.x, l.z, l.kind === "ceiling" ? ceilingY(cx, cz) : l.y * wallHeight];
-      }
-      if (kind === "actor") {
-        const actor = actorsRef.current.find((a) => a.id === index);
-        if (!actor) return null;
-        // (a turret, a camera: hung from the ceiling, above the eye)
-        const mesh = actorMeshes.get(index)?.mesh;
-        const hung = !!mesh && mesh.position.y > camera.position.y;
-        return [actor.cell.x, actor.cell.y, hung ? ceilingY(actor.cell.x, actor.cell.y) : floorY(actor.cell.x, actor.cell.y)];
-      }
-      if (kind === "door" && door) {
-        // (where it stands in its cell, not the cell's middle)
-        const obj = doorGroups.get(`${door.x},${door.y}`);
-        return [obj?.position.x ?? door.x, obj?.position.z ?? door.y, floorY(door.x, door.y)];
-      }
-      return null;
-    }
-    // where a point of the view meets a level (world height y), if it does
-    // within reach
-    function levelPoint(ndc: THREE.Vector2, y: number): THREE.Vector3 | null {
-      editRaycaster.setFromCamera(ndc, camera);
-      dragPlane.set(new THREE.Vector3(0, 1, 0), -y);
-      const p = editRaycaster.ray.intersectPlane(dragPlane, dragPoint);
-      // (the top-down camera floats high above the map: its reach is its own)
-      return p && p.distanceTo(editRaycaster.ray.origin) <= (topdown.on ? TOPDOWN_REACH : EDIT_REACH) ? p : null;
-    }
-    // the loose item (not taken yet) the nearest thing under a point of the view is, with what it is
-    function pressedItem(ndc: THREE.Vector2): { index: number; slot: { item: string; qty: number } } | null {
-      raycaster.setFromCamera(ndc, camera);
-      const hits = raycastDrawn(raycaster, group.children);
-      if (!hits.length) return null;
-      // (a decal on a wall counts if it is as near as the nearest hit: that is its click)
-      if (hits.some((h) => h.object.userData.action && h.distance <= hits[0].distance + 0.02)) return null;
-      for (let o: THREE.Object3D | null = hits[0].object; o; o = o.parent) {
-        if (typeof o.userData.itemIndex !== "number") continue;
-        const index = o.userData.itemIndex as number;
-        const spec = latestMapRef.current.items?.[index];
-        if (!spec || looseItems.get(index)?.taken || lootRef.current.takenItems?.has(index)) return null;
-        return { index, slot: { item: spec.item, qty: spec.count ?? 1 } };
-      }
-      return null;
-    }
-    const onPress = (e: PointerEvent) => {
-      // The canvas handles editing in top-down view. Keep the outer
-      // first-person pointer controls from starting a look drag.
-      if (topdown.on) e.stopPropagation();
-      press = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), ndc: viewNdc(e.clientX, e.clientY) };
-      dragItem = null;
-      roofStroke = null;
-      // A loose item pressed while playing: dragged on, it goes to the screen's hand boxes, cards and
-      // backpack (slotDrag's beginWorldDrag); released without moving, it is the click pickup below.
-      // (The press is the item's: the view's own drag - peeking round - mustn't start on it.)
-      if (!editModeRef.current && !interactionCallbacks.current.interactionOpen && (e.pointerType !== "mouse" || e.button === 0)) {
-        const grabbed = pressedItem(press.ndc);
-        if (grabbed) {
-          e.stopPropagation();
-          beginWorldDrag(e, grabbed.index, grabbed.slot);
-        }
-      }
-      // the Roof tool: a press starts a stroke (either button); the cell under it is the first
-      if (editModeRef.current && STROKE_TOOLS.has(editToolRef.current) && (e.button === 0 || e.button === 2) && !toolLocked()) {
-        const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
-        if (hit && onEditPaintRef.current) {
-          const stroke = { pointer: e.pointerId, id: ++dragSerial, erase: e.button === 2, last: `${hit.cell.x},${hit.cell.y}`, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
-          roofStroke = stroke;
-          onEditPaintRef.current(hit, { id: stroke.id, first: true, erase: stroke.erase, shift: stroke.shift, ctrl: stroke.ctrl });
-        }
-        return;
-      }
-      if (!editModeRef.current || e.button !== 0) return;
-      const tool = editToolRef.current;
-      if (toolLocked()) return;
-      if (tool === "select" && pickEventMarker(press.ndc)) return;
-      // each tool grabs only its own kind of thing; Select any kind, the nearest
-      let kind: EditDragKind | null =
-        tool === "prop" || tool === "decal" || tool === "item" || tool === "smoke" || tool === "sound" || tool === "light" || tool === "door"
-          ? tool
-          : tool === "robot"
-            ? "actor"
-            : null;
-      if (!kind && tool !== "select") return;
-      const hit = editTargetAt(viewNdc(e.clientX, e.clientY));
-      if (!hit) return;
-      if (tool === "select")
-        kind = hit.actor !== undefined ? "actor" : hit.item !== undefined ? "item" : hit.prop !== undefined ? "prop" : hit.decal !== undefined ? "decal" : hit.light !== undefined ? "light" : hit.smoke !== undefined ? "smoke" : hit.sound !== undefined ? "sound" : null;
-      if (!kind) return;
-      let index: number | undefined;
-      let door: Vec2 | undefined;
-      if (kind === "prop") index = hit.prop;
-      else if (kind === "decal") index = hit.decal;
-      else if (kind === "item") index = hit.item;
-      else if (kind === "smoke") index = hit.smoke;
-      else if (kind === "sound") index = hit.sound;
-      else if (kind === "actor") index = hit.actor;
-      else if (kind === "light") {
-        // a bulb or a lamp panel; or a ceiling with its lamp in it (a lit
-        // ceiling texture has no panel of its own to grab)
-        const own = hit.light ?? (hit.kind === "ceiling" ? ownCeilingLight(latestMapRef.current, hit.cell) : -1);
-        index = own >= 0 && latestMapRef.current.lights?.[own]?.pos ? own : undefined;
-      } else if (kind === "door" && hit.door) {
-        door = hit.door;
-        index = -1;
-      }
-      if (index === undefined) return;
-      const anchor = dragAnchor(kind, index, door);
-      const spot = anchor && new THREE.Vector3(anchor[0], anchor[2], anchor[1]).project(camera);
-      const doorObj = door && doorGroups.get(`${door.x},${door.y}`);
-      dragItem = {
-        kind,
-        index,
-        door,
-        copy: e.ctrlKey || e.metaKey,
-        first: true,
-        x: e.clientX,
-        y: e.clientY,
-        moved: false,
-        id: ++dragSerial,
-        anchor: anchor && [anchor[0], anchor[1]],
-        planeY: anchor ? anchor[2] : 0,
-        level: anchor
-          ? (() => {
-              const cx = Math.round(anchor[0]);
-              const cz = Math.round(anchor[1]);
-              // (a ceiling lamp, a hung turret: its level is the ceiling's)
-              const hung = ceilingY(cx, cz) - anchor[2] < anchor[2] - floorY(cx, cz);
-              return hung ? { base: "ceiling" as const, offset: anchor[2] - ceilingY(cx, cz) } : { base: "floor" as const, offset: anchor[2] - floorY(cx, cz) };
-            })()
-          : null,
-        doorAcross: e.shiftKey || e.ctrlKey || e.metaKey,
-        grab: spot && new THREE.Vector2(spot.x, spot.y).sub(viewNdc(e.clientX, e.clientY)),
-        doorHome: doorObj ? { position: doorObj.position.clone(), rotation: doorObj.rotation.y } : undefined,
-      };
-    };
-    // (heard on the window, in the capture phase: while a drag is on, the view
-    // controls underneath mustn't turn the view too)
-    const onDragMove = (e: PointerEvent) => {
-      const stroke = roofStroke;
-      if (stroke && stroke.pointer === e.pointerId) {
-        if (!editModeRef.current || !(e.buttons & (stroke.erase ? 2 : 1))) {
-          roofStroke = null;
-          return;
-        }
-        // (the view underneath mustn't turn with it)
-        e.stopPropagation();
-        const target = editTargetAt(viewNdc(e.clientX, e.clientY));
-        const key = target && `${target.cell.x},${target.cell.y}`;
-        if (target && key !== stroke.last) {
-          stroke.last = key!;
-          onEditPaintRef.current?.(target, { id: stroke.id, first: false, erase: stroke.erase, shift: stroke.shift, ctrl: stroke.ctrl });
-        }
-        return;
-      }
-      const d = dragItem;
-      if (!d || !editModeRef.current || !(e.buttons & 1)) return;
-      if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
-      d.moved = true;
-      e.stopPropagation();
-      if (e.shiftKey) {
-        // Shift + drag: up and down raises or lowers
-        onEditAdjustRef.current?.({ what: "height", delta: -e.movementY * 0.004 });
-        return;
-      }
-      const ndc = viewNdc(e.clientX, e.clientY);
-      // where the grabbed spot is taken to, on its level
-      let at: [number, number] | undefined;
-      if (d.anchor && d.grab) {
-        const grabbed = ndc.clone().add(d.grab);
-        let p = levelPoint(grabbed, d.planeY);
-        // The level moves with the floor under the spot: over a cell of another height the
-        // thing is higher or lower, and the pointer's ray must meet THAT height (a few steps
-        // settle it: the cell it lands in may change with the height).
-        for (let i = 0; p && d.level && i < 4; i++) {
-          const cx = Math.round(p.x);
-          const cz = Math.round(p.z);
-          const y = (d.level.base === "ceiling" ? ceilingY(cx, cz) : floorY(cx, cz)) + d.level.offset;
-          if (Math.abs(y - d.planeY) < 1e-4) break;
-          d.planeY = y;
-          p = levelPoint(grabbed, d.planeY);
-        }
-        // (its spot taken over the horizon, or far off: nowhere to put it)
-        if (!p) return;
-        at = [p.x, p.z];
-      }
-      if (d.kind === "door") {
-        if (at && d.doorAcross) previewDoor(d, { x: Math.round(at[0]), y: Math.round(at[1]) });
-        else if (at) slideDoor(d, at);
-        return;
-      }
-      const target = at ? { kind: "floor" as const, cell: { x: Math.round(at[0]), y: Math.round(at[1]) } } : editTargetAt(ndc);
-      if (!target) return;
-      const index = onEditDragRef.current?.({ kind: d.kind, index: d.index, copy: d.copy, first: d.first, id: d.id, at }, target);
-      if (index === false) return;
-      d.first = false;
-      if (typeof index === "number") d.index = index;
-    };
-    // A door dragged: shown where it'd go (a cell it fits in - see doorFits -
-    // facing along that passage) - the map takes it on release: it changes
-    // the deck's structure, a rebuild that's too slow for every step.
-    function previewDoor(d: NonNullable<typeof dragItem>, cell: Vec2) {
-      const from = d.door;
-      const obj = from && doorGroups.get(`${from.x},${from.y}`);
-      if (!from || !obj || !d.doorHome) return;
-      const m = latestMapRef.current;
-      const home = cell.x === from.x && cell.y === from.y;
-      if (!home && !doorFits(m, cell, d.copy ? undefined : from)) return;
-      d.doorTo = home ? undefined : cell;
-      const spec = doorAt(m, from.x, from.y);
-      const facing = home ? spec.facing : doorFacingAt(m, cell, spec.facing);
-      obj.position.set(cell.x, floorY(cell.x, cell.y), cell.y);
-      obj.rotation.y = FACING_ROTATION[facing];
-      obj.translateZ(spec.offset ?? 0);
-    }
-    // A door slid inside its cell: along its passage (the way it faces), up
-    // to flush with the cell's edge (see DoorSpec.offset) - shown as it goes,
-    // taken into the map on release (as a door moved to another cell).
-    function slideDoor(d: NonNullable<typeof dragItem>, at: [number, number]) {
-      const cell = d.door;
-      const obj = cell && doorGroups.get(`${cell.x},${cell.y}`);
-      if (!cell || !obj) return;
-      const spec = doorAt(latestMapRef.current, cell.x, cell.y);
-      const v = DIR_VECTOR[spec.facing];
-      const along = (at[0] - cell.x) * v.x + (at[1] - cell.y) * v.y;
-      const offset = Math.round(Math.max(-DOOR_EDGE_OFFSET, Math.min(DOOR_EDGE_OFFSET, along)) * 100) / 100;
-      d.doorOffset = offset;
-      obj.position.set(cell.x, floorY(cell.x, cell.y), cell.y);
-      obj.rotation.y = FACING_ROTATION[spec.facing];
-      obj.translateZ(offset);
-    }
-    window.addEventListener("pointermove", onDragMove, true);
-    // the wheel over the view, while a prop, decal, item or free-standing
-    // light is selected: height, Ctrl: scale, Alt: turn
-    const onWheel = (e: WheelEvent) => {
-      if (!editModeRef.current || !onEditAdjustRef.current) return;
-      const tool = editToolRef.current;
-      // (Select: the selected one, whatever its kind)
-      const sel = tool === "select";
-      const pointLight = (tool === "light" || sel) && selectedLightRef.current !== null && !!latestMapRef.current.lights?.[selectedLightRef.current]?.pos;
-      const selected = (kind: EditTool, picked: number | null) => tool === kind || (sel && picked !== null);
-      if (!selected("prop", selectedPropRef.current) && !selected("decal", selectedDecalRef.current) && !selected("item", selectedItemRef.current) && !pointLight) return;
-      e.preventDefault();
-      const dir = e.deltaY < 0 ? 1 : -1;
-      if (e.ctrlKey || e.metaKey) onEditAdjustRef.current({ what: "scale", delta: dir * 0.05 });
-      else if (e.altKey) onEditAdjustRef.current({ what: "rotate", delta: dir * 15 });
-      else onEditAdjustRef.current({ what: "height", delta: dir * 0.05 });
-    };
-    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
-    // a point of the view in normalized device coordinates - its center
-    // while the pointer is locked (free mouselook)
-    const viewNdc = (clientX: number, clientY: number) => {
-      if (document.pointerLockElement) return new THREE.Vector2(0, 0);
-      const rect = renderer.domElement.getBoundingClientRect();
-      return new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
-    };
-    const onRelease = (e: PointerEvent) => {
-      const p = press;
-      if (p && p.id !== e.pointerId) return;
-      press = null;
-      // a loose item dragged to the screen and let go (slotDrag's beginWorldDrag): not a click
-      if (justDragged()) return;
-      // the Roof tool's strokes did it all (the minimap's clicks reach the tool on their own)
-      if (roofStroke?.pointer === e.pointerId) {
-        roofStroke = null;
-        return;
-      }
-      if (editModeRef.current && STROKE_TOOLS.has(editToolRef.current)) return;
-      // a drag just ended: not a click
-      const d = dragItem;
-      if (d?.moved) {
-        dragItem = null;
-        // a door: into the map where it was shown, if it takes it there - else
-        // back where it stood (on success the deck is rebuilt around it)
-        if (d.kind === "door" && d.door) {
-          const drop = { kind: "door" as const, index: -1, door: d.door, copy: d.copy, first: true, id: d.id, drop: true };
-          const taken = d.doorAcross
-            ? d.doorTo && onEditDragRef.current?.(drop, { kind: "floor", cell: d.doorTo })
-            : d.doorOffset !== undefined && onEditDragRef.current?.({ ...drop, copy: false, offset: d.doorOffset }, { kind: "floor", cell: d.door });
-          const obj = doorGroups.get(`${d.door.x},${d.door.y}`);
-          if ((taken !== true || d.copy) && obj && d.doorHome) {
-            obj.position.copy(d.doorHome.position);
-            obj.rotation.y = d.doorHome.rotation;
-          }
-        }
-        return;
-      }
-      dragItem = null;
-      if (!p || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8 || performance.now() - p.at > 500) return;
-      const ndc = viewNdc(e.clientX, e.clientY);
-      if (editModeRef.current) {
-        if (toolLocked()) return;
-        const marker = (editToolRef.current === "event" || (editToolRef.current === "select" && e.button === 0))
-          ? pickEventMarker(ndc)
-          : null;
-        if (marker) {
-          interactionCallbacks.current.onEditInteraction?.(marker, e.button === 2);
-          return;
-        }
-        if (editToolRef.current === "event") {
-          interactionCallbacks.current.onEditInteraction?.(findInteractionHit(ndc, true)?.target ?? null, e.button === 2);
-          return;
-        }
-        const target = editTargetAt(ndc);
-        if (target) onEditRef.current?.(target, e.button === 2, e.shiftKey, e.ctrlKey || e.metaKey);
-        return;
-      }
-      if (interactionCallbacks.current.interactionOpen) return;
-      if (e.button === 0 && activateInteraction(p.ndc, "pointer")) return;
-      raycaster.setFromCamera(ndc, camera);
-      const hits = raycastDrawn(raycaster, group.children);
-      if (!hits.length) return;
-      // a decal lies on its wall: count it if it's as near as the nearest hit
-      const touched = hits.find((h) => h.object.userData.action && h.distance <= hits[0].distance + 0.02);
-      if (touched) {
-        onTouchRef.current?.(touched.object.userData.action);
-        return;
-      }
-      // a container or a wreck, nearest: the same as Use (handy on a phone)
-      for (let o: THREE.Object3D | null = hits[0].object; o; o = o.parent) {
-        // a loose item: picked up if it is within reach (see pickupMode.ts)
-        if (typeof o.userData.itemIndex === "number") {
-          onTouchRef.current?.(`pickup:${o.userData.itemIndex}`);
-          return;
-        }
-        if (o.userData.propIndex !== undefined) {
-          const spec = map.props?.[o.userData.propIndex as number];
-          if (spec && PROP_TYPES[spec.prop]?.container) onTouchRef.current?.("use");
-          return;
-        }
-        if (o.userData.actorId !== undefined) {
-          const actor = actorsRef.current.find((a) => a.id === o.userData.actorId);
-          if (actor && actor.diedAt !== null) onTouchRef.current?.("use");
-          return;
-        }
-      }
-    };
-    renderer.domElement.addEventListener("pointerdown", onPress);
-    window.addEventListener("pointerup", onRelease);
-
-    // --- the map editor: what's under the pointer, highlighted ---
-    const editRaycaster = new THREE.Raycaster();
-    editRaycaster.far = EDIT_REACH;
-    const editNormal = new THREE.Vector3();
-    const onHover = (e: PointerEvent) => {
-      editHoverRef.current = viewNdc(e.clientX, e.clientY);
-    };
-    // leaving the view (for the toolbar, say) keeps the last point: the
-    // highlight mustn't jump to whatever is in the middle of the view
-    const onLeave = () => {};
-    // no context menu over the view while editing: the right button fills
-    const onContextMenu = (e: Event) => {
-      if (editModeRef.current) e.preventDefault();
-    };
-    renderer.domElement.addEventListener("pointermove", onHover);
-    renderer.domElement.addEventListener("pointerleave", onLeave);
-    renderer.domElement.addEventListener("contextmenu", onContextMenu);
-    // The top-down view's input: O switches it (editing only); WASD / arrows
-    // pan and Q / E turn it - taken before the game's own keys (this runs in
-    // the capture phase), so the party doesn't walk; the wheel zooms
-    // (Ctrl+wheel tilts); the middle button drags the map.
-    const topdownKeys = new Set<string>();
-    const typingIn = isTextEntry;
-    const onTopdownKey = (e: KeyboardEvent) => {
-      if (typingIn(e.target) || e.ctrlKey || e.altKey || e.metaKey) return;
-      const key = e.key.toLowerCase();
-      if (e.type === "keydown" && key === "o" && editModeRef.current && !e.repeat) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        setTopdown(!topdown.on);
-        return;
-      }
-      if (!topdown.on) return;
-      if (["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (e.type === "keydown") topdownKeys.add(key);
-        else topdownKeys.delete(key);
-      }
-      if (key === "shift") {
-        if (e.type === "keydown") topdownKeys.add("Shift");
-        else topdownKeys.delete("Shift");
-      }
-    };
-    window.addEventListener("keydown", onTopdownKey, true);
-    window.addEventListener("keyup", onTopdownKey, true);
-    const onTopdownBlur = () => topdownKeys.clear();
-    window.addEventListener("blur", onTopdownBlur);
-    const onTopdownWheel = (e: WheelEvent) => {
-      if (!topdown.on) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.ctrlKey) topdown.tilt = Math.min(Math.PI / 2, Math.max(0.5, topdown.tilt - Math.sign(e.deltaY) * 0.06));
-      else topdown.h = Math.min(TOPDOWN_ZOOM_MAX, Math.max(TOPDOWN_ZOOM_MIN, topdown.h * Math.exp(e.deltaY * 0.0012)));
-    };
-    renderer.domElement.addEventListener("wheel", onTopdownWheel, { capture: true, passive: false });
-    let topdownPan: { x: number; y: number } | null = null;
-    const onTopdownDown = (e: PointerEvent) => {
-      if (!topdown.on || e.button !== 1) return;
-      e.preventDefault();
-      e.stopPropagation();
-      topdownPan = { x: e.clientX, y: e.clientY };
-      renderer.domElement.setPointerCapture(e.pointerId);
-    };
-    const onTopdownMove = (e: PointerEvent) => {
-      if (!topdownPan) return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      // cells per pixel at the looked-at floor
-      const perPx = (2 * Math.tan(THREE.MathUtils.degToRad(TOPDOWN_FOV) / 2) * (topdown.h / Math.sin(topdown.tilt))) / Math.max(1, rect.height);
-      const dx = (e.clientX - topdownPan.x) * perPx;
-      const dy = (e.clientY - topdownPan.y) * perPx;
-      const sy = Math.sin(topdown.yaw);
-      const cy = Math.cos(topdown.yaw);
-      // (dragging the map: the view moves the other way)
-      topdown.x -= cy * dx - (sy * dy) / Math.sin(topdown.tilt);
-      topdown.z -= sy * dx + (cy * dy) / Math.sin(topdown.tilt);
-      topdownPan = { x: e.clientX, y: e.clientY };
-    };
-    const onTopdownUp = (e: PointerEvent) => {
-      if (!topdownPan) return;
-      topdownPan = null;
-      if (renderer.domElement.hasPointerCapture(e.pointerId)) renderer.domElement.releasePointerCapture(e.pointerId);
-    };
-    renderer.domElement.addEventListener("pointerdown", onTopdownDown, true);
-    renderer.domElement.addEventListener("pointermove", onTopdownMove);
-    renderer.domElement.addEventListener("pointerup", onTopdownUp);
-    // The cell a point of the view shows: the first solid surface there - a
-    // wall's face (the wall cell behind it, dug from the open cell in front),
-    // else the floor or ceiling of the cell it's in: floors face up, ceiling
-    // geometry is turned to face down.
-    const decalIndexOf = (h: THREE.Intersection | undefined) => h?.object.userData.decalIndex as number | undefined;
-    // a world point on a cell's surface in that surface's pixels (see
-    // DecalSpec and surfaceFrame)
-    const surfaceInverse = new THREE.Quaternion();
-    const surfaceLocal = new THREE.Vector3();
-    function surfacePointAt(cell: Vec2, surface: Direction | "floor" | "ceiling", point: THREE.Vector3): EditTarget["surfacePoint"] {
-      const frame = surfaceFrame(cell, surface, wallHeight, { floor: floorY(cell.x, cell.y), ceiling: ceilingY(cell.x, cell.y) });
-      surfaceInverse.copy(frame.quaternion).invert();
-      surfaceLocal.copy(point).sub(frame.position).applyQuaternion(surfaceInverse);
-      return {
-        cell,
-        surface,
-        u: Math.round(((surfaceLocal.x + frame.width / 2) / frame.width) * SURFACE_PIXELS),
-        v: Math.round(((frame.height / 2 - surfaceLocal.y) / frame.height) * SURFACE_PIXELS),
-      };
-    }
-    const ownedByDrag = (obj: THREE.Object3D) => {
-      for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (dragOwn(o)) return true;
-      return false;
-    };
-    // The editor layer a picked object belongs to (a locked one is looked
-    // through: what's behind it can still be clicked).
-    const objectLayer = (obj: THREE.Object3D): string | undefined => {
-      for (let o: THREE.Object3D | null = obj; o; o = o.parent) {
-        const u = o.userData;
-        if (u.propIndex !== undefined) return "prop";
-        if (u.decalIndex !== undefined) return "decal";
-        if (u.itemIndex !== undefined) return "item";
-        if (u.actorId !== undefined) return "robot";
-        if (u.smokeIndex !== undefined) return "smoke";
-        if (u.soundIndex !== undefined) return "sound";
-        if (u.mapLight !== undefined) return "light";
-      }
-      return undefined;
-    };
-    const toolLocked = () => {
-      const layer = TOOL_LAYER[editToolRef.current];
-      return !!layer && lockedLayersRef.current.has(layer);
-    };
-    let cursorLamp: THREE.Vector3 | null = null;
-    function editTargetAt(ndc: THREE.Vector2, updateLamp = false): EditTarget | null {
-      editRaycaster.setFromCamera(ndc, camera);
-      editRaycaster.far = topdown.on ? TOPDOWN_REACH : EDIT_REACH;
-      // (the Select tool points at any kind: the nearest thing under the pointer)
-      const selecting = editToolRef.current === "select";
-      const lightTool = editToolRef.current === "light" || selecting;
-      const locked = lockedLayersRef.current;
-      const intersections = editRaycaster.intersectObjects(group.children, true);
-      if (updateLamp) {
-        for (const hit of intersections) {
-          if (!hit.face || !drawnChain(hit.object) || seeThrough(hit.object)) continue;
-          const layer = objectLayer(hit.object);
-          if (layer === "light" || layer === "smoke" || layer === "sound" || layer === "actor" || layer === "decal") continue;
-          // Nudge off vertical faces into the adjacent open cell.
-          editNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
-          const x = hit.point.x + editNormal.x * 0.05;
-          const z = hit.point.z + editNormal.z * 0.05;
-          const cx = Math.round(x);
-          const cz = Math.round(z);
-          if (cellAt(liveMap, cx, cz) === "wall") continue;
-          cursorLamp ??= new THREE.Vector3();
-          cursorLamp.set(x, Math.min(hit.point.y + 0.75, ceilingY(cx, cz) - 0.08), z);
-          break;
-        }
-      }
-      const hits = intersections
-        .filter((h) => {
-          if (!h.face) return false;
-          const layer = objectLayer(h.object);
-          if (locked.size && layer && locked.has(layer)) return false;
-          return (
-            (h.object.userData.actorId === undefined || editToolRef.current === "robot" || selecting) &&
-            (lightTool || h.object.userData.mapLight === undefined) &&
-            drawnChain(h.object) &&
-            // (the loose items are see-through sprites, but the Item tool can point at them)
-            (!seeThrough(h.object) || ((editToolRef.current === "item" || selecting || operableLink.active()) && isItemObject(h.object))) &&
-            // (a fence's floor mark: the Select tool and the fence tools point at it, the others see the floor under it)
-            (h.object.parent?.name !== "fenceMarker" || selecting || editToolRef.current.startsWith("fence")) &&
-            // (the thing being dragged is looked through: what's behind it is
-            // where it goes)
-            !(dragItem?.moved && ownedByDrag(h.object))
-          );
-        });
-      const hit = hits[0];
-      if (!hit?.face) return null;
-      // the Decal tool: a decal lies on its surface - it counts if it's as
-      // near as the nearest hit
-      const decalHit =
-        editToolRef.current === "decal" || selecting
-          ? hits.find((h) => h.object.userData.decalIndex !== undefined && h.distance <= hit.distance + 0.02)
-          : undefined;
-      // the Robot tool: an actor pointed at
-      const actorId = hit.object.userData.actorId as number | undefined;
-      if (actorId !== undefined) {
-        const actor = actorsRef.current.find((a) => a.id === actorId);
-        return actor ? { kind: "floor", cell: { ...actor.cell }, actor: actorId } : null;
-      }
-      // the Door tool: a door pointed at (any part of it) - and the operable props' link mode, which picks doors too
-      if (editToolRef.current === "door" || operableLink.active()) {
-        for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
-          const at = o.userData.doorCell as Vec2 | undefined;
-          if (at) return { kind: "floor", cell: { ...at }, door: { ...at } };
-        }
-      }
-      // the Smoke tool: an emitter's marker pointed at
-      if (editToolRef.current === "smoke" || ((selecting || operableLink.active()) && hit.object.userData.smokeIndex !== undefined)) {
-        const at = hits.find((h) => h.object.userData.smokeIndex !== undefined);
-        const spec = at && latestMapRef.current.smokes?.[at.object.userData.smokeIndex as number];
-        if (at && spec) return { kind: "floor", cell: { ...spec.cell }, smoke: at.object.userData.smokeIndex as number };
-      }
-      // the Sound tool: a sound emitter's marker pointed at
-      // (as near as the nearest thing: a marker behind a wall is not the one a click is meant for)
-      if (editToolRef.current === "sound" || selecting || operableLink.active()) {
-        const at = hits.find((h) => h.object.userData.soundIndex !== undefined && h.distance <= hit.distance + 0.25);
-        const spec = at && latestMapRef.current.sounds?.[at.object.userData.soundIndex as number];
-        if (at && spec) return { kind: "floor", cell: { x: spec.x, y: spec.y }, sound: at.object.userData.soundIndex as number };
-      }
-      // the Item tool: an item pointed at
-      if (editToolRef.current === "item" || selecting || operableLink.active()) {
-        for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
-          if (o.userData.itemIndex === undefined) continue;
-          const spec = latestMapRef.current.items?.[o.userData.itemIndex as number];
-          if (spec) return { kind: "floor", cell: { ...spec.cell }, item: o.userData.itemIndex as number };
-        }
-      }
-      // the Prop tool: a prop pointed at (any part of it)
-      if (editToolRef.current === "prop" || selecting) {
-        for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
-          if (o.userData.propIndex === undefined) continue;
-          const spec = latestMapRef.current.props?.[o.userData.propIndex as number];
-          if (spec) return { kind: "floor", cell: { ...spec.cell }, prop: o.userData.propIndex as number };
-        }
-      }
-      const lightIndex = hit.object.userData.mapLight as number | undefined;
-      const own = lightIndex === undefined ? undefined : latestMapRef.current.lights?.[lightIndex];
-      if (lightIndex !== undefined && own) {
-        return { kind: "floor", cell: { x: own.x, y: own.y }, light: lightIndex };
-      }
-      editNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
-      const p = hit.point;
-      // a free-standing light's spot: just off the surface, in its cell
-      const sx0 = p.x + editNormal.x * LIGHT_SPOT_GAP;
-      const sy0 = p.y + editNormal.y * LIGHT_SPOT_GAP;
-      const sz0 = p.z + editNormal.z * LIGHT_SPOT_GAP;
-      const spotCell = { x: Math.round(sx0), y: Math.round(sz0) };
-      const round2 = (v: number) => Math.round(v * 100) / 100;
-      const spot: EditTarget["spot"] =
-        cellAt(liveMap, spotCell.x, spotCell.y) === "wall"
-          ? undefined
-          : {
-              cell: spotCell,
-              pos: [round2(sx0 - spotCell.x), round2(sy0 / wallHeight - floorHeight(liveMap, spotCell.x, spotCell.y)), round2(sz0 - spotCell.y)],
-            };
-      const flat = Math.abs(editNormal.y) >= Math.max(Math.abs(editNormal.x), Math.abs(editNormal.z));
-      if (!flat) {
-        // the side it faces, on the grid
-        const sx = Math.abs(editNormal.x) > Math.abs(editNormal.z) ? Math.sign(editNormal.x) : 0;
-        const sz = sx ? 0 : Math.sign(editNormal.z);
-        const behind = { x: Math.round(p.x - sx * 0.05), y: Math.round(p.z - sz * 0.05) };
-        if (cellAt(liveMap, behind.x, behind.y) === "wall") {
-          const from = { x: behind.x + sx, y: behind.y + sz };
-          const side: Direction = sx > 0 ? "W" : sx < 0 ? "E" : sz > 0 ? "N" : "S";
-          return { kind: "wall", cell: behind, from, spot, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(from, side, p) };
-        }
-        // A step face: the plane between two open cells where the far one's floor
-        // is higher (a riser, up to that floor) or its ceiling lower (a header,
-        // from that ceiling up). It's seen from the near cell, and is addressed
-        // like a wall face: that cell and the side toward the far one. (The
-        // point has to be on the plane itself: the sides of a relief's steps
-        // face sideways too, and mustn't count.)
-        const from = { x: behind.x + sx, y: behind.y + sz };
-        const planeAt = sx ? (behind.x + from.x) / 2 : (behind.y + from.y) / 2;
-        if (
-          cellAt(liveMap, behind.x, behind.y) !== "wall" &&
-          cellAt(liveMap, from.x, from.y) !== "wall" &&
-          Math.abs((sx ? p.x : p.z) - planeAt) <= reliefDepth + 0.08
-        ) {
-          const side: Direction = sx > 0 ? "W" : sx < 0 ? "E" : sz > 0 ? "N" : "S";
-          const slack = 0.05;
-          const part: "riser" | "header" | null =
-            floorHeight(liveMap, behind.x, behind.y) > floorHeight(liveMap, from.x, from.y) && p.y <= floorY(behind.x, behind.y) + slack
-              ? "riser"
-              : ceilingHeight(liveMap, behind.x, behind.y) < ceilingHeight(liveMap, from.x, from.y) && p.y >= ceilingY(behind.x, behind.y) - slack
-                ? "header"
-                : null;
-          if (part) {
-            return { kind: "floor", cell: from, spot, decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(from, side, p), face: { cell: from, side, part } };
-          }
-        }
-      }
-      const cell = { x: Math.round(p.x), y: Math.round(p.z) };
-      if (cellAt(liveMap, cell.x, cell.y) === "wall") return null;
-      // floor or ceiling by which the hit is nearer to (a relief's step
-      // sides face sideways, so the normal can't tell)
-      const nearCeiling = ceilingY(cell.x, cell.y) - p.y < p.y - floorY(cell.x, cell.y);
-      const surface = nearCeiling ? "ceiling" : "floor";
-      // an upward face (a floor, a table's top): the point itself
-      const point: EditTarget["point"] =
-        editNormal.y > 0.7 ? { cell, pos: [round2(p.x - cell.x), round2((p.y - floorY(cell.x, cell.y)) / wallHeight), round2(p.z - cell.y)] } : undefined;
-      return { kind: surface, cell, spot, point, at: [round2(p.x), round2(p.z)], decal: decalIndexOf(decalHit), surfacePoint: surfacePointAt(cell, surface, p) };
-    }
-    const editBox = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
-      new THREE.LineBasicMaterial({ color: EDIT_DIG_COLOR, depthTest: false, transparent: true }),
-    );
-    editBox.renderOrder = 10;
-    editBox.visible = false;
-    scene.add(editBox);
-    geometries.push(editBox.geometry);
-    // the surface under the pointer, to the editor (the palette follows it):
-    // only when it changes, not every frame, and only once it settles - a
-    // sweep across the view on the way to the toolbar mustn't swap the
-    // palette away from the surface it was picked for
-    let lastHover = "";
-    let hoverKey = "";
-    let hoverSince = 0;
-    const HOVER_SETTLE_MS = 150;
-    function reportHover(target: EditTarget | null) {
-      const key = target ? `${target.kind} ${target.cell.x},${target.cell.y} ${target.from?.x},${target.from?.y} ${target.face?.side ?? ""}` : "";
-      if (key === lastHover) return;
-      if (key !== hoverKey) {
-        hoverKey = key;
-        hoverSince = performance.now();
-      }
-      if (performance.now() - hoverSince < HOVER_SETTLE_MS) return;
-      lastHover = key;
-      onEditHoverRef.current?.(target);
-    }
-    // Marks what a click with the tool in hand would do: the wall block Dig
-    // takes out, or the surface Fill paints over / the Texture tool paints /
-    // the Light tool hangs a light in.
-    // the Light tool's selected light, framed
-    const selectBox = new THREE.LineSegments(
-      editBox.geometry,
-      new THREE.LineBasicMaterial({ color: EDIT_SELECT_COLOR, depthTest: false, transparent: true }),
-    );
-    selectBox.renderOrder = 11;
-    selectBox.visible = false;
-    scene.add(selectBox);
-    const selectBounds = new THREE.Box3();
-    const selectCenter = new THREE.Vector3();
-    const selectSize = new THREE.Vector3();
-    const frameObject = (box: THREE.LineSegments, obj: THREE.Object3D, pad: number) => {
-      selectBounds.setFromObject(obj);
-      selectBounds.getCenter(selectCenter);
-      selectBounds.getSize(selectSize);
-      box.position.copy(selectCenter);
-      box.scale.set(selectSize.x + pad, selectSize.y + pad, selectSize.z + pad);
-    };
-    function updateSelectionBox() {
-      // a selected event: framed around what it is attached to (the same frame as for the other kinds)
-      const ev = editModeRef.current ? selectedEventRef.current : null;
-      if (ev) {
-        selectBounds.makeEmpty();
-        let pad = 0.04;
-        if (ev.kind === "actor") {
-          const mesh = actorMeshes.get(ev.index)?.mesh;
-          if (mesh) selectBounds.expandByObject(mesh);
-        } else if (ev.kind === "door") {
-          const obj = doorGroups.get(`${ev.cell.x},${ev.cell.y}`);
-          if (obj) selectBounds.expandByObject(obj);
-        } else if (ev.kind === "decal") {
-          for (const obj of group.children) if (obj.userData.decalIndex === ev.index) selectBounds.expandByObject(obj);
-          pad = 0.03;
-        } else if (ev.kind === "item") {
-          const obj = looseItems.get(ev.index)?.obj;
-          if (obj) selectBounds.expandByObject(obj);
-        } else if (ev.kind === "prop") {
-          const obj = propObjects.get(ev.index);
-          if (obj) selectBounds.expandByObject(obj);
-        } else if (ev.kind === "wall") {
-          // a wall face: around its marker (the face itself is no object of its own)
-          for (const marker of eventMarkers.children) {
-            const t = marker.userData.interactionTarget as InteractionTarget | undefined;
-            if (t?.kind === "wall" && t.side === ev.side && t.part === ev.part && t.cell.x === ev.cell.x && t.cell.y === ev.cell.y) {
-              selectBounds.expandByPoint(marker.position);
-            }
-          }
-          pad = 0.4;
-        }
-        if (!selectBounds.isEmpty()) {
-          selectBounds.getCenter(selectCenter);
-          selectBounds.getSize(selectSize);
-          selectBox.position.copy(selectCenter);
-          selectBox.scale.set(selectSize.x + pad, selectSize.y + pad, selectSize.z + pad);
-          selectBox.visible = true;
-          return;
-        }
-      }
-      // a selected actor: framed around its sprite
-      const actorIndex = editModeRef.current ? selectedActorRef.current : null;
-      const actorEntry = actorIndex === null ? undefined : actorMeshes.get(actorIndex);
-      if (actorEntry) {
-        frameObject(selectBox, actorEntry.mesh, 0.04);
-        selectBox.visible = true;
-        return;
-      }
-      // a selected door: framed around it
-      const doorCell = editModeRef.current ? selectedDoorRef.current : null;
-      const doorObj = doorCell && doorGroups.get(`${doorCell.x},${doorCell.y}`);
-      if (doorObj) {
-        frameObject(selectBox, doorObj, 0.04);
-        selectBox.visible = true;
-        return;
-      }
-      // a selected gate or staircase: framed around its floor plate
-      const linkCell = editModeRef.current ? selectedLinkRef.current : null;
-      const linkPlate = linkCell && linkPlates.get(`${linkCell.x},${linkCell.y}`);
-      if (linkPlate) {
-        frameObject(selectBox, linkPlate, 0.12);
-        selectBox.visible = true;
-        return;
-      }
-      // a selected decal: framed around its pieces
-      const decalIndex = editModeRef.current ? selectedDecalRef.current : null;
-      if (decalIndex !== null) {
-        selectBounds.makeEmpty();
-        for (const obj of group.children) {
-          if (obj.userData.decalIndex === decalIndex) selectBounds.expandByObject(obj);
-        }
-        if (!selectBounds.isEmpty()) {
-          selectBounds.getCenter(selectCenter);
-          selectBounds.getSize(selectSize);
-          selectBox.position.copy(selectCenter);
-          selectBox.scale.set(selectSize.x + 0.03, selectSize.y + 0.03, selectSize.z + 0.03);
-          selectBox.visible = true;
-          return;
-        }
-      }
-      // a selected smoke emitter: framed around its marker
-      const smokeIndex = editModeRef.current ? selectedSmokeRef.current : null;
-      const smokeMarker = smokeIndex === null ? undefined : smokeFire.smokeMarkers.get(smokeIndex);
-      if (smokeMarker) {
-        frameObject(selectBox, smokeMarker, 0.05);
-        selectBox.visible = true;
-        return;
-      }
-      // a selected sound emitter: framed around its marker
-      const soundIndex = editModeRef.current ? selectedSoundRef.current : null;
-      const soundMarker = soundIndex === null ? undefined : soundMarkers.get(soundIndex);
-      if (soundMarker) {
-        // (not frameObject: the range ring under it is part of the marker, and would be framed too)
-        selectBox.position.copy(soundMarker.position);
-        selectBox.scale.setScalar(SOUND_ICON_SIZE * 1.15);
-        selectBox.visible = true;
-        return;
-      }
-      // a selected item: framed around its sprite
-      const itemIndex = editModeRef.current ? selectedItemRef.current : null;
-      const itemObj = itemIndex === null ? undefined : looseItems.get(itemIndex)?.obj;
-      if (itemObj) {
-        frameObject(selectBox, itemObj, 0.03);
-        selectBox.visible = true;
-        return;
-      }
-      // a selected prop: framed around its bounds
-      const propIndex = editModeRef.current ? selectedPropRef.current : null;
-      const prop = propIndex === null ? undefined : propObjects.get(propIndex);
-      if (prop) {
-        selectBounds.setFromObject(prop);
-        selectBounds.getCenter(selectCenter);
-        selectBounds.getSize(selectSize);
-        selectBox.position.copy(selectCenter);
-        selectBox.scale.set(selectSize.x + 0.04, selectSize.y + 0.04, selectSize.z + 0.04);
-        selectBox.visible = true;
-        return;
-      }
-      const selected = editModeRef.current ? selectedLightRef.current : null;
-      const l = selected === null ? undefined : mapLightState.mapLights.find((m) => m.source === selected);
-      selectBox.visible = !!l;
-      if (!l) return;
-      if (l.kind === "point") {
-        selectBox.position.set(l.x, l.y * wallHeight, l.z);
-        selectBox.scale.setScalar(0.14);
-      } else {
-        selectBox.position.set(l.x, ceilingY(Math.round(l.x), Math.round(l.z)) - 0.03, l.z);
-        selectBox.scale.set(0.5, 0.05, 0.5);
-      }
-    }
-    // What is under the pointer is found with a ray (through thousands of triangles); it only changes when the pointer,
-    // the view, the tool, the map or a drag does - not worked out again every frame while all of those stand still.
-    let hoverCache: { map: GameMap; tool: string; locked: ReadonlySet<string>; x: number; y: number; dragging: boolean; lamp: boolean; aspect: number; pos: THREE.Vector3; quat: THREE.Quaternion; target: EditTarget | null } | null = null;
-    function hoverTarget(lamp: boolean): EditTarget | null {
-      const at = editHoverRef.current ?? ORIGIN_NDC;
-      const dragging = !!dragItem?.moved;
-      const locked = lockedLayersRef.current;
-      const c = hoverCache;
-      if (c && c.map === latestMapRef.current && c.tool === editToolRef.current && c.locked === locked && c.x === at.x && c.y === at.y && c.dragging === dragging && c.lamp === lamp && c.aspect === camera.aspect && c.pos.equals(camera.position) && c.quat.equals(camera.quaternion)) return c.target;
-      const target = editTargetAt(at, lamp);
-      hoverCache = { map: latestMapRef.current, tool: editToolRef.current, locked, x: at.x, y: at.y, dragging, lamp, aspect: camera.aspect, pos: camera.position.clone(), quat: camera.quaternion.clone(), target };
-      return target;
-    }
-    function updateEditHighlight() {
-      const lamp = topdown.on && settingsRef.current.headlamp;
-      const canEdit = editModeRef.current && !toolLocked();
-      const hovered = canEdit || lamp ? hoverTarget(lamp) : null;
-      const target = canEdit ? hovered : null;
-      if (lamp) {
-        if (cursorLamp) pointLight.position.copy(cursorLamp);
-        else {
-          const x = Math.round(topdown.x);
-          const z = Math.round(topdown.z);
-          pointLight.position.set(topdown.x, Math.min(floorY(x, z) + 0.75, ceilingY(x, z) - 0.08), topdown.z);
-        }
-      }
-      reportHover(target);
-      // dev: what's under the pointer, for the console and tests
-      if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewEditTarget: target });
-      const tool = editToolRef.current;
-      let mode: "wall" | "plate" | "face" | "bulb" | "prop" | "decal" | "door" | "actor" | "item" | "smoke" | "sound" | null = null;
-      let color = EDIT_FILL_COLOR;
-      if (target) {
-        if (tool === "select") {
-          // any kind pointed at: the nearest, as a click would pick it
-          mode = target.actor !== undefined ? "actor" : target.item !== undefined ? "item" : target.prop !== undefined ? "prop" : target.decal !== undefined ? "decal" : target.light !== undefined ? "bulb" : target.smoke !== undefined ? "smoke" : target.sound !== undefined ? "sound" : null;
-          color = EDIT_LIGHT_ADD_COLOR;
-        } else if (tool === "texture") {
-          mode = target.face ? "face" : target.kind === "wall" ? "wall" : "plate";
-          color = EDIT_PAINT_COLOR;
-        } else if (tool === "robot" && target.actor !== undefined) {
-          mode = "actor";
-          color = EDIT_LIGHT_ADD_COLOR;
-        } else if (tool === "door" && target.door) {
-          mode = "door";
-          color = EDIT_LIGHT_ADD_COLOR;
-        } else if (tool === "decal") {
-          mode = target.decal !== undefined ? "decal" : target.face ? "face" : null;
-          color = EDIT_LIGHT_ADD_COLOR;
-        } else if (tool === "prop" && (target.prop !== undefined || target.face)) {
-          mode = target.prop !== undefined ? "prop" : "face";
-          color = EDIT_LIGHT_ADD_COLOR;
-        } else if (tool === "item") {
-          mode = target.item !== undefined ? "item" : null;
-          color = EDIT_LIGHT_ADD_COLOR;
-        } else if (tool === "smoke") {
-          mode = target.smoke !== undefined ? "smoke" : null;
-          color = EDIT_LIGHT_ADD_COLOR;
-        } else if (tool === "sound") {
-          // a marker pointed at is picked; any other floor or ceiling gets a new emitter in its cell
-          if (target.sound !== undefined) {
-            mode = "sound";
-            color = EDIT_LIGHT_ADD_COLOR;
-          } else if (target.kind !== "wall") {
-            mode = "plate";
-            color = EDIT_LIGHT_ADD_COLOR;
-          }
-        } else if (tool === "light") {
-          // a light hangs in the cell's ceiling, so either surface of it works
-          if (target.light !== undefined) {
-            mode = "bulb";
-            color = EDIT_LIGHT_ADD_COLOR;
-          } else if (target.kind !== "wall") {
-            mode = "plate";
-            const lit = mapLightState.litCells.has(`${target.cell.x},${target.cell.y}`);
-            color = lit ? EDIT_LIGHT_REMOVE_COLOR : EDIT_LIGHT_ADD_COLOR;
-          }
-        } else if (target.kind === "wall") {
-          // only Dig works on a wall (Fill's right button needs a floor)
-          if (tool === "dig") {
-            mode = "wall";
-            color = EDIT_DIG_COLOR;
-          }
-        } else {
-          mode = "plate";
-          color = EDIT_FILL_COLOR;
-        }
-      }
-      updateSelectionBox();
-      editBox.visible = mode !== null;
-      // an area being pasted: its outline on the floor, its top-left corner on the cell pointed at
-      const ghost = areaGhostRef.current;
-      if (ghost && target) {
-        const base = target.kind === "wall" && target.from ? target.from : target.cell;
-        editBox.visible = true;
-        editBox.position.set(target.cell.x + (ghost.w - 1) / 2, floorY(base.x, base.y) + 0.02, target.cell.y + (ghost.h - 1) / 2);
-        editBox.scale.set(ghost.w - 0.02, 0.04, ghost.h - 0.02);
-        (editBox.material as THREE.LineBasicMaterial).color.setHex(0xffc400);
-        return;
-      }
-      if (!target || !mode) return;
-      const mat = editBox.material as THREE.LineBasicMaterial;
-      if (mode === "actor") {
-        const entry = actorMeshes.get(target.actor!);
-        if (entry) frameObject(editBox, entry.mesh, 0.02);
-      } else if (mode === "door") {
-        const obj = doorGroups.get(`${target.door!.x},${target.door!.y}`);
-        if (obj) frameObject(editBox, obj, 0.02);
-      } else if (mode === "item") {
-        const item = looseItems.get(target.item!);
-        if (item) frameObject(editBox, item.obj, 0.02);
-      } else if (mode === "smoke") {
-        const marker = smokeFire.smokeMarkers.get(target.smoke!);
-        if (marker) frameObject(editBox, marker, 0.03);
-      } else if (mode === "sound") {
-        const marker = soundMarkers.get(target.sound!);
-        if (marker) {
-          editBox.position.copy(marker.position);
-          editBox.scale.setScalar(SOUND_ICON_SIZE * 1.1);
-        }
-      } else if (mode === "decal") {
-        selectBounds.makeEmpty();
-        for (const obj of group.children) {
-          if (obj.userData.decalIndex === target.decal) selectBounds.expandByObject(obj);
-        }
-        selectBounds.getCenter(selectCenter);
-        selectBounds.getSize(selectSize);
-        editBox.position.copy(selectCenter);
-        editBox.scale.set(selectSize.x + 0.02, selectSize.y + 0.02, selectSize.z + 0.02);
-      } else if (mode === "prop") {
-        const obj = propObjects.get(target.prop!);
-        if (obj) {
-          selectBounds.setFromObject(obj);
-          selectBounds.getCenter(selectCenter);
-          selectBounds.getSize(selectSize);
-          editBox.position.copy(selectCenter);
-          editBox.scale.set(selectSize.x + 0.02, selectSize.y + 0.02, selectSize.z + 0.02);
-        }
-      } else if (mode === "bulb") {
-        const l = mapLightState.mapLights.find((m) => m.source === target.light);
-        if (l) editBox.position.set(l.x, l.y * wallHeight, l.z);
-        editBox.scale.setScalar(0.1);
-      } else if (mode === "face") {
-        // the step face: a thin slab on its plane, as tall as the step
-        const { cell, side, part } = target.face!;
-        const v = DIR_VECTOR[side];
-        const far = { x: cell.x + v.x, y: cell.y + v.y };
-        const bottom = part === "riser" ? floorY(cell.x, cell.y) : Math.max(floorY(cell.x, cell.y), ceilingY(far.x, far.y));
-        const top = part === "riser" ? Math.min(ceilingY(cell.x, cell.y), floorY(far.x, far.y)) : ceilingY(cell.x, cell.y);
-        editBox.position.set(cell.x + v.x * 0.5, (bottom + top) / 2, cell.y + v.y * 0.5);
-        editBox.scale.set(v.x ? 0.06 : 0.98, Math.max(0.02, top - bottom - 0.02), v.y ? 0.06 : 0.98);
-      } else if (mode === "wall") {
-        // the wall block, as tall as the room it's dug from
-        const from = target.from!;
-        const bottom = floorY(from.x, from.y);
-        const top = ceilingY(from.x, from.y);
-        editBox.position.set(target.cell.x, (bottom + top) / 2, target.cell.y);
-        editBox.scale.set(0.98, top - bottom - 0.02, 0.98);
-      } else {
-        // the surface the tool touches: its ceiling where the tool works on
-        // one (the ceiling plate of a light's cell), else its floor
-        const onCeiling = tool === "light" || ((tool === "texture" || tool === "height") && target.kind === "ceiling");
-        const y = onCeiling ? ceilingY(target.cell.x, target.cell.y) - 0.02 : floorY(target.cell.x, target.cell.y) + 0.02;
-        // the edge fence tool: the edge of the cell nearest the pointer, as a click would take it (none in the cell's middle)
-        const side = tool === "fenceedge" && target.at ? sideFromPoint(target.at[0] - target.cell.x, target.at[1] - target.cell.y) : null;
-        if (side) {
-          const v = DIR_VECTOR[side];
-          editBox.position.set(target.cell.x + v.x * 0.5, y + 0.08, target.cell.y + v.y * 0.5);
-          editBox.scale.set(v.x ? 0.08 : 1, 0.2, v.y ? 0.08 : 1);
-        } else {
-          editBox.position.set(target.cell.x, y, target.cell.y);
-          editBox.scale.set(0.98, 0.04, 0.98);
-        }
-      }
-      mat.color.setHex(color);
-    }
+    const picking = createEditPicking({
+      camera, group, topdown, wallHeight, reliefDepth, getLiveMap: () => liveMap, floorY, ceilingY,
+      latestMapRef, lockedLayersRef, actorsRef, editToolRef, editHoverRef,
+      ownsDrag: obj => pointerInput.ownsDrag(obj), isDragging: () => pointerInput.isDragging(),
+    });
+    const pointerInput = createPointerInput({
+      canvas: renderer.domElement, camera, group, topdown, map, latestMapRef,
+      cameraPullback: settings.cameraPullback, wallHeight, floorY, ceilingY,
+      levelPoint: picking.levelPoint, editTargetAt: picking.editTargetAt, toolLocked: picking.toolLocked,
+      actorsRef, actorMeshes, looseItems, lootRef, mapLightState, propObjects, doorGroups,
+      interactionCallbacks, interactionRaycasts, editModeRef, editToolRef, editHoverRef,
+      onTouchRef, onEditRef, onEditPaintRef, onEditDragRef, onEditAdjustRef,
+      selectedLightRef, selectedPropRef, selectedDecalRef, selectedItemRef,
+    });
+    const topdownControls = createTopdownControls({ canvas: renderer.domElement, topdown, editModeRef, setTopdown });
+    const selectionBox = createSelectionBox({
+      scene, group, geometries, topdown, settingsRef, wallHeight, floorY, ceilingY, pointLight, doorPreview,
+      getEventMarkers: () => eventMarkers, actorMeshes, looseItems, doorGroups, linkPlates,
+      smokeMarkers: smokeFire.smokeMarkers, soundMarkers, propObjects, mapLightState, editModeRef, editToolRef,
+      picking, onEditHoverRef, areaGhostRef, selectedActorRef, selectedDoorRef, selectedLinkRef,
+      selectedDecalRef, selectedSmokeRef, selectedSoundRef, selectedItemRef, selectedPropRef,
+      selectedLightRef, selectedEventRef,
+    });
 
     const startedAt = performance.now();
     let lastFrameAt = startedAt;
@@ -3981,7 +2894,7 @@ export function GameViewport({
           topdown.z = cam.z;
         }
         // the view's panning keys (WASD / arrows, the heading's frame; Shift: faster), Q / E turn it
-        const move = topdownKeys;
+        const move = topdownControls.keys;
         const speed = topdown.h * 0.9 * (move.has("Shift") ? 2.5 : 1) * dt;
         const sy = Math.sin(topdown.yaw);
         const cy = Math.cos(topdown.yaw);
@@ -4120,7 +3033,7 @@ export function GameViewport({
       editorMarkers.updateLinkPlates(gameNow);
       updateTracers();
       camera.updateMatrixWorld();
-      updateEditHighlight();
+      selectionBox.updateEditHighlight();
       updatePartyCover(camX, cam.y * wallHeight, camZ, s.eyeHeight);
       if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ, aimZoom);
       else if (aimFrameRef.current) aimFrameRef.current = null;
@@ -4289,22 +3202,10 @@ export function GameViewport({
       const w = window as { __voidcrewSnapshot?: () => string };
       if (w.__voidcrewSnapshot === snapshot) delete w.__voidcrewSnapshot;
       cancelAnimationFrame(raf);
-      resizeObserver.disconnect();
-      renderer.domElement.removeEventListener("pointerdown", onPress);
-      window.removeEventListener("pointermove", onDragMove, true);
-      renderer.domElement.removeEventListener("wheel", onWheel);
-      window.removeEventListener("pointerup", onRelease);
+      stopResize();
+      topdownControls.dispose();
+      pointerInput.dispose();
       if (interactionUseRef?.current === useInteraction) interactionUseRef.current = null;
-      renderer.domElement.removeEventListener("pointermove", onHover);
-      renderer.domElement.removeEventListener("pointerleave", onLeave);
-      renderer.domElement.removeEventListener("contextmenu", onContextMenu);
-      window.removeEventListener("keydown", onTopdownKey, true);
-      window.removeEventListener("keyup", onTopdownKey, true);
-      window.removeEventListener("blur", onTopdownBlur);
-      renderer.domElement.removeEventListener("wheel", onTopdownWheel, true);
-      renderer.domElement.removeEventListener("pointerdown", onTopdownDown, true);
-      renderer.domElement.removeEventListener("pointermove", onTopdownMove);
-      renderer.domElement.removeEventListener("pointerup", onTopdownUp);
       topdownToggleRef.current = null;
       capMaterial.dispose();
       capGeometry.dispose();
@@ -4335,7 +3236,7 @@ export function GameViewport({
       bridgeMat.dispose();
       ceilMat.dispose();
       lightFixtures.dispose();
-      (selectBox.material as THREE.Material).dispose();
+      selectionBox.dispose();
       stopSharedDecals();
       sky.stopWaiting();
       decals.dispose();

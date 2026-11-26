@@ -7,7 +7,7 @@ on one area without reading (or conflicting in) the giant file. Read `AGENTS.md`
 
 ## Status (2026-11-26)
 
-`GameViewport.tsx`: 9,100 → 4,314 lines. `src/render/viewport/` holds ~45 modules.
+`GameViewport.tsx`: 9,100 → 3,307 lines (step 6 started at 4,406).
 
 | Step | What moved | Where |
 |---|---|---|
@@ -16,16 +16,14 @@ on one area without reading (or conflicting in) the giant file. Read `AGENTS.md`
 | 3 | Smoke/fire, items and loot, editor/event/fence markers | `smokeFire.ts`, `itemsLoot.ts`, `editorMarkers.ts`, `eventMarkers.ts`, `fenceMarkers.ts` |
 | 4 | Structural geometry: walls, floors/ceilings, backing, doors, props, relief, prop retexture | `baseGeometry.ts`, `structuralSurfaces.ts`, `structuralWalls.ts`, `structuralTiles.ts`, `structuralDoors.ts`, `structuralProps.ts`, `wallBacking.ts`, `reliefGeometry.ts`, `propRetexture.ts` |
 | 5 | Actor rendering, interaction raycasts, combat aiming, light fixtures and pool | `actorRendering.ts`, `interactionRaycasts.ts`, `combatAiming.ts`, `raycastObjects.ts`, `aimHitPart.ts`, `lightFixtures.ts`, `lightPool.ts` |
+| 6 | Resize, game and editor pointer input, top-down controls, editor picking and selection outlines | `viewportResize.ts`, `pointerInput.ts`, `topdownControls.ts`, `editPicking.ts`, `selectionBox.ts` |
 
 ## Remaining (suggested order)
 
-1. **Input and picking** (largest block, CODEMAP "Resize, pointer and drag handlers..."): `resize`, `onPress`, `onRelease`, drag,
-   top-down controls (pan/zoom/tilt/rotate), `editTargetAt`, `updateSelectionBox`. Split into e.g. `pointerInput.ts`,
-   `topdownControls.ts`, `editPicking.ts`, `selectionBox.ts`.
-2. **Per-frame loop**: `renderFrame` / `animate` and camera update into `frameLoop.ts`; keep the effect's cleanup order intact.
-3. **Live map edits and visibility**: `setTopdown`, `applySight`, `applyStructure` into `liveEdits.ts` / `sightView.ts`.
-4. **Scene setup in the main effect** (renderer, textures/materials wiring) into `sceneSetup.ts`, if it still pays off.
-5. Props/refs/subscriptions at the top of the component: only if a clean hook (`useViewportRefs`) falls out naturally.
+1. **Per-frame loop** into `frameLoop.ts`. Move `renderFrame`, `animate` and the camera update. Keep the effect's cleanup order intact.
+2. **Live map edits and visibility**: `setTopdown`, `applySight`, `applyStructure` into `liveEdits.ts` / `sightView.ts`.
+3. **Scene setup in the main effect** (renderer, textures/materials wiring) into `sceneSetup.ts`, if it still pays off.
+4. Props/refs/subscriptions at the top of the component: only if a clean hook (`useViewportRefs`) falls out naturally.
 
 Stop when the component is mostly wiring (target: under ~1,500 lines); do not split for its own sake.
 

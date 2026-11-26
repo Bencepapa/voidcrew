@@ -12,6 +12,8 @@ import type { EditTool } from "../../editor/mapEdits";
 
 import type { ViewportSettings } from "./settings";
 
+export type ViewportRef<T> = { readonly current: T };
+
 export interface ReliefStats {
   trianglesPerWall: number;
   levelCount: number;

@@ -59,13 +59,13 @@ Approximate line ranges. Search for the named functions as the file moves.
 
 | Lines | Subsystem and anchors |
 | --- | --- |
-| 238–617 | `GameViewport` props, refs, subscriptions and selection of the settled scene map. |
-| 618–1233 | Main scene effect, renderer, textures/materials and subsystem setup. See `createWallKit`, `createBakeRuntime`, `createPostPipeline`, `createSkySurface` and `applyMaterialViews`. |
-| 1234–2284 | Structural geometry, props, operables, particles, markers, items and trim. See `createStructuralSurfaces`, `buildProps`, `createSmokeFire` and `createItemsLoot`. |
-| 2285–2626 | Fixture and light pool setup, top-down mode, visibility and live map edits. See `createLightFixtures`, `createLightPool`, `setTopdown`, `applySight` and `applyStructure`. |
-| 2627–2645 | Actor rendering, interaction raycast and combat aiming setup. See `createActorRendering`, `createInteractionRaycasts` and `createCombatAiming`. |
-| 2646–3758 | Resize, pointer and drag handlers, top-down controls, picking and selection. See `resize`, `onPress`, `onRelease`, `editTargetAt` and `updateSelectionBox`. |
-| 3759–4406 | Per-frame camera and rendering, animation loop and effect cleanup. See `renderFrame` and `animate`. |
+| 213–595 | `GameViewport` props, refs, subscriptions and selection of the settled scene map. |
+| 596–1211 | Main scene effect, renderer, textures/materials and subsystem setup. See `createWallKit`, `createBakeRuntime`, `createPostPipeline`, `createSkySurface` and `applyMaterialViews`. |
+| 1212–2262 | Structural geometry, props, operables, particles, markers, items and trim. See `createStructuralSurfaces`, `buildProps`, `createSmokeFire` and `createItemsLoot`. |
+| 2263–2604 | Fixture and light pool setup, top-down mode, visibility and live map edits. See `createLightFixtures`, `createLightPool`, `setTopdown`, `applySight` and `applyStructure`. |
+| 2605–2624 | Actor rendering, interaction raycast and combat aiming setup. See `createActorRendering`, `createInteractionRaycasts` and `createCombatAiming`. |
+| 2625–2652 | Resize, pointer input, top-down controls, picking and selection setup. See `createPointerInput`, `createEditPicking` and `createSelectionBox`. |
+| 2653–3307 | Per-frame camera and rendering, animation loop and effect cleanup. See `renderFrame` and `animate`. |
 
 ## `src/render/viewport/`
 
@@ -90,6 +90,11 @@ Approximate line ranges. Search for the named functions as the file moves.
 - `actors.ts` - Actor and aiming render constants and the part-highlight shader.
 - `actorRendering.ts` - Actor sprites, materials, animation, shadows and sheet alpha sampling.
 - `interactionRaycasts.ts` - Pointer and Use interaction picking, including editor event markers.
+- `pointerInput.ts` - Game clicks and pickup drags, editor clicks, paint strokes and object dragging.
+- `topdownControls.ts` - Top-down input listeners, keyboard state, wheel zoom and tilt, middle-button pan.
+- `editPicking.ts` - Editor raycasts, drag-plane intersections and cached hover targets.
+- `selectionBox.ts` - Selection and hover outlines, cursor light and surface reporting.
+- `viewportResize.ts` - Canvas sizing, camera projection and resize observer.
 - `combatAiming.ts` - Aim overlay hit chances, party cover, shots and tracers.
 - `aimHitPart.ts` and `aimHitPart.test.ts` - Body-part selection and assertions.
 - `raycastObjects.ts` - Shared visibility, material and object ancestry checks for picking.
