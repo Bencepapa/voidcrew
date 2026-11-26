@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { SKY_CEILING, type LightBakeMap } from "./bakeOcclusion";
+import { SKY_CEILING, type LightBakeMap, type Occluder } from "./bakeOcclusion";
 import { createSkyBake, type SkyLight } from "./skyBake";
 
 const map: LightBakeMap = {
@@ -43,3 +43,29 @@ assert.ok(target(true, { domeIntensity: 0 }).faces[0][0] === 0);
 const cube = target(false);
 assert.ok(cube.faces[2][0] > cube.faces[3][0], "the dome brightens upward-facing surfaces");
 assert.ok(cube.faces[0][3] > cube.faces[1][3], "sun from the east brightens east-facing surfaces");
+
+const roof: Occluder = { minX: 1.5, maxX: 2.5, minZ: -0.5, maxZ: 0.5, minY: 1, maxY: 1.6, skyOnly: true };
+const overhead = { ...roof, minY: 1.5, maxY: 2 };
+const roofBoxes = [[], [], [roof]];
+const roofProbes = [[2, 0.75], [2, 1.25], [2, 1.6], [5, 0.75], [5, 1]] as const;
+for (const quick of [false, true]) {
+  const faces = Array.from({ length: 3 }, () => new Float32Array(roofProbes.length * 3));
+  const bake = createSkyBake(map, { width: map.width, cells: roofBoxes }, 1,
+    { ...sky, elevation: 90, quick }, [1, 1, 1], faces, new Float32Array(roofProbes.length * 3), false);
+  roofProbes.forEach(([x, y], n) => bake.sample(n, x, y, 0));
+  bake.applySun();
+  for (const face of faces.slice(0, 2)) {
+    assert.equal(face[0], 0, "a probe below a wall top receives no sky light");
+    assert.ok(face[3] > 0, "a probe inside a roof receives sky light from its surface");
+    assert.equal(face[3], face[6], "a probe at the roof top gets the same light");
+    assert.equal(face[9], 0, "a probe below a solid ceiling receives no sky light");
+    assert.ok(face[12] > 0, "a probe on top of a solid ceiling receives sky light");
+  }
+}
+
+const blockedFaces = Array.from({ length: 3 }, () => new Float32Array(3));
+const blockedRoof = createSkyBake(map, { width: map.width, cells: [[], [], [roof, overhead]] }, 1,
+  { ...sky, elevation: 90 }, [1, 1, 1], blockedFaces, new Float32Array(3), false);
+blockedRoof.sample(0, 2, 1.25, 0);
+blockedRoof.applySun();
+assert.equal(blockedFaces[1][0], 0, "a separate overhead box still blocks the sun");

@@ -98,11 +98,26 @@ export function bakeLightGrid(
     }
   }
   if (!Number.isFinite(lo)) [lo, hi] = [0, 1];
+  const { sky, bounce = 0 } = options;
+  const hasSky = !!sky && (sky.intensity > 0 || sky.domeIntensity > 0) &&
+    !!map.skySurfaces?.some((mask) => mask & SKY_CEILING);
+  const occluders = occludersOf(map, hasSky);
+  let roofTop = hi;
+  if (hasSky) {
+    for (const boxes of occluders.cells) {
+      for (const box of boxes ?? []) {
+        if (box.skyOnly) roofTop = Math.max(roofTop, box.skyMaxY ?? box.maxY);
+      }
+    }
+  }
   const nx = map.width * perCell;
   const nz = map.height * perCell;
-  const ny = Math.max(2, Math.round((hi - lo) * Math.max(4, perCell)) + 1);
+  const roomLayers = Math.max(2, Math.round((hi - lo) * Math.max(4, perCell)) + 1);
   const step = 1 / perCell;
-  const stepY = (hi - lo) / (ny - 1 || 1);
+  // Add roof layers above the rooms without shifting the room probes.
+  const stepY = (hi - lo) / (roomLayers - 1) || (roofTop > hi ? 1 / Math.max(4, perCell) : 0);
+  const ny = stepY ? Math.max(roomLayers, Math.ceil((roofTop - hi) / stepY) + roomLayers) : roomLayers;
+  hi = lo + (ny - 1) * stepY;
   // sample centers: x, z in cells; y in wall heights
   const sx = (i: number) => -0.5 + (i + 0.5) * step;
   const sz = (k: number) => -0.5 + (k + 0.5) * step;
@@ -110,10 +125,6 @@ export function bakeLightGrid(
   const index = (i: number, k: number, j: number) => i + k * nx + j * nx * nz;
   const count = nx * nz * ny;
 
-  const { sky, bounce = 0 } = options;
-  const hasSky = !!sky && (sky.intensity > 0 || sky.domeIntensity > 0) &&
-    !!map.skySurfaces?.some((mask) => mask & SKY_CEILING);
-  const occluders = occludersOf(map, hasSky);
   // where a sample stands in a room (its cell open, between its floor and
   // ceiling) - one inside a prop still counts: the prop's own surfaces read
   // it (see clearLine)
@@ -139,12 +150,13 @@ export function bakeLightGrid(
   const skyColor = hasSky && sky ? color.setHex(sky.color) : undefined;
   const skyBake = skyColor && sky ? createSkyBake(map, occluders, wallHeight, sky,
     [skyColor.r, skyColor.g, skyColor.b], faces, mainDir, bounce > 0) : undefined;
-  if (skyBake) {
+  const exterior = skyBake ? new Uint8Array(count) : undefined;
+  if (skyBake && exterior) {
     for (let j = 0; j < ny; j++) {
       for (let k = 0; k < nz; k++) {
         for (let i = 0; i < nx; i++) {
           const n = index(i, k, j);
-          if (valid[n]) skyBake.sample(n, sx(i), sy(j), sz(k));
+          if (skyBake.sample(n, sx(i), sy(j), sz(k), !!valid[n]) && !valid[n]) exterior[n] = 1;
         }
       }
     }
@@ -292,12 +304,11 @@ export function bakeLightGrid(
     }
   }
 
-  // Samples outside the rooms take their nearest room sample's light (a
-  // breadth-first flood from the room samples, one step at a time)
+  // Fill unsampled space from the nearest room or exterior probe.
   let frontier: number[] = [];
   const done = new Uint8Array(count);
   for (let n = 0; n < count; n++) {
-    if (valid[n]) {
+    if (valid[n] || exterior?.[n]) {
       done[n] = 1;
       frontier.push(n);
     }

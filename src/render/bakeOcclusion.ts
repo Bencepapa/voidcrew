@@ -163,7 +163,6 @@ function intersectsBox(
   box: Occluder, x: number, y: number, z: number, dx: number, dy: number, dz: number, enter: number, exit: number,
 ): boolean {
   const top = box.skyMaxY ?? box.maxY;
-  if (!box.skyOnly && inside(box, x, y, z, top)) return false;
   for (const [origin, direction, min, max] of [
     [x, dx, box.minX, box.maxX], [y, dy, box.minY, top], [z, dz, box.minZ, box.maxZ],
   ]) {
