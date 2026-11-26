@@ -61,6 +61,7 @@ export const debugEn = {
   "debug.lights": "Lights",
   "debug.bakedLightingOffEveryMapLightReal": "Baked lighting (off: every map light real)",
   "debug.bakedLight": "Baked light",
+  "debug.showLightProbes": "Show light probes",
   "debug.directionalMainLightAmbient": "directional (main light + ambient)",
   "debug.cubeSixDirections": "cube (six directions)",
   "debug.bakedSamplesPerCellUnlessTheMap": "Baked samples per cell (unless the map sets it)",

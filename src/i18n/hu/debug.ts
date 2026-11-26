@@ -61,6 +61,7 @@ export const debugHu = {
   "debug.lights": "Fények",
   "debug.bakedLightingOffEveryMapLightReal": "Előszámított világítás (ki: minden pályafény valódi)",
   "debug.bakedLight": "Előszámított fény",
+  "debug.showLightProbes": "Fényprobe-ok mutatása",
   "debug.directionalMainLightAmbient": "irányított (főfény + környezeti)",
   "debug.cubeSixDirections": "kocka (hat irány)",
   "debug.bakedSamplesPerCellUnlessTheMap": "Fényminták mezőnként (ha a pálya nem adja meg)",
