@@ -37,6 +37,17 @@ Mérőfeladat: "a nyomjelző vonal hossza legfeljebb 24 egység + TRACER_COLOR k
 
 Következtetés: a két sáv átfed, nincs kimutatható különbség. A Codex grep-pel keres, ezért egy kis, célzott feladaton a kisebb fájl nem takarít meg tokent; szélesebb áttekintést igénylő feladaton vagy sorokban olvasó ügynöknél (Claude) lehet különbség. Az első kísérlet érvénytelen volt (fegyveres megfogalmazást megtagadta, és az AGENTS.md miatt további fájlokhoz nyúlt).
 
+## Mérés: szétválasztás előtt / kész (2026-11-26)
+
+Mérőfeladat: "a pályaszerkesztés után újraépített propok száma (utolsó + összes) a Debug statisztikában, en + hu felirattal" (több részt összekötő feladat, fájlnevek nélkül, a gyökér .md fájlok törölve). Codex gpt-6.2-sol, effort low, 3 futás oldalanként, váltakozva.
+
+| Oldal | GameViewport sorok | Token (3 futás) | Átlag | Átlagos idő | Érintett fájlok |
+|---|---:|---|---:|---:|---:|
+| 1131987 (szétválasztás előtt) | 8 937 | 31 840 / 27 233 / 35 336 | 31 470 | 105 mp | 4 |
+| main 87d4151 (kész) | 1 470 | 21 930 / 26 719 / 33 017 | 27 222 | 122 mp | 8 |
+
+Következtetés: az új szerkezeten kb. 13%-kal kevesebb token, de a sávok átfednek (27-35 ezer vs. 22-33 ezer), így a jel gyenge; az idő nem javult, mert a változás több modulon (propScene, liveEdits, frameLoop, contracts) fut át. A szétválasztás fő haszna így a párhuzamos munka konfliktusok nélkül és a kisebb, áttekinthető fájlok, nem a tokenmegtakarítás.
+
 ## Szabályok a fogyasztás csökkentésére (2026-11-25-től)
 
 - Alapértelmezett ügynök-erőfokozat: **medium** (high csak indokolt, nagy és kockázatos feladatra); mechanikus munka (áthelyezés, generálás, dokumentáció): **Codex** vagy kis erőfokozat.
