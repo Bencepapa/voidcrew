@@ -7,7 +7,7 @@ on one area without reading (or conflicting in) the giant file. Read `AGENTS.md`
 
 ## Status (2026-11-26)
 
-`GameViewport.tsx`: 9,100 → 3,307 lines (step 6 started at 4,406).
+`GameViewport.tsx`: 9,100 → 2,447 lines (step 6 ended at 3,307).
 
 | Step | What moved | Where |
 |---|---|---|
@@ -17,13 +17,13 @@ on one area without reading (or conflicting in) the giant file. Read `AGENTS.md`
 | 4 | Structural geometry: walls, floors/ceilings, backing, doors, props, relief, prop retexture | `baseGeometry.ts`, `structuralSurfaces.ts`, `structuralWalls.ts`, `structuralTiles.ts`, `structuralDoors.ts`, `structuralProps.ts`, `wallBacking.ts`, `reliefGeometry.ts`, `propRetexture.ts` |
 | 5 | Actor rendering, interaction raycasts, combat aiming, light fixtures and pool | `actorRendering.ts`, `interactionRaycasts.ts`, `combatAiming.ts`, `raycastObjects.ts`, `aimHitPart.ts`, `lightFixtures.ts`, `lightPool.ts` |
 | 6 | Resize, game and editor pointer input, top-down controls, editor picking and selection outlines | `viewportResize.ts`, `pointerInput.ts`, `topdownControls.ts`, `editPicking.ts`, `selectionBox.ts` |
+| 7 | Per-frame camera, rendering and animation loop, plus developer capture helpers | `frameLoop.ts`, `frameDebug.ts` |
+| 8 | Top-down mode, sight and culling, live map edits and structural previews | `sightView.ts`, `liveEdits.ts` |
 
 ## Remaining (suggested order)
 
-1. **Per-frame loop** into `frameLoop.ts`. Move `renderFrame`, `animate` and the camera update. Keep the effect's cleanup order intact.
-2. **Live map edits and visibility**: `setTopdown`, `applySight`, `applyStructure` into `liveEdits.ts` / `sightView.ts`.
-3. **Scene setup in the main effect** (renderer, textures/materials wiring) into `sceneSetup.ts`, if it still pays off.
-4. Props/refs/subscriptions at the top of the component: only if a clean hook (`useViewportRefs`) falls out naturally.
+1. **Scene setup in the main effect** (renderer, textures/materials wiring) into `sceneSetup.ts`, if it still pays off. Deferred after step 8 because the renderer and material setup shares inputs and resources with multiple scene builders.
+2. Props/refs/subscriptions at the top of the component: only if a clean hook (`useViewportRefs`) falls out naturally.
 
 Stop when the component is mostly wiring (target: under ~1,500 lines); do not split for its own sake.
 

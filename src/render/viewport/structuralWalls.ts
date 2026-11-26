@@ -23,7 +23,7 @@ interface StructuralWallsContext {
   kits: WallKit[];
   buildRelief: ReturnType<typeof createReliefGeometry>["buildRelief"];
   farReliefLevels: ReturnType<typeof createReliefGeometry>["farReliefLevels"];
-  culledCount: number;
+  invalidateCulling(): void;
 }
 
 export function createStructuralWalls(context: StructuralWallsContext) {
@@ -180,7 +180,7 @@ export function createStructuralWalls(context: StructuralWallsContext) {
           triangles += strips.triangles;
         }
         // (drawn from the next sight pass on)
-        context.culledCount = -1;
+        context.invalidateCulling();
         if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewJoins: { points: joins.length, triangles } });
       })
       .catch((err) => console.error("Corner joins failed:", err));

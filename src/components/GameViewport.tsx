@@ -1,3 +1,7 @@
+import { createSightView } from "../render/viewport/sightView";
+import { createLiveEdits } from "../render/viewport/liveEdits";
+import { createFrameLoop } from "../render/viewport/frameLoop";
+import { createFrameDebug } from "../render/viewport/frameDebug";
 import { createLightFixtures, createMapLightState } from "../render/viewport/lightFixtures";
 import { createLightPool } from "../render/viewport/lightPool";
 import { createActorRendering } from "../render/viewport/actorRendering";
@@ -13,23 +17,20 @@ import * as THREE from "three";
 import { prepareRaycastsGradually } from "../render/bvh";
 import type { SmokeBody } from "../render/smoke";
 import { effectiveViewDistance } from "../render/graphics";
-import { ACCENT_UNIFORMS, ownAccentUniforms, type AccentUniforms } from "../render/accent";
+import { ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, isSharedPickupId } from "../game/items";
 import {
-  propCastsBakedShadow,
-  createLightGridUniforms,
-  disposeLightGrid,
-  useLightGrid,
+createLightGridUniforms,
+disposeLightGrid,
+useLightGrid
 } from "../render/lightGrid";
 import {
-  bridgeAt,
-  cellAt,
-  ceilingHeight,
-  floorHeight,
-  ladderBetween,
-  liftDoorOf,
-  windowPanels,
+bridgeAt,
+cellAt,
+ceilingHeight,
+floorHeight,
+ladderBetween,windowPanels
 } from "../game/map";
 import { BRIDGE_THICKNESS, BRIDGE_WIDTH, MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
@@ -37,14 +38,13 @@ import { DIR_VECTOR } from "../game/movement";
 import type { DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
 import { buildRoofGeometry } from "../render/roofMesh";
 import {
-  fenceFaces,
-  fenceFormOf,
-  fenceIndex,
-  fenceModelSpec,
-  isFoliageSpec,
-  type FenceModelSpec,
+fenceFaces,
+fenceFormOf,
+fenceIndex,
+fenceModelSpec,
+isFoliageSpec,
+type FenceModelSpec,
 } from "../game/fences";
-import type { JoinedStrips } from "../render/cornerJoins";
 import { lampColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
 import { buildOperableModel, setOperablePose } from "../render/operableModel";
@@ -52,20 +52,17 @@ import { operableView } from "../game/operableStore";
 import { emitterView } from "../game/emitterStore";
 import { sourceKeys } from "../game/operables";
 import {
-  PROP_TYPES,
-  propPlacement,
-  propHeight,
-  propReliefAmount,
-  propReliefCells,
+PROP_TYPES,
+propPlacement,
+propHeight,
+propReliefAmount,
+propReliefCells,
 } from "../game/props";
-import { actorHeight } from "../game/actors";
 import { onSharedActorsChanged } from "../editor/sharedActors";
 import { onTextureTuningSaved, textureTuning } from "../render/textureTuning";
-import { buildEditPreview, changedCells } from "../render/editPreview";
+import { changedCells } from "../render/editPreview";
 import { gameClock } from "../game/clock";
-import { cellKey, visibleCells } from "../game/visibility";
 import type { PropFace, PropPart, PropType, PropView } from "../game/props";
-import { forwardOf } from "../game/freeMovement";
 import { WALL_ROTATION, surfaceKey } from "../render/surfaces";
 import { DecalLibrary, fetchDecalManifest } from "../render/decals";
 import { renderText, seededRandom } from "../render/pixelFont";
@@ -78,12 +75,11 @@ import { propPrismGeometry } from "../render/propPrismMesh";
 import { isSharedTextureId } from "../game/mapSharedRefs";
 import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import {
-  onSharedDecalsChanged,
-  onSharedPickupsChanged,
+onSharedDecalsChanged,
+onSharedPickupsChanged,
 } from "../render/sharedImages";
 import { gameSound } from "../audio/gameSound";
 import { soundsOn } from "../game/soundOperables";
-import { publishSight } from "../render/sightStore";
 import type { TextureSetFiles, TextureSetId } from "../render/textureSets";
 import { draggedWorldItem } from "./slotDrag";
 
@@ -91,72 +87,38 @@ export { DEFAULT_SETTINGS } from "../render/viewport/settings";
 
 import type { ViewportSettings } from "../render/viewport/settings";
 import {
-  LIGHT_PANEL_INTENSITY,
-  DEFAULT_FLOOR,
-  createBandPlane,
-  type WallKit,
-  kitMaterials,
-  wallVariantRoll,
-  FLOOR_BASE_DEPTH,
+LIGHT_PANEL_INTENSITY,
+DEFAULT_FLOOR,
+createBandPlane,
+type WallKit,
+kitMaterials,FLOOR_BASE_DEPTH
 } from "../render/viewport/walls";
 import {
-  TEXTURE_CHANGED_EVENT,
-  EDIT_SETTLE_MS,
-  CULL_MAX_SIZE,
-  WINDOW_SET,
-  NO_LAYERS,
-  PROP_COARSE,
-  SURFACE_GLOW,
-  DOOR_PANEL_SETS,
-  DOOR_LABEL_AREA,
-  DOOR_LABEL_MAX_SCALE,
-  DOOR_NUMBER_GAP,
-  LABEL_PAINT,
-  LABEL_PAINT_DARK,
-  DOOR_OPEN_MS,
-  TRIM_PAINT_URL,
-  TRIM_HAZARD_URL,
-  TRIM_TEXELS,
-  LADDER_HALF_WIDTH,
-  LADDER_RAIL,
-  LADDER_RUNG,
-  LADDER_STANDOFF,
-  LADDER_HANDHOLD,
-  LADDER_NECK,
-  BRIDGE_KICK,
-  BRIDGE_STRINGER,
+TEXTURE_CHANGED_EVENT,
+EDIT_SETTLE_MS,WINDOW_SET,PROP_COARSE,
+SURFACE_GLOW,
+DOOR_PANEL_SETS,
+DOOR_LABEL_AREA,
+DOOR_LABEL_MAX_SCALE,
+DOOR_NUMBER_GAP,
+LABEL_PAINT,
+LABEL_PAINT_DARK,TRIM_PAINT_URL,
+TRIM_HAZARD_URL,
+TRIM_TEXELS,
+LADDER_HALF_WIDTH,
+LADDER_RAIL,
+LADDER_RUNG,
+LADDER_STANDOFF,
+LADDER_HANDHOLD,
+LADDER_NECK,
+BRIDGE_KICK,
+BRIDGE_STRINGER
 } from "../render/viewport/constants";
-import { type SceneCache, clearSceneCache, renderedSpecs } from "../render/viewport/sceneCache";
+import { type SceneCache, clearSceneCache } from "../render/viewport/sceneCache";
 import { fogRange } from "../render/viewport/fog";
 import {
-  SIGHT_POINTS,
-  FIRE_LIGHT_INTENSITY,
-  FIRE_LIGHT_LIFT,
-} from "../render/viewport/lighting";
-import {
-  TOPDOWN_FOV,
-  TOPDOWN_REACH,
-  AIM_FRAMING,
-  AIM_MIN_FOV,
-  AIM_CAMERA_TAU,
-  LIFT_DIP_MS,
-  SHAFT_LIGHT_COLOR,
-  SHAFT_LIGHT_INTENSITY,
-  SHAFT_LIGHT_PERIOD_MS,
-  SHAFT_LIGHT_SWEEP,
-  TRANSIT_FADE_IN_S,
-  STAIRS_WALK,
-  STAIRS_RISE,
-  DOWN_FALL_MS,
-  DOWN_EYE,
-  DOWN_LOOK_UP,
-  DOWN_ROLL,
-  PEEK_IDLE_MS,
-  PEEK_RETURN_TAU,
-  type CamTarget,
-  computeTarget,
-  zoomedFov,
-  verticalFov,
+SHAFT_LIGHT_COLOR,type CamTarget,
+computeTarget
 } from "../render/viewport/camera";
 import { ITEM_TOPDOWN_GROW } from "../render/viewport/loot";
 import { addDirectLightOcclusion } from "../render/viewport/materials";
@@ -164,14 +126,7 @@ import { createPostPipeline } from "../render/viewport/postPipeline";
 import { createBakeRuntime } from "../render/viewport/bakeRuntime";
 import { createSkySurface } from "../render/viewport/skySurface";
 import {
-  jumpPose,
-  FALL_GRAVITY,
-  FALL_START,
-  RUNG_SPACING,
-  climbPose,
-  lerp,
-  easeOutQuad,
-  smoothstep,
+RUNG_SPACING
 } from "../render/viewport/poses";
 import { drawChalkCross } from "../render/viewport/markers";
 import { createSmokeFire } from "../render/viewport/smokeFire";
@@ -182,10 +137,10 @@ import { createFenceMarkers } from "../render/viewport/fenceMarkers";
 import { buildFoliage } from "../render/viewport/foliageMesh";
 import { turnClockwise } from "../render/viewport/pixels";
 import type {
-  ReliefStats,
-  AimFrame,
-  AimFocus,
-  GameViewportProps,
+ReliefStats,
+AimFrame,
+AimFocus,
+GameViewportProps,
 } from "../render/viewport/contracts";
 import { createBaseGeometry } from "../render/viewport/baseGeometry";
 import { createStructuralSurfaces } from "../render/viewport/structuralSurfaces";
@@ -601,7 +556,6 @@ export function GameViewport({
     if (!container) return;
 
     let disposed = false;
-    let raf = 0;
     const buildStart = performance.now();
     // Where the build's time goes (shown in the console when the scene is ready - always with
     // ?profile in the address, else in dev; and in window.__voidcrewBuild): totals by kind of
@@ -621,7 +575,6 @@ export function GameViewport({
     // what's past the far plane (nothing drawn) is the fog's colour too
     const fogBackground = new THREE.Color(settings.fogColor);
     scene.background = fogBackground;
-    let fogColorNow = settings.fogColor;
 
     // anything past the fog's end renders the fog's colour anyway, so the far plane
     // sits just beyond it and frustum culling skips those walls entirely
@@ -650,7 +603,6 @@ export function GameViewport({
     const ambient = new THREE.AmbientLight(0x445566, settings.ambientIntensity);
     scene.add(ambient);
     const pointLight = new THREE.PointLight(settings.headlampColor, settings.pointLightIntensity, 8, 2);
-    let headlampColorNow = settings.headlampColor;
     scene.add(pointLight);
     // a lift ride's shaft lights: sweeping past the outside of the cabin
     // (lights shine through walls here - that's what makes it read as
@@ -1051,7 +1003,6 @@ export function GameViewport({
     // materials made beside the kits' (labeled door panels, see-through
     // bridge decks), kept in step with the material settings like theirs
     const ownMaterials: THREE.MeshStandardMaterial[] = [];
-    const inspectMaterialDefaults = new WeakMap<THREE.Material, { transparent: boolean; opacity: number; depthWrite: boolean }>();
     // Top-down: the upright sprites (trees and other billboards, NPCs, loose
     // items) are edge-on from above, so they lie down as icons - on the floor,
     // the top of the picture toward the top of the screen, no bigger than a
@@ -1268,7 +1219,7 @@ export function GameViewport({
       settings, doorPreview,
       get disposed() { return disposed; }, group, track, wallHeight, primaryKit, geometries, wallGeo,
       set reliefStats(value: ReliefStats | null) { reliefStats = value; }, placeWalls, kits, buildRelief, farReliefLevels,
-      set culledCount(value: number) { culledCount = value; },
+      invalidateCulling: () => invalidateCulling(),
     });
 
     // every kit, for per-frame material updates and disposal (the props'
@@ -1959,7 +1910,7 @@ export function GameViewport({
       const m = latestMapRef.current;
       if (!smokeFire.shownChanged(m)) return;
       smokeFire.applySmoke(m);
-      sceneVersion++;
+      liveEdits.bumpSceneVersion();
     });
 
     const editorMarkers = createEditorMarkers({
@@ -1968,7 +1919,7 @@ export function GameViewport({
     const { soundMarkers, linkPlates, buildSoundMarkers } = editorMarkers;
 
     const itemsLoot = createItemsLoot({
-      group, map, getLatestMap: () => latestMapRef.current, lootRef, getVisibleCells: () => sight.cells,
+      group, map, getLatestMap: () => latestMapRef.current, lootRef, getVisibleCells: () => getSightCells(),
       draggedWorldItem, markLooted, isDisposed: () => disposed, track, geometries, grids: cache.grids,
       sharedPropKitFor, loadWithRetry, buildPropRelief, lightGrid, propReliefDepth, wallHeight, floorY,
     });
@@ -2293,343 +2244,27 @@ export function GameViewport({
       getActorMeshes: () => actorMeshes, smokeFire, actorsRef,
       refreshSight: (party, range) => {
         applySight(updateSight(party, range));
-        return sight.cells;
+        return getSightCells();
       },
     });
-    // the cells seen from the party's cell, redone when it changes cell or
-    // a door opens or shuts
-    // The cells seen from the party's cell (see visibility.ts) - from its
-    // center and near its corners, so moving about in it (free movement)
-    // shows nothing new. Redone when the party changes cell or a door opens
-    // or shuts; picks the lights (updateLightPool) and what gets drawn
-    // (applySight).
-    // the top-down camera (see TOPDOWN_*): what it looks at (x, z), its height
-    // above the floor, its tilt (90 degrees: straight down) and heading
     const topdown = topdownRef.current;
-    let topCaps: THREE.Group | null = null;
-    // the walls seen from above: a dark, see-through cap on each wall cell (the walls
-    // are only faces, so they'd be nothing from up here)
-    const capMaterial = new THREE.MeshBasicMaterial({ color: 0x2a2018, transparent: true, opacity: 0.5, depthWrite: false, fog: false });
-    const capGeometry = new THREE.PlaneGeometry(1, 1);
-    function buildCaps() {
-      if (topCaps) {
-        scene.remove(topCaps);
-        topCaps = null;
-      }
-      const caps = new THREE.Group();
-      for (let y = 0; y < liveMap.height; y++) {
-        for (let x = 0; x < liveMap.width; x++) {
-          if (cellAt(liveMap, x, y) !== "wall") continue;
-          let top = 1;
-          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-            if (cellAt(liveMap, x + dx, y + dy) !== "wall") top = Math.max(top, ceilingHeight(liveMap, x + dx, y + dy));
-          }
-          const cap = new THREE.Mesh(capGeometry, capMaterial);
-          cap.rotation.x = -Math.PI / 2;
-          cap.position.set(x, top * wallHeight + 0.01, y);
-          caps.add(cap);
-        }
-      }
-      topCaps = caps;
-      scene.add(caps);
-    }
-    function setTopdown(on: boolean) {
-      if (on === topdown.on) return;
-      topdown.on = on;
-      if (on) {
-        topdown.fresh = true;
-        buildCaps();
-      } else {
-        if (topCaps) {
-          scene.remove(topCaps);
-          topCaps = null;
-        }
-        onTopdownExitRef.current?.({ x: Math.round(topdown.x), y: Math.round(topdown.z) });
-      }
-      for (const obj of group.children) if (obj.userData.skyCeiling) obj.traverse((o) => o.layers.set(on ? 1 : 0));
-      // (every surface is judged again: all in sight up here, back to the party's own sight down there)
-      sight = { key: "", cells: sight.cells };
-      culledCount = -1;
-      setTopdownOn(on);
-    }
-    topdownToggleRef.current = (on) => setTopdown(on ?? !topdown.on);
-    // (a rebuild while the view is up: its caps and open skies again)
-    if (topdown.on) {
-      topdown.fresh = false;
-      buildCaps();
-      for (const obj of group.children) if (obj.userData.skyCeiling) obj.traverse((o) => o.layers.set(1));
-    }
-    let sight = { key: "", cells: new Set<string>() };
-    function updateSight(party: { x: number; z: number }, range: number) {
-      if (topdown.on) {
-        if (sight.key === "topdown") return false;
-        const all = new Set<string>();
-        for (let y = 0; y < liveMap.height; y++) for (let x = 0; x < liveMap.width; x++) all.add(cellKey(x, y));
-        sight = { key: "topdown", cells: all };
-        publishSight(all);
-        return true;
-      }
-      const doors = openDoorsRef.current;
-      const cx = Math.round(party.x);
-      const cz = Math.round(party.z);
-      const key = `${cx},${cz}|${range}|${[...doors].sort().join(";")}`;
-      if (key === sight.key) return false;
-      const cells = new Set<string>();
-      for (const [ox, oz] of SIGHT_POINTS) {
-        for (const c of visibleCells(liveMap, cx + ox, cz + oz, Math.round(range), (k) => doors.has(k))) cells.add(c);
-      }
-      // a door cell seen shut: the walls on its sides still show around the
-      // door (their panels may count as the wall cells beyond, which the
-      // shut door hides from the sight lines)
-      for (const c of [...cells]) {
-        const [x, y] = c.split(",").map(Number);
-        if (cellAt(liveMap, x, y) !== "door") continue;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) cells.add(cellKey(x + dx, y + dy));
-      }
-      sight = { key, cells };
-      publishSight(cells);
-      return true;
-    }
+    const sightView = createSightView({
+      getLiveMap: () => liveMap, camera, decals, facingSurfaces, floorDepth, group, joinedStrips,
+      onTopdownExitRef, openDoorsRef, reliefDepth, scene, setTopdownOn, topdown, topdownToggleRef,
+      wallHeight,
+    });
+    const { setTopdown, updateSight, applySight, cullFacing, cellOf, getSightCells, invalidateSight, invalidateCulling } = sightView;
+    const liveEdits = createLiveEdits({
+      setLiveMap: (next) => { liveMap = next; }, invalidateSight, invalidateCulling,
+      getBackingObject: () => backingObject, accentKit, accentSet, applyLightsRef, applyProps, bakeRuntime,
+      buildItems, buildSoundMarkers, ceilingKitAt, ceilMat, clearItems, decals, doorPreview, facingSurfaces,
+      floorKitAt, floorMat, group, joinedStrips, lightFixtures, lightGrid, map, markSurface, primarySet,
+      settings, settingsRef, sky, smokeFire, track, wallHeight, wallKitFor,
+    });
 
-    // Culling: the scene's small objects (a wall panel, a floor tile, a
-    // door, a prop...) each belong to the cell their bounding box centers
-    // on, and are drawn only while that cell is seen. Big or spread-out
-    // ones (a ladder's group, the sky) are always drawn. Actors are culled
-    // as they move (updateActors).
-    const cullBox = new THREE.Box3();
-    const cullCenter = new THREE.Vector3();
-    const cullSize = new THREE.Vector3();
-    const cullCells = new WeakMap<THREE.Object3D, string | null>();
-    let culledCount = -1;
-    function cellOf(obj: THREE.Object3D): string | null {
-      let key = cullCells.get(obj);
-      if (key === undefined && obj.userData.cullCell) key = obj.userData.cullCell as string;
-      if (key === undefined) {
-        obj.updateMatrixWorld(true);
-        cullBox.setFromObject(obj);
-        cullBox.getSize(cullSize);
-        cullBox.getCenter(cullCenter);
-        key =
-          cullBox.isEmpty() || cullSize.x > CULL_MAX_SIZE || cullSize.z > CULL_MAX_SIZE
-            ? null
-            : cellKey(Math.round(cullCenter.x), Math.round(cullCenter.z));
-        cullCells.set(obj, key);
-      }
-      return key;
-    }
-    // A prop bigger than a cell (a tree's crown, a tall pillar) isn't left
-    // always drawn: it's seen while any cell under its footprint is (an
-    // object that isn't a prop, and has no footprint, still is).
-    const bigPropCells = new WeakMap<THREE.Object3D, string[] | null>();
-    function bigPropSeen(obj: THREE.Object3D): boolean {
-      let cells = bigPropCells.get(obj);
-      if (cells === undefined) {
-        cells = null;
-        if (obj.userData.prop) {
-          obj.updateMatrixWorld(true);
-          cullBox.setFromObject(obj);
-          if (!cullBox.isEmpty()) {
-            const x0 = Math.round(cullBox.min.x);
-            const x1 = Math.round(cullBox.max.x);
-            const z0 = Math.round(cullBox.min.z);
-            const z1 = Math.round(cullBox.max.z);
-            // (a runaway size - a sky-high thing - stays always drawn)
-            if (x1 - x0 <= 4 && z1 - z0 <= 4) {
-              cells = [];
-              for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) cells.push(cellKey(cx, cz));
-            }
-          }
-        }
-        bigPropCells.set(obj, cells);
-      }
-      return cells === null || cells.some((c) => sight.cells.has(c));
-    }
-    // dev: __voidcrewNoCull = true in the console draws everything, to compare
-    let cullingOff = false;
-    function applySight(changed: boolean) {
-      const off = import.meta.env.DEV && !!(window as { __voidcrewNoCull?: boolean }).__voidcrewNoCull;
-      // (objects are still being added while the scene builds)
-      if (!changed && group.children.length === culledCount && off === cullingOff) return;
-      culledCount = group.children.length;
-      cullingOff = off;
-      for (const obj of group.children) {
-        // (a decal is culled with the surface it lies on - see cullFacing)
-        if (obj.userData.actor || obj.userData.item || obj.userData.decalHost) continue;
-        // (the corner joins: each point's strip is in sight with any of the
-        // cells round it; which are drawn is picked in cullFacing)
-        if (obj.userData.joinStrips) {
-          for (const p of (obj.userData.joinStrips as JoinedStrips).points) {
-            const { x, y } = p.point;
-            p.inSight =
-              off ||
-              sight.cells.has(cellKey(Math.floor(x), Math.floor(y))) ||
-              sight.cells.has(cellKey(Math.ceil(x), Math.floor(y))) ||
-              sight.cells.has(cellKey(Math.floor(x), Math.ceil(y))) ||
-              sight.cells.has(cellKey(Math.ceil(x), Math.ceil(y)));
-          }
-          continue;
-        }
-        const key = cellOf(obj);
-        const seen = off || (key === null ? bigPropSeen(obj) : sight.cells.has(key));
-        // (a surface's own pass decides, with its facing - every frame)
-        if (obj.userData.facing) obj.userData.inSight = seen;
-        else obj.visible = seen;
-      }
-      cullFacing();
-    }
-    // Surfaces seen from behind their plane are hidden - by more than a
-    // margin: the relief stands out of the plane (up to its depth), and its
-    // bumps could catch a grazing look from just behind it. Every frame (it
-    // turns with the eye, between cells too); ~a dot product a surface.
-    const FACING_MARGIN = 2 * Math.max(reliefDepth, floorDepth) + 0.02;
-    const joinFrustum = new THREE.Frustum();
-    const joinMatrix = new THREE.Matrix4();
-    function cullFacing() {
-      const eye = camera.position;
-      for (const obj of facingSurfaces) {
-        const { n, d } = obj.userData.facing as { n: THREE.Vector3; d: number };
-        obj.visible = !!obj.userData.inSight && (topdown.on ? n.y > -0.5 : cullingOff || n.dot(eye) - d > -FACING_MARGIN);
-      }
-      // the corner joins' strips: those in sight and in view (one merged
-      // mesh can't be frustum-culled as a whole)
-      if (joinedStrips.length) {
-        joinFrustum.setFromProjectionMatrix(joinMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
-        for (const strips of joinedStrips) strips.mesh.visible = strips.show((p) => p.inSight && joinFrustum.intersectsBox(p.box));
-      }
-      // the decals with their surfaces, just decided (see DecalLibrary.cull)
-      decals.cull(camera);
-    }
-    // bumped whenever objects are swapped in place (see objectsAlong)
-    let sceneVersion = 0;
-
-    // A new version of the map with the same structure (see structureKey):
-    // what differs in it is redone in place. Its robots need nothing here -
-    // the scene draws them from the game's state.
-    let applied = map;
-    const lightsOf = (m: GameMap) => JSON.stringify([m.lights, m.lightGridDensity, m.lightGridAmbient]);
-    // A structural edit (cells dug, filled, raised, repainted) while editing: the
-    // scene isn't rebuilt at once (the walls' relief, the lights' bake...), it
-    // shows a quick flat preview of what changed (see editPreview.ts) - the old
-    // surfaces on the changed cells are taken off the camera's layer, flat
-    // quads put in their place - and the light grid is baked roughly again.
-    // The whole scene is rebuilt a few seconds after the last such edit (see
-    // EDIT_SETTLE_MS), which drops all of this.
-    let previewObjects: THREE.Object3D[] = [];
-    let previewGeometries: THREE.BufferGeometry[] = [];
-    let previewKey = map.structureKey;
-    // (layer 1: not drawn, not picked - what a camera on layer 0 doesn't see)
-    const setLayer = (obj: THREE.Object3D, layer: number) => obj.traverse((o) => o.layers.set(layer));
-    function clearPreview() {
-      for (const obj of previewObjects) {
-        group.remove(obj);
-        const i = facingSurfaces.indexOf(obj);
-        if (i >= 0) facingSurfaces.splice(i, 1);
-      }
-      for (const geo of previewGeometries) geo.dispose();
-      previewObjects = [];
-      previewGeometries = [];
-    }
-    function applyStructure(next: GameMap) {
-      clearPreview();
-      const changed = changedCells(map, next);
-      // (a map the quick look can't show never gets here - see the viewport's render)
-      if (!changed) return;
-      const edited = changed.size > 0;
-      for (const obj of facingSurfaces) {
-        const back = obj.userData.backCell as string | undefined;
-        const hide = edited && (changed.has(obj.userData.cullCell as string) || (back !== undefined && changed.has(back)));
-        if (!!obj.userData.editHidden !== hide) {
-          obj.userData.editHidden = hide;
-          setLayer(obj, hide ? 1 : 0);
-        }
-      }
-      // (the black backing and the corner joins are merged meshes: none of their pieces can be left out)
-      if (backingObject) setLayer(backingObject, edited ? 1 : 0);
-      for (const strips of joinedStrips) setLayer(strips.mesh, edited ? 1 : 0);
-      if (edited) {
-        const lit = (m: THREE.Material) => {
-          useLightGrid(m, lightGrid);
-          return m;
-        };
-        const built = buildEditPreview(next, changed, wallHeight, {
-          floor: (x, y) => lit(floorKitAt(x, y, next)?.wallMat ?? floorMat),
-          ceiling: (x, y) => {
-            if ((next.ceilingTextureAt?.(x, y) ?? next.textures?.ceiling) === "sky") return sky.skySurface();
-            return lit(ceilingKitAt(x, y, next)?.wallMat ?? ceilMat);
-          },
-          wall: (x, y, side) => {
-            const v = DIR_VECTOR[side];
-            const override = next.wallTextureAt?.(x, y);
-            const own = cellAt(next, x + v.x, y + v.y) !== "wall" ? next.faceTextureAt?.(x, y, side) : undefined;
-            const faceSet: string = isTextureSetId(own)
-              ? own
-              : isTextureSetId(override)
-              ? override
-              : accentKit && wallVariantRoll(x + v.x * 0.5, y + v.y * 0.5) < settings.accentRatio
-                ? accentSet
-                : primarySet;
-            if (faceSet === "sky") return sky.skySurface();
-            return lit(wallKitFor(faceSet as TextureSetId).wallMat);
-          },
-        });
-        for (const mesh of built.objects) {
-          group.add(mesh);
-          mesh.updateMatrixWorld(true);
-          markSurface(mesh);
-        }
-        previewObjects = built.objects;
-        previewGeometries = built.geometries;
-      }
-      liveMap = edited ? next : map;
-      // (what is in sight, and what each light reaches, follow the new cells)
-      sight = { key: "", cells: sight.cells };
-      culledCount = -1;
-      sceneVersion++;
-      // the light grid, roughly: the full bake comes with the rebuild
-      bakeRuntime.bakeSoon();
-      // dev: what the quick preview holds (flat quads drawn, old surfaces taken off)
-      if (import.meta.env.DEV && !doorPreview) {
-        Object.assign(window, { __voidcrewPreview: { changed: changed.size, quads: previewObjects.length, hidden: facingSurfaces.filter((o) => o.userData.editHidden).length } });
-      }
-    }
-    applyLightsRef.current = (next: GameMap) => {
-      smokeFire.setWeatherMap(next);
-      if (next.structureKey !== previewKey) {
-        previewKey = next.structureKey;
-        applyStructure(next);
-      }
-      const lightsChanged = lightsOf(next) !== lightsOf(applied);
-      if (lightsChanged) {
-        sceneVersion++;
-        lightFixtures.applyLights(next);
-        // the new fixtures get culled with the rest on the next frame
-        culledCount = -1;
-      }
-      if (smokeFire.updateSmokeSpecs(next, applied)) sceneVersion++;
-      // (the sounds' markers only: the sounds themselves are the audio system's)
-      if (JSON.stringify(next.sounds) !== JSON.stringify(applied.sounds)) buildSoundMarkers(next);
-      if (renderedSpecs(next.decals) !== renderedSpecs(applied.decals) && settingsRef.current.decalsEnabled) {
-        // (decals: redone on the surfaces already there)
-        track(decals.reset(next.decals ?? []));
-      }
-      if (renderedSpecs(next.items) !== renderedSpecs(applied.items)) {
-        clearItems();
-        buildItems(next);
-      }
-      if (renderedSpecs(next.props) !== renderedSpecs(applied.props)) {
-        applyProps(next, applied);
-        const shadowProps = (m: GameMap) => renderedSpecs((m.props ?? []).filter(propCastsBakedShadow));
-        if (shadowProps(next) !== shadowProps(applied)) bakeRuntime.bakeSoon();
-      }
-      if (lightsChanged) {
-        bakeRuntime.bakeAfterLightEdit();
-      }
-      applied = next;
-    };
-    const applyChanges = applyLightsRef.current;
     const actorRendering = createActorRendering({
       map, group, wallHeight, reliefDepth, lightGrid, smokeBodies, bust, busted, kitTexture,
-      textures: cache.textures, markSprite, ceilingY, getSightCells: () => sight.cells,
+      textures: cache.textures, markSprite, ceilingY, getSightCells,
       isDisposed: () => disposed, isReady: () => ready, afterReady, liveRef, aimFocusRef, aimingRef,
       settingsRef, actorsRef, addFlash,
     });
@@ -2643,7 +2278,7 @@ export function GameViewport({
     if (interactionUseRef) interactionUseRef.current = useInteraction;
     const combatAiming = createCombatAiming({
       container, scene, group, camera, wallHeight, doorPreview: !!doorPreview, aimFrameRef, partyCoverRef,
-      cellOf, getSceneVersion: () => sceneVersion, actorsRef, actorMeshes, alphaAt, addFlash,
+      cellOf, getSceneVersion: liveEdits.getSceneVersion, actorsRef, actorMeshes, alphaAt, addFlash,
     });
     const { updateAimFrame, updatePartyCover, updateTracers } = combatAiming;
 
@@ -2675,565 +2310,45 @@ export function GameViewport({
       selectedLightRef, selectedEventRef,
     });
 
-    const startedAt = performance.now();
-    let lastFrameAt = startedAt;
-    let lastStatsAt = 0;
-    // frames counted for the fps
-    let fpsFrames = 0;
-    let fpsSince = performance.now();
-
-    // aiming camera (see renderFrame): how far it's turned to the target
-    // (0..1), where it looks, and its field of view there
-    let aimBlend = 0;
-    const aimLookAt = new THREE.Vector3();
-    let aimFov = verticalFov(settings.fov, camera.aspect);
-    let aimFovGoal = aimFov;
-    let aimZoom = 1;
-
-    let waterLightsAt = -1e9;
-    // (whether a layer was hidden last frame: showing it again needs one pass)
-    let hiddenApplied = false;
+    const frameLoop = createFrameLoop({
+      getLiveMap: () => liveMap, getSightCells,
+      invalidateCulling, isDisposed: () => disposed, isReady: () => ready,
+      actorMeshes, actorsRef, aimFocusRef, aimFrameRef, aimingRef, allKits, ambient, animRef,
+      applyMaterialViews, backingMat, bakeRuntime, billboardProps, camera, cavity, ceilingY, cullFacing,
+      decals, doorAnimsRef, doorPreview, downAtRef, editModeRef, editorMarkers, facingSurfaces, fadeLevelRef,
+      fadeRef, fences, floorY, fog, fogBackground, freeTickRef, hiddenLayersRef, itemsLoot, latestMapRef,
+      layFlatSprites, lightFixtures, lightGrid, liveRef, map, mapLightState, newMap, onStatsRef, ownAccents,
+      ownMaterials, peekRefRef, pointLight, postPipeline, propObjects, getReliefStats: () => reliefStats,
+      renderer, rideRef,
+      selectionBox, settings, settingsRef, setTopdown, shaftLight, shipAccentRef, smokeBodies, smokeFire,
+      topdown, topdownControls, transitRef, updateActors, updateAimFrame,
+      updateEventMarkers: () => updateEventMarkers(), updateLightPool,
+      updateLockMarkers: () => updateLockMarkers(), updateLoot, updatePartyCover, updateTracers, wallHeight,
+    });
     const events = createEventMarkers({
       scene, latestMapRef, editModeRef, hiddenLayersRef, decals, floorY, ceilingY, wallHeight, interactionWallCenter,
     });
     const { eventMarkers, updateEventMarkers, updateLockMarkers } = events;
-    function renderFrame() {
-      bakeRuntime.updateProbeDebug();
-      updateEventMarkers();
-      updateLockMarkers();
-      const s = settingsRef.current;
-      const now = performance.now();
-      const t = (now - startedAt) / 1000;
-      // standing water: its ripples' clock, and the few lights nearest the eye
-      // it glints with (the map's, and the fires')
-      decals.waterUniforms.uTime.value = t;
-      if (now - waterLightsAt > 250) {
-        waterLightsAt = now;
-        const eye = camera.position;
-        const lights = [
-          ...mapLightState.mapLights
-            .filter((l) => l.kind !== "window")
-            .map((l) => ({ x: l.x, y: l.y * wallHeight, z: l.z, color: l.color, intensity: l.intensity })),
-          ...[...smokeFire.fireEmitters.values()].filter(e => e.lightIntensity > 0).map(e => ({
-            x: e.x, y: e.y + FIRE_LIGHT_LIFT * wallHeight, z: e.z, color: e.lightColor,
-            intensity: FIRE_LIGHT_INTENSITY * e.lightIntensity * 0.5,
-          })),
-        ];
-        lights.sort((a, b) => (a.x - eye.x) ** 2 + (a.z - eye.z) ** 2 - ((b.x - eye.x) ** 2 + (b.z - eye.z) ** 2));
-        decals.setWaterLights(lights);
-      }
-      // capped so a stall (tab switch, breakpoint) doesn't teleport the
-      // free-moving player through a wall
-      const dt = Math.min(0.05, (now - lastFrameAt) / 1000);
-      lastFrameAt = now;
-      // the world's own time (bullet time slows it - see clock.ts): what
-      // moves in it - its doors, smoke, flickering lights, flashes, loot -
-      // goes by this; the party's own moves and looking round by real time
-      const gameNow = gameClock.now();
-      const gameDt = dt * gameClock.rate();
+    frameLoop.start();
 
-      const anim = animRef.current;
-      const freeTick = freeTickRef.current;
-      let cam: CamTarget;
-      // free movement puts the eye right at the pose; grid movement pulls it
-      // back from the cell center
-      let pullback = s.cameraPullback;
-      if (freeTick) {
-        const pose = freeTick(dt);
-        const f = forwardOf(pose.yaw);
-        cam = { x: pose.x, z: pose.z, tx: pose.x + f.x, tz: pose.z + f.z, y: pose.y };
-        animRef.current = null;
-        pullback = 0;
-      } else if (anim?.jumpSide) {
-        const { cam: jumpCam, done } = jumpPose(anim.from, anim.to, anim.jumpSide, now - anim.start, s.moveDurationMs);
-        cam = jumpCam;
-        if (done) animRef.current = null;
-      } else if (anim?.climb) {
-        const { cam: climbCam, done } = climbPose(anim.from, anim.to, now - anim.start, s.moveDurationMs);
-        cam = climbCam;
-        if (done) animRef.current = null;
-      } else if (anim) {
-        const elapsed = now - anim.start;
-        const p = Math.min(1, elapsed / s.moveDurationMs);
-        const e = easeOutQuad(p);
-        // stepping off a ledge: walk out over the edge, then fall -
-        // accelerating, so the landing reads as a drop rather than a slide
-        const drop = anim.from.y - anim.to.y;
-        let y = lerp(anim.from.y, anim.to.y, e);
-        let done = p >= 1;
-        if (drop > MAX_STEP + 1e-6) {
-          const fallMs = 1000 * Math.sqrt((2 * drop) / FALL_GRAVITY);
-          const f = Math.min(1, Math.max(0, (elapsed - s.moveDurationMs * FALL_START) / fallMs));
-          y = anim.from.y - drop * f * f;
-          done = done && f >= 1;
-        }
-        cam = {
-          x: lerp(anim.from.x, anim.to.x, e),
-          z: lerp(anim.from.z, anim.to.z, e),
-          tx: lerp(anim.from.tx, anim.to.tx, e),
-          tz: lerp(anim.from.tz, anim.to.tz, e),
-          y,
-        };
-        if (done) animRef.current = null;
-      } else {
-        cam = liveRef.current;
-      }
-      liveRef.current = cam;
-
-      // Stairs taken (see MapTransit): the eye walks on ahead and climbs or sinks
-      // a floor's worth, turning half round on a spiral - while the sheet fades
-      // to black. (Laid over the pose after it is kept, so arriving starts clean.)
-      let stairsYaw = 0;
-      const stairsRide = transitRef.current?.kind === "stairs" ? transitRef.current : null;
-      if (stairsRide && now - stairsRide.start < stairsRide.duration) {
-        const e = smoothstep(0, 1, (now - stairsRide.start) / stairsRide.duration);
-        const len = Math.hypot(cam.tx - cam.x, cam.tz - cam.z) || 1;
-        const walk = (STAIRS_WALK * e) / len;
-        const dy = (stairsRide.up ? 1 : -1) * STAIRS_RISE * e;
-        cam = { x: cam.x + (cam.tx - cam.x) * walk, z: cam.z + (cam.tz - cam.z) * walk, tx: cam.tx + (cam.tx - cam.x) * walk, tz: cam.tz + (cam.tz - cam.z) * walk, y: cam.y + dy };
-        if (stairsRide.spiral) stairsYaw = (stairsRide.up ? 1 : -1) * Math.PI * e;
-      }
-
-      for (const [key, anim] of doorAnimsRef.current) {
-        const p = Math.min(1, (gameNow - anim.start) / DOOR_OPEN_MS);
-        const target: THREE.Vector3 = anim.panel.userData.open ? anim.panel.userData.openPos : anim.panel.userData.closedPos;
-        const eased = easeOutQuad(p);
-        anim.panel.position.lerpVectors(anim.from, target, eased);
-        anim.panel.rotation.y = lerp(anim.fromYaw, anim.panel.userData.open ? anim.panel.userData.openYaw : 0, eased);
-        if (p >= 1) doorAnimsRef.current.delete(key);
-      }
-
-      // A lift ride: the cabin shakes (easing in and out), its lights dip
-      // while the next deck is swapped in, and shaft lights sweep past
-      // outside the door - downward while riding up, upward riding down.
-      const ride = rideRef.current;
-      let shake = 0;
-      let rideDip = 1;
-      let rideElapsed = 0;
-      if (ride) {
-        rideElapsed = now - ride.start;
-        const p = rideElapsed / ride.duration;
-        shake = smoothstep(0, 0.1, p) * (1 - smoothstep(0.85, 1, p));
-        rideDip = 1 - 0.85 * (1 - smoothstep(0, LIFT_DIP_MS, Math.abs(rideElapsed - ride.swapAt)));
-      }
-      // A change of map (a gate): the view fades to black, stays black while the
-      // next map loads (the loading screen covers it by then), and clears once
-      // the party has arrived
-      const transitNow = transitRef.current;
-      if (transitNow) fadeLevelRef.current = smoothstep(transitNow.fadeFrom, 1, (now - transitNow.start) / transitNow.duration);
-      else if (fadeLevelRef.current > 0) fadeLevelRef.current = Math.max(0, fadeLevelRef.current - dt / TRANSIT_FADE_IN_S);
-      if (fadeRef.current) fadeRef.current.style.opacity = String(fadeLevelRef.current);
-      const shakeY = shake * (Math.sin(t * 37) * 0.006 + Math.sin(t * 23.3) * 0.004);
-      // steady while editing: the bob sways the view enough to move what's
-      // under the pointer between the floor and the ceiling - and with it
-      // the surface (and the palette) a click would work on
-      const bob = s.bobEnabled && !editModeRef.current ? 1 : 0;
-      const bobY = bob * Math.sin((t * 2 * Math.PI) / 3.2) * 0.035 + shakeY;
-      const bobRoll = bob * Math.cos((t * 2 * Math.PI) / 1.6) * 0.015 + shake * Math.sin(t * 29) * 0.004;
-
-      const fwdX = cam.tx - cam.x;
-      const fwdZ = cam.tz - cam.z;
-      const fwdLen = Math.hypot(fwdX, fwdZ) || 1;
-
-      // the normal field of view (the aiming camera narrows it, below)
-      const fov = verticalFov(s.fov, camera.aspect);
-
-      // glance-around (grid movement only): ease back to center once idle,
-      // then turn the head by the offset around the eye
-      const peek = peekRefRef.current?.current;
-      let peekYaw = 0;
-      if (peek && !freeTick) {
-        if (!peek.held && now - peek.lastInputAt > PEEK_IDLE_MS) {
-          peek.offset *= Math.exp(-dt / PEEK_RETURN_TAU);
-          if (Math.abs(peek.offset) < 1e-3) peek.offset = 0;
-        }
-        peekYaw = peek.offset;
-      }
-      peekYaw += stairsYaw;
-      // rotating the facing clockwise (seen from above) by peekYaw
-      const fx = fwdX / fwdLen;
-      const fz = fwdZ / fwdLen;
-      const cos = Math.cos(peekYaw);
-      const sin = Math.sin(peekYaw);
-      const lookX = fx * cos - fz * sin;
-      const lookZ = fz * cos + fx * sin;
-      // the eye pulled back from the cell center against where it looks -
-      // peeking included, so a glance circles the center just as a turn
-      // does, and a peek that becomes a turn doesn't move the eye
-      const camX = cam.x - lookX * pullback;
-      const camZ = cam.z - lookZ * pullback;
-
-      // dev-only: the view's actual heading, for checking turn continuity
-      if (import.meta.env.DEV && !doorPreview) Object.assign(window, { __voidcrewViewYaw: Math.atan2(lookX, -lookZ) });
-
-      // the crew down: the eye falls to the floor (faster and faster, a
-      // little bounce) and the head rolls onto its side, looking up a bit
-      const downAtMs = downAtRef.current;
-      const down = downAtMs === null ? 0 : Math.min(1, (now - downAtMs) / DOWN_FALL_MS);
-      const fall = down < 0.8 ? (down / 0.8) ** 2 : 1 - Math.sin(((down - 0.8) / 0.2) * Math.PI) * 0.08;
-      const standY = cam.y * wallHeight + s.eyeHeight + bobY * (1 - down);
-      const eyeY = standY + (cam.y * wallHeight + DOWN_EYE - standY) * fall;
-      camera.position.set(camX, eyeY, camZ);
-
-      // aiming: turn to the target and zoom - framing it while a part is
-      // picked, at the weapon's zoom for the mini-game - easing in and out
-      const focus = aimFocusRef.current;
-      const aimWeapon = aimingRef.current;
-      const focused = aimWeapon && focus?.target != null ? actorMeshes.get(focus.target) : undefined;
-      if (focused && aimWeapon) {
-        const actor = actorsRef.current.find((a) => a.id === focus!.target);
-        aimLookAt.copy(focused.mesh.position);
-        const dist = Math.max(0.3, aimLookAt.distanceTo(camera.position));
-        const h = actor ? actorHeight(actor.type) * wallHeight : 0.8;
-        const framing = THREE.MathUtils.radToDeg(2 * Math.atan((h * AIM_FRAMING) / 2 / dist));
-        aimFovGoal =
-          focus!.phase === "pick"
-            ? Math.min(fov, Math.max(AIM_MIN_FOV, framing))
-            : Math.max(AIM_MIN_FOV, zoomedFov(fov, aimWeapon.aimZoom ?? 1));
-      }
-      aimBlend += ((focused ? 1 : 0) - aimBlend) * (1 - Math.exp(-dt / AIM_CAMERA_TAU));
-      aimFov += (aimFovGoal - aimFov) * (1 - Math.exp(-dt / AIM_CAMERA_TAU));
-      if (!focused) aimFovGoal = fov;
-      const viewFov = topdown.on ? TOPDOWN_FOV : fov + (aimFov - fov) * aimBlend;
-      if (Math.abs(camera.fov - viewFov) > 1e-3) {
-        camera.fov = viewFov;
-        camera.updateProjectionMatrix();
-      }
-      aimZoom = Math.tan(THREE.MathUtils.degToRad(fov) / 2) / Math.tan(THREE.MathUtils.degToRad(viewFov) / 2);
-      // editing: the view looks up or down as dragged (the look target is a
-      // unit ahead, so the lift is the pitch's tangent)
-      if (peek && !editModeRef.current) peek.pitch = 0;
-      const editPitchLift = peek && editModeRef.current ? Math.tan(peek.pitch) : 0;
-      camera.lookAt(
-        camX + lookX + (aimLookAt.x - camX - lookX) * aimBlend,
-        eyeY + (aimLookAt.y - eyeY) * aimBlend + DOWN_LOOK_UP * fall + editPitchLift,
-        camZ + lookZ + (aimLookAt.z - camZ - lookZ) * aimBlend,
-      );
-      camera.rotateZ(bobRoll * (1 - aimBlend) + DOWN_ROLL * fall);
-      if (topdown.on && !editModeRef.current) setTopdown(false);
-      if (topdown.on) {
-        // (it starts over the party)
-        if (topdown.fresh) {
-          topdown.fresh = false;
-          topdown.x = cam.x;
-          topdown.z = cam.z;
-        }
-        // the view's panning keys (WASD / arrows, the heading's frame; Shift: faster), Q / E turn it
-        const move = topdownControls.keys;
-        const speed = topdown.h * 0.9 * (move.has("Shift") ? 2.5 : 1) * dt;
-        const sy = Math.sin(topdown.yaw);
-        const cy = Math.cos(topdown.yaw);
-        const forward = (move.has("w") || move.has("arrowup") ? 1 : 0) - (move.has("s") || move.has("arrowdown") ? 1 : 0);
-        const right = (move.has("d") || move.has("arrowright") ? 1 : 0) - (move.has("a") || move.has("arrowleft") ? 1 : 0);
-        topdown.x += (sy * forward + cy * right) * speed;
-        topdown.z += (-cy * forward + sy * right) * speed;
-        topdown.yaw += ((move.has("e") ? 1 : 0) - (move.has("q") ? 1 : 0)) * 1.4 * dt;
-        topdown.x = Math.min(liveMap.width, Math.max(-1, topdown.x));
-        topdown.z = Math.min(liveMap.height, Math.max(-1, topdown.z));
-        // the view looks at the floor under (x, z), from `h` above it, back along the heading
-        const sinT = Math.sin(topdown.tilt);
-        const dist = topdown.h / sinT;
-        const fx = Math.sin(topdown.yaw);
-        const fz = -Math.cos(topdown.yaw);
-        const baseY = floorY(Math.round(topdown.x), Math.round(topdown.z));
-        camera.up.set(fx, 0, fz);
-        camera.position.set(topdown.x - fx * dist * Math.cos(topdown.tilt), baseY + topdown.h, topdown.z - fz * dist * Math.cos(topdown.tilt));
-        camera.lookAt(topdown.x, baseY, topdown.z);
-      } else if (camera.up.y !== 1) {
-        camera.up.set(0, 1, 0);
-      }
-      // the billboards (trees) face the eye, turning about the vertical only
-      for (const b of billboardProps) b.rotation.y = Math.atan2(camera.position.x - b.position.x, camera.position.z - b.position.z);
-
-      ambient.intensity = s.ambientIntensity;
-      backingMat.visible = s.wallBacking || s.backingInspect;
-      backingMat.color.setHex(s.backingInspect ? 0xffffff : 0x000000);
-      if (backingMat.fog === s.backingInspect) {
-        backingMat.fog = !s.backingInspect;
-        backingMat.needsUpdate = true;
-      }
-      pointLight.intensity = s.headlamp ? s.pointLightIntensity * rideDip : 0;
-      if (s.headlampColor !== headlampColorNow) {
-        headlampColorNow = s.headlampColor;
-        pointLight.color.set(s.headlampColor);
-      }
-      lightGrid.scale.value = s.bakedLights ? s.mapLightIntensity * rideDip : 0;
-      const viewReach = topdown.on ? TOPDOWN_REACH : effectiveViewDistance(s);
-      const fogSpan = fogRange(viewReach, s.fogStart, s.fogEnd);
-      if (fog.far !== fogSpan.far || fog.near !== fogSpan.near) {
-        fog.far = fogSpan.far;
-        fog.near = fogSpan.near;
-        camera.far = viewReach + 0.5;
-        camera.updateProjectionMatrix();
-      }
-      if (s.fogColor !== fogColorNow) {
-        fogColorNow = s.fogColor;
-        fog.color.set(s.fogColor);
-        fogBackground.set(s.fogColor);
-      }
-      const mapViewOn = s.geometryView === "normals" || s.geometryView === "depth";
-      for (const kit of allKits()) {
-        const tune = textureTuning(kit.id);
-        for (const mat of kitMaterials(kit)) {
-          const inspect = s.backingInspect && !kit.floor;
-          if (!inspectMaterialDefaults.has(mat)) inspectMaterialDefaults.set(mat, { transparent: mat.transparent, opacity: mat.opacity, depthWrite: mat.depthWrite });
-          const original = inspectMaterialDefaults.get(mat)!;
-          const transparent = inspect || original.transparent;
-          if (mat.transparent !== transparent) {
-            mat.transparent = transparent;
-            mat.needsUpdate = true;
-          }
-          mat.opacity = inspect ? 0.25 : original.opacity;
-          mat.depthWrite = inspect ? false : original.depthWrite;
-          // (one with its own surface map keeps it; a set's own tuning
-          // scales the viewer's values)
-          if (!mat.userData.surface) {
-            mat.roughness = Math.min(1, s.roughness * (tune?.rough ?? 1));
-            mat.metalness = s.showMetal ? Math.min(1, s.metalness * (tune?.metal ?? 1)) : 0;
-          } else {
-            mat.metalness = s.showMetal ? 1 : 0;
-          }
-          mat.aoMapIntensity = s.showAO ? s.aoIntensity : 0;
-        }
-        // (a floor's normal strength: its own, else 1 - the Asset Manager's baseline - not the walls' setting on top
-        // of its tuned value)
-        const strength = kit.floor ? (s.floorNormalStrength > 0 ? s.floorNormalStrength : 1) : s.normalStrength;
-        const normal = s.showNormals ? strength * (kit.normal ?? 1) * (tune?.normal ?? 1) : 0;
-        kit.wallMat.normalScale.set(normal, normal);
-        kit.litMat?.normalScale.set(normal, normal);
-        if (kit.wallMat.userData.glow && !mapViewOn) kit.wallMat.emissiveIntensity = s.showGlow ? SURFACE_GLOW : 0;
-      }
-      decals.forEachLitMaterial((mat) => {
-        // (a decal's own base - roughness 0.75, metalness 0.15 - at the viewer's defaults (0.55, 0.45), scaled with the
-        // sliders: a plain metalness of 1 blacked them out, as the floors it lies on are only tuned a part of it)
-        mat.roughness = Math.min(1, 0.75 * (s.roughness / 0.55));
-        mat.metalness = s.showMetal ? Math.min(0.5, 0.15 * (s.metalness / 0.45)) : 0;
-        // (like a floor's: its own strength setting, else 1)
-        const normal = s.showNormals ? (s.floorNormalStrength > 0 ? s.floorNormalStrength : 1) : 0;
-        mat.normalScale.set(normal, normal);
-      });
-      for (const mat of ownMaterials) {
-        const tune = mat.userData.tuneId ? textureTuning(mat.userData.tuneId as string) : undefined;
-        mat.roughness = Math.min(1, s.roughness * (tune?.rough ?? 1));
-        mat.metalness = s.showMetal ? Math.min(1, s.metalness * (tune?.metal ?? 1)) : 0;
-        mat.aoMapIntensity = s.showAO ? s.aoIntensity : 0;
-        const normal = s.showNormals ? s.normalStrength * (mat.userData.normal ?? 1) * (tune?.normal ?? 1) : 0;
-        mat.normalScale.set(normal, normal);
-      }
-      cavity.value = s.aoDirect;
-      // the deck's accent turned to the ship's livery (none: as painted)
-      const deckAccent = latestMapRef.current.accent;
-      const livery = s.shipAccent === "painted" ? null : s.shipAccent === "rolled" ? (shipAccentRef.current ?? null) : s.shipAccent;
-      const turn = deckAccent && livery !== null ? (((livery - deckAccent.hue) % 360) + 360) % 360 : 0;
-      ACCENT_UNIFORMS.uAccentShift.value = turn / 360;
-      ACCENT_UNIFORMS.uAccentFrom.value = (deckAccent?.hue ?? 0) / 360;
-      ACCENT_UNIFORMS.uAccentWidth.value = (deckAccent?.range ?? 30) / 360;
-      ACCENT_UNIFORMS.uAccentMinSat.value = s.accentMinSat;
-      // (a set with its own accent: from its own hue to the same livery)
-      for (const own of ownAccents) {
-        own.uniforms.uAccentShift.value = livery !== null ? (((livery - own.hue) % 360) + 360) % 360 / 360 : 0;
-        own.uniforms.uAccentFrom.value = own.hue / 360;
-        own.uniforms.uAccentWidth.value = own.range / 360;
-        own.uniforms.uAccentMinSat.value = s.accentMinSat;
-      }
-      // the headlamp: just above the eyes, where they are - it used to circle
-      // the camera (an early experiment), which read as a light wandering
-      // about the walls; at the eye it also never slips behind a wall plane
-      // (lighting the back of its front faces and only the step sides of
-      // relief walls)
-      const camCell = { x: Math.round(camX), y: Math.round(camZ) };
-      const ceilingHere = cellAt(map, camCell.x, camCell.y) === "wall" ? eyeY + 0.5 : ceilingY(camCell.x, camCell.y);
-      pointLight.position.set(
-        camX,
-        // above the eyes, but never through the ceiling
-        Math.min(eyeY - bobY + 0.3, ceilingHere - 0.08),
-        camZ,
-      );
-      updateActors(camX, camZ);
-      updateLoot(camX, camZ, cam.y * wallHeight);
-      smokeFire.updateParticles(gameDt, t, s, sight.cells, smokeBodies);
-      smokeFire.updateMarkers();
-      editorMarkers.updateSoundMarkers();
-      fences.syncFenceMarkers();
-      editorMarkers.updateLinkPlates(gameNow);
-      updateTracers();
-      camera.updateMatrixWorld();
-      selectionBox.updateEditHighlight();
-      updatePartyCover(camX, cam.y * wallHeight, camZ, s.eyeHeight);
-      if (aimWeapon) updateAimFrame(aimWeapon, camX, camZ, aimZoom);
-      else if (aimFrameRef.current) aimFrameRef.current = null;
-      // (the ears: where the party's eye is and which way it looks - see audio/soundSystem.ts)
-      // (in the editor's top-down view it is the spot looked at: the camera floats high above the map)
-      if (!doorPreview) {
-        gameSound.frame(
-          topdown.on
-            ? { x: topdown.x, y: floorY(Math.round(topdown.x), Math.round(topdown.z)) + s.eyeHeight, z: topdown.z, fx: Math.sin(topdown.yaw), fz: -Math.cos(topdown.yaw) }
-            : { x: camX, y: eyeY, z: camZ, fx: fwdX / fwdLen, fz: fwdZ / fwdLen },
-        );
-      }
-      updateLightPool(
-        topdown.on ? { x: topdown.x, z: topdown.z } : { x: cam.x, z: cam.z },
-        topdown.on
-          ? { x: topdown.x, y: floorY(Math.round(topdown.x), Math.round(topdown.z)) + 1, z: topdown.z, fwdX: 0, fwdZ: 0 }
-          : { x: camX, y: eyeY, z: camZ, fwdX: fwdX / fwdLen, fwdZ: fwdZ / fwdLen },
-        s.mapLightIntensity * rideDip * (editModeRef.current && hiddenLayersRef.current.has("light") ? 0 : 1),
-        dt,
-      );
-      cullFacing();
-      lightFixtures.updateVisibility(editModeRef.current, hiddenLayersRef.current.has("light"));
-
-      const liftDoor = ride ? liftDoorOf(map, { x: Math.round(cam.x), y: Math.round(cam.z) }) : undefined;
-      if (ride && liftDoor) {
-        const v = DIR_VECTOR[liftDoor.facing];
-        const phase = (rideElapsed / SHAFT_LIGHT_PERIOD_MS) % 1;
-        const offset = (ride.up ? 1 - 2 * phase : 2 * phase - 1) * SHAFT_LIGHT_SWEEP;
-        shaftLight.position.set(liftDoor.cell.x + v.x * 0.3, eyeY + offset, liftDoor.cell.y + v.y * 0.3);
-        shaftLight.intensity = SHAFT_LIGHT_INTENSITY * shake * (1 - Math.abs(offset) / SHAFT_LIGHT_SWEEP) ** 2;
-      } else {
-        shaftLight.intensity = 0;
-      }
-
-      // the layers the editor hides (only while editing)
-      const hidden = editModeRef.current ? hiddenLayersRef.current : NO_LAYERS;
-      if (hidden.size || hiddenApplied) {
-        // Surfaces already restore their visibility in the culling pass above.
-        if (hidden.has("texture")) for (const obj of facingSurfaces) obj.visible = false;
-        backingMat.visible = s.wallBacking && !hidden.has("texture");
-        smokeFire.setVisible(!hidden.has("smoke"));
-        const propsHidden = hidden.has("prop");
-        for (const obj of propObjects.values()) obj.visible = !propsHidden;
-        // (shown again: the culling pass decides afresh which are in sight)
-        if (!propsHidden) culledCount = -1;
-        decals.setVisible(!hidden.has("decal"));
-        if (hidden.has("item")) itemsLoot.hideItems();
-        if (hidden.has("robot")) {
-          for (const entry of actorMeshes.values()) {
-            entry.mesh.visible = false;
-            entry.shadow.visible = false;
-          }
-        }
-        hiddenApplied = hidden.size > 0;
-      }
-      layFlatSprites();
-      applyMaterialViews(s);
-      postPipeline.renderGeometryView(s.geometryView);
-
-      fpsFrames++;
-      if (now - lastStatsAt > 500) {
-        lastStatsAt = now;
-        const elapsed = now - fpsSince;
-        const fps = elapsed > 0 ? (fpsFrames * 1000) / elapsed : 0;
-        fpsFrames = 0;
-        fpsSince = now;
-        onStatsRef.current?.({
-          renderedTriangles: renderer.info.render.triangles,
-          drawCalls: renderer.info.render.calls,
-          visibleCells: sight.cells.size,
-          fps,
-          frameMs: fps > 0 ? 1000 / fps : 0,
-          relief: reliefStats,
-        });
-      }
-
-    }
-
-    function animate() {
-      if (disposed) return;
-      // The loading screen covers a new map completely. Let its assets
-      // and worker results reach the main thread before drawing the scene.
-      if (!newMap || ready) renderFrame();
-      raf = requestAnimationFrame(animate);
-    }
-    animate();
-
-    // dev-only: render a frame on demand and return it as an image, for the
-    // voidcrew.capture() console helper - works even when the browser has
-    // paused requestAnimationFrame (hidden tab/pane)
-    const snapshot = () => {
-      // a hidden page lays the view out at ~0x0; render captures at a fixed
-      // size then, and put the real size back afterwards
-      const size = renderer.getSize(new THREE.Vector2());
-      const tiny = size.x < 16 || size.y < 16;
-      if (tiny) {
-        renderer.setSize(800, 600, false);
-        camera.aspect = 800 / 600;
-        camera.updateProjectionMatrix();
-      }
-      renderFrame();
-      const url = renderer.domElement.toDataURL("image/jpeg", 0.9);
-      if (tiny) {
-        renderer.setSize(size.x, size.y, false);
-        camera.aspect = size.x / size.y;
-        camera.updateProjectionMatrix();
-      }
-      return url;
-    };
-    // dev-only: render a frame on demand and report what it drew
-    const renderInfo = () => {
-      snapshot();
-      return { ...renderer.info.render, cellsInSight: sight.cells.size, objects: group.children.length };
-    };
-    // dev-only: how long a frame takes (ms; the median of `frames`, each
-    // waited out on the graphics card) at a given size, with the smoke drawn
-    // and without - and how long moving its puffs takes alone
-    const bench = (frames = 120, width = 1280, height = 720) => {
-      const size = renderer.getSize(new THREE.Vector2());
-      const ratio = renderer.getPixelRatio();
-      renderer.setPixelRatio(1);
-      renderer.setSize(width, height, false);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      const gl = renderer.getContext();
-      const pixel = new Uint8Array(4);
-      const run = (withSmoke: boolean) => {
-        const times: number[] = [];
-        smokeFire.getSmoke().mesh.visible = withSmoke;
-        for (let i = 0; i < frames + 10; i++) {
-          const start = performance.now();
-          renderFrame();
-          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-          if (i >= 10) times.push(performance.now() - start);
-        }
-        smokeFire.getSmoke().mesh.visible = true;
-        times.sort((a, b) => a - b);
-        return times[times.length >> 1];
-      };
-      const withSmoke = run(true);
-      const without = run(false);
-      const again = run(true);
-      const start = performance.now();
-      for (let i = 0; i < 1000; i++) smokeFire.getSmoke().update(0, camera, sight.cells, 0.3);
-      const update = (performance.now() - start) / 1000;
-      const geometry = smokeFire.getSmoke().mesh.geometry;
-      const puffs = geometry instanceof THREE.InstancedBufferGeometry ? geometry.instanceCount : 0;
-      renderer.setPixelRatio(ratio);
-      renderer.setSize(size.x, size.y, false);
-      if (size.x > 0 && size.y > 0) {
-        camera.aspect = size.x / size.y;
-        camera.updateProjectionMatrix();
-      }
-      return { withSmoke, without, again, update, puffs, calls: renderer.info.render.calls };
-    };
-    if (import.meta.env.DEV && !doorPreview) {
-      Object.assign(window, { __voidcrewSnapshot: snapshot, __voidcrewRenderInfo: renderInfo, __voidcrewScene: group, __voidcrewBench: bench });
-    }
+    const frameDebug = createFrameDebug({
+      renderFrame: frameLoop.renderFrame, getSightCells, camera, group, renderer, smokeFire,
+      doorPreview: !!doorPreview,
+    });
 
     return () => {
       disposed = true;
       postPipeline.dispose();
       bakeRuntime.dispose();
       stopRaycastPrep?.();
-      if (applyLightsRef.current === applyChanges) applyLightsRef.current = null;
-      const w = window as { __voidcrewSnapshot?: () => string };
-      if (w.__voidcrewSnapshot === snapshot) delete w.__voidcrewSnapshot;
-      cancelAnimationFrame(raf);
+      liveEdits.dispose();
+      frameDebug.dispose();
+      frameLoop.dispose();
       stopResize();
       topdownControls.dispose();
       pointerInput.dispose();
       if (interactionUseRef?.current === useInteraction) interactionUseRef.current = null;
-      topdownToggleRef.current = null;
-      capMaterial.dispose();
-      capGeometry.dispose();
+      sightView.dispose();
       container.removeChild(renderer.domElement);
       for (const geo of geometries) geo.dispose();
       // (their textures and relief stay cached for the next build)
