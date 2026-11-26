@@ -8,6 +8,8 @@ import { AreaClipButtons } from "./editor/AreaClipButtons";
 import { useAreaClipboard } from "./editor/useAreaClipboard";
 import { useMapDrafts } from "./editor/DraftNotice";
 import { FloatToolbar } from "./editor/FloatToolbar";
+import { useEditorSearch } from "./search/useEditorSearch";
+import { isSearchControl } from "./search/searchKeyboard";
 import { ShortcutHelp } from "./editor/ShortcutHelp";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { InteractionPopup } from "./components/InteractionPopup";
@@ -1708,7 +1710,7 @@ export default function App() {
   editKeys.current = { editUndo, editRedo, editSave };
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (isTextEntry(e.target)) return;
+      if (isTextEntry(e.target) || isSearchControl(e.target)) return;
       if (e.key === "Tab" && !aimRef.current) {
         e.preventDefault();
         if (e.repeat) return;
@@ -1935,6 +1937,7 @@ export default function App() {
   useEffect(() => {
     if (!editMode || editTool !== "door") return;
     function onKey(e: KeyboardEvent) {
+      if (isSearchControl(e.target)) return;
       const { changeDoor: change, deleteDoor: remove, info } = doorKeys.current;
       if (!info) return;
       const stop = () => {
@@ -2028,6 +2031,7 @@ export default function App() {
   useEffect(() => {
     if (!editMode || keyTool !== "smoke") return;
     function onKey(e: KeyboardEvent) {
+      if (isSearchControl(e.target)) return;
       const { selectedSmokeInfo: info, selectedSmokeSpec: spec, changeSmoke: change, deleteSmoke: remove } = smokeKeys.current;
       if (!info || !spec) return;
       const stop = () => {
@@ -2102,6 +2106,7 @@ export default function App() {
   useEffect(() => {
     if (!editMode || keyTool !== "sound") return;
     function onKey(e: KeyboardEvent) {
+      if (isSearchControl(e.target)) return;
       const { selectedSoundSpec: spec, changeSound: change, deleteSound: remove } = soundKeys.current;
       if (!spec) return;
       const stop = () => {
@@ -2184,6 +2189,7 @@ export default function App() {
   useEffect(() => {
     if (!editMode || keyTool !== "item") return;
     function onKey(e: KeyboardEvent) {
+      if (isSearchControl(e.target)) return;
       const { selectedItemInfo: info, changeItem: change, deleteItem: remove, items, selectedItem: index } = itemKeys.current;
       const spec = index === null ? undefined : items?.[index];
       if (!info || !spec) return;
@@ -2277,6 +2283,7 @@ export default function App() {
   useEffect(() => {
     if (!editMode || keyTool !== "decal") return;
     function onKey(e: KeyboardEvent) {
+      if (isSearchControl(e.target)) return;
       const { changeDecal: change, deleteDecal: remove, decals, selectedDecal: index } = decalKeys.current;
       const spec = index === null ? undefined : decals?.[index];
       const turn = e.key === "r" || e.key === "R";
@@ -2437,6 +2444,7 @@ export default function App() {
   useEffect(() => {
     if (!editMode || keyTool !== "prop") return;
     function onKey(e: KeyboardEvent) {
+      if (isSearchControl(e.target)) return;
       const { selectedPropInfo: info, changeProp: change, deleteProp: remove, props, selectedProp: index } = propKeys.current;
       const spec = index === null ? undefined : props?.[index];
       if (!info || !spec) return;
@@ -2543,6 +2551,11 @@ export default function App() {
     if (isFenceTool(tool)) setFence((f) => ({ ...f, style: fenceToolStyle(tool, f.style) }));
     setEditTool(tool);
   };
+  const editorSearch = useEditorSearch(editMode, map.world, {
+    openMapRender: () => { setEditorDebug(false); chooseTool("select"); },
+    openDebug: () => setEditorDebug(true),
+    revealAssetTree: () => { setEditorDebug(false); setMiniZoom(false); chooseTool("roofauto"); },
+  });
   const editInteraction = (target: InteractionTarget, event?: Interaction, merge?: string) => {
     const result = applyEdit(map.id, file => setInteraction(file, map, target, event), merge && `event ${JSON.stringify(target)} ${merge}`);
     if ("error" in result) {
@@ -2602,7 +2615,7 @@ export default function App() {
   useEffect(() => {
     if (!editMode) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Delete" || isTextEntry(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key !== "Delete" || isTextEntry(e.target) || isSearchControl(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
       const { eventTarget: target, remove, removeLink: link } = eventKeys.current;
       if (!target && !link) return;
       e.preventDefault();
@@ -2721,6 +2734,7 @@ export default function App() {
   useEffect(() => {
     if (!editMode || keyTool !== "light") return;
     function onKey(e: KeyboardEvent) {
+      if (isSearchControl(e.target)) return;
       const { selectedLightInfo: info, changeLight: change, deleteLight: remove } = lightKeys.current;
       if (!info) return;
       if (e.key === "Delete") {
@@ -2979,6 +2993,7 @@ export default function App() {
       {editMode && (
         <Inspector
           assetDock={assetDock}
+          assetSearchRequest={editorSearch.assetRequest}
           onAssetEffect={(kind, effect) => { remember(kind, {effect, ...(kind === "smoke" ? {fire: undefined, petals: undefined} : {})}); setTemplateTick(n => n + 1); }}
           inspected={inspected}
           dock={editDock}
@@ -3157,6 +3172,7 @@ export default function App() {
           compact={compact}
         />
       )}
+      {editorSearch.dialog}
       {editMode && <ShortcutHelp open={shortcutHelp} onClose={() => setShortcutHelp(false)} />}
     </>
   );
@@ -3304,7 +3320,8 @@ export default function App() {
     <div className="relative h-[100dvh] w-screen flex flex-col p-2 gap-2 overflow-hidden bg-neutral-950 font-sans">
       <ReleaseNotes {...releaseNotes} />
       <div className="flex-1 flex gap-2 min-h-0">
-        <div className={`${zoomed ? "w-[40vw]" : editMode ? "w-40 xl:w-56" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0 ${editMode ? "max-md:hidden" : ""}`}>
+        <div className={`${zoomed ? "w-[40vw]" : editMode ? "w-40 xl:w-56" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0 ${editMode ? editorSearch.assetRequest ? "max-md:absolute max-md:inset-y-2 max-md:left-2 max-md:z-30 max-md:w-40 max-md:bg-neutral-950" : "max-md:hidden" : ""}`}>
+          {editMode && editorSearch.assetRequest && <button type="button" className="hidden shrink-0 self-end rounded border border-neutral-600 px-2 text-neutral-200 max-md:block" aria-label={t("dialog.close")} onClick={editorSearch.closeAssetTree}>×</button>}
           {editMode && !zoomed ? (
             <section className="flex shrink-0 flex-col">
               <button
@@ -3388,7 +3405,7 @@ export default function App() {
           {(phase === "run" || editMode) && viewport}
           {joysticks}
           {overlays}
-          {editMode && <FloatToolbar view={settings.geometryView} onView={(v) => setSettings({ ...settings, geometryView: v })} onHelp={() => setShortcutHelp(true)} debugOpen={editorDebug} onDebug={() => setEditorDebug(!editorDebug)} tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager reliefMode={settings.reliefMode} reliefDepth={map.reliefDepth ?? settings.reliefDepth} wallDetail={settings.wallDetail} /></div>} compact={compact} hint={areaClip.hint} />}
+          {editMode && <FloatToolbar view={settings.geometryView} onView={(v) => setSettings({ ...settings, geometryView: v })} onHelp={() => setShortcutHelp(true)} onSearch={editorSearch.open} debugOpen={editorDebug} onDebug={() => setEditorDebug(!editorDebug)} tool={editTool} onTool={chooseTool} canUndo={canUndo(map.id)} canRedo={canRedo(map.id)} onUndo={editUndo} onRedo={editRedo} unsaved={hasUnsavedEdits(map.id)} onSave={editSave} onDownload={() => downloadMap(map.id)} onExit={() => setEditMode(false)} onNewMap={newMap} onMapProps={() => selectOnly(null)} shared={<div className="flex flex-wrap gap-2">{sharedConfigured && <SharedEditor key={map.world} map={map} openMap={openMap} changed={() => setEdits(n => n + 1)} />}<AssetManager reliefMode={settings.reliefMode} reliefDepth={map.reliefDepth ?? settings.reliefDepth} wallDetail={settings.wallDetail} /></div>} compact={compact} hint={areaClip.hint} />}
         </div>
 
         <div className={`${editMode ? "w-64 xl:w-80 max-md:w-44" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0`}>

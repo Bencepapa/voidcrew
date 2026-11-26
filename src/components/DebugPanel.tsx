@@ -26,6 +26,7 @@ import { useSharedImages } from "../render/sharedImages";
 import { t, formatNumber, type Key } from "../i18n";
 import type { TextureSetKind } from "../render/textureSets";
 import type { MapFile } from "../game/mapFormat";
+import { searchAnchor } from "../search/searchAnchor";
 
 interface DebugPanelProps {
   settings: ViewportSettings;
@@ -191,11 +192,12 @@ export function DebugPanel({
     );
   }
 
-  function check(key: keyof ViewportSettings, label: string) {
+  function check(key: keyof ViewportSettings, label: string, anchor?: ReturnType<typeof searchAnchor>) {
     return (
       <label key={key} className="flex items-center gap-2 text-[11px] cursor-pointer">
         <input
           type="checkbox"
+          {...anchor}
           checked={settings[key] as boolean}
           onChange={(e) => set(key, e.target.checked as ViewportSettings[typeof key])}
         />
@@ -328,7 +330,7 @@ export function DebugPanel({
         t("debug.lights"),
         <>
           {check("bakedLights", t("debug.bakedLightingOffEveryMapLightReal"))}
-          {check("showLightProbes", t("debug.showLightProbes"))}
+          {check("showLightProbes", t("debug.showLightProbes"), inEditor ? searchAnchor("debug.lightProbes") : undefined)}
           {settings.bakedLights && (
             <>
               {select(

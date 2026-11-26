@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 4,
     date: "2026-11-26",
     items: [
+      { title: "Kereső a szerkesztőben", text: "A nagyítóval, illetve Ctrl+P vagy Ctrl+K billentyűvel nyitható kereső az automata tetőhöz, a napszak és a napfény beállításaihoz, valamint a fényprobe kapcsolóhoz ugrik." },
       { title: "Kiadási jegyzetek", text: "A menüből bármikor megnyithatod a korábbi kiadások jegyzeteit." },
       { title: "Sokszög és csillag alakú tárgy", text: "Az Asset Managerben kipróbálható a 3–12 oldalú, csillagformára is behúzható tárgyforma két váltakozó textúrával." },
       { title: "Hangfeltöltés", text: "Az Asset Managerben hangeffektet, zenét és GUI-hangot tölthetsz fel, beállíthatod az alapértelmezett hangerőt és sebességet, és a szerkesztőben lerakás előtt is meghallgathatod." },
