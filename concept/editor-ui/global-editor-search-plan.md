@@ -31,6 +31,8 @@
 
 ## Megvalósítás (2026-11-26)
 
+Kapcsolódó: [Teljesítmény és bővíthetőség terve](../scalability-and-development-plan.md), 7. pont (feature-regisztráció) és G szakasz. Onnan ide tartozik: hiányellenőrzés (vezérlő célpont nélkül, hiányzó súgó- vagy fordításkulcs), egyszerű mezőknél közös metaadat (típus, határok, alapérték) ugyanabból a regisztrációból, az index csak assetmetadatát tölt, statikus súgóindex buildkor, worker csak mérés alapján.
+
 A célpont nem a menü helyét tárolja, hanem egy stabil azonosítót, így a Debug vagy a Pályaadatok átszervezése után is jó helyre ugrik.
 
 - **Célpont-katalógus** (`src/search/targets.ts`, tiszta modul): `{ id, kind, titleKey, synonyms, keywords, world?, oldIds? }`. Az `id` stabil és pontozott (pl. `setting.sky.sunAzimuth`, `tool.roofAuto`, `debug.lightProbes`); átnevezéskor a régi id az `oldIds`-be kerül. A címek az i18n-ből jönnek, a szinonimák hu + en kézzel gondozottak.
