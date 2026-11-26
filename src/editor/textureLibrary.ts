@@ -249,6 +249,7 @@ export function mapUsesTexture(m: GameMap, id: string): boolean {
   if (m.textures && Object.values(m.textures).includes(id)) return true;
   if (m.props?.some(spec => {
     const type = PROP_TYPES[spec.prop];
+    if (type?.kind === "prism" && type.textureB === id) return true;
     return spec.texture === id || (!spec.texture && type && "texture" in type && type.texture === id);
   })) return true;
   if (m.doors?.some(spec => spec.leafTexture === id || spec.frameTexture === id)) return true;

@@ -6,7 +6,7 @@ import type { LightBakeMap, Occluder, Occluders } from "./bakeOcclusion";
 export function propCastsBakedShadow(spec: NonNullable<GameMap["props"]>[number]): boolean {
   const kind = PROP_TYPES[spec.prop]?.kind;
   // Fences and crossed foliage are mostly gaps, thin faces or leaves.
-  return !!kind && kind !== "cross" && kind !== "fence";
+  return !!kind && kind !== "cross" && kind !== "fence" && kind !== "prism";
 }
 
 export function occludersOf(map: LightBakeMap, includeRoofs = false): Occluders {
@@ -21,7 +21,7 @@ export function occludersOf(map: LightBakeMap, includeRoofs = false): Occluders 
   for (const spec of map.props ?? []) {
     const sharedType = map.sharedPropTypes?.[spec.prop];
     const type = sharedType ?? PROP_TYPES[spec.prop];
-    if (!type || type.kind === "cross" || (type.kind === "roof" && !includeRoofs) || type.kind === "fence") continue;
+    if (!type || type.kind === "cross" || type.kind === "prism" || (type.kind === "roof" && !includeRoofs) || type.kind === "fence") continue;
     const { x, z, reachX, reachZ } = propPlacement(spec, type);
     const scale = spec.scale ?? 1;
     const lift = sharedType?.elevation ?? 0;

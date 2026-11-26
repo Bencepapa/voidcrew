@@ -71,7 +71,7 @@ import {
 import { MapTitle } from "./components/MapTitle";
 import { GatePrompt } from "./components/GatePrompt";
 import { LoadingImagePreloader } from "./components/LoadingImagePreloader";
-import { ReleaseNotes } from "./components/ReleaseNotes";
+import { ReleaseNotes, useReleaseNotes } from "./components/ReleaseNotes";
 import { loadingImagesAhead } from "./game/mapLinks";
 import { MapDialog } from "./editor/MapDialog";
 import type { MapDialogMode, MapDialogValues } from "./editor/MapDialog";
@@ -374,6 +374,7 @@ export default function App() {
   const viewSettings = editMode ? { ...settings, noclip: true, headlamp: editLamp } : settings;
   const [stats, setStats] = useState<ViewportStats | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const releaseNotes = useReleaseNotes();
   const aimFrameRef = useRef<AimFrame | null>(null);
   const aimFocusRef = useRef<AimFocus | null>(null);
   useEffect(() => setImmortalCrew(settings.immortalCrew), [settings.immortalCrew, setImmortalCrew]);
@@ -3275,6 +3276,7 @@ export default function App() {
             <div className="pointer-events-auto flex flex-col gap-1 landscape:fixed landscape:top-12 landscape:right-2 landscape:bottom-16 landscape:w-48 landscape:overflow-y-auto">
               {SHOW_ACTION_MENU && actionMenu}
               <DebugPanel
+                onReleaseNotes={releaseNotes.openArchive}
                 settings={settings}
                 onChange={setSettings}
                 stats={stats}
@@ -3293,13 +3295,14 @@ export default function App() {
             </div>
           )}
         </div>
+        <ReleaseNotes {...releaseNotes} />
       </div>
     );
   }
 
   return (
     <div className="relative h-[100dvh] w-screen flex flex-col p-2 gap-2 overflow-hidden bg-neutral-950 font-sans">
-      <ReleaseNotes />
+      <ReleaseNotes {...releaseNotes} />
       <div className="flex-1 flex gap-2 min-h-0">
         <div className={`${zoomed ? "w-[40vw]" : editMode ? "w-40 xl:w-56" : "w-56"} flex shrink-0 flex-col gap-2 min-h-0 ${editMode ? "max-md:hidden" : ""}`}>
           {editMode && !zoomed ? (
@@ -3397,6 +3400,7 @@ export default function App() {
           {(!editMode || editorDebug) && <div className={editMode ? "absolute right-2 top-2 bottom-2 z-50 w-[min(26rem,96vw)] overflow-auto border border-neutral-500 bg-neutral-950 p-2 shadow-xl" : "flex-1 min-h-0"}>
             {editMode && <button className="mb-2 w-full rounded border border-neutral-600 px-2 py-1 text-neutral-200" onClick={()=>setEditorDebug(false)}>{t("editorShell.closeDebug")} ×</button>}
             <DebugPanel
+              onReleaseNotes={releaseNotes.openArchive}
               settings={settings}
               onChange={setSettings}
               stats={stats}

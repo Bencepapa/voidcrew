@@ -109,6 +109,13 @@ export type PropType = {
       texture: string;
     }
   | {
+      kind: "prism";
+      texture: string;
+      textureB?: string;
+      sides?: number;
+      inset?: number;
+    }
+  | {
       // a square pillar from the floor to the ceiling (whatever the cell's
       // height), widening at its foot and head like a door's jamb: `size`
       // x and z are the foot's width, `shaft` the width between, `flare`
@@ -387,7 +394,7 @@ const CHAMFER_YAW = { NE: 45, SE: 135, SW: 225, NW: 315 };
 // the texture sets a prop can wear instead of its own (see
 // PropSpec.texture): only the one-texture kinds
 export function propRetexturable(type: PropType): boolean {
-  return type.kind === "box" || type.kind === "pillar" || type.kind === "chamfer" || type.kind === "panel" || type.kind === "cross" || type.kind === "roof" || type.kind === "fence";
+  return type.kind === "box" || type.kind === "pillar" || type.kind === "chamfer" || type.kind === "panel" || type.kind === "cross" || type.kind === "prism" || type.kind === "roof" || type.kind === "fence";
 }
 
 // Props are small: their relief usually starts shallower than the walls'.
@@ -405,7 +412,7 @@ export function propReliefCells(type: PropType): number {
 export const isSharedPropId = (id: string) =>
   /^(scifi|fantasy)_prop_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id);
 
-export type SingleTextureProp = Extract<PropType, { kind: "panel" | "billboard" | "cross" }>;
+export type EditableProp = Extract<PropType, { kind: "panel" | "billboard" | "cross" | "prism" }>;
 
 export function propHeight(map: Pick<GameMap, "floorHeights" | "ceilingHeights">, spec: PropSpec, type = PROP_TYPES[spec.prop]): number {
   if (!type) return 0;

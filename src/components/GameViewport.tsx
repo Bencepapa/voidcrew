@@ -73,6 +73,9 @@ import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSe
 import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
 import { mapUsesTexture, wantSharedUrl } from "../editor/textureLibrary";
 import { onSharedPropsChanged } from "../editor/sharedProps";
+import { prismFaces, prismInset, prismSides } from "../game/propPrism";
+import { propPrismGeometry } from "../render/propPrismMesh";
+import { isSharedTextureId } from "../game/mapSharedRefs";
 import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import {
   onSharedDecalsChanged,
@@ -1439,6 +1442,28 @@ export function GameViewport({
         const sprite = new THREE.Mesh(geo, mat);
         sprite.position.y = h / 2 + (type.elevation ?? 0) * wallHeight;
         template.add(sprite);
+        return template;
+      }
+
+      if (type.kind === "prism") {
+        const alternate = type.textureB && (!isSharedTextureId(type.textureB) || isTextureSetId(type.textureB)) ? type.textureB : undefined;
+        const material = (id: string) => {
+          const key = `prism:${id}`;
+          let kit = propKits.get(key);
+          if (!kit) {
+            kit = createWallKit(id, false, false);
+            kit.wallMat.alphaTest = 0.5;
+            kit.wallMat.side = THREE.DoubleSide;
+            useLightGrid(kit.wallMat, lightGrid);
+            propKits.set(key, kit);
+          }
+          return kit.wallMat;
+        };
+        const geometry = propPrismGeometry(prismFaces(length, depth, prismSides(type.sides), prismInset(type.inset), !!alternate), height * wallHeight);
+        geometries.push(geometry);
+        const mesh = new THREE.Mesh(geometry, [material(type.texture), material(alternate ?? type.texture)]);
+        mesh.position.y = (type.elevation ?? 0) * wallHeight;
+        template.add(mesh);
         return template;
       }
 

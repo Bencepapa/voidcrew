@@ -350,7 +350,7 @@ async function pullDefinitions(world: string, kind: DefinitionKind) {
     } else {
       if (dryRun) { console.log(`Would bundle ${kind} ${id} (r${found.rev}).`); continue; }
       // textures a prop or door uses that are not bundled (they come with their own pull) are worth a warning
-      const used = kind === "prop" ? [definition.texture] : [definition.leaf, definition.frame];
+      const used = kind === "prop" ? [definition.texture, definition.textureB] : [definition.leaf, definition.frame];
       for (const texture of used) {
         if (typeof texture === "string" && texture.includes("_shared_") && !Object.hasOwn(catalog.textures, texture) && !existsSync(join(root, "public/textures", texture))) {
           console.warn(`${kind} ${id} uses texture ${texture}, which is not bundled (is it published?).`);

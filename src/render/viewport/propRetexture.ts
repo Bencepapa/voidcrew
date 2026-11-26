@@ -10,6 +10,7 @@ export function retextured(type: PropType, texture: string | undefined, isTextur
     case "roof":
     case "panel":
     case "cross":
+    case "prism":
       return { ...type, texture };
     default:
       return type;

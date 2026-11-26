@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { t } from "../i18n";
-import type { SingleTextureProp } from "../game/props";
+import type { EditableProp } from "../game/props";
 import { NumberField } from "./NumberField";
+import { PrismPropFields } from "./PrismPropFields";
 import { sharedConfigured, useSharedAuth } from "./sharedAuth";
 import { attachPropTexture, discardPropDraft, getPropDrafts, PROP_SHAPES, propTextureId, propTextures, publishProp, savePropDraft, type PropDraft } from "./sharedProps";
 import { errorText, SignInPopover } from "./TexturePanel";
@@ -25,7 +26,7 @@ export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onE
   const usesOwnTexture = definition.texture === own;
   const current = () => getPropDrafts().find(row => row.id === draft.id);
 
-  function edit(patch: Partial<SingleTextureProp>) {
+  function edit(patch: Partial<EditableProp>) {
     const latest = current();
     if (!latest || busy) return;
     try { savePropDraft({ ...latest, definition: { ...latest.definition, ...patch } }); }
@@ -64,7 +65,11 @@ export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onE
         <input className={field} value={definition.name ?? ""} maxLength={100} onChange={event => edit({ name: event.target.value })}/>
       </label>
       <label>{t("assetManager.propDraft.shape")}
-        <select className={field} value={definition.kind} onChange={event => edit({ kind: PROP_SHAPES[event.target.selectedIndex] })}>
+        <select className={field} value={definition.kind} onChange={event => {
+          const kind = PROP_SHAPES[event.target.selectedIndex];
+          const [width, height] = definition.size;
+          edit(kind === "prism" ? { kind, size: [width, height, width] } : { kind });
+        }}>
           {PROP_SHAPES.map(kind => <option key={kind} value={kind}>{t(`assetManager.propDraft.${kind}`)}</option>)}
         </select>
       </label>
@@ -79,17 +84,18 @@ export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onE
           {[...textures].map(([id, texture]) => <option key={id} value={id}>{texture.label}</option>)}
         </select>
       </label>
+      {definition.kind === "prism" && <PrismPropFields definition={definition} textures={textures} edit={edit} field={field}/>}
       {(["width", "height", "depth"] as const).map((axis, index) =>
         <NumberField key={axis} value={definition.size[index]} min={axis === "depth" ? .01 : .05} max={8} step={.01}
           label={t(`assetManager.propDraft.${axis}`)} onChange={value => {
-            const size: SingleTextureProp["size"] = [...definition.size];
+            const size: EditableProp["size"] = [...definition.size];
             size[index] = value;
             edit({ size });
           }}/>)}
       <p className="text-xs text-neutral-400">{t("assetManager.propDraft.footprintHint")}</p>
       <NumberField label={t("assetManager.propDraft.elevation")} value={definition.elevation ?? 0} min={0} max={8} step={.05}
         defaultValue={0} onChange={elevation => edit({ elevation })}/>
-      {definition.kind !== "billboard" && <NumberField label={t("assetManager.reliefDepth")} value={definition.relief ?? 1}
+      {definition.kind !== "billboard" && definition.kind !== "prism" && <NumberField label={t("assetManager.reliefDepth")} value={definition.relief ?? 1}
         min={0} max={3} step={.05} defaultValue={1} onChange={relief => edit({ relief })}/>}
       <label><input type="checkbox" checked={definition.wall ?? false} onChange={event => edit({ wall: event.target.checked })}/> {t("assetManager.propDraft.wall")}</label>
       <label><input type="checkbox" checked={definition.blocks ?? false} onChange={event => edit({ blocks: event.target.checked })}/> {t("assetManager.propDraft.blocks")}</label>

@@ -30,7 +30,7 @@ const map = {
 } as unknown as GameMap;
 
 // nothing loaded yet: a prop's / door's own textures are not known
-let refs = mapSharedRefs(map, { propTexture: () => undefined, doorTextures: () => [] });
+let refs = mapSharedRefs(map, { propTextures: () => [], doorTextures: () => [] });
 assert.deepEqual([...refs.textures].sort(), [tex(1), tex(2), tex(3), tex(4), tex(5), tex(6)]);
 assert.deepEqual([...refs.props], [prop]);
 assert.deepEqual([...refs.doors], [door]);
@@ -39,21 +39,21 @@ assert.deepEqual([...refs.images].sort(), [decal, pickup, still, still2].sort())
 
 // once the definitions are loaded, their textures are referenced too
 refs = mapSharedRefs(map, {
-  propTexture: (id) => (id === prop ? tex(7) : undefined),
+  propTextures: (id) => (id === prop ? [tex(7), tex(9)] : []),
   doorTextures: (id) => (id === door ? [tex(8), undefined, "wood"] : []),
 });
-assert.ok(refs.textures.has(tex(7)) && refs.textures.has(tex(8)));
+assert.ok(refs.textures.has(tex(7)) && refs.textures.has(tex(8)) && refs.textures.has(tex(9)));
 assert.ok(!refs.textures.has("wood") && !refs.textures.has("stone"), "built-in sets are not shared ids");
 
 // a map with nothing shared references nothing
 const plain = { width: 1, height: 1, props: [{ prop: "crate1", cell: { x: 0, y: 0 }, at: "center" }] } as unknown as GameMap;
-refs = mapSharedRefs(plain, { propTexture: () => undefined, doorTextures: () => [] });
+refs = mapSharedRefs(plain, { propTextures: () => [], doorTextures: () => [] });
 assert.equal(refs.textures.size + refs.images.size + refs.props.size + refs.doors.size + refs.actors.size, 0);
 
 // the map's sky: a shared sky id is an image to load (a built-in name, like "night" above, is not)
 const sky = `fantasy_sky_${u(30)}`;
 const skyMap = { width: 1, height: 1, textures: { sky } } as unknown as GameMap;
-refs = mapSharedRefs(skyMap, { propTexture: () => undefined, doorTextures: () => [] });
+refs = mapSharedRefs(skyMap, { propTextures: () => [], doorTextures: () => [] });
 assert.deepEqual([...refs.images], [sky]);
 assert.equal(refs.textures.size, 0, "a sky is not a texture set");
 assert.ok(isSharedImageId(sky) && worldOfAssetId(`scifi_sky_${u(1)}`) === "scifi");

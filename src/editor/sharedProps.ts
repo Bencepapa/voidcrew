@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { isSharedPropId, PROP_TYPES, type SingleTextureProp } from "../game/props";
+import { isSharedPropId, PROP_TYPES, type EditableProp } from "../game/props";
+import { prismInset, prismSides } from "../game/propPrism";
 import { bundledDefinitions } from "../game/sharedBuiltins";
 import { definitionIdOk } from "../game/sharedContent";
 import { assetInWorld, assetWorld, type WorldId } from "../game/worlds";
@@ -12,12 +13,12 @@ import { textureStatus } from "./textureLibrary";
 import { loadSharedTexturesById, patchSharedTexture, publishTextureRevision } from "./sharedTextures";
 import { discardDraft, draftById, draftsReady, isPropTexture, newDraft } from "./textureDrafts";
 
-export const PROP_SHAPES = ["panel", "billboard", "cross"] as const;
+export const PROP_SHAPES = ["panel", "billboard", "cross", "prism"] as const;
 
 export interface PropDraft {
   id: string;
   world: WorldId;
-  definition: SingleTextureProp;
+  definition: EditableProp;
 }
 
 const storageKey = "voidcrew:prop-drafts";
@@ -25,7 +26,7 @@ const texturePattern = /^[a-z0-9_-]+$/i;
 const bound = (value: unknown, min: number, max: number, fallback: number) =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
 
-function readDefinition(raw: Partial<SingleTextureProp> | null | undefined): SingleTextureProp | undefined {
+function readDefinition(raw: Partial<EditableProp> | null | undefined): EditableProp | undefined {
   if (!raw || !raw.kind || !PROP_SHAPES.includes(raw.kind) || !Array.isArray(raw.size) ||
       typeof raw.texture !== "string" || (raw.texture !== "" && !texturePattern.test(raw.texture))) return;
   return {
@@ -37,6 +38,11 @@ function readDefinition(raw: Partial<SingleTextureProp> | null | undefined): Sin
     relief: bound(raw.relief, 0, 3, 1),
     blocks: raw.blocks === true,
     wall: raw.wall === true,
+    ...(raw.kind === "prism" ? {
+      sides: prismSides(raw.sides),
+      inset: prismInset(raw.inset),
+      textureB: typeof raw.textureB === "string" && texturePattern.test(raw.textureB) ? raw.textureB : undefined,
+    } : {}),
   };
 }
 
@@ -58,7 +64,7 @@ let drafts = readDrafts();
 const listeners = new Set<() => void>();
 const registryListeners = new Set<(ids: ReadonlySet<string>) => void>();
 let catalogueVersion = 0;
-const installed = new Map<WorldId, Map<string, SingleTextureProp>>();
+const installed = new Map<WorldId, Map<string, EditableProp>>();
 const loads = new Map<WorldId, number>();
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
@@ -78,7 +84,7 @@ export function savePropDraft(draft: PropDraft) {
   for (const listener of listeners) listener();
 }
 
-export function createPropDraft(world: WorldId, kind: SingleTextureProp["kind"], texture = "") {
+export function createPropDraft(world: WorldId, kind: EditableProp["kind"], texture = "") {
   const draft: PropDraft = {
     id: `${world}_prop_${crypto.randomUUID()}`,
     world,
@@ -137,7 +143,7 @@ export function onSharedPropsChanged(listener: (ids: ReadonlySet<string>) => voi
   return () => { registryListeners.delete(listener); };
 }
 
-function install(world: WorldId, next: Map<string, SingleTextureProp>) {
+function install(world: WorldId, next: Map<string, EditableProp>) {
   const before = installed.get(world) ?? new Map();
   const changed = new Set<string>();
   for (const id of before.keys()) {
@@ -158,7 +164,7 @@ function install(world: WorldId, next: Map<string, SingleTextureProp>) {
 }
 
 const usable = (raw: unknown) => {
-  const definition = readDefinition(raw as Partial<SingleTextureProp>);
+  const definition = readDefinition(raw as Partial<EditableProp>);
   return definition?.name?.trim() && definition.texture ? definition : undefined;
 };
 
@@ -201,6 +207,9 @@ export async function publishProp(draft: PropDraft) {
   if (!definition?.name?.trim()) throw new Error(t("assetManager.propDraft.needName"));
   if (!sharedToken()) throw new Error(t("assetManager.err.signInFirst"));
   definition.name = definition.name.trim();
+  if (definition.kind === "prism" && definition.textureB && !propTextures(draft.world).has(definition.textureB)) {
+    throw new Error(t("assetManager.propDraft.needTextureB"));
+  }
   if (definition.texture === propTextureId(draft.id)) {
     await draftsReady;
     const texture = draftById(definition.texture);

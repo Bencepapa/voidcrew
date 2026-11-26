@@ -40,7 +40,11 @@ const byWorld = (ids: Iterable<string>) => {
 /** What the map references that is not registered yet and was not asked for before. */
 function missing(map: GameMap, extraImages: readonly string[]) {
   const refs = mapSharedRefs(map, {
-    propTexture: (id) => (PROP_TYPES[id] as { texture?: string } | undefined)?.texture,
+    propTextures: (id) => {
+      const prop = PROP_TYPES[id];
+      if (!prop || !("texture" in prop)) return [];
+      return prop.kind === "prism" ? [prop.texture, prop.textureB] : [prop.texture];
+    },
     doorTextures: (id) => { const type = doorType(id); return type ? [type.leaf, type.frame] : []; },
   });
   for (const id of extraImages) if (isSharedImageId(id)) refs.images.add(id);

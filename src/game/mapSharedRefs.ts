@@ -16,8 +16,8 @@ export interface SharedRefs {
 }
 
 export interface RefLookups {
-  /** The texture a loaded prop definition wears (undefined: not loaded / none). */
-  propTexture: (propId: string) => string | undefined;
+  /** The textures a loaded prop definition wears. */
+  propTextures: (propId: string) => readonly (string | undefined)[];
   /** The leaf and frame textures of a loaded door type. */
   doorTextures: (typeId: string) => readonly (string | undefined)[];
 }
@@ -55,7 +55,7 @@ export function mapSharedRefs(map: GameMap, lookups: RefLookups): SharedRefs {
   for (const spec of map.props ?? []) {
     if (PROP.test(spec.prop)) {
       refs.props.add(spec.prop);
-      texture(lookups.propTexture(spec.prop));
+      for (const id of lookups.propTextures(spec.prop)) texture(id);
     }
     texture(spec.texture);
     for (const loot of spec.loot ?? []) image(loot.item);

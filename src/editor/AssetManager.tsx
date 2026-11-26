@@ -52,6 +52,8 @@ import { ShopsPanel } from "./ShopsPanel";
 import { SoundAssetsPanel } from "./SoundAssetsPanel";
 import { loadSharedSounds } from "./sharedSounds";
 import { SOUND_CATEGORIES, isSoundCategory } from "../audio/sharedSamples";
+import { prismFaces, prismInset, prismSides } from "../game/propPrism";
+import { propPrismGeometry } from "../render/propPrismMesh";
 import { DoorAssemblyPreview, DoorAssetFields } from "./DoorAssetFields";
 import { createDoorDraft, getDoorDrafts, loadSharedDoors, useDoorCatalog, useDoorDrafts } from "./sharedDoorTypes";
 import { textureFolder } from "../render/textureSets";
@@ -349,7 +351,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     ]
     : [...Object.entries(PROP_TYPES).filter(([key,v])=>v.kind!=="fence" && v.kind!=="operable" && !propDrafts.some(draft=>draft.id===key)).map(([key,v])=>({key,label:v.name ?? key,img:propImage(key),groups:[v.kind==="billboard"||v.kind==="cross"?"billboard":"3D"],world:assetWorld(key)})),
       ...propDrafts.map(d=>({key:d.id,label:d.definition.name || t("assetManager.untitled"),img:catalog[d.definition.texture]?.diffuse ?? propTextures(d.world).get(d.definition.texture)?.diffuse ?? "",
-        groups:[d.definition.kind==="panel"?"3D":"billboard"],world:d.world,propDraft:d})),
+        groups:[d.definition.kind==="billboard"||d.definition.kind==="cross"?"billboard":"3D"],world:d.world,propDraft:d})),
       ...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"],world:assetWorld(d),builtinDecal:d})),
       ...imageCatalog.filter(image=>image.type==="decal" && !decalDrafts.some(d=>d.id===image.id)).map(image=>({key:"decal:"+image.id,label:image.name,img:image.url,groups:["decal"],world:image.world,image})),
       ...decalDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:["decal"],world:d.world,draft:d}))];
@@ -389,7 +391,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [propAiTexture, setPropAiTexture] = useState("");
   const [publishingProp, setPublishingProp] = useState("");
   const prop = sample==="prop" ? propDraft?.definition ?? PROP_TYPES[id] : undefined;
-  const propRenderKey = prop && JSON.stringify([prop.kind, prop.size, prop.elevation, prop.wall, prop.relief]);
+  const propRenderKey = prop && JSON.stringify([prop.kind, prop.size, prop.elevation, prop.wall, prop.relief,
+    ...(prop.kind === "prism" ? [prop.sides, prop.inset] : [])]);
+  const alternateTexture = prop?.kind === "prism" ? prop.textureB : undefined;
   const top = prop ? prop.size[1] + ("elevation" in prop ? prop.elevation ?? 0 : 0) : 0;
   const showCeiling = ceiling==="On" || (ceiling==="Auto" && top<=1);
   const shot = useRef<{position:THREE.Vector3,target:THREE.Vector3} | null>(null);
@@ -403,11 +407,12 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const primary = propDraft ? propDraft.definition.texture || id : prop ? propTexture(id) : id;
   // the selected texture (or the prop's / door's own) is shown: its Auto maps are made now (the rest of the store's are not)
   const doorLeaf = doorAsset?.definition.leaf, doorFrame = doorAsset?.definition.frame;
-  useEffect(() => { if (open) for (const tex of [id, primary, doorLeaf, doorFrame]) if (tex) wantSharedTexture(tex); }, [open, id, primary, doorLeaf, doorFrame]);
+  useEffect(() => { if (open) for (const tex of [id, primary, alternateTexture, doorLeaf, doorFrame]) if (tex) wantSharedTexture(tex); }, [open, id, primary, alternateTexture, doorLeaf, doorFrame]);
   const maskKey = (group:string, channel:Channel) => [sample,id,group,channel].join(":");
   // the files of the selected texture (they change when a draft changes a map)
   const selectedTexture = (sample === "material" || sample === "prop") ? catalog[primary] : undefined;
   const texSig = selectedTexture ? [selectedTexture.diffuse, selectedTexture.normal, selectedTexture.depth, selectedTexture.surface, selectedTexture.emissive].join("|") : "";
+  const alternateSig = alternateTexture ? JSON.stringify(catalog[alternateTexture]) : "";
   // a built-in or old shared texture can't be edited: a map imported there is a local preview, kept in IndexedDB
   const previewBlobs = useRef<PreviewMaps>({});
   const previewUrls = useRef<string[]>([]);
@@ -446,7 +451,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       }else{
         const names=prop?.kind==="views"?["front","side","top"].map(v=>prop.views+"_"+v)
           : prop?.kind==="box"?[prop.side,prop.top]
-          : prop?.kind==="cabin"?[prop.door,prop.inside,prop.views+"_side",prop.views+"_top"]:[primary];
+          : prop?.kind==="cabin"?[prop.door,prop.inside,prop.views+"_side",prop.views+"_top"]
+          : alternateTexture && alternateTexture !== primary ? [primary, alternateTexture] : [primary];
         // (a new draft without a diffuse has no files yet)
         result=sample==="material" && !catalog[id] ? {[id]:{}} : Object.fromEntries(await Promise.all(names.map(async name=>[name,await baseMaps(catalog[name] ?? textureFolder(sample==="item"?"item_"+id:name))])));
       }
@@ -456,7 +462,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     read().catch(()=>{if(active)setError(t("assetManager.readMaps"));});
     return ()=>{active=false;};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[open,id,sample,primary,prop?.kind,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,decalDraftNormal,isPickupDraft,pickupMaps,actorVersion,npcEditor,ownedTexture]);
+  },[open,id,sample,primary,prop?.kind,alternateTexture,alternateSig,decals,texSig,imageCatalog,previewUrl,selectedDecalDraft,decalDraftNormal,isPickupDraft,pickupMaps,actorVersion,npcEditor,ownedTexture]);
   async function edit(channel: Channel, file?: Blob | "") {
     const next: PreviewMaps = { ...previewBlobs.current, [channel]: file };
     if (file === undefined) delete next[channel];
@@ -788,7 +794,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       const detail=load("depth");
       const mat=keep(new THREE.MeshStandardMaterial({...params,map:diffuse,normalMap:load("normal"),emissiveMap:emission,emissive:emission?0xffffff:0,
         roughnessMap:gloss,metalnessMap:metal,metalness:metal?1:params.metalness ?? 0,wireframe:view==="wireframe"}));
-      if(detail && !["item","material"].includes(sample) && prop?.kind!=="cross" && prop?.kind!=="panel"){
+      if(detail && !["item","material"].includes(sample) && prop?.kind!=="cross" && prop?.kind!=="panel" && prop?.kind!=="prism"){
         mat.bumpMap=detail;mat.bumpScale=.035;
       }
       const inspect=view==="normals"?mat.normalMap:view==="depth"?detail:null;
@@ -910,16 +916,22 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       if(prop && "elevation" in prop)object.position.y=prop.elevation ?? 0;
       if(!prop || prop.kind!=="views"){
         // (its normal map too, where it has one - for the tuning)
-      const mat=assetMaterial(primary,{alphaTest:.4,side:THREE.DoubleSide});
+      const mat=assetMaterial(primary,{alphaTest:prop?.kind==="prism"?.5:.4,side:THREE.DoubleSide});
       apply = () => { const t = tuneRef.current, n = t?.normal ?? 1; mat.normalScale.set(n, n); mat.roughness = Math.min(1, .85 * (t?.rough ?? 1)); mat.metalness = Math.min(1, .02 * (t?.metal ?? 1)); };
         const [w,h,d]=prop?.size ?? (sample==="item"?[.24,.24,.15]:[.6,.6,.02]);
         const flat=!prop || ["panel","billboard","cross","chamfer"].includes(prop.kind);
-        const geo: THREE.BufferGeometry=flat ? keep(new THREE.PlaneGeometry(w,h)) : keep(new THREE.BoxGeometry(w,h,d));
+        const alternate = alternateTexture && groups[alternateTexture]?.diffuse ? alternateTexture : undefined;
+        const geo = keep(prop?.kind==="prism"
+          ? propPrismGeometry(prismFaces(w,d,prismSides(prop.sides),prismInset(prop.inset),!!alternate),h)
+          : flat ? new THREE.PlaneGeometry(w,h) : new THREE.BoxGeometry(w,h,d));
         const faceMat=(name:string)=>assetMaterial(name,{alphaTest:.4});
         let faces: THREE.Material | THREE.Material[]=mat;
         if(prop?.kind==="box"){const top=faceMat(prop.top);faces=[mat,mat,top,top,mat,mat];}
         if(prop?.kind==="cabin"){const side=faceMat(prop.views+"_side"),top=faceMat(prop.views+"_top");faces=[side,side,top,top,mat,faceMat(prop.inside)];}
-        const mesh=new THREE.Mesh(geo,faces); mesh.position.y=onWall && !prop?.wall ? .5 : h/2; object.add(mesh);
+        if(prop?.kind==="prism") faces=[mat,alternate && alternate!==primary ? assetMaterial(alternate,{alphaTest:.5,side:THREE.DoubleSide}) : mat];
+        const mesh=new THREE.Mesh(geo,faces);
+        mesh.position.y=(onWall && !prop?.wall ? .5 : h/2)-(prop?.kind==="prism" ? h/2 : 0);
+        object.add(mesh);
         if(prop?.kind==="pillar"){
           const height=prop.height ?? h;
           mesh.scale.set(prop.shaft/w,(height-2*prop.flare)/h,prop.shaft/d);mesh.position.y=height/2;

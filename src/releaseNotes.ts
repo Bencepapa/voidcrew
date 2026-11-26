@@ -15,14 +15,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
-    version: 3,
-    date: "2026-11-25",
+    version: 4,
+    date: "2026-11-26",
     items: [
+      { title: "Kiadási jegyzetek", text: "A menüből bármikor megnyithatod a korábbi kiadások jegyzeteit." },
+      { title: "Sokszög és csillag alakú tárgy", text: "Az Asset Managerben kipróbálható a 3–12 oldalú, csillagformára is behúzható tárgyforma két váltakozó textúrával." },
       { title: "Hangfeltöltés", text: "Az Asset Managerben hangeffektet, zenét és GUI-hangot tölthetsz fel, beállíthatod az alapértelmezett hangerőt és sebességet, és a szerkesztőben lerakás előtt is meghallgathatod." },
       { title: "Tárgyfelvétel egérrel", text: "A rejtett szerkesztői jelölők mellett is működik a földön fekvő tárgyak felvétele kattintással vagy a hátizsákra húzással." },
       { title: "Fényprobe-ok megjelenítése", text: "A Hibakeresés panelen bekapcsolhatók az előszámított fénymintákat mutató színes gömbök és az irányított fény irányjelzői." },
       { title: "Nap és égbolt fény", text: "A nap irányított árnyékot vet, az árnyékos kültéri részeket pedig állítható, szórt égboltfény deríti." },
       { title: "Pálya közzététele újabb változat fölé", text: "Ütközéskor jóváhagyhatod a saját pályád közzétételét a legfrissebb változat után, a korábbi változatok megőrzésével." },
+    ],
+  },
+  {
+    version: 3,
+    date: "2026-11-25",
+    items: [
       { title: "Fű és búza a kerítéseken", text: "A fantasy kerítésekhez közepes fű, magas fű és búza választható, áttetsző hézagokkal és folytonosan illeszkedő szélekkel." },
       { title: "Növényzet: réteges és X kerítés", text: "A Kerítések csoportban a Réteges kerítés (a szélen vagy a közepén több párhuzamos síkban) és az X kerítés (két keresztező sík a cella közepén) sűrű, minden oldalról kitöltött sövényt, magas füvet és búzát ad; a rétegek száma, távolsága és eltolása állítható, alapból járható és átlátszó." },
       { title: "Hangminták", text: "A térképre valódi hangmintákból (madarak, tűzropogás, kandalló, goblin, kalapács) hangelem rakható (hangerő, sebesség, hatótáv, az egyszeri hangoknál ismétlődés szünettel; a régi sípoló és zajos hangelemek is működnek), amely a játékban 3D-ben szól: falon át tompítva, nyíláson át az ajtó felől érkezve, simán átúszó átmenetekkel, mindkét fülbe; a hangerő és a hátsó tompítás a Debug panelben állítható, a szerkesztőben hangszóró-jel mutatja, az impulzus felfutása és lecsengése állítható, és kar, gomb vagy nyomólap ki-be kapcsolhatja." },

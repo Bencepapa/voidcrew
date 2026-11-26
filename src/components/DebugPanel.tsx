@@ -38,6 +38,7 @@ interface DebugPanelProps {
   mapId?: string;
   // opens the map editor
   onEditMap?: () => void;
+  onReleaseNotes?: () => void;
   // the deck variation being played (see variation.ts), and a new one
   seed?: number;
   onReroll?: () => void;
@@ -90,6 +91,7 @@ export function DebugPanel({
   compact,
   mapId,
   onEditMap,
+  onReleaseNotes,
   seed,
   onReroll,
   mood,
@@ -298,6 +300,7 @@ export function DebugPanel({
         <span>{t("common.language")}</span>
         <LangSwitch />
       </div>
+      {onReleaseNotes && <button type="button" className={button} onClick={onReleaseNotes}>{t("app.releaseArchive")}</button>}
       {world && !LOCKED_WORLD &&
         select(
           t("debug.world"),
