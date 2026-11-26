@@ -48,6 +48,8 @@ Mérőfeladat: "a pályaszerkesztés után újraépített propok száma (utolsó
 
 Következtetés: az új szerkezeten kb. 13%-kal kevesebb token, de a sávok átfednek (27-35 ezer vs. 22-33 ezer), így a jel gyenge; az idő nem javult, mert a változás több modulon (propScene, liveEdits, frameLoop, contracts) fut át. A szétválasztás fő haszna így a párhuzamos munka konfliktusok nélkül és a kisebb, áttekinthető fájlok, nem a tokenmegtakarítás.
 
+Ugyanez a feladat az új szerkezeten opencode ingyenes modellel (opencode/deepseek-v4.1-flash-free, 1 futás): 30 kör, 170 mp, bemenet 1 116 188 / kimenet 7 087 token, 0 USD, 7 fájl, tsc tiszta. A bemeneti szám a körönként újraküldött kontextust is tartalmazza, ezért nem vethető össze közvetlenül a Codex "tokens used" értékével (az a gyorsítótárazott bemenetet nem számolja ugyanígy).
+
 ## Szabályok a fogyasztás csökkentésére (2026-11-25-től)
 
 - Alapértelmezett ügynök-erőfokozat: **medium** (high csak indokolt, nagy és kockázatos feladatra); mechanikus munka (áthelyezés, generálás, dokumentáció): **Codex** vagy kis erőfokozat.
