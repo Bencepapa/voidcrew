@@ -1,3 +1,7 @@
+import { createPropModels } from "../render/viewport/propModels";
+import { createPropScene } from "../render/viewport/propScene";
+import { createLootChalk } from "../render/viewport/lootChalk";
+import { createTrim } from "../render/viewport/trim";
 import { createSightView } from "../render/viewport/sightView";
 import { createLiveEdits } from "../render/viewport/liveEdits";
 import { createFrameLoop } from "../render/viewport/frameLoop";
@@ -32,47 +36,24 @@ ceilingHeight,
 floorHeight,
 ladderBetween,windowPanels
 } from "../game/map";
-import { BRIDGE_THICKNESS, BRIDGE_WIDTH, MAX_STEP } from "../game/heights";
+import { MAX_STEP } from "../game/heights";
 import { rightOf } from "../game/movement";
 import { DIR_VECTOR } from "../game/movement";
-import type { DoorSpec, GameMap, PropSpec, Vec2 } from "../game/types";
-import { buildRoofGeometry } from "../render/roofMesh";
-import {
-fenceFaces,
-fenceFormOf,
-fenceIndex,
-fenceModelSpec,
-isFoliageSpec,
-type FenceModelSpec,
-} from "../game/fences";
+import type { DoorSpec, GameMap, Vec2 } from "../game/types";
 import { lampColor } from "../game/lights";
 import { WORLDS } from "../game/worlds";
-import { buildOperableModel, setOperablePose } from "../render/operableModel";
-import { operableView } from "../game/operableStore";
 import { emitterView } from "../game/emitterStore";
-import { sourceKeys } from "../game/operables";
-import {
-PROP_TYPES,
-propPlacement,
-propHeight,
-propReliefAmount,
-propReliefCells,
-} from "../game/props";
 import { onSharedActorsChanged } from "../editor/sharedActors";
-import { onTextureTuningSaved, textureTuning } from "../render/textureTuning";
+import { onTextureTuningSaved } from "../render/textureTuning";
 import { changedCells } from "../render/editPreview";
 import { gameClock } from "../game/clock";
-import type { PropFace, PropPart, PropType, PropView } from "../game/props";
-import { WALL_ROTATION, surfaceKey } from "../render/surfaces";
+import { surfaceKey } from "../render/surfaces";
 import { DecalLibrary, fetchDecalManifest } from "../render/decals";
 import { renderText, seededRandom } from "../render/pixelFont";
 import { TEXTURE_SETS, isTextureSetId, textureFolder } from "../render/textureSets";
 import { onSharedTexturesChanged } from "../render/sharedTextureEvents";
 import { mapUsesTexture, wantSharedUrl } from "../editor/textureLibrary";
 import { onSharedPropsChanged } from "../editor/sharedProps";
-import { prismFaces, prismInset, prismSides } from "../game/propPrism";
-import { propPrismGeometry } from "../render/propPrismMesh";
-import { isSharedTextureId } from "../game/mapSharedRefs";
 import { doorType, onSharedDoorsChanged } from "../editor/sharedDoorTypes";
 import {
 onSharedDecalsChanged,
@@ -89,30 +70,19 @@ import type { ViewportSettings } from "../render/viewport/settings";
 import {
 LIGHT_PANEL_INTENSITY,
 DEFAULT_FLOOR,
-createBandPlane,
 type WallKit,
 kitMaterials,FLOOR_BASE_DEPTH
 } from "../render/viewport/walls";
 import {
 TEXTURE_CHANGED_EVENT,
-EDIT_SETTLE_MS,WINDOW_SET,PROP_COARSE,
+EDIT_SETTLE_MS,WINDOW_SET,
 SURFACE_GLOW,
 DOOR_PANEL_SETS,
 DOOR_LABEL_AREA,
 DOOR_LABEL_MAX_SCALE,
 DOOR_NUMBER_GAP,
 LABEL_PAINT,
-LABEL_PAINT_DARK,TRIM_PAINT_URL,
-TRIM_HAZARD_URL,
-TRIM_TEXELS,
-LADDER_HALF_WIDTH,
-LADDER_RAIL,
-LADDER_RUNG,
-LADDER_STANDOFF,
-LADDER_HANDHOLD,
-LADDER_NECK,
-BRIDGE_KICK,
-BRIDGE_STRINGER
+LABEL_PAINT_DARK
 } from "../render/viewport/constants";
 import { type SceneCache, clearSceneCache } from "../render/viewport/sceneCache";
 import { fogRange } from "../render/viewport/fog";
@@ -125,16 +95,11 @@ import { addDirectLightOcclusion } from "../render/viewport/materials";
 import { createPostPipeline } from "../render/viewport/postPipeline";
 import { createBakeRuntime } from "../render/viewport/bakeRuntime";
 import { createSkySurface } from "../render/viewport/skySurface";
-import {
-RUNG_SPACING
-} from "../render/viewport/poses";
-import { drawChalkCross } from "../render/viewport/markers";
 import { createSmokeFire } from "../render/viewport/smokeFire";
 import { createItemsLoot } from "../render/viewport/itemsLoot";
 import { createEditorMarkers } from "../render/viewport/editorMarkers";
 import { createEventMarkers } from "../render/viewport/eventMarkers";
 import { createFenceMarkers } from "../render/viewport/fenceMarkers";
-import { buildFoliage } from "../render/viewport/foliageMesh";
 import { turnClockwise } from "../render/viewport/pixels";
 import type {
 ReliefStats,
@@ -150,7 +115,6 @@ import { createStructuralWalls } from "../render/viewport/structuralWalls";
 import { createStructuralTiles } from "../render/viewport/structuralTiles";
 import { createStructuralDoors, type DoorCell } from "../render/viewport/structuralDoors";
 import { createStructuralProps } from "../render/viewport/structuralProps";
-import { retextured } from "../render/viewport/propRetexture";
 import { LoadingScreen } from "../render/viewport/LoadingScreen";
 
 export type { TextureSetId, WallProfileId, GeometryViewId, ViewportSettings } from "../render/viewport/settings";
@@ -965,20 +929,6 @@ export function GameViewport({
     for (const id of Object.keys(ITEM_TYPES)) {
       if (!doorPreview && !isSharedPickupId(id)) sharedPropKitFor(`item_${id}`);
     }
-    // a prop type's texture sets: a box's side and top, its views, or a
-    // cutout's one
-    const propSets = (type: PropType): string[] =>
-      type.kind === "box"
-        ? [type.side, type.top]
-        : type.kind === "views"
-          ? ["front", "side", "top"].map((v) => `${type.views}_${v}`)
-          : type.kind === "cabin"
-            ? [type.door, type.inside, `${type.views}_side`, `${type.views}_top`]
-            : type.kind === "pillar"
-              ? [type.texture ?? primarySet]
-              : type.kind === "chamfer" || type.kind === "roof" || type.kind === "fence" || type.kind === "operable"
-                ? []
-                : [type.texture];
     // door panel kits by door kind, created on demand
     // a deck's own door panels and label paint, else the defaults
     const panelSetFor = (kind: DoorSpec["kind"]): TextureSetId => {
@@ -1255,648 +1205,19 @@ export function GameViewport({
     // ---- fences and blocks (see game/fences.ts) ----
     // Their floor marks while editing: a hatched square for a block, strips for the fences (amber, cyan, green)
     const fences = createFenceMarkers({ geometries, reliefDepth, editModeRef });
-    // A fence or block piece's model: its faces - upright relief cutouts, as the panels' (front and mirrored
-    // back, so it looks the same from both sides; a block's outer sides only), and flat caps - laid out round
-    // the middle of its cell, in its texture sets (unset or not known: the deck's walls), and the floor mark
-    async function buildFence(spec: FenceModelSpec): Promise<THREE.Group | null> {
-      const template = new THREE.Group();
-      const setOf = (id: string | undefined) => (isTextureSetId(id) ? id : primarySet);
-      const sets = { main: setOf(spec.texture), top: setOf(spec.top ?? spec.texture), deco: setOf(spec.post?.texture ?? spec.texture) };
-      const kitOf = (id: string) => {
-        const kit = sharedPropKitFor(id);
-        kit.normal = undefined;
-        const normal = settingsRef.current.normalStrength;
-        kit.wallMat.normalScale.set(normal, normal);
-        return kit;
-      };
-      const relief = propReliefAmount(propReliefDepth, PROP_TYPES.fence_edge, hybrid);
-      // foliage (layers, an X): the planes' panels merged into one model (see render/viewport/foliageMesh.ts)
-      if (isFoliageSpec(spec)) {
-        const foliage = await buildFoliage(
-          { wallHeight, relief, coarse: PROP_COARSE, panel: buildPropRelief, far: farReliefLevels, geometries },
-          kitOf(sets.main),
-          spec,
-        );
-        if (!foliage) return null;
-        template.add(foliage);
-        template.add(fences.buildFenceMarker(spec));
-        return template;
-      }
-      for (const f of fenceFaces(spec)) {
-        const kit = kitOf(sets[f.tex]);
-        if (f.kind === "cap") {
-          const geo = new THREE.PlaneGeometry(f.sx, f.sz);
-          geometries.push(geo);
-          const cap = new THREE.Mesh(geo, roundMaterial(kit));
-          cap.rotation.x = -Math.PI / 2;
-          cap.position.set(f.x, f.y * wallHeight + 0.002, f.z);
-          template.add(cap);
-          continue;
-        }
-        const whole = f.u0 <= 1e-6 && f.u1 >= 1 - 1e-6;
-        const panel = await buildPropRelief(kit, {
-          width: f.length,
-          height: (f.y1 - f.y0) * wallHeight,
-          flushEdges: false,
-          depth: relief,
-          coarse: PROP_COARSE,
-          ...(whole ? {} : { cols: [f.u0, f.u1] as [number, number] }),
-        });
-        if (!panel) return null;
-        const mesh = new THREE.Mesh(panel.geometry, [kit.wallMat, kit.sideMat]);
-        mesh.position.set(f.x, ((f.y0 + f.y1) / 2) * wallHeight, f.z);
-        mesh.rotation.y = f.yaw;
-        if (f.mirror) mesh.scale.x = -1;
-        template.add(mesh);
-      }
-      template.add(fences.buildFenceMarker(spec));
-      return template;
-    }
-
-    // the billboard props (trees): turned to face the camera every frame
-    const billboardProps: THREE.Object3D[] = [];
-    const billboardMaterials: THREE.MeshStandardMaterial[] = [];
-    async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
-      const [length, height, depth] = type.size;
-      // (its texture sets take its own normal strength)
-      const propKitFor = (setId: string) => {
-        const kit = sharedPropKitFor(setId);
-        kit.normal = type.normal;
-        const normal = settingsRef.current.normalStrength * (kit.normal ?? 1);
-        kit.wallMat.normalScale.set(normal, normal);
-        return kit;
-      };
-      const relief = propReliefAmount(propReliefDepth, type, hybrid);
-      const template = new THREE.Group();
-      // a lever, button, plate or trap: plain boxes (see render/operableModel.ts)
-      if (type.kind === "operable") {
-        const built = buildOperableModel(type.model, type.size, type.elevation ?? 0, wallHeight, (mat) => {
-          useLightGrid(mat, lightGrid);
-          ownMaterials.push(mat);
-        });
-        geometries.push(...built.geometries);
-        return built.group;
-      }
-      const face = (
-        geo: THREE.BufferGeometry,
-        kit: WallKit,
-        pos: [number, number, number],
-        rot: [number, number],
-        mirror = false,
-      ) => {
-        const mesh = new THREE.Mesh(geo, [kit.wallMat, kit.sideMat]);
-        mesh.position.set(...pos);
-        mesh.rotation.set(rot[0], rot[1], 0);
-        if (mirror) mesh.scale.x = -1;
-        template.add(mesh);
-      };
-
-      if (type.kind === "box") {
-        const sideKit = propKitFor(type.side);
-        const topKit = propKitFor(type.top);
-        const h = height * wallHeight;
-        const side = await buildPropRelief(sideKit, { width: length, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE });
-        const top = await buildPropRelief(topKit, { width: length, height: depth, flushEdges: false, depth: relief, coarse: PROP_COARSE });
-        if (!side || !top) return null;
-        for (let i = 0; i < 4; i++) {
-          const a = (i * Math.PI) / 2;
-          face(side.geometry, sideKit, [(Math.sin(a) * length) / 2, h / 2, (Math.cos(a) * depth) / 2], [0, a]);
-        }
-        face(top.geometry, topKit, [0, h, 0], [-Math.PI / 2, 0]);
-        return template;
-      }
-
-      if (type.kind === "billboard") {
-        // one flat sprite, turned to the viewer every frame (see billboardProps)
-        const paths = isTextureSetId(type.texture) ? TEXTURE_SETS[type.texture] : textureFolder(type.texture);
-        const diffuse = kitTexture(busted(paths.diffuse));
-        const normalMap = kitTexture(busted(paths.normal));
-        diffuse.colorSpace = THREE.SRGBColorSpace;
-        for (const tex of [diffuse, normalMap]) tex.magFilter = THREE.NearestFilter;
-        const tune = textureTuning(type.texture);
-        const mat = new THREE.MeshStandardMaterial({
-          map: diffuse,
-          normalMap,
-          alphaTest: 0.5,
-          roughness: Math.min(1, 0.85 * (tune?.rough ?? 1)),
-          metalness: Math.min(1, 0.02 * (tune?.metal ?? 1)),
-          side: THREE.DoubleSide,
-        });
-        const normal = settingsRef.current.normalStrength * (type.normal ?? 1) * (tune?.normal ?? 1);
-        mat.normalScale.set(normal, normal);
-        markSprite(mat, normal, normalMap);
-        useLightGrid(mat, lightGrid);
-        billboardMaterials.push(mat);
-        const h = height * wallHeight;
-        const geo = new THREE.PlaneGeometry(length, h);
-        geometries.push(geo);
-        const sprite = new THREE.Mesh(geo, mat);
-        sprite.position.y = h / 2 + (type.elevation ?? 0) * wallHeight;
-        template.add(sprite);
-        return template;
-      }
-
-      if (type.kind === "prism") {
-        const alternate = type.textureB && (!isSharedTextureId(type.textureB) || isTextureSetId(type.textureB)) ? type.textureB : undefined;
-        const material = (id: string) => {
-          const key = `prism:${id}`;
-          let kit = propKits.get(key);
-          if (!kit) {
-            kit = createWallKit(id, false, false);
-            kit.wallMat.alphaTest = 0.5;
-            kit.wallMat.side = THREE.DoubleSide;
-            useLightGrid(kit.wallMat, lightGrid);
-            propKits.set(key, kit);
-          }
-          return kit.wallMat;
-        };
-        const geometry = propPrismGeometry(prismFaces(length, depth, prismSides(type.sides), prismInset(type.inset), !!alternate), height * wallHeight);
-        geometries.push(geometry);
-        const mesh = new THREE.Mesh(geometry, [material(type.texture), material(alternate ?? type.texture)]);
-        mesh.position.y = (type.elevation ?? 0) * wallHeight;
-        template.add(mesh);
-        return template;
-      }
-
-      if (type.kind === "panel" || type.kind === "cross") {
-        // front and back (the back mirrored), crossed for a cross
-        const kit = propKitFor(type.texture);
-        const h = height * wallHeight;
-        const panel = await buildPropRelief(kit, {
-          width: length, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE,
-          outwardRelief: type.kind === "cross",
-        }, propReliefCells(type));
-        if (!panel) return null;
-        const y = (type.elevation ?? 0) * wallHeight + h / 2;
-        for (const turn of type.kind === "cross" ? [0, Math.PI / 2] : [0]) {
-          face(panel.geometry, kit, [0, y, 0], [0, turn]);
-          face(panel.geometry, kit, [0, y, 0], [0, turn + Math.PI], true);
-        }
-        return template;
-      }
-
-      if (type.kind === "cabin") {
-        const [door, inside, side, top] = propSets(type).map((id) => propKitFor(id));
-        const h = height * wallHeight;
-        const panel = (kit: WallKit, w: number, ph: number) =>
-          buildPropRelief(kit, { width: w, height: ph, flushEdges: false, depth: relief, coarse: PROP_COARSE });
-        const d = await panel(door, length, h);
-        const b = await panel(inside, length, h);
-        const s = await panel(side, depth, h);
-        const t = await panel(top, length, depth);
-        if (!d || !b || !s || !t) return null;
-        const inset = 0.006;
-        // the door (and its inside), the back wall's inside
-        face(d.geometry, door, [0, h / 2, depth / 2], [0, 0]);
-        face(d.geometry, door, [0, h / 2, depth / 2], [0, Math.PI], true);
-        face(b.geometry, inside, [0, h / 2, -depth / 2 + inset], [0, 0]);
-        // the sides, outside and in; the roof, outside and in
-        face(s.geometry, side, [length / 2, h / 2, 0], [0, Math.PI / 2]);
-        face(s.geometry, side, [-length / 2, h / 2, 0], [0, -Math.PI / 2], true);
-        face(s.geometry, side, [length / 2 - inset, h / 2, 0], [0, -Math.PI / 2], true);
-        face(s.geometry, side, [-length / 2 + inset, h / 2, 0], [0, Math.PI / 2]);
-        face(t.geometry, top, [0, h, 0], [-Math.PI / 2, 0]);
-        face(t.geometry, top, [0, h - inset, 0], [Math.PI / 2, 0]);
-        // a pane of glass just behind the door's frame
-        const glassGeo = new THREE.PlaneGeometry(length, h);
-        geometries.push(glassGeo);
-        const glass = new THREE.Mesh(glassGeo, cabinGlass);
-        glass.position.set(0, h / 2, depth / 2 - 0.012);
-        template.add(glass);
-        return template;
-      }
-
-      if (type.kind === "roof") {
-        // Flat triangles at 45 degrees (and flat stretches) in the wall set's
-        // diffuse and normal maps, repeating along the slope - no relief
-        // geometry (see roofKitFor and roofMesh.ts); the thick edge and the
-        // underside have the plain texture
-        const kit = roofKitFor(type.texture ?? primarySet);
-        kit.normal = type.normal;
-        const normal = settingsRef.current.normalStrength * (kit.normal ?? 1);
-        kit.wallMat.normalScale.set(normal, normal);
-        const { top, under } = buildRoofGeometry(type.profile, type.corner, type.eaves);
-        geometries.push(top, under);
-        template.add(new THREE.Mesh(top, kit.wallMat), new THREE.Mesh(under, kit.sideMat));
-        return template;
-      }
-      if (type.kind === "pillar" || type.kind === "chamfer" || type.kind === "fence") return null;
-      const [front, side, top] = propSets(type).map((id) => propKitFor(id));
-      // What each view covers (see PropType's px): at one pixel scale -
-      // the front view's across the prop's length - standing on the floor,
-      // centered, or for a wall prop starting at the wall (-z); without px,
-      // the prop's own extent
-      const px = type.kind === "views" ? type.px : undefined;
-      const scale = px ? length / px.front[0] : 0;
-      const frontY = px ? px.front[1] * scale : height;
-      const sideY = px ? px.side[1] * scale : height;
-      const sideZ = px ? px.side[0] * scale : depth;
-      const topX = px ? px.top[0] * scale : length;
-      const topZ = px ? px.top[1] * scale : depth;
-      const zFrom = (extent: number) => (type.wall ? -depth / 2 : -extent / 2);
-      const clampRange = ([a, b]: [number, number]): [number, number] => {
-        const lo = Math.min(1, Math.max(0, a));
-        return [lo, Math.max(lo + 1e-3, Math.min(1, b))];
-      };
-      // the whole views first: their builds give the kits their AO maps
-      for (const [kit, w, h] of [
-        [front, length, frontY * wallHeight],
-        [side, sideZ, sideY * wallHeight],
-        [top, topX, topZ],
-      ] as const) {
-        if (!(await buildPropRelief(kit, { width: w, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE }))) return null;
-      }
-      const cut = (kit: WallKit, w: number, h: number, cols: [number, number], rows: [number, number]) =>
-        buildPropRelief(kit, {
-          width: w,
-          height: h,
-          flushEdges: false,
-          depth: relief,
-          coarse: PROP_COARSE,
-          cols: clampRange(cols),
-          rows: clampRange(rows),
-        });
-      const lift = (type.kind === "views" ? (type.elevation ?? 0) : 0) * wallHeight;
-      const sideZ0 = zFrom(sideZ);
-      const topZ0 = zFrom(topZ);
-      // where a point shows in each view (image 0..1, rows down) - for a
-      // part whose views show it elsewhere (PropPart.src), the part's box
-      // stretched onto that place
-      const views = {
-        front: (x: number, y: number): [number, number] => [(x + length / 2) / length, (frontY - y) / frontY],
-        // (the side view runs from the front (+z) on its left to the back)
-        side: (z: number, y: number): [number, number] => [(sideZ0 + sideZ - z) / sideZ, (sideY - y) / sideY],
-        top: (x: number, z: number): [number, number] => [(x + topX / 2) / topX, (z - topZ0) / topZ],
-      };
-      for (const part of type.parts) {
-        const { min, max } = part;
-        const [x0, y0, z0] = min;
-        const [x1, y1, z1] = max;
-        const off = new Set(part.off ?? []);
-        // a coordinate of the part on `axis`, moved onto its place in a view
-        const inView = (view: PropView, axis: 0 | 1 | 2, v: number) => {
-          const src = part.src?.[view];
-          if (!src || max[axis] === min[axis]) return v;
-          return src.min[axis] + ((v - min[axis]) / (max[axis] - min[axis])) * (src.max[axis] - src.min[axis]);
-        };
-        if (part.shape === "cylinder") {
-          addCylinder(part, off, inView);
-          continue;
-        }
-        const cx = (x0 + x1) / 2;
-        const cy = ((y0 + y1) / 2) * wallHeight + lift;
-        const cz = (z0 + z1) / 2;
-        const h = (y1 - y0) * wallHeight;
-        const span = (a: [number, number], b: [number, number]): [[number, number], [number, number]] => [
-          [Math.min(a[0], b[0]), Math.max(a[0], b[0])],
-          [Math.min(a[1], b[1]), Math.max(a[1], b[1])],
-        ];
-        const [alongX, frontRows] = span(
-          views.front(inView("front", 0, x0), inView("front", 1, y0)),
-          views.front(inView("front", 0, x1), inView("front", 1, y1)),
-        );
-        const [alongZ, sideRows] = span(
-          views.side(inView("side", 2, z0), inView("side", 1, y0)),
-          views.side(inView("side", 2, z1), inView("side", 1, y1)),
-        );
-        const [topCols, topRows] = span(
-          views.top(inView("top", 0, x0), inView("top", 2, z0)),
-          views.top(inView("top", 0, x1), inView("top", 2, z1)),
-        );
-        const f = off.has("front") && off.has("back") ? null : await cut(front, x1 - x0, h, alongX, frontRows);
-        const s = off.has("right") && off.has("left") ? null : await cut(side, z1 - z0, h, alongZ, sideRows);
-        const t = off.has("top") ? null : await cut(top, x1 - x0, z1 - z0, topCols, topRows);
-        // the back and the -x end show their views mirrored
-        if (f && !off.has("front")) face(f.geometry, front, [cx, cy, z1], [0, 0]);
-        if (f && !off.has("back")) face(f.geometry, front, [cx, cy, z0], [0, Math.PI], true);
-        if (s && !off.has("right")) face(s.geometry, side, [x1, cy, cz], [0, Math.PI / 2]);
-        if (s && !off.has("left")) face(s.geometry, side, [x0, cy, cz], [0, -Math.PI / 2], true);
-        if (!t) continue;
-        // a top hidden under a part above it would show that part's top
-        // view (a table's foot wearing its top's wood): left out
-        const covered = type.parts.some(
-          (o) => o.min[1] >= y1 && o.min[0] <= x0 && o.max[0] >= x1 && o.min[2] <= z0 && o.max[2] >= z1,
-        );
-        if (!covered) face(t.geometry, top, [cx, y1 * wallHeight + lift, cz], [-Math.PI / 2, 0]);
-      }
-      return template;
-
-      // A round part: an upright cylinder (elliptic, filling its box) with
-      // no relief, its side's every strip textured from the view that looks
-      // at it - the front view on its front and back quarters, the side view
-      // on its ends - and its top from the top view, all projected straight
-      // through as the views were drawn
-      function addCylinder(part: PropPart, off: Set<PropFace>, inView: (view: PropView, axis: 0 | 1 | 2, v: number) => number) {
-        const [x0, y0, z0] = part.min;
-        const [x1, y1, z1] = part.max;
-        const cx = (x0 + x1) / 2;
-        const cz = (z0 + z1) / 2;
-        const rx = (x1 - x0) / 2;
-        const rz = (z1 - z0) / 2;
-        const ya = y0 * wallHeight + lift;
-        const yb = y1 * wallHeight + lift;
-        const uv = ([u, v]: [number, number]): [number, number] => [Math.min(1, Math.max(0, u)), 1 - Math.min(1, Math.max(0, v))];
-        const frontUV = (x: number, y: number) => uv(views.front(inView("front", 0, x), inView("front", 1, y)));
-        const sideUV = (z: number, y: number) => uv(views.side(inView("side", 2, z), inView("side", 1, y)));
-        const topUV = (x: number, z: number) => uv(views.top(inView("top", 0, x), inView("top", 2, z)));
-        const strips = { front: { pos: [] as number[], uv: [] as number[] }, side: { pos: [] as number[], uv: [] as number[] } };
-        const at = (a: number): [number, number] => [cx + rx * Math.sin(a), cz + rz * Math.cos(a)];
-        for (let k = 0; k < CYLINDER_SEGMENTS; k++) {
-          const a0 = (k / CYLINDER_SEGMENTS) * Math.PI * 2;
-          const a1 = ((k + 1) / CYLINDER_SEGMENTS) * Math.PI * 2;
-          const mid = (a0 + a1) / 2;
-          // (which quarter it faces: +z front, -z back, +x right, -x left)
-          const facing: PropFace = Math.abs(Math.cos(mid)) >= Math.abs(Math.sin(mid)) ? (Math.cos(mid) > 0 ? "front" : "back") : Math.sin(mid) > 0 ? "right" : "left";
-          if (off.has(facing)) continue;
-          const ends = facing === "right" || facing === "left";
-          const strip = ends ? strips.side : strips.front;
-          const [p0x, p0z] = at(a0);
-          const [p1x, p1z] = at(a1);
-          const tex = (x: number, z: number, y: number) => (ends ? sideUV(z, y / wallHeight) : frontUV(x, y / wallHeight));
-          const corners: [number, number, number][] = [
-            [p0x, ya - lift, p0z],
-            [p1x, ya - lift, p1z],
-            [p1x, yb - lift, p1z],
-            [p0x, yb - lift, p0z],
-          ];
-          // (two triangles, counter-clockwise seen from outside)
-          for (const i of [0, 1, 2, 0, 2, 3]) {
-            const [x, y, z] = corners[i];
-            strip.pos.push(x, y + lift, z);
-            strip.uv.push(...tex(x, z, y));
-          }
-        }
-        const mesh = (pos: number[], uvs: number[], kit: WallKit) => {
-          if (!pos.length) return;
-          const geo = new THREE.BufferGeometry();
-          geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-          geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-          geo.computeVertexNormals();
-          geometries.push(geo);
-          template.add(new THREE.Mesh(geo, roundMaterial(kit)));
-        };
-        mesh(strips.front.pos, strips.front.uv, front);
-        mesh(strips.side.pos, strips.side.uv, side);
-        // the top: a fan round its middle (unless a part above covers it)
-        const covered = type.kind === "views" && type.parts.some(
-          (o) => o !== part && o.min[1] >= y1 && o.min[0] <= x0 && o.max[0] >= x1 && o.min[2] <= z0 && o.max[2] >= z1,
-        );
-        if (off.has("top") || covered) return;
-        const pos: number[] = [];
-        const uvs: number[] = [];
-        for (let k = 0; k < CYLINDER_SEGMENTS; k++) {
-          const [p0x, p0z] = at((k / CYLINDER_SEGMENTS) * Math.PI * 2);
-          const [p1x, p1z] = at(((k + 1) / CYLINDER_SEGMENTS) * Math.PI * 2);
-          for (const [x, z] of [
-            [cx, cz],
-            [p0x, p0z],
-            [p1x, p1z],
-          ] as const) {
-            pos.push(x, yb, z);
-            uvs.push(...topUV(x, z));
-          }
-        }
-        mesh(pos, uvs, top);
-      }
-    }
-    // a round part's sides: no relief, so the view's see-through pixels cut
-    // it out here, and it's seen from inside too (through those)
-    const CYLINDER_SEGMENTS = 24;
-    const roundMaterials = new Map<WallKit, THREE.MeshStandardMaterial>();
-    function roundMaterial(kit: WallKit): THREE.MeshStandardMaterial {
-      let mat = roundMaterials.get(kit);
-      if (!mat) {
-        mat = new THREE.MeshStandardMaterial({
-          map: kit.wallMat.map,
-          normalMap: kit.wallMat.normalMap,
-          alphaTest: 0.5,
-          side: THREE.DoubleSide,
-          roughness: settingsRef.current.roughness,
-          metalness: settingsRef.current.metalness,
-        });
-        mat.userData.normal = kit.normal;
-        mat.userData.tuneId = kit.id;
-        const normal = settingsRef.current.normalStrength * (kit.normal ?? 1);
-        mat.normalScale.set(normal, normal);
-        addDirectLightOcclusion(mat, cavity);
-        useLightGrid(mat, lightGrid);
-        ownMaterials.push(mat);
-        roundMaterials.set(kit, mat);
-      }
-      return mat;
-    }
-
     // the doors, by door cell key (the editor's selection)
     const doorGroups = new Map<string, THREE.Object3D>();
-    // the props placed, by index in the map's props (the editor's selection)
-    const propObjects = new Map<number, THREE.Object3D>();
-    const markedProps = new Set<number>();
-    // (built again, in place, when the props change - see applyProps)
-    let propsVersion = 0;
-    // The models, built once per deck and cloned for each prop: a type in a
-    // texture, and a pillar or a chamfer per height and texture set too (see
-    // propBuildKey). A prop dragged in the editor gets its model from here at
-    // once instead of waiting for a new build at every step.
-    const propModels = new Map<string, Promise<THREE.Group | null>>();
-    // what a prop's model depends on: its type and texture, and for a pillar or
-    // a chamfer its height and the wall texture around it
-    function propBuildKey(m: GameMap, spec: PropSpec, index: number): string {
-      // a fence or block piece: its settings and what its neighbours make of it (see fenceModelSpec) - a
-      // neighbour changing changes this piece's key
-      if (fenceFormOf(spec.prop)) {
-        const fences = fenceIndex(m.props);
-        const piece = fences.byIndex.get(index);
-        return piece ? `fence|${JSON.stringify(fenceModelSpec(fences, piece))}` : `${spec.prop}|`;
-      }
-      const texture = spec.texture ?? "";
-      const type = retextured(PROP_TYPES[spec.prop], texture || undefined, isTextureSetId);
-      if (type.kind !== "pillar" && type.kind !== "chamfer") return `${spec.prop}|${texture}`;
-      const h = propHeight(m, spec) * wallHeight;
-      // its own texture, else the wall texture painted in its cell or beside it, else the deck's
-      const near = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]
-        .map(([dx, dy]) => m.wallTextureAt?.(spec.cell.x + dx, spec.cell.y + dy))
-        .find((id) => isTextureSetId(id));
-      const own = texture || near;
-      const setId = isTextureSetId(own) ? own : primarySet;
-      return `${spec.prop}|${texture}|${h}|${setId}`;
-    }
-    function propModel(key: string): Promise<THREE.Group | null> {
-      let made = propModels.get(key);
-      if (made) return made;
-      if (key.startsWith("fence|")) {
-        const fenceMade = buildFence(JSON.parse(key.slice(6)) as FenceModelSpec).then(async (g) => {
-          if (g) await addPropLods(g);
-          return g;
-        });
-        propModels.set(key, fenceMade);
-        return fenceMade;
-      }
-      const [name, texture, h, setId] = key.split("|");
-      const type = retextured(PROP_TYPES[name], texture || undefined, isTextureSetId);
-      const build =
-        type.kind === "pillar"
-          ? buildPillar(type, Number(h), setId)
-          : type.kind === "chamfer"
-            ? buildChamfer(type, wallKitFor(setId as TextureSetId), Number(h))
-            : buildPropTemplate(type);
-      made = build.then(async (g) => {
-        if (g) await addPropLods(g);
-        return g;
-      });
-      propModels.set(key, made);
-      return made;
-    }
-    // a prop's object where its spec puts it
-    function placeProp(obj: THREE.Object3D, spec: PropSpec) {
-      const type = PROP_TYPES[spec.prop];
-      const { x, z, yaw } = propPlacement(spec);
-      obj.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
-      obj.rotation.y = -yaw;
-      // (bigger or smaller: a pillar only wider - it still fills its room)
-      // (a fence or block piece is the size its settings say: its bodies don't scale)
-      const scale = type.kind === "fence" ? 1 : spec.scale ?? 1;
-      obj.scale.set(scale, type.kind === "pillar" ? 1 : scale, scale);
-    }
-    // the props as last applied (a build finishing late places its prop where
-    // the prop is by then, not where it was when the build began)
-    let propSpecs: PropSpec[] = map.props ?? [];
-    let propsMap = map;
-    // One prop's object, built (or cloned from the model) and put in the scene
-    // in place of the one it had, if any - which stays until then, so a prop
-    // being rebuilt (a pillar dragged into a taller room) never blinks out.
-    function buildProp(m: GameMap, index: number) {
-      const spec = m.props?.[index];
-      const definition = spec && PROP_TYPES[spec.prop];
-      if (!spec || !definition) return;
-      const texture = spec.texture ?? ("texture" in definition ? definition.texture : undefined);
-      if (texture && /^(scifi|fantasy)_shared_/.test(texture) && !isTextureSetId(texture)) return;
-      // (a fence's top and decoration textures too)
-      if (definition.kind === "fence" && [spec.fence?.top, spec.fence?.deco?.texture].some((id) => id && /^(scifi|fantasy)_shared_/.test(id) && !isTextureSetId(id))) return;
-      const version = propsVersion;
-      const key = propBuildKey(m, spec, index);
-      track(async () => {
-        const made = await propModel(key);
-        if (!made || version !== propsVersion) return;
-        const now = propSpecs[index];
-        // (changed again meanwhile into something else: that build places it)
-        if (!now || !PROP_TYPES[now.prop] || propBuildKey(propsMap, now, index) !== key) return;
-        const prop = made.clone();
-        placeProp(prop, now);
-        prop.userData.prop = true;
-        // the editor picks it by this (its index in the map's props)
-        prop.userData.propIndex = index;
-        prop.userData.propType = now.prop;
-        prop.userData.propKey = key;
-        const old = propObjects.get(index);
-        if (old) {
-          group.remove(old);
-          const at = billboardProps.indexOf(old);
-          if (at >= 0) billboardProps.splice(at, 1);
-          markedProps.delete(index);
-          // (a hidden layer stays hidden)
-          prop.visible = old.visible;
-        }
-        if (PROP_TYPES[now.prop].kind === "billboard") billboardProps.push(prop);
-        propObjects.set(index, prop);
-        group.add(prop);
-        if (PROP_TYPES[now.prop].kind === "operable") syncOperables(false);
-        // (a fence's floor mark: shown while editing)
-        fences.syncFenceMarker(index, prop);
-        refreshPropWires();
-      }).catch((err) => console.error("Prop build failed:", err));
-    }
-    function buildProps(m: GameMap) {
-      propSpecs = m.props ?? [];
-      propsMap = m;
-      for (let index = 0; index < propSpecs.length; index++) buildProp(m, index);
-    }
-    buildProps(map);
-    // The operable props' poses follow the game's state (see operableStore.ts): a lever down, a button sunk, a plate pressed
-    function syncOperables(animate: boolean) {
-      const view = operableView.get();
-      const keys = sourceKeys(propsMap).props;
-      for (const [index, obj] of propObjects) {
-        if (PROP_TYPES[propSpecs[index]?.prop]?.kind !== "operable") continue;
-        const key = keys.get(index);
-        setOperablePose(obj, !!key && view.mapId === propsMap.id && !!view.on[key], animate);
-      }
-    }
-    const offOperables = operableView.subscribe(() => syncOperables(true));
-    // the props gone from the scene (before they're built anew)
-    function clearProps() {
-      propsVersion++;
-      for (const obj of propObjects.values()) group.remove(obj);
-      propObjects.clear();
-      fences.clear();
-      billboardProps.length = 0;
-      markedProps.clear();
-    }
-    // The map's props changed (the editor): a prop that's still the same model
-    // (moved, turned, raised, scaled - into another cell too) is just set
-    // again where it is now; one whose model changed (another type, texture,
-    // or a pillar in a room of another height) is built anew in its place; an
-    // added one is built. Only when props were taken out (the indices shift)
-    // are they all built afresh (the models are cached, so it's quick).
-    function applyProps(next: GameMap, prev: GameMap) {
-      const a = next.props ?? [];
-      const b = prev.props ?? [];
-      if (a.length < b.length || a.some((spec, index) => !PROP_TYPES[spec.prop] && propObjects.has(index))) {
-        clearProps();
-        buildProps(next);
-        return;
-      }
-      propSpecs = a;
-      propsMap = next;
-      a.forEach((spec, i) => {
-        if (!PROP_TYPES[spec.prop]) return;
-        // (a fence or block piece is looked at in any case: a neighbour changing changes its model)
-        if (i < b.length && JSON.stringify(spec) === JSON.stringify(b[i]) && !fenceFormOf(spec.prop)) return;
-        const obj = propObjects.get(i);
-        const key = propBuildKey(next, spec, i);
-        // (meanwhile the old one - or, still building, the new one once it's
-        // there - stands where the prop is now)
-        if (obj) placeProp(obj, spec);
-        if (obj?.userData.propKey !== key) buildProp(next, i);
-      });
-    }
-
-    // the prop editor's boxes (see propEditState) over each prop of the
-    // type it edits, in the prop's own space: its boxes (the picked one
-    // yellow) and its whole extent, seen through everything
-    const wireMats = {
-      part: new THREE.LineBasicMaterial({ color: 0x3fd0ff, depthTest: false, transparent: true, opacity: 0.85 }),
-      picked: new THREE.LineBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true }),
-      extent: new THREE.LineBasicMaterial({ color: 0x8a8f99, depthTest: false, transparent: true, opacity: 0.5 }),
-    };
-    function refreshPropWires() {
-      for (const prop of propObjects.values()) {
-        const old = prop.getObjectByName("propEditWires");
-        if (!old) continue;
-        prop.remove(old);
-        old.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
-      }
-      const { name, part } = propEdit.get();
-      const type = name ? PROP_TYPES[name] : undefined;
-      if (!editModeRef.current || !type) return;
-      const lift = (type.kind === "views" || type.kind === "panel" ? (type.elevation ?? 0) : 0) * wallHeight;
-      const box = (min: number[], max: number[], mat: THREE.LineBasicMaterial) => {
-        const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(max[0] - min[0], (max[1] - min[1]) * wallHeight, max[2] - min[2]));
-        const lines = new THREE.LineSegments(geo, mat);
-        lines.position.set((min[0] + max[0]) / 2, ((min[1] + max[1]) / 2) * wallHeight + lift, (min[2] + max[2]) / 2);
-        lines.renderOrder = 10;
-        return lines;
-      };
-      const [length, height, depth] = type.size;
-      for (const prop of propObjects.values()) {
-        if (prop.userData.propType !== name) continue;
-        const wires = new THREE.Group();
-        wires.name = "propEditWires";
-        wires.add(box([-length / 2, 0, -depth / 2], [length / 2, height, depth / 2], wireMats.extent));
-        if (type.kind === "views") type.parts.forEach((p, i) => wires.add(box(p.min, p.max, i === part ? wireMats.picked : wireMats.part)));
-        prop.add(wires);
-      }
-    }
-    propWiresRef.current = refreshPropWires;
+    const propModels = createPropModels({
+      primarySet, sharedPropKitFor, roofKitFor, settingsRef, wallHeight, propReliefDepth, hybrid,
+      buildPropRelief, farReliefLevels, geometries, fences, lightGrid, ownMaterials, kitTexture,
+      busted, markSprite, propKits, createWallKit, cabinGlass, cavity,
+    });
+    const propScene = createPropScene({
+      map, group, wallHeight, primarySet, floorY, wallKitFor, buildPillar, buildChamfer,
+      buildFence: propModels.buildFence, buildPropTemplate: propModels.buildPropTemplate,
+      addPropLods, track, fences, editModeRef, propWiresRef,
+    });
+    const { propObjects, markedProps, billboardProps, applyProps } = propScene;
 
     // the robots as the smoke feels them (see updateActors)
     const smokeBodies: SmokeBody[] = [];
@@ -1918,80 +1239,13 @@ export function GameViewport({
     });
     const { soundMarkers, linkPlates, buildSoundMarkers } = editorMarkers;
 
+    const lootChalk = createLootChalk({ map, markedProps, propObjects, propKits, ownMaterials, lightGrid, cavity });
     const itemsLoot = createItemsLoot({
       group, map, getLatestMap: () => latestMapRef.current, lootRef, getVisibleCells: () => getSightCells(),
-      draggedWorldItem, markLooted, isDisposed: () => disposed, track, geometries, grids: cache.grids,
+      draggedWorldItem, markLooted: lootChalk.markLooted, isDisposed: () => disposed, track, geometries, grids: cache.grids,
       sharedPropKitFor, loadWithRetry, buildPropRelief, lightGrid, propReliefDepth, wallHeight, floorY,
     });
     const { buildItems, clearItems, updateLoot, looseItems } = itemsLoot;
-    // an emptied container: its lid lifted a little and askew, a chalk
-    // cross on it (or, lidless, on its front)
-    // (a copy of each face material with the cross chalked into its
-    // diffuse: it follows the relief, and takes the light as the paint does)
-    const chalked = new Map<THREE.Material, THREE.MeshStandardMaterial>();
-    function chalkedMaterial(mat: THREE.Material): THREE.MeshStandardMaterial | null {
-      const known = chalked.get(mat);
-      if (known) return known;
-      const kit = [...propKits.values()].find((k) => k.wallMat === mat);
-      const image = kit?.wallMat.map?.image as HTMLImageElement | undefined;
-      if (!kit || !image?.width) return null;
-      const canvas = document.createElement("canvas");
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(image, 0, 0);
-      drawChalkCross(ctx, canvas.width, canvas.height);
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.magFilter = kit.wallMat.map!.magFilter;
-      const material = new THREE.MeshStandardMaterial({
-        map: texture,
-        normalMap: kit.wallMat.normalMap,
-        aoMap: kit.wallMat.aoMap,
-        aoMapIntensity: kit.wallMat.aoMapIntensity,
-        roughness: kit.wallMat.roughness,
-        metalness: kit.wallMat.metalness,
-        roughnessMap: kit.wallMat.roughnessMap,
-        metalnessMap: kit.wallMat.metalnessMap,
-      });
-      material.userData.surface = kit.wallMat.userData.surface;
-      material.userData.accentUniforms = kit.wallMat.userData.accentUniforms;
-      addDirectLightOcclusion(material, cavity);
-      useLightGrid(material, lightGrid);
-      ownMaterials.push(material);
-      kit.textures.push(texture);
-      chalked.set(mat, material);
-      return material;
-    }
-    function markLooted(looted: ReadonlySet<number> | undefined) {
-      for (const index of looted ?? []) {
-        if (markedProps.has(index)) continue;
-        const obj = propObjects.get(index);
-        const spec = map.props?.[index];
-        if (!obj || !spec) continue;
-        // its faces' textures (not loaded yet: next frame)
-        const faces: { mesh: THREE.Mesh; mats: THREE.Material[]; chalk: THREE.MeshStandardMaterial }[] = [];
-        let ready = true;
-        obj.traverse((o) => {
-          const mesh = o as THREE.Mesh;
-          if (!mesh.isMesh || !Array.isArray(mesh.material)) return;
-          const chalk = chalkedMaterial(mesh.material[0]);
-          if (chalk) faces.push({ mesh, mats: mesh.material, chalk });
-          else ready = false;
-        });
-        if (!ready) continue;
-        markedProps.add(index);
-        for (const { mesh, mats, chalk } of faces) mesh.material = [chalk, ...mats.slice(1)];
-        if (PROP_TYPES[spec.prop].kind === "box") {
-          // the lid (the box's last face - see buildPropTemplate) lifted a
-          // little and askew
-          const lid = obj.children[obj.children.length - 1];
-          lid.position.y += 0.03;
-          lid.position.z -= 0.02;
-          lid.rotation.x += 0.12;
-        }
-      }
-    }
 
     // a copy of the kit's panel material whose diffuse has the door's label
     // stenciled into the panel's label field
@@ -2063,178 +1317,10 @@ export function GameViewport({
       return material;
     }
 
-    // --- trim: worn yellow paint (ladders) and hazard stripes (bridge
-    // edges), repeating at the walls' pixel density on boxes of any size ---
-    function trimTexture(url: string, wrap: THREE.Wrapping): THREE.Texture {
-      const tex = kitTexture(url + bust, (t) => {
-        // the boxes' UVs count texels (trimBox): one repeat per image size
-        const img = t.image as HTMLImageElement;
-        t.repeat.set(1 / img.width, 1 / img.height);
-      });
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.magFilter = THREE.NearestFilter;
-      tex.wrapS = tex.wrapT = wrap;
-      return tex;
-    }
-    const trimTextures = [
-      // mirrored: a patch cut from a decal tiles without seams that way
-      trimTexture(TRIM_PAINT_URL, THREE.MirroredRepeatWrapping),
-      // already a whole number of stripe periods wide
-      trimTexture(TRIM_HAZARD_URL, THREE.RepeatWrapping),
-    ];
-    const [paintMat, hazardMat] = trimTextures.map(
-      (map) => new THREE.MeshStandardMaterial({ map, roughness: 0.6, metalness: 0.3 }),
-    );
-    // a box whose UVs run in texels (TRIM_TEXELS per world unit) on every
-    // face; one per size
-    const trimBoxes = new Map<string, THREE.BoxGeometry>();
-    function trimBox(w: number, h: number, d: number, uvScale = TRIM_TEXELS): THREE.BoxGeometry {
-      const key = `${w.toFixed(4)},${h.toFixed(4)},${d.toFixed(4)},${uvScale}`;
-      let geo = trimBoxes.get(key);
-      if (!geo) {
-        geo = new THREE.BoxGeometry(w, h, d);
-        // BoxGeometry faces (+x, -x, +y, -y, +z, -z), 4 vertices each, and
-        // the box dimensions their u and v run along
-        const spans = [
-          [d, h],
-          [d, h],
-          [w, d],
-          [w, d],
-          [w, h],
-          [w, h],
-        ];
-        const uv = geo.getAttribute("uv");
-        for (let i = 0; i < uv.count; i++) {
-          const [su, sv] = spans[Math.floor(i / 4)];
-          uv.setXY(i, uv.getX(i) * su * uvScale, uv.getY(i) * sv * uvScale);
-        }
-        trimBoxes.set(key, geo);
-        geometries.push(geo);
-      }
-      return geo;
-    }
-
-    // --- ladders: rails and rungs standing against the step face, the rails
-    // reaching above the ledge and bending over onto it as handholds ---
-    const ladderBox = new THREE.BoxGeometry(1, 1, 1);
-    geometries.push(ladderBox);
-    for (const ladder of map.ladders ?? []) {
-      const v = DIR_VECTOR[ladder.wall];
-      const { x, y } = ladder.cell;
-      const bottom = floorY(x, y);
-      const h = floorY(x + v.x, y + v.y) - bottom;
-      const reach = h + LADDER_HANDHOLD * wallHeight;
-      const z = LADDER_STANDOFF;
-      const ladderGroup = new THREE.Group();
-      // like the wall panel it stands against: local +Z faces the foot's cell
-      ladderGroup.position.set(x + v.x * 0.5, bottom, y + v.y * 0.5);
-      ladderGroup.rotation.y = WALL_ROTATION[ladder.wall];
-      const bar = (w: number, bh: number, d: number, px: number, py: number, pz: number) => {
-        const mesh = new THREE.Mesh(trimBox(w, bh, d), paintMat);
-        mesh.position.set(px, py, pz);
-        ladderGroup.add(mesh);
-      };
-      for (const side of [-1, 1]) {
-        const rx = side * LADDER_HALF_WIDTH;
-        bar(LADDER_RAIL, reach, LADDER_RAIL, rx, reach / 2, z);
-        // over the edge and down onto the floor above
-        bar(LADDER_RAIL, LADDER_RAIL, z + LADDER_NECK, rx, reach, (z - LADDER_NECK) / 2);
-        bar(LADDER_RAIL, reach - h, LADDER_RAIL, rx, h + (reach - h) / 2, -LADDER_NECK);
-        // brackets holding it off the wall
-        for (const by of [0.12 * wallHeight, h - 0.08 * wallHeight]) bar(LADDER_RAIL, LADDER_RAIL, z, rx, by, z / 2);
-      }
-      const spacing = RUNG_SPACING * wallHeight;
-      for (let ry = spacing; ry <= h + 1e-6; ry += spacing) {
-        bar(LADDER_HALF_WIDTH * 2, LADDER_RUNG, LADDER_RUNG, 0, ry, z);
-      }
-      group.add(ladderGroup);
-    }
-
-    // --- bridges: a strip of the cell's floor texture as the deck, with a
-    // low hazard-striped kick plate along each edge. A grate deck has its
-    // slots cut open, seen from both sides, resting on two slim stringers;
-    // any other deck sits on a solid steel body. ---
-    const stoneBridge = map.world === "fantasy";
-    const bridgeMat = new THREE.MeshStandardMaterial(stoneBridge ? { map: primaryKit.wallMat.map, roughness: 1, metalness: 0 } : { color: 0x2a2d31, roughness: 0.5, metalness: 0.6 });
-    // a see-through deck is seen from below as well
-    const doubleSided = (src: THREE.MeshStandardMaterial) => {
-      const mat = new THREE.MeshStandardMaterial({
-        map: src.map,
-        normalMap: src.normalMap,
-        roughness: settings.roughness,
-        metalness: settings.metalness,
-        side: THREE.DoubleSide,
-      });
-      ownMaterials.push(mat);
-      return mat;
-    };
-    const grateMats = new Map<WallKit, THREE.MeshStandardMaterial[]>();
-    for (const bridge of map.bridges ?? []) {
-      const { x, y } = bridge.cell;
-      const deckY = bridge.height * wallHeight;
-      const bridgeGroup = new THREE.Group();
-      bridgeGroup.position.set(x, deckY, y);
-      // built running east-west (local X)
-      if (bridge.axis === "NS") bridgeGroup.rotation.y = Math.PI / 2;
-      const box = (w: number, h: number, d: number, px: number, py: number, pz: number, mat: THREE.Material) => {
-        const mesh = new THREE.Mesh(ladderBox, mat);
-        mesh.scale.set(w, h, d);
-        mesh.position.set(px, py, pz);
-        bridgeGroup.add(mesh);
-      };
-      for (const side of [-1, 1]) {
-        const kick = new THREE.Mesh(trimBox(1, BRIDGE_KICK, LADDER_RAIL, stoneBridge ? 1 : TRIM_TEXELS), stoneBridge ? bridgeMat : hazardMat);
-        kick.position.set(0, BRIDGE_KICK / 2 - 0.01, side * (BRIDGE_WIDTH / 2));
-        bridgeGroup.add(kick);
-      }
-      group.add(bridgeGroup);
-      if (stoneBridge) {
-        box(1, BRIDGE_THICKNESS, BRIDGE_WIDTH, 0, -BRIDGE_THICKNESS / 2, 0, bridgeMat);
-        continue;
-      }
-
-      // the walking surface: the middle band of the floor tile, as wide as
-      // the deck, so its texels stay square
-      const kit = floorKitAt(x, y);
-      const grate = isRelief && kit?.grateLevels ? kit.grateLevels : 0;
-      if (grate) {
-        for (const side of [-1, 1]) {
-          const z = side * (BRIDGE_WIDTH / 2 - BRIDGE_STRINGER / 2);
-          box(1, BRIDGE_THICKNESS, BRIDGE_STRINGER, 0, -BRIDGE_THICKNESS / 2 - 0.02, z, bridgeMat);
-        }
-      } else {
-        box(1, BRIDGE_THICKNESS, BRIDGE_WIDTH, 0, -BRIDGE_THICKNESS / 2 - 0.002, 0, bridgeMat);
-      }
-      if (!kit) {
-        box(1, 0.004, BRIDGE_WIDTH, 0, 0, 0, floorMat);
-        continue;
-      }
-      const rows: [number, number] = [(1 - BRIDGE_WIDTH) / 2, (1 + BRIDGE_WIDTH) / 2];
-      const deckGeometry = isRelief
-        ? buildRelief(kit, { height: BRIDGE_WIDTH, flushEdges: false, depth: floorDepth, rows, holeLevels: grate }).then(
-            (relief) => relief?.geometry ?? null,
-          )
-        : Promise.resolve(createBandPlane(BRIDGE_WIDTH, rows));
-      track(deckGeometry)
-        .then((geo) => {
-          if (!geo) return;
-          if (!isRelief) geometries.push(geo);
-          let mats: THREE.Material | THREE.Material[] = isRelief ? [kit.wallMat, kit.sideMat] : kit.wallMat;
-          if (grate) {
-            let own = grateMats.get(kit);
-            if (!own) {
-              own = [doubleSided(kit.wallMat), doubleSided(kit.sideMat)];
-              grateMats.set(kit, own);
-            }
-            mats = own;
-          }
-          const deck = new THREE.Mesh(geo, mats);
-          // laid flat facing up; local X (the band's length) along the bridge
-          deck.rotation.x = -Math.PI / 2;
-          bridgeGroup.add(deck);
-        })
-        .catch((err) => console.error("Bridge build failed:", err));
-    }
+    const trim = createTrim({
+      map, group, geometries, ownMaterials, kitTexture, bust, floorY, wallHeight, primaryKit,
+      settings, floorKitAt, isRelief, floorMat, buildRelief, floorDepth, track,
+    });
 
     const lightFixtures = createLightFixtures({
       map, group, wallHeight, geometries, floorStrips, ceilingKitAt, ceilingY, lights: mapLightState, ceilingTiles, ceilingMaterial,
@@ -2350,6 +1436,12 @@ export function GameViewport({
       if (interactionUseRef?.current === useInteraction) interactionUseRef.current = null;
       sightView.dispose();
       container.removeChild(renderer.domElement);
+      trim.dispose();
+      lootChalk.dispose();
+      offEmitters();
+      propScene.dispose();
+      propModels.dispose();
+      fences.dispose();
       for (const geo of geometries) geo.dispose();
       // (their textures and relief stay cached for the next build)
       for (const kit of allKits()) {
@@ -2360,20 +1452,12 @@ export function GameViewport({
       for (const mat of ownMaterials) mat.dispose();
     events.dispose();
       postPipeline.disposeFaceMaterials();
-      offOperables();
-      offEmitters();
-      if (propWiresRef.current === refreshPropWires) propWiresRef.current = null;
-      for (const prop of propObjects.values()) prop.getObjectByName("propEditWires")?.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
-      for (const mat of Object.values(wireMats)) mat.dispose();
       actorRendering.dispose();
       combatAiming.dispose();
       floorMat.dispose();
       spaceMat.dispose();
       sheenMat.dispose();
       wiredGlass.dispose();
-      paintMat.dispose();
-      hazardMat.dispose();
-      bridgeMat.dispose();
       ceilMat.dispose();
       lightFixtures.dispose();
       selectionBox.dispose();
@@ -2381,13 +1465,11 @@ export function GameViewport({
       sky.stopWaiting();
       decals.dispose();
       disposeLightGrid(lightGrid);
-    fences.dispose();
     editorMarkers.disposeLinkPlates();
     smokeFire.dispose();
     editorMarkers.disposeSoundMarkers();
     smokeFire.disposeMarkerDetails();
       backingMat.dispose();
-      for (const mat of billboardMaterials) mat.dispose();
       sky.dispose();
       // the renderer stays for the next build (see SceneCache)
       renderer.renderLists.dispose();

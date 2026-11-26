@@ -7,7 +7,7 @@ on one area without reading (or conflicting in) the giant file. Read `AGENTS.md`
 
 ## Status (2026-11-26)
 
-`GameViewport.tsx`: 9,100 → 2,447 lines (step 6 ended at 3,307).
+`GameViewport.tsx`: 9,100 → 1,529 lines (step 8 ended at 2,447). Split finished.
 
 | Step | What moved | Where |
 |---|---|---|
@@ -19,13 +19,13 @@ on one area without reading (or conflicting in) the giant file. Read `AGENTS.md`
 | 6 | Resize, game and editor pointer input, top-down controls, editor picking and selection outlines | `viewportResize.ts`, `pointerInput.ts`, `topdownControls.ts`, `editPicking.ts`, `selectionBox.ts` |
 | 7 | Per-frame camera, rendering and animation loop, plus developer capture helpers | `frameLoop.ts`, `frameDebug.ts` |
 | 8 | Top-down mode, sight and culling, live map edits and structural previews | `sightView.ts`, `liveEdits.ts` |
+| 9 | Prop, fence and foliage models, prop placement, operables and editor wires | `propModels.ts`, `propScene.ts`, `propModelInputs.ts` |
+| 10 | Looted-container chalk and lid poses, ladder and bridge trim | `lootChalk.ts`, `trim.ts` |
 
-## Remaining (suggested order)
+## Remaining
 
-1. **Scene setup in the main effect** (renderer, textures/materials wiring) into `sceneSetup.ts`, if it still pays off. Deferred after step 8 because the renderer and material setup shares inputs and resources with multiple scene builders.
-2. Props/refs/subscriptions at the top of the component: only if a clean hook (`useViewportRefs`) falls out naturally.
-
-Stop when the component is mostly wiring (target: under ~1,500 lines); do not split for its own sake.
+No further split steps planned. The renderer, texture kits and door label wiring stay with scene setup.
+The component also keeps the React props, refs and subscriptions that coordinate the scene.
 
 ## How each step is done
 
