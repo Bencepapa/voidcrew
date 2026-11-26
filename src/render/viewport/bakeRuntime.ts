@@ -1,4 +1,5 @@
 import type { LightSpec } from "../../game/lights";
+import type { Scene } from "three";
 import { cellAt } from "../../game/mapGeometry";
 import { DIR_VECTOR } from "../../game/movement";
 import { isSharedPropId, PROP_TYPES } from "../../game/props";
@@ -8,6 +9,7 @@ import { bakeLightGrid, packLightGrid, setLightGrid, type LightGridUniforms } fr
 import { isTextureSetId } from "../textureSets";
 import { bakeInputs, shouldBakeQuickFirst } from "./bakeInputs";
 import { EDIT_SETTLE_MS, LIGHT_EDIT_SETTLE_MS } from "./constants";
+import { createProbeDebug } from "./probeDebug";
 import { bakeCache } from "./sceneCache";
 import type { ViewportSettings } from "./settings";
 import type { SkyWall } from "./skyBakeInputs";
@@ -30,6 +32,7 @@ function skyWallOf(map: GameMap, settings: ViewportSettings): SkyWall {
 }
 
 interface BakeRuntimeContext {
+  scene: Scene;
   map: GameMap;
   settingsRef: { readonly current: ViewportSettings };
   latestMapRef: { readonly current: GameMap };
@@ -44,8 +47,12 @@ interface BakeRuntimeContext {
 }
 
 export function createBakeRuntime({
-  map, settingsRef, latestMapRef, rebakeRef, getLiveMap, getMapLights, lightGrid, wallHeight, isDisposed, tick, track,
+  scene, map, settingsRef, latestMapRef, rebakeRef, getLiveMap, getMapLights, lightGrid, wallHeight, isDisposed, tick, track,
 }: BakeRuntimeContext) {
+  const probeDebug = createProbeDebug(scene);
+  let currentGrid: LightBakeResult["data"] | undefined;
+  const updateProbeDebug = () => probeDebug.update(settingsRef.current.showLightProbes ? currentGrid : undefined);
+
   // the bake (and a coarser one for the ambient part, if the map asks)
   let cancelBake: (() => void) | undefined;
   const inputsFor = (m: GameMap, quick: boolean) =>
@@ -67,6 +74,7 @@ export function createBakeRuntime({
         tick("light worker response", timing.packedAt, performance.timeOrigin + applyFrom);
       }
       setLightGrid(lightGrid, data, ambient);
+      currentGrid = data;
       tick("light grid texture setup", applyFrom);
       tick("light bake", bakeFrom);
     };
@@ -192,8 +200,10 @@ export function createBakeRuntime({
   function dispose() {
     clearBakeTimers();
     cancelBake?.();
+    probeDebug.dispose();
+    currentGrid = undefined;
     rebakeRef.current = null;
   }
 
-  return { start, bindRebake, bakeSoon, bakeAfterLightEdit, dispose };
+  return { start, bindRebake, bakeSoon, bakeAfterLightEdit, updateProbeDebug, dispose };
 }

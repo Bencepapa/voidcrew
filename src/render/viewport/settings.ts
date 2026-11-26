@@ -55,6 +55,7 @@ export interface ViewportSettings extends PostProcessSettings {
   // the map's lights baked (see lightGrid.ts) - any number of them, the
   // real lights left for flashes; off: every map light a real one
   bakedLights: boolean;
+  showLightProbes: boolean;
   // the baked light's samples per cell, and how they keep it (see
   // lightGrid.ts)
   lightGridDensity: number;
@@ -162,6 +163,7 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   headlamp: false,
   headlampColor: "#fff2d9",
   bakedLights: true,
+  showLightProbes: false,
   lightGridDensity: 3,
   lightGridQuickDensity: 1,
   lightGridMode: "directional",

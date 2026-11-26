@@ -29,6 +29,8 @@ Pipálható lista: húzd ki, ami rendben van; ami nem, azt írd le (melyik lép�
 - [ ] A **jelenet nem tűnik el és nem fagy** a vendég-automatikus betöltés után (az újraépítés csak akkor fut, ha a térkép használ megváltozott megosztott textúrát).
 
 ## Újabb funkciók (2026-11-21, még nem próbáltad ki)
+
+- [ ] Nyisd meg a Hibakeresés panelt, és a fénybeállításoknál kapcsold be az alapból kikapcsolt **Fényprobe-ok mutatása** opciót. Kocka módban színes gömbök látszanak, irányított módban a fő fény felé mutató vonalak is. Állíts be a véglegesnél kisebb gyors mintasűrűséget, majd mozgass egy pályafényt. A gyors és a végleges előszámítás után is frissülnek a jelölők. Ellenőrizd, hogy a gömbökön át ki lehet jelölni a pályaelemeket, majd kapcsold ki az opciót, és ellenőrizd, hogy minden jelölő eltűnik.
 - [x] **Nap és égbolt fény.** Nyiss meg egy kültéri pályát egy- és kétszintes házakkal, és kapcsold ki a fejlámpát és a fényvisszaverődést. A pálya beállításaiban állítsd alacsonyra a napot, majd fordítsd meg az irányát. A falak és a házak árnyéka forduljon meg, és a magasabb ház árnyéka érjen messzebbre. A Hibakeresés panelen emeld a szórt égboltfényt nulláról. Az árnyékos udvarok világosodjanak, a zárt mennyezet alatti helyek maradjanak sötétek. A napfény nullázásakor csak a szórt égboltfény maradjon.
 - [ ] **Irányítás:** W/S előre-hátra, A/D oldalra lépés (strafe), Q/E fordulás; nincs alap egérnézet, a bal gomb + húzás kitekint. Fantasy és sci-fi nézetben is; boltablak/párbeszéd közben a kamera nem mozog.
 - [ ] **Bolt nem állítja le a világot:** NPC-vel beszélgetés → bolt megnyitása: az NPC és a kamera megáll (ezt kell újra próbálni, a javítás csak a kamera-kitekintést találta meg).

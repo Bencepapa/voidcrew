@@ -959,7 +959,7 @@ export function GameViewport({
     // the map as edited since the scene was built (see applyStructure): what the quick preview of an edit shows
     let liveMap = map;
     const bakeRuntime = createBakeRuntime({
-      map, settingsRef, latestMapRef, rebakeRef, lightGrid, wallHeight, track, tick,
+      scene, map, settingsRef, latestMapRef, rebakeRef, lightGrid, wallHeight, track, tick,
       getLiveMap: () => liveMap,
       getMapLights: () => mapLightState.mapLights,
       isDisposed: () => disposed,
@@ -3760,6 +3760,7 @@ export function GameViewport({
     });
     const { eventMarkers, updateEventMarkers, updateLockMarkers } = events;
     function renderFrame() {
+      bakeRuntime.updateProbeDebug();
       updateEventMarkers();
       updateLockMarkers();
       const s = settingsRef.current;

@@ -325,6 +325,7 @@ export function DebugPanel({
         t("debug.lights"),
         <>
           {check("bakedLights", t("debug.bakedLightingOffEveryMapLightReal"))}
+          {check("showLightProbes", t("debug.showLightProbes"))}
           {settings.bakedLights && (
             <>
               {select(

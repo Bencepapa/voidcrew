@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 3,
     date: "2026-11-25",
     items: [
+      { title: "Fényprobe-ok megjelenítése", text: "A Hibakeresés panelen bekapcsolhatók az előszámított fénymintákat mutató színes gömbök és az irányított fény irányjelzői." },
       { title: "Nap és égbolt fény", text: "A nap irányított árnyékot vet, az árnyékos kültéri részeket pedig állítható, szórt égboltfény deríti." },
       { title: "Pálya közzététele újabb változat fölé", text: "Ütközéskor jóváhagyhatod a saját pályád közzétételét a legfrissebb változat után, a korábbi változatok megőrzésével." },
       { title: "Fű és búza a kerítéseken", text: "A fantasy kerítésekhez közepes fű, magas fű és búza választható, áttetsző hézagokkal és folytonosan illeszkedő szélekkel." },
