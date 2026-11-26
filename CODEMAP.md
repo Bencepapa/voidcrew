@@ -59,13 +59,14 @@ Approximate line ranges. Search for the named functions as the file moves.
 
 | Lines | Subsystem and anchors |
 | --- | --- |
-| 171–553 | `GameViewport` props, refs, subscriptions and selection of the settled scene map. |
-| 554–1192 | Main scene effect, renderer, textures/materials and surface setup. See `createWallKit`, `createBakeRuntime`, `createPostPipeline` and `createSkySurface`. |
-| 1193–2238 | Structural geometry, props, operables, particles, markers, items and trim. See `createStructuralSurfaces`, `buildProps`, `createSmokeFire` and `createItemsLoot`. |
-| 2239–2264 | Fixtures, light pool, visibility and live edit wiring. See `createLightFixtures`, `createLightPool`, `createSightView` and `createLiveEdits`. |
-| 2265–2284 | Actor rendering, interaction raycasts and combat aiming. See `createActorRendering`, `createInteractionRaycasts` and `createCombatAiming`. |
-| 2285–2312 | Resize, pointer input, top-down controls, picking and selection wiring. |
-| 2313–2424 | Frame loop, debug capture and scene cleanup. See `createFrameLoop` and `createFrameDebug`. |
+| 135–517 | `GameViewport` props, refs, subscriptions and selection of the settled scene map. |
+| 518–1142 | Main scene effect, renderer, texture kits and surface setup. See `createWallKit`, `createBakeRuntime`, `createPostPipeline` and `createSkySurface`. |
+| 1143–1324 | Structural geometry and door label materials, props, operables, particles, markers, items and trim. See `createStructuralSurfaces`, `createPropModels`, `createPropScene`, `createSmokeFire`, `createLootChalk`, `createItemsLoot` and `createTrim`. |
+| 1325–1350 | Fixtures, light pool, visibility and live edit wiring. See `createLightFixtures`, `createLightPool`, `createSightView` and `createLiveEdits`. |
+| 1351–1370 | Actor rendering, interaction raycasts and combat aiming. See `createActorRendering`, `createInteractionRaycasts` and `createCombatAiming`. |
+| 1371–1398 | Resize, pointer input, top-down controls, picking and selection wiring. |
+| 1399–1506 | Frame loop, debug capture and scene cleanup. See `createFrameLoop` and `createFrameDebug`. |
+| 1508–1529 | Viewport DOM, editor controls and loading overlay. |
 
 ## `src/render/viewport/`
 
@@ -81,6 +82,11 @@ Approximate line ranges. Search for the named functions as the file moves.
 - `structuralTiles.ts` - Windows, ceilings and floors, including async relief builds.
 - `structuralDoors.ts` - Door frames and leaves, plus the cutout relief builder used by props.
 - `structuralProps.ts` - Cabin glass, pillar and chamfer builders.
+- `propModels.ts` - Prop, fence and foliage model building, including billboard and round-part materials.
+- `propScene.ts` - Model caching, prop placement, live updates, operable poses and editor wires.
+- `propModelInputs.ts` and `propModelInputs.test.ts` - Pure prop texture-set selection and model cache keys.
+- `lootChalk.ts` - Chalk materials and emptied-container lid poses.
+- `trim.ts` - Ladder and bridge geometry, paint, hazard stripes and double-sided grate materials.
 - `propRetexture.ts` - Pure property overrides for retextured props.
 - `sceneCache.ts` - Bake cache, scene resource cleanup and rendered-spec comparison.
 - `fog.ts` - Fog range and the guarded three.js shader-chunk patch.
@@ -156,7 +162,7 @@ Line counts at the time of writing.
 
 | File | Lines | Editing risk |
 | --- | ---: | --- |
-| `src/components/GameViewport.tsx` | 2,447 | Scene lifetimes, live refs and per-frame performance. Preserve teardown symmetry and check rebuilds versus in-place edits. |
+| `src/components/GameViewport.tsx` | 1,529 | Scene lifetimes, live refs and per-frame performance. Preserve teardown symmetry and check rebuilds versus in-place edits. |
 | `src/App.tsx` | 3,420 | Shared game/editor state and two UI layouts. Trace the action through its normal entry points. |
 | `src/game/useGameState.ts` | 2,183 | Gameplay orchestration. Keep state transitions and side effects in their existing order. |
 | `src/game/actors.ts` | 1,815 | Actor behavior and state. Exercise the affected actor paths. |
