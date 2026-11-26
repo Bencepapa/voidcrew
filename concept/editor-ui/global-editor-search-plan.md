@@ -29,6 +29,17 @@
 - A közös Google Táblázat nyilvántartja a beküldéseket, a bejelentőt, a sürgősséget és a feldolgozás állapotát. Az első változatban egy Drive-űrlap adhat strukturált beküldést. A közvetlen vágólapos képbeillesztéshez külön szerkesztői űrlap és jogosultsággal védett képtár kellhet.
 - Egy későbbi óránkénti Codex-ellenőrzés csoportosíthatja a duplikátumokat, kereshet meglévő megoldást, és jóváhagyásra felajánlhatja a soron következő tételt. Implementálás jóváhagyott tételből, külön ágon történhet.
 
+## Megvalósítás (2026-11-26)
+
+A célpont nem a menü helyét tárolja, hanem egy stabil azonosítót, így a Debug vagy a Pályaadatok átszervezése után is jó helyre ugrik.
+
+- **Célpont-katalógus** (`src/search/targets.ts`, tiszta modul): `{ id, kind, titleKey, synonyms, keywords, world?, oldIds? }`. Az `id` stabil és pontozott (pl. `setting.sky.sunAzimuth`, `tool.roofAuto`, `debug.lightProbes`); átnevezéskor a régi id az `oldIds`-be kerül. A címek az i18n-ből jönnek, a szinonimák hu + en kézzel gondozottak.
+- **Horgony a vezérlőn**: a mező vagy gomb `data-search-target="<id>"` attribútumot kap (egy `searchAnchor(id)` segéddel). Ha a mező másik menübe költözik, a horgony vele megy, a katalógushoz nem kell nyúlni.
+- **Megnyitók**: minden panel (Debug, Pályabeállítások, Asset Manager, eszközfa) regisztrál egy `openForTarget(id)` függvényt egy közös registrybe, amely megnyitja a panelt és kibontja a csoportot, ha a célpont nála van. A navigáció sorban: a megfelelő megnyitó, majd `[data-search-target]` keresése a DOM-ban, odagörgetés, rövid kiemelés, fókusz. Ha nincs horgony, a találat jelzi, de nem hibázik.
+- **Index**: MiniSearch, ékezetfüggetlen normalizálás, előtag- és elírás-egyezés, súly: cím > szinonima > régi név > leírás; az aktuális világ kis bónuszt ad. Az index-építés és a rangsorolás tiszta, tesztelt modul.
+- **Ellenőrzés**: egy teszt végigmegy a katalóguson, és jelzi az árva célpontokat (nincs megnyitó vagy nincs horgony a forrásban), így egy menü-átszervezés után azonnal kiderül, ha valami elveszett.
+- **Lépések**: 1) mag: katalógus, index, horgony, megnyitó-registry, kereső ablak (Ctrl+P / Ctrl+K, nagyító), előzmények, néhány célpont a próbakörhöz (Codex). 2) a Debug, a Pályabeállítások és az eszközfa összes mezőjének és eszközének horgonya és katalógusbejegyzése, szinonimákkal (opencode, mechanikus). 3) changelog-, doksi- és videótalálatok. 4) tippek. 5) kérés és hibajelentés.
+
 ## Első próbakör
 
 1. Tető. Egy új szerkesztő a tippből megtalálja az automata eszközt és az egész tömböt lefedő műveletet.
