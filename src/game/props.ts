@@ -32,6 +32,8 @@ export type PropFace = "front" | "back" | "right" | "left" | "top";
 export type PropType = {
   name?: string;
   elevation?: number;
+  // Floor contact shadow strength (0–1) for prisms, panels, crosses and billboards.
+  shadow?: number;
   // extent (cells; height in wall heights): x length, y height, z depth
   size: [number, number, number];
   blocks?: boolean;

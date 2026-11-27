@@ -11,6 +11,7 @@ import type { Direction, GameMap, Vec2 } from "../../game/types";
 import { TOPDOWN_REACH } from "./camera";
 import { EDIT_REACH } from "./editor";
 import type { ActorEntry } from "./actorRendering";
+import { expandByPropModel } from "./propShadows";
 import { drawnChain, seeThrough } from "./raycastObjects";
 
 export function createInteractionRaycasts(deps: {
@@ -176,7 +177,7 @@ export function createInteractionRaycasts(deps: {
       const interaction = spec.interaction ?? operableInteraction(spec, "prop", index);
       const object = interaction && propObjects.get(index);
       if (!object || !drawnChain(object)) return;
-      bounds.setFromObject(object);
+      expandByPropModel(bounds.makeEmpty(), object);
       bounds.getCenter(center);
       const anchor = spec.at[0];
       const side = anchor === "N" || anchor === "E" || anchor === "S" || anchor === "W" ? anchor : undefined;

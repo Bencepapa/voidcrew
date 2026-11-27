@@ -95,6 +95,7 @@ export const imageAssetsEn = {
   "assetManager.propDraft.height": "Height",
   "assetManager.propDraft.depth": "Footprint depth",
   "assetManager.propDraft.elevation": "Height above floor",
+  "assetManager.propDraft.shadow": "Contact shadow strength",
   "assetManager.propDraft.wall": "Wall-mounted",
   "assetManager.propDraft.blocks": "Blocks the cell",
   "assetManager.propDraft.needName": "Give the prop a name before publishing.",

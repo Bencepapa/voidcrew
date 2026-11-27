@@ -395,7 +395,10 @@ export function createFrameLoop(deps: FrameLoopDeps) {
       camera.up.set(0, 1, 0);
     }
     // the billboards (trees) face the eye, turning about the vertical only
-    for (const b of billboardProps) b.rotation.y = Math.atan2(camera.position.x - b.position.x, camera.position.z - b.position.z);
+    for (const b of billboardProps) {
+      const billboard = b.getObjectByName("propBillboard");
+      if (billboard) billboard.rotation.y = Math.atan2(camera.position.x - b.position.x, camera.position.z - b.position.z) - b.rotation.y;
+    }
 
     ambient.intensity = s.ambientIntensity;
     backingMat.visible = s.wallBacking || s.backingInspect;

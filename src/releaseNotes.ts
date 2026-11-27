@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 4,
     date: "2026-11-26",
     items: [
+      { title: "Lágy árnyék a propok alatt", text: "A prizma, panel, kereszt és billboard propok lágy padlóárnyékának erőssége az Eszközkezelőben állítható." },
       { title: "Kereső a szerkesztőben", text: "A nagyítóval, illetve Ctrl+P vagy Ctrl+K billentyűvel nyitható kereső az automata tetőhöz, a napszak és a napfény beállításaihoz, valamint a fényprobe kapcsolóhoz ugrik." },
       { title: "Kiadási jegyzetek", text: "A menüből bármikor megnyithatod a korábbi kiadások jegyzeteit." },
       { title: "Sokszög és csillag alakú tárgy", text: "Az Asset Managerben kipróbálható a 3–12 oldalú, csillagformára is behúzható tárgyforma két váltakozó textúrával; a textúra több oldalon át is futhat, így egy szögből az egész kép látszik." },

@@ -10,6 +10,7 @@ import { isTextureSetId, type TextureSetId } from "../textureSets";
 import type { createFenceMarkers } from "./fenceMarkers";
 import { propBuildKey } from "./propModelInputs";
 import type { createPropModels } from "./propModels";
+import { placePropShadow, propShadowMesh } from "./propShadows";
 import { retextured } from "./propRetexture";
 import type { createReliefGeometry } from "./reliefGeometry";
 import type { createStructuralProps } from "./structuralProps";
@@ -19,6 +20,7 @@ export function createPropScene(deps: {
   map: GameMap;
   group: THREE.Group;
   wallHeight: number;
+  reliefDepth: number;
   primarySet: TextureSetId;
   floorY: (x: number, y: number) => number;
   wallKitFor: (id: TextureSetId) => WallKit;
@@ -32,7 +34,7 @@ export function createPropScene(deps: {
   editModeRef: { current: boolean };
   propWiresRef: { current: (() => void) | null };
 }) {
-  const { map, group, wallHeight, primarySet, floorY, wallKitFor, buildPillar, buildChamfer, buildFence, buildPropTemplate, addPropLods, track, fences, editModeRef, propWiresRef } = deps;
+  const { map, group, wallHeight, reliefDepth, primarySet, floorY, wallKitFor, buildPillar, buildChamfer, buildFence, buildPropTemplate, addPropLods, track, fences, editModeRef, propWiresRef } = deps;
 
   const modelInputs = { wallHeight, primarySet, isTextureSetId, propTypes: PROP_TYPES, propHeight };
 
@@ -78,12 +80,14 @@ export function createPropScene(deps: {
   function placeProp(obj: THREE.Object3D, spec: PropSpec) {
     const type = PROP_TYPES[spec.prop];
     const { x, z, yaw } = propPlacement(spec);
-    obj.position.set(x, floorY(spec.cell.x, spec.cell.y) + (spec.elevation ?? 0) * wallHeight, z);
+    const elevation = spec.elevation ?? 0;
+    obj.position.set(x, floorY(spec.cell.x, spec.cell.y) + elevation * wallHeight, z);
     obj.rotation.y = -yaw;
     // (bigger or smaller: a pillar only wider - it still fills its room)
     // (a fence or block piece is the size its settings say: its bodies don't scale)
     const scale = type.kind === "fence" ? 1 : spec.scale ?? 1;
     obj.scale.set(scale, type.kind === "pillar" ? 1 : scale, scale);
+    placePropShadow(obj, type, elevation, reliefDepth + 0.006 - elevation * wallHeight);
   }
   // the props as last applied (a build finishing late places its prop where
   // the prop is by then, not where it was when the build began)
@@ -109,6 +113,8 @@ export function createPropScene(deps: {
       // (changed again meanwhile into something else: that build places it)
       if (!now || !PROP_TYPES[now.prop] || propBuildKey(propsMap, now, index, modelInputs) !== key) return;
       const prop = made.clone();
+      const shadow = propShadowMesh(prop);
+      if (shadow) shadow.material = shadow.material.clone();
       placeProp(prop, now);
       prop.userData.prop = true;
       // the editor picks it by this (its index in the map's props)
@@ -117,6 +123,7 @@ export function createPropScene(deps: {
       prop.userData.propKey = key;
       const old = propObjects.get(index);
       if (old) {
+        propShadowMesh(old)?.material.dispose();
         group.remove(old);
         const at = billboardProps.indexOf(old);
         if (at >= 0) billboardProps.splice(at, 1);
@@ -153,7 +160,10 @@ export function createPropScene(deps: {
   // the props gone from the scene (before they're built anew)
   function clearProps() {
     propsVersion++;
-    for (const obj of propObjects.values()) group.remove(obj);
+    for (const obj of propObjects.values()) {
+      propShadowMesh(obj)?.material.dispose();
+      group.remove(obj);
+    }
     propObjects.clear();
     fences.clear();
     billboardProps.length = 0;
@@ -227,9 +237,13 @@ export function createPropScene(deps: {
   propWiresRef.current = refreshPropWires;
 
   function dispose() {
+    propsVersion++;
     offOperables();
     if (propWiresRef.current === refreshPropWires) propWiresRef.current = null;
-    for (const prop of propObjects.values()) prop.getObjectByName("propEditWires")?.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
+    for (const prop of propObjects.values()) {
+      propShadowMesh(prop)?.material.dispose();
+      prop.getObjectByName("propEditWires")?.traverse((o) => (o as THREE.LineSegments).geometry?.dispose());
+    }
     for (const mat of Object.values(wireMats)) mat.dispose();
   }
 

@@ -15,6 +15,7 @@ import type { createFenceMarkers } from "./fenceMarkers";
 import { buildFoliage } from "./foliageMesh";
 import { addDirectLightOcclusion } from "./materials";
 import { propSets } from "./propModelInputs";
+import { createPropShadows } from "./propShadows";
 import type { createReliefGeometry } from "./reliefGeometry";
 import type { ViewportSettings } from "./settings";
 import type { createStructuralDoors } from "./structuralDoors";
@@ -103,6 +104,7 @@ export function createPropModels(deps: {
   }
 
   const billboardMaterials: THREE.MeshStandardMaterial[] = [];
+  const shadows = createPropShadows();
   async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
     const [length, height, depth] = type.size;
     // (its texture sets take its own normal strength)
@@ -178,7 +180,11 @@ export function createPropModels(deps: {
       geometries.push(geo);
       const sprite = new THREE.Mesh(geo, mat);
       sprite.position.y = h / 2 + (type.elevation ?? 0) * wallHeight;
-      template.add(sprite);
+      const billboard = new THREE.Group();
+      billboard.name = "propBillboard";
+      billboard.add(sprite);
+      template.add(billboard);
+      shadows.add(template, type);
       return template;
     }
 
@@ -208,6 +214,7 @@ export function createPropModels(deps: {
         face(panel.geometry, kit, position, [0, yaw]);
         face(panel.geometry, kit, position, [0, yaw + Math.PI], true);
       }
+      shadows.add(template, type);
       return template;
     }
 
@@ -225,6 +232,7 @@ export function createPropModels(deps: {
         face(panel.geometry, kit, [0, y, 0], [0, turn]);
         face(panel.geometry, kit, [0, y, 0], [0, turn + Math.PI], true);
       }
+      shadows.add(template, type);
       return template;
     }
 
@@ -480,6 +488,7 @@ export function createPropModels(deps: {
   }
 
   function dispose() {
+    shadows.dispose();
     for (const mat of billboardMaterials) mat.dispose();
     roundMaterials.clear();
   }
