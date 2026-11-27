@@ -94,6 +94,7 @@ export const assetManagerHu = {
   "assetManager.reliefDepth": "Domborzat mélysége",
   "assetManager.roughness": "Érdesség",
   "assetManager.metalness": "Fémesség",
+  "assetManager.roomReflection": "Szobatükröződés",
   "assetManager.normalHint": "a normáltérkép fényeltérítésének erőssége",
   "assetManager.reliefHint": "falak, padlók és plafonok: a magasságtérkép valódi mélysége (újraépíti a játék geometriáját)",
   "assetManager.roughHint": "kisebb érték: fényesebb felület",

@@ -11,6 +11,7 @@ Voidcrew is a React 19, TypeScript, three.js and Vite game with an in-game grid 
 | --- | --- |
 | `?world=fantasy` or `?world=scifi` | Requests the starting world. World selection and build defaults live in `src/game/worlds.ts`. |
 | `?map=tesztsztori` | Starts on a bundled map by filename stem when present. A valid map ID takes precedence over the world's default in `src/game/map.ts`. |
+| `?reflectionTest=1` | Adds a chrome test sphere at the starting position. The `reflectiontest-room1` map shows it by default. |
 | `?play=on` or `?play=off` | Starts in Play or Wander mode. The in-page Play toggle takes precedence after use. See `src/game/playModeLogic.ts`. |
 | `?shared=on` or `?shared=off` | Overrides automatic shared-store loading for this page load. `?shared=none` disables shared-store configuration. See `src/editor/autoSharedPolicy.ts` and `src/editor/sharedAuth.ts`. |
 | `?story=on` or `?story=off` | Forces the bundled test campaign on or off ahead of its stored preference and the implicit `tesztsztori` map-prefix trigger. See `src/story/tesztsztori-switch.ts`. |

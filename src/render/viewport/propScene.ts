@@ -6,8 +6,10 @@ import { operableView } from "../../game/operableStore";
 import { PROP_TYPES, propHeight, propPlacement } from "../../game/props";
 import type { GameMap, PropSpec } from "../../game/types";
 import { setOperablePose } from "../operableModel";
+import type { LightGridUniforms } from "../lightGrid";
 import { isTextureSetId, type TextureSetId } from "../textureSets";
 import type { createFenceMarkers } from "./fenceMarkers";
+import { lightObjectMaterials } from "./materials";
 import { propBuildKey } from "./propModelInputs";
 import type { createPropModels } from "./propModels";
 import { placePropShadow, propShadowMesh } from "./propShadows";
@@ -23,18 +25,20 @@ export function createPropScene(deps: {
   reliefDepth: number;
   primarySet: TextureSetId;
   floorY: (x: number, y: number) => number;
+  puddleLift: number;
   wallKitFor: (id: TextureSetId) => WallKit;
   buildPillar: ReturnType<typeof createStructuralProps>["buildPillar"];
   buildChamfer: ReturnType<typeof createStructuralProps>["buildChamfer"];
   buildFence: ReturnType<typeof createPropModels>["buildFence"];
   buildPropTemplate: ReturnType<typeof createPropModels>["buildPropTemplate"];
   addPropLods: ReturnType<typeof createReliefGeometry>["addPropLods"];
+  lightGrid: LightGridUniforms;
   track: <T>(work: Promise<T> | (() => Promise<T>)) => Promise<T>;
   fences: Pick<ReturnType<typeof createFenceMarkers>, "clear" | "syncFenceMarker">;
   editModeRef: { current: boolean };
   propWiresRef: { current: (() => void) | null };
 }) {
-  const { map, group, wallHeight, reliefDepth, primarySet, floorY, wallKitFor, buildPillar, buildChamfer, buildFence, buildPropTemplate, addPropLods, track, fences, editModeRef, propWiresRef } = deps;
+  const { map, group, wallHeight, reliefDepth, primarySet, floorY, wallKitFor, buildPillar, buildChamfer, buildFence, buildPropTemplate, addPropLods, lightGrid, track, fences, editModeRef, propWiresRef } = deps;
 
   const modelInputs = { wallHeight, primarySet, isTextureSetId, propTypes: PROP_TYPES, propHeight };
 
@@ -50,14 +54,18 @@ export function createPropScene(deps: {
   // propBuildKey). A prop dragged in the editor gets its model from here at
   // once instead of waiting for a new build at every step.
   const propModels = new Map<string, Promise<THREE.Group | null>>();
+  async function finishModel(model: THREE.Group | null) {
+    if (model) {
+      await addPropLods(model);
+      lightObjectMaterials(model, lightGrid);
+    }
+    return model;
+  }
   function propModel(key: string): Promise<THREE.Group | null> {
     let made = propModels.get(key);
     if (made) return made;
     if (key.startsWith("fence|")) {
-      const fenceMade = buildFence(JSON.parse(key.slice(6)) as FenceModelSpec).then(async (g) => {
-        if (g) await addPropLods(g);
-        return g;
-      });
+      const fenceMade = buildFence(JSON.parse(key.slice(6)) as FenceModelSpec).then(finishModel);
       propModels.set(key, fenceMade);
       return fenceMade;
     }
@@ -69,10 +77,7 @@ export function createPropScene(deps: {
         : type.kind === "chamfer"
           ? buildChamfer(type, wallKitFor(setId as TextureSetId), Number(h))
           : buildPropTemplate(type);
-    made = build.then(async (g) => {
-      if (g) await addPropLods(g);
-      return g;
-    });
+    made = build.then(finishModel);
     propModels.set(key, made);
     return made;
   }
@@ -81,7 +86,8 @@ export function createPropScene(deps: {
     const type = PROP_TYPES[spec.prop];
     const { x, z, yaw } = propPlacement(spec);
     const elevation = spec.elevation ?? 0;
-    obj.position.set(x, floorY(spec.cell.x, spec.cell.y) + elevation * wallHeight, z);
+    const surfaceLift = type.kind === "puddle" ? deps.puddleLift : 0;
+    obj.position.set(x, floorY(spec.cell.x, spec.cell.y) + elevation * wallHeight + surfaceLift, z);
     obj.rotation.y = -yaw;
     // (bigger or smaller: a pillar only wider - it still fills its room)
     // (a fence or block piece is the size its settings say: its bodies don't scale)

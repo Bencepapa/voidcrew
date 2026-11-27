@@ -1,6 +1,16 @@
 import * as THREE from "three";
 
+import { useLightGrid, type LightGridUniforms } from "../lightGrid";
 import type { GeometryViewId } from "./settings";
+
+export function lightObjectMaterials(root: THREE.Object3D, lightGrid: LightGridUniforms) {
+  root.traverse(object => {
+    const material = (object as THREE.Mesh).material;
+    for (const entry of Array.isArray(material) ? material : material ? [material] : []) {
+      useLightGrid(entry, lightGrid);
+    }
+  });
+}
 
 // three.js applies aoMap to ambient/indirect light only, so crevices facing a
 // point light still light up fully. This extends the same occlusion term to

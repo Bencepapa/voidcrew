@@ -91,6 +91,8 @@ interface FrameLoopDeps {
   postPipeline: Pick<ReturnType<typeof import("./postPipeline").createPostPipeline>, "renderGeometryView">;
   propObjects: Map<number, THREE.Object3D>;
   getReliefStats: () => ReliefStats | null;
+  reflectionTest?: ReturnType<typeof import("./reflectionTestSphere").addReflectionTestSphere>;
+  puddles: Pick<ReturnType<typeof import("./puddleProps").createPuddleProps>, "update">;
   renderer: THREE.WebGLRenderer;
   rideRef: RefObject<LiftRide | null | undefined>;
   selectionBox: Pick<ReturnType<typeof import("./selectionBox").createSelectionBox>, "updateEditHighlight">;
@@ -122,7 +124,7 @@ export function createFrameLoop(deps: FrameLoopDeps) {
     downAtRef, editModeRef, editorMarkers, facingSurfaces, fadeLevelRef, fadeRef, fences, floorY, fog,
     fogBackground, freeTickRef, hiddenLayersRef, itemsLoot, latestMapRef, layFlatSprites, lightFixtures,
     lightGrid, liveRef, map, mapLightState, newMap, onStatsRef, ownAccents, ownMaterials, peekRefRef,
-    pointLight, postPipeline, propObjects, getReliefStats, renderer, rideRef, selectionBox, settings, settingsRef,
+    pointLight, postPipeline, propObjects, getReliefStats, reflectionTest, puddles, renderer, rideRef, selectionBox, settings, settingsRef,
     setTopdown, shaftLight, shipAccentRef, smokeBodies, smokeFire, topdown, topdownControls, transitRef,
     updateActors, updateAimFrame, updateEventMarkers, updateLightPool, updateLockMarkers, updateLoot,
     updatePartyCover, updateTracers, wallHeight } = deps;
@@ -413,6 +415,7 @@ export function createFrameLoop(deps: FrameLoopDeps) {
       pointLight.color.set(s.headlampColor);
     }
     lightGrid.scale.value = s.bakedLights ? s.mapLightIntensity * rideDip : 0;
+    lightGrid.reflectionStrength.value = s.probeReflections && lightGrid.reflectionReady ? s.probeReflectionStrength : 0;
     const viewReach = topdown.on ? TOPDOWN_REACH : effectiveViewDistance(s);
     const fogSpan = fogRange(viewReach, s.fogStart, s.fogEnd);
     if (fog.far !== fogSpan.far || fog.near !== fogSpan.near) {
@@ -571,7 +574,12 @@ export function createFrameLoop(deps: FrameLoopDeps) {
     }
     layFlatSprites();
     applyMaterialViews(s);
-    postPipeline.renderGeometryView(s.geometryView);
+    reflectionTest?.update(s.reflectionTestCubemap, isReady() && s.geometryView === "textured", renderer, pointLight, facingSurfaces, propObjects.values());
+    const textured = s.geometryView === "textured";
+    const restoreRoomMaterials = puddles.update(getLiveMap(), renderer, pointLight, camera, now, t, isReady() && textured,
+      facingSurfaces, propObjects, textured && s.roomMaterialReflections);
+    try { postPipeline.renderGeometryView(s.geometryView); }
+    finally { restoreRoomMaterials?.(); }
 
     fpsFrames++;
     if (now - lastStatsAt > 500) {

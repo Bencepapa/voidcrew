@@ -18,6 +18,10 @@ export const RELEASES: Release[] = [
     version: 4,
     date: "2026-11-26",
     items: [
+      { title: "Szobatükröződés fémfelületeken", text: "A fémfalak és fémpropok alapból megoszthatják a tócsák helyiségenkénti felvételét mindkét világban, a részvétel textúránként állítható." },
+      { title: "Méretezhető tükröződő tócsa", text: "A padlóra helyezhető, méretezhető tócsa finoman fodrozódik, a megvilágított szoba részletei pedig játék közben is jól láthatóan tükröződnek rajta." },
+      { title: "Szoba-cubemap a tesztgömbön", text: "A tesztgömbön kapcsolóval vethető össze a hatirányú fényprobe és a megvilágított szobáról készült 32×32 pixeles cubemap." },
+      { title: "Kísérleti probe-tükröződés", text: "Az irányított sütött világítás mellé kapcsolható, propokon is látható csillogás erőssége és mintasűrűsége a Debug panelen és a keresőből érhető el." },
       { title: "Lágy árnyék a propok alatt", text: "A prizma, panel, kereszt és billboard propok lágy padlóárnyékának erőssége az Eszközkezelőben állítható." },
       { title: "Kereső a szerkesztőben", text: "A nagyítóval, illetve Ctrl+P vagy Ctrl+K billentyűvel nyitható kereső az automata tetőhöz, a napszak és a napfény beállításaihoz, valamint a fényprobe kapcsolóhoz ugrik." },
       { title: "Kiadási jegyzetek", text: "A menüből bármikor megnyithatod a korábbi kiadások jegyzeteit." },

@@ -1,0 +1,91 @@
+{
+  "name": "room1",
+  "place": "reflectiontest",
+  "deck": 2,
+  "start": { "x": 2, "y": 2, "facing": "S" },
+  "props": [
+    { "prop": "puddle_prop", "x": 2, "y": 3, "at": "center", "scale": 1.6 },
+    { "prop": "puddle_prop", "x": 3, "y": 3, "at": "center", "scale": 0.7 },
+    { "prop": "crate1", "x": 1, "y": 3, "at": "center", "texture": "bridgewall1" }
+  ],
+  "layout": [
+    ".....WWWWW",
+    ".....WWWWW",
+    ".....WWWWW",
+    ".....WWWWW",
+    ".....WWWWW",
+    "WWWWWWWWWW",
+    "WWWWWWWWWW",
+    "WWWWWWWWWW",
+    "WWWWWWWWWW",
+    "WWWWWWWWWW"
+  ],
+  "lights": [
+    { "x": 2, "y": 2, "pos": [0.02, 1.68, 0.02], "color": "#ffffff", "intensity": 4, "range": 6 },
+    { "x": 3, "y": 4 },
+    { "x": 1, "y": 4 },
+    { "x": 0, "y": 3 },
+    { "x": 0, "y": 1 },
+    { "x": 1, "y": 0 },
+    { "x": 3, "y": 0 },
+    { "x": 4, "y": 1 },
+    { "x": 4, "y": 3 },
+    { "x": 3, "y": 4, "pos": [-0.49, 0.5, 0.28] },
+    { "x": 1, "y": 4, "pos": [0.47, 0.54, 0.28] },
+    { "x": 0, "y": 4, "pos": [0.5, 0.51, 0.28] }
+  ],
+  "layers": {
+    "ceiling": {
+      "legend": { "a": 1.25, "b": 1.5, "c": 1.75, "d": 2 },
+      "rows": [
+        "ddddd.....",
+        "ddddd.....",
+        "ddddd.....",
+        "ddddd.....",
+        "ddddd.....",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        ".........."
+      ]
+    },
+    "floor": {
+      "legend": { "a": 0.25 },
+      "rows": [
+        "..........",
+        "..........",
+        "..a.......",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        ".........."
+      ]
+    },
+    "wallTexture": {
+      "legend": { "a": "bridgewall1", "b": "medwall1", "c": "wall4", "d": "wall5", "e": "sky", "f": "lift1" },
+      "rows": [
+        "baaaa.....",
+        "b...f.....",
+        "b.........",
+        "b.........",
+        "aaaaf.....",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        ".........."
+      ]
+    }
+  },
+  "textures": { "wall": "lift1", "floor": "lift1", "ceiling": "liftceil1" },
+  "faceTextures": [
+    { "x": 1, "y": 2, "face": "E", "texture": "wall4" },
+    { "x": 2, "y": 3, "face": "N", "texture": "wall4" },
+    { "x": 3, "y": 2, "face": "W", "texture": "wall4" },
+    { "x": 2, "y": 1, "face": "S", "texture": "wall4" }
+  ]
+}

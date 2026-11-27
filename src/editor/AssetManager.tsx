@@ -39,6 +39,7 @@ export type Sample = "material" | "actor" | "prop" | "item" | "still" | "sky" | 
 type Entry = { key: string; label: string; img: string; groups: string[]; world: WorldId; draft?: ImageDraft; image?: SharedImage; builtinDecal?: string; propDraft?: PropDraft; actorDraft?: ActorDraft };
 import { ITEM_TYPES } from "../game/items";
 import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/worlds";
+import { PUDDLE_MASK_PATH, PUDDLE_PROP } from "../game/puddle";
 import { fetchDecalManifest } from "../render/decals";
 import { sharedImage, useSharedImages, type ImagePurpose, type SharedImage } from "../render/sharedImages";
 import { neutralStyle } from "./inspector/parts";
@@ -218,11 +219,12 @@ function propTexture(id: string) {
   return p.kind==="views" ? p.views+"_front" : p.kind==="box" ? p.side : p.kind==="cabin" ? p.door : ("texture" in p && p.texture) || "wall4";
 }
 function propImage(id: string) {
+  if (id === PUDDLE_PROP) return `${import.meta.env.BASE_URL}${PUDDLE_MASK_PATH}`;
   const tex = propTexture(id);
   return (catalog[tex] ?? textureFolder(tex)).diffuse;
 }
 // what the tuning sliders change (see textureTuning.ts); every one a multiplier of the game's own value
-const TUNING: { key: keyof TextureTuning; label: Key; max: number; hint: Key }[] = [
+const TUNING: { key: Exclude<keyof TextureTuning, "roomReflection">; label: Key; max: number; hint: Key }[] = [
   { key: "normal", label: "assetManager.normalForce", max: 3, hint: "assetManager.normalHint" },
   { key: "relief", label: "assetManager.reliefDepth", max: 3, hint: "assetManager.reliefHint" },
   { key: "rough", label: "assetManager.roughness", max: 2, hint: "assetManager.roughHint" },
@@ -349,7 +351,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       ...imageCatalog.filter(image=>image.type==="sky" && !skyDrafts.some(d=>d.id===image.id)).map(image=>({key:image.id,label:image.name,img:image.url,groups:[],world:image.world,image})),
       ...skyDrafts.map(d=>({key:d.id,label:d.name || t("assetManager.untitled"),img:"",groups:[],world:d.world,draft:d})),
     ]
-    : [...Object.entries(PROP_TYPES).filter(([key,v])=>v.kind!=="fence" && v.kind!=="operable" && !propDrafts.some(draft=>draft.id===key)).map(([key,v])=>({key,label:v.name ?? key,img:propImage(key),groups:[v.kind==="billboard"||v.kind==="cross"?"billboard":"3D"],world:assetWorld(key)})),
+    : [...Object.entries(PROP_TYPES).filter(([key,v])=>v.kind!=="fence" && v.kind!=="operable" && !propDrafts.some(draft=>draft.id===key)).map(([key,v])=>({key,label:v.kind === "puddle" ? t("assetTree.name.puddle_prop") : v.name ?? key,img:propImage(key),groups:[v.kind==="billboard"||v.kind==="cross"?"billboard":"3D"],world:assetWorld(key)})),
       ...propDrafts.map(d=>({key:d.id,label:d.definition.name || t("assetManager.untitled"),img:catalog[d.definition.texture]?.diffuse ?? propTextures(d.world).get(d.definition.texture)?.diffuse ?? "",
         groups:[d.definition.kind==="billboard"||d.definition.kind==="cross"?"billboard":"3D"],world:d.world,propDraft:d})),
       ...Object.keys(decals).map(d=>({key:"decal:"+d,label:d,img:import.meta.env.BASE_URL+"decals/"+d+"/diffuse.png",groups:["decal"],world:assetWorld(d),builtinDecal:d})),
@@ -374,7 +376,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const pickupMaps = usePickupDraftMaps(selectedPickupDraft, setError);
   const pickupDraftPreview = useImageDraftPreview(selectedPickupDraft);
   const [inventoryPreview, setInventoryPreview] = useState(false);
-  const preview2D = sample === "still" || sample === "sky" || (sample === "item" && inventoryPreview);
+  const isPuddle = sample === "prop" && entry?.key === PUDDLE_PROP;
+  const preview2D = isPuddle || sample === "still" || sample === "sky" || (sample === "item" && inventoryPreview);
   const decalDraftPreview = useImageDraftPreview(selectedDecalDraft);
   const decalDraftNormal = useBlobUrl(selectedDecalDraft?.decalNormal);
   const stillDraftPreview = useImageDraftPreview(selectedStillDraft);
@@ -404,7 +407,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [view,setView] = useState("textured");
   const [hidden,setHidden] = useState<Record<string,boolean>>({});
   const [edits, setEdits] = useState<MaterialMaps>({});
-  const primary = propDraft ? propDraft.definition.texture || id : prop ? propTexture(id) : id;
+  const primary = isPuddle ? "" : propDraft ? propDraft.definition.texture || id : prop ? propTexture(id) : id;
   // the selected texture (or the prop's / door's own) is shown: its Auto maps are made now (the rest of the store's are not)
   const doorLeaf = doorAsset?.definition.leaf, doorFrame = doorAsset?.definition.frame;
   useEffect(() => { if (open) for (const tex of [id, primary, alternateTexture, doorLeaf, doorFrame]) if (tex) wantSharedTexture(tex); }, [open, id, primary, alternateTexture, doorLeaf, doorFrame]);
@@ -636,7 +639,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [saveNote, setSaveNote] = useState("");
   const [copyNote, setCopyNote] = useState("");
   // the texture whose look the sliders tune (an NPC's normal strength is set in the NPC editor, a decal has none)
-  const tuneId = !entry || sample==="actor" || sample==="still" || sample==="sky" || sample==="door" || isDecal || pickup || (propDraft && !ownedTexture) || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : ownedTexture || propTexture(id);
+  const tuneId = !entry || sample==="actor" || sample==="still" || sample==="sky" || sample==="door" || isDecal || isPuddle || pickup || (propDraft && !ownedTexture) || id.startsWith("decal:") ? "" : sample==="material" ? id : sample==="item" ? "item_"+id : ownedTexture || propTexture(id);
   // a prop that uses a shared wall / floor / ceiling texture: that texture's maps are edited in Textures (a link says so)
   const propSurfaceTexture = sample==="prop" && !ownedTexture && prop && "texture" in prop && prop.texture ? prop.texture : "";
   const elsewhereTexture = propSurfaceTexture && isEditable(propSurfaceTexture) && !isPropTexture([catalog[propSurfaceTexture]?.kind ?? []].flat()) ? propSurfaceTexture : "";
@@ -646,11 +649,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const tune: TextureTuning | undefined = tuneId ? { ...textureTuning(tuneId) } : undefined;
   const tuneRef = useRef(tune);
   tuneRef.current = tune;
-  function changeTune(key: keyof TextureTuning, value: number) {
+  function changeTune(key: keyof TextureTuning, value: number | boolean | undefined) {
     const next = { ...tuneRef.current, [key]: value };
     setTextureTuning(tuneId, next);
     // a shared texture keeps its tuning with itself (a draft, published with the texture), not in the project file
-    if (tuneEditable) void editor.setTuning(Object.fromEntries(Object.entries(next).filter(([,v]) => typeof v==="number" && v!==1)) as TextureTuning);
+    if (tuneEditable) void editor.setTuning(Object.fromEntries(Object.entries(next).filter(([,v]) => typeof v === "boolean" || (typeof v === "number" && v !== 1))) as TextureTuning);
     setTuneStamp(n => n + 1);
     setSaveNote("");
     setCopyNote("");
@@ -1184,7 +1187,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                   try { reviseSharedProp(id); } catch (error) { setError(errorText(error)); }
                 } else { setOpen(false); propEdit.set({name:id,part:0}); }
               }}>{t("assetManager.propEditor")}</button>}
-              {!isDecal && sample==="prop" && <label>{t("assetManager.mount")} <select className={selectClass} value={placement} onChange={e=>setPlacement(e.target.value)}>{["Auto","Floor","Wall"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>}</div>
+              {!isDecal && !isPuddle && sample==="prop" && <label>{t("assetManager.mount")} <select className={selectClass} value={placement} onChange={e=>setPlacement(e.target.value)}>{["Auto","Floor","Wall"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>}</div>
             {sample==="item" && <div className="flex gap-1">
               <button type="button" className={button} aria-pressed={inventoryPreview} onClick={()=>setInventoryPreview(true)}>{t("assetManager.pickup.icon")}</button>
               <button type="button" className={button} aria-pressed={!inventoryPreview} onClick={()=>setInventoryPreview(false)}>{t("assetManager.pickup.world")}</button>
@@ -1198,7 +1201,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
           </main>
           {panelOpen ? <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-neutral-800 pl-2">
             <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setPanelOpen(false)}>▶</button></div>
-            {sample==="door" ? doorAsset && <DoorAssetFields key={id} asset={doorAsset} editable={!!doorDraft} onError={setError}/>
+            {isPuddle ? <p className="text-xs text-neutral-400">{t("assetTree.puddlePreviewHint")}</p>
+              : sample==="door" ? doorAsset && <DoorAssetFields key={id} asset={doorAsset} editable={!!doorDraft} onError={setError}/>
               : sample==="still" || sample==="sky" || isDecal || (sample==="item" && (isPickupDraft || entry?.image?.pickup)) ? <>
               {selectedImageDraft && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName(selectedImageDraft.world)}</p>}
               <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError} onRevised={select}/>
@@ -1237,6 +1241,10 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               {tune ? <>
                 <p className="my-1 text-xs text-neutral-400">{t("assetManager.tuningHint")}</p>
                 {TUNING.map(({key,label,max,hint})=><label key={key} className="my-1 block text-sm" title={t(hint)}>{t(label)}: <strong>{(tune[key]??1).toFixed(2)}×</strong><input className="block w-full" type="range" min="0" max={max} step=".05" value={tune[key]??1} onChange={e=>changeTune(key,+e.target.value)}/></label>)}
+                {(sample === "material" || sample === "prop") && <label className="my-1 flex items-center justify-between gap-2 text-sm">{t("assetManager.roomReflection")}
+                  <select className={selectClass} value={String(tune.roomReflection ?? "auto")} onChange={e=>changeTune("roomReflection", e.target.value === "auto" ? undefined : e.target.value === "true")}>
+                    <option value="auto">{display("Auto")}</option><option value="true">{display("On")}</option><option value="false">{display("Off")}</option>
+                  </select></label>}
                 <div className="mt-2 flex flex-wrap items-center gap-2">{!tuneEditable && <button className={button+" !py-1"} onClick={dev ? saveTune : downloadTune}>{t(dev ? "assetManager.save" : "assetManager.download")}</button>}{!tuneEditable && !dev && <button className={button+" !py-1"} onClick={copyTune}>{t("assetManager.copy")}</button>}<button className={button+" !py-1"} onClick={()=>{setTextureTuning(tuneId,undefined);if(tuneEditable)void editor.setTuning(undefined);setTuneStamp(n=>n+1);setSaveNote("");setCopyNote("");}}>{t("assetManager.reset")}</button></div>
                 {tuneEditable && <p className="mt-1 text-xs text-neutral-300">{t("assetManager.tuningShared")}</p>}
                 {saveNote && <p className="mt-1 text-xs text-neutral-300">{saveNote}</p>}

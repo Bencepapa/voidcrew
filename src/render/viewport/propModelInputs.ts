@@ -14,7 +14,7 @@ export const propSets = (type: PropType, primarySet: string): string[] =>
         ? [type.door, type.inside, `${type.views}_side`, `${type.views}_top`]
         : type.kind === "pillar"
           ? [type.texture ?? primarySet]
-          : type.kind === "chamfer" || type.kind === "roof" || type.kind === "fence" || type.kind === "operable"
+          : type.kind === "chamfer" || type.kind === "roof" || type.kind === "fence" || type.kind === "operable" || type.kind === "puddle"
             ? []
             : [type.texture];
 

@@ -94,6 +94,7 @@ export const assetManagerEn = {
   "assetManager.reliefDepth": "Relief depth",
   "assetManager.roughness": "Roughness",
   "assetManager.metalness": "Metalness",
+  "assetManager.roomReflection": "Room reflection",
   "assetManager.normalHint": "how strongly the normal map bends the light",
   "assetManager.reliefHint": "walls, floors and ceilings: the height map's real depth (rebuilds the geometry in the game)",
   "assetManager.roughHint": "lower is shinier",

@@ -10,6 +10,9 @@ import { SEARCH_TARGETS, type SearchTarget } from "./targets";
 assert.equal(normalizeSearch("  TETŐ\t és Égbolt "), "teto es egbolt");
 for (const dictionary of [{ ...debugEn, ...editorShellEn }, { ...debugHu, ...editorShellHu }]) {
   const index = buildSearchIndex(SEARCH_TARGETS, target => dictionary[target.titleKey as keyof typeof dictionary] ?? target.titleKey);
+  assert.equal(index.query("tükröződés")[0]?.id, "debug.lights.probeReflections");
+  assert.equal(index.query("reflection strength")[0]?.id, "debug.lights.probeReflectionStrength");
+  assert.equal(index.query("probe sűrűség")[0]?.id, "debug.lights.probeReflectionDensity");
   for (const query of ["napszak", "time of day"]) {
     assert.equal(index.query(query)[0]?.id, "setting.sky.timeOfDay", query);
   }

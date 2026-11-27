@@ -7,7 +7,7 @@ import { createBakeCache } from "../lightBakeCache";
 
 // the baked light grids of the last few scenes (see render/lightBakeCache.ts): a rebuild whose light inputs did not change
 // (a wall texture, say) reuses its grid instead of baking again
-export const bakeCache = createBakeCache<{ data: LightBakeResult["data"]; ambient?: LightBakeResult["ambient"] }>(4);
+export const bakeCache = createBakeCache<Omit<LightBakeResult, "timing">>(4);
 
 // What one build of the scene leaves for the next - an edit rebuilds the
 // deck, but its walls' textures and relief don't change: the renderer (and

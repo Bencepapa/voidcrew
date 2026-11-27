@@ -4,6 +4,7 @@ import type { EditorBarProps } from "../EditorBar";
 import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle } from "./parts";
 
 import { PROP_TYPES, propEditable } from "../../game/props";
+import { PUDDLE_PROP } from "../../game/puddle";
 import { propEdit } from "../propEditState";
 import { useTextureVersion } from "../textureLibrary";
 import { useSharedPropVersion } from "../sharedProps";
@@ -41,7 +42,7 @@ return <>
 </div>
 </div>}
 {p.prop.fence ? <FencePieceFields {...p}/> : <>
-<KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id) && PROP_TYPES[id].kind !== "fence").map(value => ({value,label:PROP_TYPES[value].name ?? value}))} onChange={prop => p.onPropChange({prop})}/>
+<KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id) && PROP_TYPES[id].kind !== "fence").map(value => ({value,label:value === PUDDLE_PROP ? t("assetTree.name.puddle_prop") : PROP_TYPES[value].name ?? value}))} onChange={prop => p.onPropChange({prop})}/>
 
 {p.prop.retexturable && (
                   // (a roof wears any wall-kind set - the user's shared ones too; the other props

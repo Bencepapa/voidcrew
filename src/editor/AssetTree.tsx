@@ -6,6 +6,7 @@ import { ROOF_FORMS, type RoofForm } from "../game/roofAutotile";
 import { hasKey, t, type Key } from "../i18n";
 import { assetInWorld, worldOfMap } from "../game/worlds";
 import { PROP_TYPES } from "../game/props";
+import { PUDDLE_MASK_PATH } from "../game/puddle";
 import { ITEM_TYPES } from "../game/items";
 import { ACTOR_TYPES, type ActorType } from "../game/actors";
 import { ActorThumb, Thumb } from "./Thumb";
@@ -108,7 +109,8 @@ export function AssetTree(p: EditorBarProps & { searchRequest?: AssetSearchReque
     const kind = ["pillar","chamfer"].includes(v.kind) ? "pillar" : ["billboard","cross"].includes(v.kind) ? "billboard" : "3D";
     if (!query && kind!==propTab) return [];
     const tex = v.kind==="views" ? v.views+"_front" : v.kind==="box" ? v.side : v.kind==="cabin" ? v.door : "texture" in v && v.texture || p.mapLook.textures?.wall || "wall4";
-    return [{id,label:v.name ?? propName(id),kind:kind==="pillar"?t("assetTree.pillar"):kind,image:(TEXTURE_SETS[tex as keyof typeof TEXTURE_SETS] ?? textureFolder(tex)).diffuse,active:p.propChoice===id,pick:()=>choose("prop",()=>p.onPropChoice(id)),manager:"prop" as const}];
+    const image = v.kind === "puddle" ? `${import.meta.env.BASE_URL}${PUDDLE_MASK_PATH}` : (TEXTURE_SETS[tex as keyof typeof TEXTURE_SETS] ?? textureFolder(tex)).diffuse;
+    return [{id,label:v.name ?? propName(id),kind:kind==="pillar"?t("assetTree.pillar"):kind,image,active:p.propChoice===id,pick:()=>choose("prop",()=>p.onPropChoice(id)),manager:"prop" as const}];
   });
   // the door entry shows the map's own door (a fantasy map's gate, a ship's sliding door), else the default one
   const doorSet = (TEXTURE_SETS as Record<string,{diffuse:string}>)[p.mapLook.textures?.door ?? ""] ? p.mapLook.textures!.door! : "door1";

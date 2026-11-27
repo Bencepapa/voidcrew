@@ -64,6 +64,8 @@
 "assetTree.name.Wall 4": "Wall 4",
 "assetTree.name.Wall 5": "Wall 5",
 "assetTree.name.fence1": "Iron fence",
+"assetTree.name.puddle_prop": "Reflective puddle",
+"assetTree.puddlePreviewHint": "Place the puddle on a map floor to see it reflect the room. Resize it in the Inspector.",
 "assetTree.name.arch1": "Stone arch",
 "assetTree.name.roof_slope": "Roof slope",
 "assetTree.name.roof_slope_flat": "Roof slope into flat",

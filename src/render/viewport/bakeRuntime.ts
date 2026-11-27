@@ -5,7 +5,8 @@ import { DIR_VECTOR } from "../../game/movement";
 import { isSharedPropId, PROP_TYPES } from "../../game/props";
 import type { GameMap } from "../../game/types";
 import type { LightBakeRequest, LightBakeResult } from "../lightBake.worker";
-import { bakeLightGrid, packLightGrid, setLightGrid, type LightGridUniforms } from "../lightGrid";
+import { computeLightBake } from "../lightBakeJob";
+import { setLightGrid, type LightGridUniforms } from "../lightGrid";
 import { isTextureSetId } from "../textureSets";
 import { bakeInputs, shouldBakeQuickFirst } from "./bakeInputs";
 import { EDIT_SETTLE_MS, LIGHT_EDIT_SETTLE_MS } from "./constants";
@@ -41,13 +42,14 @@ interface BakeRuntimeContext {
   getMapLights(): LightSpec[];
   lightGrid: LightGridUniforms;
   wallHeight: number;
+  max3DTextureSize: number;
   isDisposed(): boolean;
   tick(name: string, since: number, end?: number): void;
   track(work: Promise<void>): Promise<void>;
 }
 
 export function createBakeRuntime({
-  scene, map, settingsRef, latestMapRef, rebakeRef, getLiveMap, getMapLights, lightGrid, wallHeight, isDisposed, tick, track,
+  scene, map, settingsRef, latestMapRef, rebakeRef, getLiveMap, getMapLights, lightGrid, wallHeight, max3DTextureSize, isDisposed, tick, track,
 }: BakeRuntimeContext) {
   const probeDebug = createProbeDebug(scene);
   let currentGrid: LightBakeResult["data"] | undefined;
@@ -60,11 +62,12 @@ export function createBakeRuntime({
   const bake = (m: GameMap, quick = false): Promise<void> => {
     cancelBake?.();
     const bakeFrom = performance.now();
-    const { options, ambientDensity, lights, sharedPropTypes, skySurfaces, cacheKey } = inputsFor(m, quick);
+    const { options, ambientDensity, reflectionDensity, lights, sharedPropTypes, skySurfaces, cacheKey } = inputsFor(m, quick);
     const { width, height, cells, floorHeights, ceilingHeights, props, bridges } = m;
     const bakeMap = { width, height, cells, floorHeights, ceilingHeights, props, bridges, sharedPropTypes, skySurfaces };
-    const applyBake = ({ data, ambient, timing }: LightBakeResult) => {
-      bakeCache.set(cacheKey, { data, ambient });
+    const request: LightBakeRequest = { map: bakeMap, lights, wallHeight, options, ambientDensity, reflectionDensity };
+    const applyBake = ({ data, ambient, reflection, timing }: LightBakeResult) => {
+      bakeCache.set(cacheKey, { data, ambient, reflection });
       const applyFrom = performance.now();
       if (timing) {
         const start = performance.timeOrigin + bakeFrom;
@@ -73,16 +76,13 @@ export function createBakeRuntime({
         tick("light grid packing", timing.computedAt, timing.packedAt);
         tick("light worker response", timing.packedAt, performance.timeOrigin + applyFrom);
       }
-      setLightGrid(lightGrid, data, ambient);
+      const supported = reflection && Math.max(reflection.nx, reflection.ny, reflection.nz) <= max3DTextureSize;
+      setLightGrid(lightGrid, data, ambient, supported ? reflection : undefined);
       currentGrid = data;
       tick("light grid texture setup", applyFrom);
       tick("light bake", bakeFrom);
     };
-    const fallback = () => applyBake({
-      data: packLightGrid(bakeLightGrid(bakeMap, lights, wallHeight, options)),
-      ambient: ambientDensity === undefined ? undefined
-        : packLightGrid(bakeLightGrid(bakeMap, lights, wallHeight, { ...options, perCell: ambientDensity }), true),
-    });
+    const fallback = () => applyBake({ ...computeLightBake(request), timing: undefined });
     // the same inputs as a bake before (a rebuild for a texture change, say): its result, at once
     const cached = bakeCache.get(cacheKey);
     if (cached) {
@@ -126,10 +126,6 @@ export function createBakeRuntime({
         event.preventDefault();
         finish();
         recover();
-      };
-      const request: LightBakeRequest = {
-        map: bakeMap,
-        lights, wallHeight, options, ambientDensity,
       };
       try {
         worker.postMessage(request);

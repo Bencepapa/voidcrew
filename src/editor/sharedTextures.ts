@@ -40,6 +40,7 @@ const revNumbers = (entries: { name: string }[]) => entries.map(e => /^r(\d+)$/.
 function parseTuning(raw: unknown): SharedMeta["tuning"] {
   if (!raw || typeof raw !== "object") return undefined;
   const out: NonNullable<SharedMeta["tuning"]> = {};
+  if ("roomReflection" in raw && typeof raw.roomReflection === "boolean") out.roomReflection = raw.roomReflection;
   for (const k of ["normal", "relief", "rough", "metal"] as const) {
     const v = (raw as Record<string, unknown>)[k];
     if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 10) out[k] = v;

@@ -1,6 +1,7 @@
 import { createWeatherUniforms, useWeatherSurface, type WeatherUniforms } from "./weather";
 import * as THREE from "three";
 import { ACCENT_GLSL, ACCENT_UNIFORMS } from "./accent";
+import { REFLECTION_PROBE_GLSL, type PackedReflectionProbe } from "./reflectionProbe";
 import { cellAt, ceilingHeight, floorHeight } from "../game/mapGeometry";
 import { clearLine, SKY_CEILING, type LightBakeMap } from "./bakeOcclusion";
 import { occludersOf } from "./bakeOccluders";
@@ -422,6 +423,10 @@ function bounceLight(map: LightBakeMap, lights: LightSpec[]): Float32Array {
 // The shared uniforms every lit material reads the grid through (one set per
 // scene: a new bake swaps their values).
 export interface LightGridUniforms {
+  reflectionReady: boolean;
+  reflectionStrength: { value: number };
+  reflectionMin: { value: THREE.Vector3 };
+  reflectionSize: { value: THREE.Vector3 };
   weather: WeatherUniforms;
   faces: { value: THREE.Data3DTexture }[];
   min: { value: THREE.Vector3 };
@@ -482,6 +487,10 @@ export function createLightGridUniforms(): LightGridUniforms {
   };
   return {
     weather: createWeatherUniforms(),
+    reflectionReady: false,
+    reflectionStrength: { value: 0 },
+    reflectionMin: { value: new THREE.Vector3() },
+    reflectionSize: { value: new THREE.Vector3(1, 1, 1) },
     faces: AXES.map(() => ({ value: empty() })),
     min: { value: new THREE.Vector3() },
     size: { value: new THREE.Vector3(1, 1, 1) },
@@ -498,8 +507,8 @@ export function createLightGridUniforms(): LightGridUniforms {
 // puts a bake into the uniforms (the old textures freed); `ambient`: a
 // coarser directional bake to take the ambient part from (see
 // LightGridUniforms.split)
-export function setLightGrid(uniforms: LightGridUniforms, data: PackedLightGrid, ambient?: PackedLightGrid) {
-  const put = (rgba: Uint16Array, a: number, grid: PackedLightGrid) => {
+export function setLightGrid(uniforms: LightGridUniforms, data: PackedLightGrid, ambient?: PackedLightGrid, reflection?: PackedReflectionProbe) {
+  const put = (rgba: Uint16Array, a: number, grid: Pick<PackedLightGrid, "nx" | "ny" | "nz">) => {
     const tex = new THREE.Data3DTexture(rgba, grid.nx, grid.nz, grid.ny);
     tex.format = THREE.RGBAFormat;
     tex.type = THREE.HalfFloatType;
@@ -522,6 +531,15 @@ export function setLightGrid(uniforms: LightGridUniforms, data: PackedLightGrid,
     uniforms.min2.value.copy(ambient.min);
     uniforms.size2.value.copy(ambient.size);
   }
+  if (reflection) {
+    reflection.faces.forEach((face, index) => put(face, 4 + index, reflection));
+    const { min, size } = reflection;
+    uniforms.reflectionMin.value.set(min.x, min.y, min.z);
+    uniforms.reflectionSize.value.set(size.x, size.y, size.z);
+  } else if (uniforms.reflectionReady && data.mode === "directional") {
+    for (const index of [4, 5]) put(new Uint16Array(4), index, { nx: 1, ny: 1, nz: 1 });
+  }
+  uniforms.reflectionReady = !!reflection;
 }
 
 export function disposeLightGrid(uniforms: LightGridUniforms) {
@@ -544,7 +562,9 @@ const SHEEN = 0.9;
 // (a little in front of it), from the directions its normal faces, added to
 // the ambient light - so the AO map shades it too. Keeps whatever the
 // material's own onBeforeCompile does.
-export function useLightGrid(material: THREE.Material, uniforms: LightGridUniforms) {
+const FULL_PROBE_REFLECTION = { value: 1 };
+
+export function useLightGrid(material: THREE.Material, uniforms: LightGridUniforms, reflectionMask = FULL_PROBE_REFLECTION) {
   if (!(material as THREE.MeshStandardMaterial).isMeshStandardMaterial || material.userData.lightGrid) return;
   material.userData.lightGrid = true;
   useWeatherSurface(material, uniforms.weather);
@@ -565,6 +585,10 @@ export function useLightGrid(material: THREE.Material, uniforms: LightGridUnifor
     shader.uniforms.uLgScale = uniforms.scale;
     shader.uniforms.uLgMode = uniforms.mode;
     shader.uniforms.uLgSplit = uniforms.split;
+    shader.uniforms.uLgReflectionStrength = uniforms.reflectionStrength;
+    shader.uniforms.uLgReflectionMask = reflectionMask;
+    shader.uniforms.uLgReflectionMin = uniforms.reflectionMin;
+    shader.uniforms.uLgReflectionSize = uniforms.reflectionSize;
     shader.uniforms.uLgMin2 = uniforms.min2;
     shader.uniforms.uLgSize2 = uniforms.size2;
     shader.uniforms.uLgReach = uniforms.reach;
@@ -586,6 +610,8 @@ uniform highp sampler3D uLgFace2;
 uniform highp sampler3D uLgFace3;
 uniform highp sampler3D uLgFace4;
 uniform highp sampler3D uLgFace5;
+${REFLECTION_PROBE_GLSL}
+uniform float uLgReflectionMask;
 uniform vec3 uLgMin;
 uniform vec3 uLgSize;
 uniform float uLgScale;
@@ -638,17 +664,28 @@ if (uLgReachOn > 0.5) {
 }
 ${LIGHTS_BEGIN_REACHED}
 if (uLgScale > 0.0) {
-  vec3 lgN = inverseTransformDirection(normal, viewMatrix);
-  vec3 lgP = vLgWorld + lgN * 0.06;
-  // the grid's textures run x, z, y
+vec3 lgN = inverseTransformDirection(
+    normal, viewMatrix
+);
+
+vec3 lgGeomN = normalize(
+    inverseTransformDirection(
+        nonPerturbedNormal, viewMatrix
+    )
+);
+
+vec3 lgP = vLgWorld + lgGeomN * 0.06;
   vec3 lgUvw = vec3((lgP.x - uLgMin.x) / uLgSize.x, (lgP.z - uLgMin.z) / uLgSize.z, (lgP.y - uLgMin.y) / uLgSize.y);
   if (uLgMode < 0.5) {
     irradiance += lgCube(lgN, lgUvw) * uLgScale;
     // the metal's sheen: the light the view reflects off the surface -
     // from the same cube, the other way round (a soft stand-in for the
     // lights' highlights, which the cube has none of)
-    vec3 lgR = inverseTransformDirection(reflect(-geometryViewDir, normal), viewMatrix);
-    radiance += lgCube(lgR, lgUvw) * uLgScale * LG_SHEEN;
+    vec3 lgR = inverseTransformDirection(
+        reflect(-geometryViewDir, normal),
+        viewMatrix
+    );
+    radiance += lgCube(lgR, lgUvw) * uLgScale * LG_SHEEN * uLgReflectionMask;
   } else {
     // the ambient part, and the main part as a real light from its
     // direction - shaded (highlights too) as the real lights are
@@ -666,6 +703,11 @@ if (uLgScale > 0.0) {
       lgMain.direction = normalize((viewMatrix * vec4(lgDir / lgLen, 0.0)).xyz);
       lgMain.visible = true;
       RE_Direct(lgMain, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
+    }
+    if (uLgReflectionStrength * uLgReflectionMask > 0.0) {
+      vec3 lgR = inverseTransformDirection(reflect(-geometryViewDir, normal), viewMatrix);
+      radiance += lgReflection(lgR, lgP, material.roughness)
+          * uLgScale * uLgReflectionStrength * uLgReflectionMask;
     }
   }
 }`,

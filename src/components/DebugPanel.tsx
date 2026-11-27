@@ -358,6 +358,11 @@ export function DebugPanel({
               {slider({ key: "skyDomeIntensity", label: "debug.skyDomeStrength0None", min: 0, max: 3, step: 0.05, anchor: searchAnchor("debug.lights.skyDome") })}
             </>
           )}
+          {check("probeReflections", t("debug.probeReflections"), searchAnchor("debug.lights.probeReflections"))}
+          {slider({ key: "probeReflectionStrength", label: "debug.probeReflectionStrength", min: 0, max: 1, step: 0.05, anchor: searchAnchor("debug.lights.probeReflectionStrength") })}
+          {slider({ key: "probeReflectionDensity", label: "debug.probeReflectionDensity", min: 1, max: 3, step: 1, anchor: searchAnchor("debug.lights.probeReflectionDensity") })}
+          {check("reflectionTestCubemap", t("debug.reflectionTestCubemap"), searchAnchor("debug.lights.reflectionTestCubemap"))}
+          {check("roomMaterialReflections", t("debug.roomMaterialReflections"), searchAnchor("debug.lights.roomMaterialReflections"))}
           {select(
             t("debug.shipLivery"),
             <select

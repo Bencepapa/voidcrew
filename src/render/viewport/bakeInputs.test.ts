@@ -8,6 +8,9 @@ const settings = {
   lightGridDensity: 8,
   lightGridQuickDensity: 2,
   lightGridMode: "directional" as const,
+  bakedLights: true,
+  probeReflections: false,
+  probeReflectionDensity: 1,
   lightBounce: 0.25,
   skyLightIntensity: 1,
   skyDomeIntensity: 0.45,
@@ -62,9 +65,18 @@ assert.equal(bakeInputs({ ...map, lightGridAmbient: 6 }, false, false, settings,
 assert.equal(bakeInputs(map, false, false, { ...settings, lightGridMode: "cube" }, [], 2, propTypes, isSharedPropId, noSkyWall).ambientDensity, undefined);
 
 const outdoors = { ...map, textures: { ceiling: "sky" } };
-const skyInputs = (m = outdoors, s = settings, quick = false, preview = false) =>
+const skyInputs = (m = outdoors, s: Parameters<typeof bakeInputs>[3] = settings, quick = false, preview = false) =>
   bakeInputs(m, quick, preview, s, [], 2, propTypes, isSharedPropId, noSkyWall);
 const outdoorBake = skyInputs();
+const reflection = { ...settings, probeReflections: true };
+const reflected = skyInputs(outdoors, reflection);
+assert.equal(reflected.reflectionDensity, 1);
+assert.notEqual(reflected.cacheKey, outdoorBake.cacheKey);
+assert.notEqual(reflected.cacheKey, skyInputs(outdoors, { ...reflection, probeReflectionDensity: 2 }).cacheKey);
+assert.equal(skyInputs(outdoors, reflection, true).reflectionDensity, undefined);
+assert.equal(skyInputs(outdoors, reflection, false, true).reflectionDensity, undefined);
+assert.equal(skyInputs(outdoors, { ...reflection, bakedLights: false }).reflectionDensity, undefined);
+assert.equal(skyInputs(outdoors, { ...reflection, lightGridMode: "cube" }).reflectionDensity, undefined);
 assert.deepEqual(outdoorBake.skySurfaces, Uint8Array.of(1));
 assert.equal(outdoorBake.options.sky?.quick, false);
 assert.equal(skyInputs(outdoors, settings, true).options.sky?.quick, true);

@@ -15,6 +15,7 @@ export interface TextureTuning {
   // its roughness and metalness (not for a set with its own surface map)
   rough?: number;
   metal?: number;
+  roomReflection?: boolean;
 }
 
 export type TextureTuningTable = Record<string, TextureTuning>;
@@ -35,6 +36,7 @@ export function textureTuning(id: string): TextureTuning | undefined {
 export function setTextureTuning(id: string, value: TextureTuning | undefined) {
   const next = { ...table };
   const clean: TextureTuning = {};
+  if (typeof value?.roomReflection === "boolean") clean.roomReflection = value.roomReflection;
   for (const key of ["normal", "relief", "rough", "metal"] as const) {
     const v = value?.[key];
     if (typeof v === "number" && Number.isFinite(v) && v !== 1) clean[key] = v;

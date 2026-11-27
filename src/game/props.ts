@@ -54,6 +54,7 @@ export type PropType = {
   // it hangs on (taking the prop out takes the fire too)
   flame?: { up: number };
 } & (
+  | { kind: "puddle" }
   | {
       // a relief box: `side` texture set on its four sides, `top` on top
       kind: "box";
@@ -353,6 +354,7 @@ export const PROP_TYPES: Record<string, PropType> = {
   trapcell1: { kind: "operable", model: "trapcell", size: [0.9, 0.02, 0.9] },
   arrowslit1: { kind: "operable", model: "slit", size: [0.3, 0.24, 0.06], wall: true, elevation: 0.45 },
   glyph1: { kind: "operable", model: "glyph", size: [0.36, 0.36, 0.04], wall: true, elevation: 0.35 },
+  puddle_prop: { kind: "puddle", size: [0.92, 0, 0.64] },
 };
 
 // The prop editor's saves (see src/editor/PropEditor.tsx): src/props/<name>.json
@@ -517,7 +519,7 @@ export function flamePosition(spec: PropSpec): [number, number, number] | null {
 export function propBoxes(map: GameMap, cx: number, cy: number) {
   const boxes = (map.props ?? [])
     // (a roof is decoration: it hangs over the cell, never in the way; a fence has boxes of its own, below; a plate is walked over)
-    .filter((p) => p.cell.x === cx && p.cell.y === cy && PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "roof" && PROP_TYPES[p.prop].kind !== "fence" && !isFloorOperable(PROP_TYPES[p.prop]))
+    .filter((p) => p.cell.x === cx && p.cell.y === cy && PROP_TYPES[p.prop] && PROP_TYPES[p.prop].kind !== "roof" && PROP_TYPES[p.prop].kind !== "fence" && PROP_TYPES[p.prop].kind !== "puddle" && !isFloorOperable(PROP_TYPES[p.prop]))
     .map((p) => {
       const { x, z, reachX, reachZ } = propPlacement(p);
       return { minX: x - reachX, maxX: x + reachX, minZ: z - reachZ, maxZ: z + reachZ, height: (p.elevation ?? 0) + propHeight(map, p) };

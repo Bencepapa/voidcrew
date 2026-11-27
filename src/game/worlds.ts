@@ -111,7 +111,7 @@ const FANTASY_ASSETS = new Set([
   "puddle_small", "puddle_large", "puddle_long", "cart_ruts", "footpath", "footpath_bend", "cartwheel",
 ]);
 // what both worlds may use
-const SHARED_ASSETS = new Set(["sky", "chamfer1", "chamfer2", "pillar1", "pillar2", "lever1", "button1", "plate1", "trapcell1", "arrowslit1", "glyph1"]);
+const SHARED_ASSETS = new Set(["sky", "chamfer1", "chamfer2", "pillar1", "pillar2", "lever1", "button1", "plate1", "trapcell1", "arrowslit1", "glyph1", "puddle_prop"]);
 
 export function assetWorld(id: string): WorldId {
   // (tesztsztori: remove together - the test story's actors and items are fantasy ones)

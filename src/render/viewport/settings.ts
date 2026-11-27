@@ -63,6 +63,11 @@ export interface ViewportSettings extends PostProcessSettings {
   // real one is still being computed
   lightGridQuickDensity: number;
   lightGridMode: LightGridMode;
+  probeReflections: boolean;
+  probeReflectionStrength: number;
+  probeReflectionDensity: number;
+  reflectionTestCubemap: boolean;
+  roomMaterialReflections: boolean;
   // how much light the bake lets bounce round corners into the cells no
   // light sees (see lightGrid.ts bounceLight; 0: none, they stay dark)
   lightBounce: number;
@@ -167,6 +172,11 @@ export const DEFAULT_SETTINGS: ViewportSettings = {
   lightGridDensity: 3,
   lightGridQuickDensity: 1,
   lightGridMode: "directional",
+  probeReflections: false,
+  probeReflectionStrength: 0.25,
+  probeReflectionDensity: 1,
+  reflectionTestCubemap: false,
+  roomMaterialReflections: true,
   lightBounce: 0.4,
   smokeStyle: "animated",
   shipAccent: "rolled",

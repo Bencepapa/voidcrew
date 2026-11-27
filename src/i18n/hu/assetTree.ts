@@ -64,6 +64,8 @@
 "assetTree.name.Wall 4": "Fal 4",
 "assetTree.name.Wall 5": "Fal 5",
 "assetTree.name.fence1": "Vasker\u00edt\u00e9s",
+"assetTree.name.puddle_prop": "Tükröződő tócsa",
+"assetTree.puddlePreviewHint": "Tedd a tócsát a pálya padlójára a szoba tükröződésének megtekintéséhez. A méret az Inspektorban állítható.",
 "assetTree.name.arch1": "K\u0151bolt\u00edv",
 "assetTree.name.roof_slope": "Tet\u0151 lejt\u0151",
 "assetTree.name.roof_slope_flat": "Tet\u0151 lejt\u0151, lapos r\u00e9sszel",

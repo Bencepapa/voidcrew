@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { WORLD_SETTING_KEYS, worldDefaults, worldSettings } from "./worldRenderDefaults";
 import type { ViewportSettings } from "../components/GameViewport";
+import { DEFAULT_SETTINGS } from "../render/viewport/settings";
 
 // The fantasy world's tuned defaults; other worlds add nothing.
 const fantasy = worldSettings("fantasy");
@@ -21,4 +22,7 @@ const merged = worldDefaults("fantasy", base) as unknown as Record<string, unkno
 assert.equal(merged.fov, 53);
 assert.equal(merged.fogColor, "#000000");
 assert.equal((worldDefaults("scifi", base) as unknown as Record<string, unknown>).fov, 72);
+for (const world of ["fantasy", "scifi"]) {
+  assert.equal(worldDefaults(world, DEFAULT_SETTINGS).roomMaterialReflections, true, world);
+}
 console.log("worldRenderDefaults ok");

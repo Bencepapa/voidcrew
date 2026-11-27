@@ -17,12 +17,13 @@ export interface BakeKeyInput {
   wallHeight: number;
   options: unknown;
   ambientDensity?: number;
+  reflectionDensity?: number;
 }
 
 /** What the bake is a function of, as a string (equal strings: the same grid). */
 export function bakeCacheKey(input: BakeKeyInput): string {
-  const { width, height, cells, floorHeights, ceilingHeights, skySurfaces, props, bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity } = input;
-  return JSON.stringify([width, height, cells, floorHeights, ceilingHeights, skySurfaces?.join(","), props, bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity ?? null]);
+  const { width, height, cells, floorHeights, ceilingHeights, skySurfaces, props, bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity, reflectionDensity } = input;
+  return JSON.stringify([width, height, cells, floorHeights, ceilingHeights, skySurfaces?.join(","), props, bridges, sharedPropTypes, lights, wallHeight, options, ambientDensity ?? null, reflectionDensity ?? null]);
 }
 
 /** A least-recently-used cache of at most `max` entries. */

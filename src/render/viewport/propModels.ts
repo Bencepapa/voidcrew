@@ -27,6 +27,7 @@ export function createPropModels(deps: {
   roofKitFor: (id: string) => WallKit;
   settingsRef: { current: ViewportSettings };
   wallHeight: number;
+  buildPuddle: (width: number, depth: number) => THREE.Group;
   propReliefDepth: number;
   hybrid: boolean;
   buildPropRelief: ReturnType<typeof createStructuralDoors>["buildPropRelief"];
@@ -107,6 +108,7 @@ export function createPropModels(deps: {
   const shadows = createPropShadows();
   async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
     const [length, height, depth] = type.size;
+    if (type.kind === "puddle") return deps.buildPuddle(length, depth);
     // (its texture sets take its own normal strength)
     const propKitFor = (setId: string, kit = sharedPropKitFor(setId)) => {
       kit.normal = type.normal;

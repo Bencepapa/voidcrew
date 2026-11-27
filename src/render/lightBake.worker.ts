@@ -1,4 +1,6 @@
-import { bakeLightGrid, packLightGrid, type LightBakeMap } from "./lightGrid";
+import type { bakeLightGrid, packLightGrid, LightBakeMap } from "./lightGrid";
+import { computeLightBake } from "./lightBakeJob";
+import type { PackedReflectionProbe } from "./reflectionProbe";
 
 export interface LightBakeRequest {
   map: LightBakeMap;
@@ -6,11 +8,13 @@ export interface LightBakeRequest {
   wallHeight: number;
   options: NonNullable<Parameters<typeof bakeLightGrid>[3]>;
   ambientDensity?: number;
+  reflectionDensity?: number;
 }
 
 export interface LightBakeResult {
   data: ReturnType<typeof packLightGrid>;
   ambient?: ReturnType<typeof packLightGrid>;
+  reflection?: PackedReflectionProbe;
   timing?: {
     receivedAt: number;
     computedAt: number;
@@ -18,17 +22,9 @@ export interface LightBakeResult {
   };
 }
 
-self.onmessage = ({ data: { map, lights, wallHeight, options, ambientDensity } }: MessageEvent<LightBakeRequest>) => {
-  const now = () => performance.timeOrigin + performance.now();
-  const receivedAt = now();
-  const grid = bakeLightGrid(map, lights, wallHeight, options);
-  const ambientGrid = ambientDensity === undefined
-    ? undefined
-    : bakeLightGrid(map, lights, wallHeight, { ...options, perCell: ambientDensity });
-  const computedAt = now();
-  const data = packLightGrid(grid);
-  const ambient = ambientGrid && packLightGrid(ambientGrid, true);
-  const result: LightBakeResult = { data, ambient, timing: { receivedAt, computedAt, packedAt: now() } };
-  const transfer = [...data.faces, ...(ambient?.faces ?? [])].map((face) => face.buffer as ArrayBuffer);
+self.onmessage = ({ data: request }: MessageEvent<LightBakeRequest>) => {
+  const result = computeLightBake(request);
+  const transfer = [...result.data.faces, ...(result.ambient?.faces ?? []), ...(result.reflection?.faces ?? [])]
+    .map(face => face.buffer as ArrayBuffer);
   self.postMessage(result, { transfer });
 };

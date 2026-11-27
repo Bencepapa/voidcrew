@@ -1,4 +1,6 @@
 import { createPropModels } from "../render/viewport/propModels";
+import { createPuddleProps } from "../render/viewport/puddleProps";
+import { PUDDLE_MASK_PATH } from "../game/puddle";
 import { createPropScene } from "../render/viewport/propScene";
 import { createLootChalk } from "../render/viewport/lootChalk";
 import { createTrim } from "../render/viewport/trim";
@@ -24,11 +26,7 @@ import { effectiveViewDistance } from "../render/graphics";
 import { ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, isSharedPickupId } from "../game/items";
-import {
-createLightGridUniforms,
-disposeLightGrid,
-useLightGrid
-} from "../render/lightGrid";
+import { createLightGridUniforms, disposeLightGrid } from "../render/lightGrid";
 import {
 bridgeAt,
 cellAt,
@@ -91,7 +89,8 @@ SHAFT_LIGHT_COLOR,type CamTarget,
 computeTarget
 } from "../render/viewport/camera";
 import { ITEM_TOPDOWN_GROW } from "../render/viewport/loot";
-import { addDirectLightOcclusion } from "../render/viewport/materials";
+import { addDirectLightOcclusion, lightObjectMaterials } from "../render/viewport/materials";
+import { addReflectionTestSphere } from "../render/viewport/reflectionTestSphere";
 import { createPostPipeline } from "../render/viewport/postPipeline";
 import { createBakeRuntime } from "../render/viewport/bakeRuntime";
 import { createSkySurface } from "../render/viewport/skySurface";
@@ -468,8 +467,10 @@ export function GameViewport({
   const topdownRef = useRef({ on: false, x: 0, z: 0, h: 9, tilt: Math.PI / 2, yaw: 0, fresh: false });
   const editHoverRef = useRef<THREE.Vector2 | null>(null);
   const rebakeRef = useRef<(() => void) | null>(null);
+  const reflectionDensity = settings.bakedLights && settings.lightGridMode === "directional" && settings.probeReflections
+    ? settings.probeReflectionDensity : undefined;
   useEffect(() => rebakeRef.current?.(), [
-    settings.lightGridDensity, settings.lightGridMode, settings.lightBounce,
+    settings.lightGridDensity, settings.lightGridMode, settings.lightBounce, reflectionDensity,
     settings.skyLightIntensity, settings.skyDomeIntensity, settings.skyLightAzimuth, settings.skyLightElevation, settings.skyLightColor,
   ]);
   // the map as it is now (lights included - the scene's may be older)
@@ -625,10 +626,7 @@ export function GameViewport({
       setTimeout(() => {
         if (disposed || ready || buildsPending > 0 || texturesLoaded < texturesTotal) return;
         ready = true;
-        group.traverse((o) => {
-          const mat = (o as THREE.Mesh).material;
-          for (const m of Array.isArray(mat) ? mat : mat ? [mat] : []) useLightGrid(m, lightGrid);
-        });
+        lightObjectMaterials(group, lightGrid);
         const compileFrom = performance.now();
         renderer.compile(scene, camera);
         tick("shader compile", compileFrom);
@@ -770,6 +768,7 @@ export function GameViewport({
       for (const mat of [wallMat, sideMat, litMat]) {
         if (!mat) continue;
         viewMaps.set(mat, { normal: normalMap, depth: depthMap });
+        mat.userData.roomReflectionTexture = setId;
         mat.userData.accent = accent;
         if (accentUniforms) mat.userData.accentUniforms = accentUniforms;
         if (surfaceMap) {
@@ -850,10 +849,15 @@ export function GameViewport({
     // the static lights, baked (see lightGrid.ts) - every lit material reads
     // it once the scene is built
     const lightGrid = createLightGridUniforms();
+    const puddles = createPuddleProps(scene, lightGrid, wallHeight, () => kitTexture(`${import.meta.env.BASE_URL}${PUDDLE_MASK_PATH}`));
+
+    const reflectionTest = !doorPreview ? addReflectionTestSphere(scene, lightGrid, map, pos, wallHeight) : undefined;
     // the map as edited since the scene was built (see applyStructure): what the quick preview of an edit shows
     let liveMap = map;
+    const gl = renderer.getContext();
     const bakeRuntime = createBakeRuntime({
       scene, map, settingsRef, latestMapRef, rebakeRef, lightGrid, wallHeight, track, tick,
+      max3DTextureSize: gl instanceof WebGL2RenderingContext ? gl.getParameter(gl.MAX_3D_TEXTURE_SIZE) : 0,
       getLiveMap: () => liveMap,
       getMapLights: () => mapLightState.mapLights,
       isDisposed: () => disposed,
@@ -1211,14 +1215,14 @@ export function GameViewport({
     // the doors, by door cell key (the editor's selection)
     const doorGroups = new Map<string, THREE.Object3D>();
     const propModels = createPropModels({
-      primarySet, sharedPropKitFor, roofKitFor, settingsRef, wallHeight, propReliefDepth, hybrid,
+      primarySet, sharedPropKitFor, roofKitFor, settingsRef, wallHeight, propReliefDepth, hybrid, buildPuddle: puddles.build,
       buildPropRelief, farReliefLevels, geometries, fences, lightGrid, ownMaterials, kitTexture,
       busted, markSprite, propKits, createWallKit, cabinGlass, cavity,
     });
     const propScene = createPropScene({
-      map, group, wallHeight, reliefDepth, primarySet, floorY, wallKitFor, buildPillar, buildChamfer,
+      map, group, wallHeight, reliefDepth, primarySet, floorY, wallKitFor, buildPillar, buildChamfer, puddleLift: floorDepth + 0.004,
       buildFence: propModels.buildFence, buildPropTemplate: propModels.buildPropTemplate,
-      addPropLods, track, fences, editModeRef, propWiresRef,
+      addPropLods, lightGrid, track, fences, editModeRef, propWiresRef,
     });
     const { propObjects, markedProps, billboardProps, applyProps } = propScene;
 
@@ -1408,7 +1412,7 @@ export function GameViewport({
       fadeRef, fences, floorY, fog, fogBackground, freeTickRef, hiddenLayersRef, itemsLoot, latestMapRef,
       layFlatSprites, lightFixtures, lightGrid, liveRef, map, mapLightState, newMap, onStatsRef, ownAccents,
       ownMaterials, peekRefRef, pointLight, postPipeline, propObjects, getReliefStats: () => reliefStats,
-      renderer, rideRef,
+      reflectionTest, puddles, renderer, rideRef,
       selectionBox, settings, settingsRef, setTopdown, shaftLight, shipAccentRef, smokeBodies, smokeFire,
       topdown, topdownControls, transitRef, updateActors, updateAimFrame,
       updateEventMarkers: () => updateEventMarkers(), updateLightPool,
@@ -1427,6 +1431,8 @@ export function GameViewport({
 
     return () => {
       disposed = true;
+      reflectionTest?.dispose();
+      puddles.dispose();
       postPipeline.dispose();
       bakeRuntime.dispose();
       stopRaycastPrep?.();
