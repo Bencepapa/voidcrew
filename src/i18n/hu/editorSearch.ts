@@ -1,6 +1,6 @@
 export const editorSearchHu = {
   "editorSearch.title": "Kereső a szerkesztőben",
-  "editorSearch.shortcut": "Kereső a szerkesztőben (Ctrl+P / Ctrl+K)",
+  "editorSearch.shortcut": "Kereső a szerkesztőben (Ctrl+Shift+F / Ctrl+Szóköz / Ctrl+P / Ctrl+K)",
   "editorSearch.query": "Eszközök és beállítások keresése",
   "editorSearch.results": "Keresési találatok",
   "editorSearch.recent": "Legutóbbi keresések",

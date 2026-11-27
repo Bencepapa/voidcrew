@@ -5,7 +5,7 @@ import { neutralStyle } from "../editor/inspector/parts";
 import { t, useLang } from "../i18n";
 import { rememberSearch, type SearchHistoryEntry } from "./history";
 import { navigate } from "./openers";
-import { setSearchKeyHandler } from "./searchKeyboard";
+import { isSearchShortcut, setSearchKeyHandler } from "./searchKeyboard";
 import { buildSearchIndex } from "./searchIndex";
 import { findSearchTarget, SEARCH_TARGETS, type SearchTarget } from "./targets";
 
@@ -110,7 +110,7 @@ export function SearchDialog({ world, history, onHistoryChange, onClose }: Searc
           e.preventDefault();
           close();
         }
-        if (e.ctrlKey && !e.altKey && !e.shiftKey && ["p", "k"].includes(e.key.toLowerCase())) e.preventDefault();
+        if (isSearchShortcut(e)) e.preventDefault();
       }}
     >
       <header className="mb-3 flex items-center justify-between gap-2">

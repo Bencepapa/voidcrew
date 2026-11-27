@@ -3,6 +3,7 @@ import type { WorldId } from "../game/worlds";
 import { registerEditorSearchOpeners } from "./editorSearchOpeners";
 import { readSearchHistory, saveSearchHistory, type SearchHistoryEntry } from "./history";
 import { SearchDialog } from "./SearchDialog";
+import { isSearchShortcut } from "./searchKeyboard";
 
 export interface AssetSearchRequest { id: string }
 
@@ -38,9 +39,7 @@ export function useEditorSearch(
   useEffect(() => {
     if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || e.defaultPrevented || e.isComposing) return;
-      if (key !== "p" && key !== "k") return;
+      if (e.defaultPrevented || e.isComposing || !isSearchShortcut(e)) return;
       if (open || hasVisibleModal()) return;
       e.preventDefault();
       e.stopImmediatePropagation();

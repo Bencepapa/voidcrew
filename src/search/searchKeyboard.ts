@@ -2,6 +2,14 @@ export function isSearchControl(target: EventTarget | null): boolean {
   return target instanceof Element && !!target.closest("[data-editor-search-dialog], [data-search-target]");
 }
 
+// The editor search's shortcuts: Ctrl+P, Ctrl+K, Ctrl+Shift+F ("search everywhere") and Ctrl+Space.
+export function isSearchShortcut(e: { key: string; code?: string; ctrlKey: boolean; altKey: boolean; metaKey: boolean; shiftKey: boolean }): boolean {
+  if (!e.ctrlKey || e.altKey || e.metaKey) return false;
+  const key = e.key.toLowerCase();
+  if (e.shiftKey) return key === "f";
+  return key === "p" || key === "k" || key === " " || e.code === "Space";
+}
+
 // The text-field key guard in main.tsx stops every key typed into a field before any other handler
 // (React's included) sees it. The open search dialog registers its key handler here, and the guard
 // hands the dialog's own keys (Enter, arrows, Escape) to it.
