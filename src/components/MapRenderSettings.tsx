@@ -29,34 +29,34 @@ interface SliderConfig {
 }
 
 const LIGHT_SLIDERS: SliderConfig[] = [
-  { key: "mapLightIntensity", label: "debug.mapLights", min: 0, max: 3, step: 0.05 },
-  { key: "pointLightIntensity", label: "debug.headlamp", min: 0, max: 8, step: 0.1 },
-  { key: "ambientIntensity", label: "debug.ambientLight", min: 0, max: 2, step: 0.05 },
+  { key: "mapLightIntensity", label: "debug.mapLights", min: 0, max: 3, step: 0.05, anchor: searchAnchor("setting.light.map") },
+  { key: "pointLightIntensity", label: "debug.headlamp", min: 0, max: 8, step: 0.1, anchor: searchAnchor("setting.light.headlamp") },
+  { key: "ambientIntensity", label: "debug.ambientLight", min: 0, max: 2, step: 0.05, anchor: searchAnchor("setting.light.ambient") },
 ];
 
 // the distance fog: where it starts to thicken and where it is fully thick (0: automatic from the view distance)
 const FOG_SLIDERS: SliderConfig[] = [
-  { key: "fogStart", label: "debug.fogStart", min: 0, max: 20, step: 0.5 },
-  { key: "fogEnd", label: "debug.fogEnd", min: 0, max: 30, step: 0.5 },
+  { key: "fogStart", label: "debug.fogStart", min: 0, max: 20, step: 0.5, anchor: searchAnchor("setting.light.fogStart") },
+  { key: "fogEnd", label: "debug.fogEnd", min: 0, max: 30, step: 0.5, anchor: searchAnchor("setting.light.fogEnd") },
 ];
 
 const RELIEF_SLIDERS: SliderConfig[] = [
-  { key: "reliefDepth", label: "debug.reliefDepthUnlessTheMapSetsIt", min: 0.005, max: 0.12, step: 0.005 },
-  { key: "reliefMinIsland", label: "debug.minFeatureSizePx1Off", min: 1, max: 16, step: 1 },
-  { key: "aoIntensity", label: "debug.aOStrengthAmbient", min: 0, max: 1.5, step: 0.05 },
-  { key: "aoDirect", label: "debug.aOOnDirectLight", min: 0, max: 1, step: 0.05 },
-  { key: "aoRadius", label: "debug.aORadiusPx", min: 1, max: 16, step: 1 },
+  { key: "reliefDepth", label: "debug.reliefDepthUnlessTheMapSetsIt", min: 0.005, max: 0.12, step: 0.005, anchor: searchAnchor("setting.walls.reliefDepth") },
+  { key: "reliefMinIsland", label: "debug.minFeatureSizePx1Off", min: 1, max: 16, step: 1, anchor: searchAnchor("setting.walls.reliefMinIsland") },
+  { key: "aoIntensity", label: "debug.aOStrengthAmbient", min: 0, max: 1.5, step: 0.05, anchor: searchAnchor("setting.walls.aoIntensity") },
+  { key: "aoDirect", label: "debug.aOOnDirectLight", min: 0, max: 1, step: 0.05, anchor: searchAnchor("setting.walls.aoDirect") },
+  { key: "aoRadius", label: "debug.aORadiusPx", min: 1, max: 16, step: 1, anchor: searchAnchor("setting.walls.aoRadius") },
 ];
 
 // the floors' own relief depth and normal strength (0: as the walls')
 const FLOOR_SLIDERS: SliderConfig[] = [
-  { key: "floorReliefDepth", label: "debug.floorReliefDepth", min: 0, max: 0.12, step: 0.005 },
-  { key: "floorNormalStrength", label: "debug.floorNormalStrength", min: 0, max: 3, step: 0.1 },
+  { key: "floorReliefDepth", label: "debug.floorReliefDepth", min: 0, max: 0.12, step: 0.005, anchor: searchAnchor("setting.floors.reliefDepth") },
+  { key: "floorNormalStrength", label: "debug.floorNormalStrength", min: 0, max: 3, step: 0.1, anchor: searchAnchor("setting.floors.normalStrength") },
 ];
 
 const BEVEL_SLIDERS: SliderConfig[] = [
-  { key: "bevelFraction", label: "debug.bevelFraction", min: 0.05, max: 0.45, step: 0.01 },
-  { key: "bevelAngleDeg", label: "debug.bevelAngleDegFromFloor", min: 15, max: 75, step: 1 },
+  { key: "bevelFraction", label: "debug.bevelFraction", min: 0.05, max: 0.45, step: 0.01, anchor: searchAnchor("setting.walls.bevelFraction") },
+  { key: "bevelAngleDeg", label: "debug.bevelAngleDegFromFloor", min: 15, max: 75, step: 1, anchor: searchAnchor("setting.walls.bevelAngle") },
 ];
 
 // (non-relief walls only)
@@ -66,12 +66,13 @@ const DISPLACEMENT_SLIDER: SliderConfig = {
   min: 0,
   max: 0.06,
   step: 0.005,
+  anchor: searchAnchor("setting.walls.displacement"),
 };
 
 const MATERIAL_SLIDERS: SliderConfig[] = [
-  { key: "roughness", label: "debug.roughness", min: 0.05, max: 1, step: 0.05 },
-  { key: "metalness", label: "debug.metalness", min: 0, max: 1, step: 0.05 },
-  { key: "normalStrength", label: "debug.normalMapStrength", min: 0, max: 3, step: 0.1 },
+  { key: "roughness", label: "debug.roughness", min: 0.05, max: 1, step: 0.05, anchor: searchAnchor("setting.material.roughness") },
+  { key: "metalness", label: "debug.metalness", min: 0, max: 1, step: 0.05, anchor: searchAnchor("setting.material.metalness") },
+  { key: "normalStrength", label: "debug.normalMapStrength", min: 0, max: 3, step: 0.1, anchor: searchAnchor("setting.material.normalStrength") },
 ];
 
 // times of day for the sky's light: strength, colour, where from, how high
@@ -121,11 +122,12 @@ export function MapRenderSettings({
     );
   }
 
-  function check(key: keyof ViewportSettings, label: string) {
+  function check(key: keyof ViewportSettings, label: string, anchor?: ReturnType<typeof searchAnchor>) {
     return (
       <label key={key} className="flex items-center gap-2 text-[11px] cursor-pointer">
         <input
           type="checkbox"
+          {...anchor}
           checked={settings[key] as boolean}
           onChange={(e) => set(key, e.target.checked as ViewportSettings[typeof key])}
         />
@@ -164,6 +166,7 @@ export function MapRenderSettings({
           {select(
             t("debug.wallType"),
             <select
+              {...searchAnchor("setting.walls.profile")}
               value={settings.wallProfile}
               onChange={(e) => set("wallProfile", e.target.value as WallProfileId)}
               className={SELECT}
@@ -179,6 +182,7 @@ export function MapRenderSettings({
             select(
               t("debug.reliefShapePropsFollowTheWallType"),
               <select
+                {...searchAnchor("setting.walls.reliefMode")}
                 value={settings.reliefMode}
                 onChange={(e) => set("reliefMode", e.target.value as ViewportSettings["reliefMode"])}
                 className={SELECT}
@@ -190,7 +194,7 @@ export function MapRenderSettings({
           {relief && RELIEF_SLIDERS.map(slider)}
           {beveled && BEVEL_SLIDERS.map(slider)}
           {!relief && slider(DISPLACEMENT_SLIDER)}
-          {slider({ key: "wallHeight", label: "debug.wallHeight", min: 0.6, max: 2, step: 0.05 })}
+          {slider({ key: "wallHeight", label: "debug.wallHeight", min: 0.6, max: 2, step: 0.05, anchor: searchAnchor("setting.walls.height") })}
         </>,
       )}
       {group("floors", "inspector.floors", <>{FLOOR_SLIDERS.map(slider)}</>)}
@@ -202,6 +206,7 @@ export function MapRenderSettings({
           {LIGHT_SLIDERS.map(slider)}
           <label className="flex items-center justify-between gap-2 text-[11px]">
             {t("debug.distanceFadesToFogColourSavedWith")}<input
+              {...searchAnchor("setting.light.fogColor")}
               type="color"
               value={settings.fogColor}
               onChange={(e) => set("fogColor", e.target.value)}
@@ -253,23 +258,24 @@ export function MapRenderSettings({
         "gameplay",
         "inspector.gameplay",
         <>
-          {check("headlamp", t("debug.headlampOnLSavedWithTheMap"))}
+          {check("headlamp", t("debug.headlampOnLSavedWithTheMap"), searchAnchor("setting.gameplay.headlamp"))}
           <label className="flex items-center justify-between gap-2 text-[11px]">
             {t("debug.headlampColour")}<input
+              {...searchAnchor("setting.gameplay.headlampColor")}
               type="color"
               value={settings.headlampColor}
               onChange={(e) => set("headlampColor", e.target.value)}
               className="w-8 h-6 bg-transparent border border-neutral-600"
             />
           </label>
-          {check("bobEnabled", t("debug.idleHeadBobSavedWithTheMap"))}
+          {check("bobEnabled", t("debug.idleHeadBobSavedWithTheMap"), searchAnchor("setting.gameplay.bob"))}
         </>,
       )}
       {onSaveRender && (
         <div className="flex gap-1 border-t border-neutral-700 px-2 py-2">
-          <button type="button" onClick={onSaveRender} className={`${button} flex-1 border-amber-500/60 text-amber-200`}>{t("debug.saveToMap")}</button>
+          <button type="button" {...searchAnchor("setting.actions.save")} onClick={onSaveRender} className={`${button} flex-1 border-amber-500/60 text-amber-200`}>{t("debug.saveToMap")}</button>
           {mapHasRender && onClearRender && (
-            <button type="button" onClick={onClearRender} className={button} title={t("debug.removeTheMapSRenderValues")}>{t("debug.clear")}</button>
+            <button type="button" {...searchAnchor("setting.actions.clear")} onClick={onClearRender} className={button} title={t("debug.removeTheMapSRenderValues")}>{t("debug.clear")}</button>
           )}
         </div>
       )}

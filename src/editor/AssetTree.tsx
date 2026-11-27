@@ -22,7 +22,49 @@ import { useTextureVersion } from "./textureLibrary";
 import type { EditorBarProps } from "./EditorBar";
 import type { EditSurface, EditTool } from "./mapEdits";
 import { searchAnchor } from "../search/searchAnchor";
+import { assetToolGroup } from "../search/assetToolGroups";
 import type { AssetSearchRequest } from "../search/useEditorSearch";
+
+// stable search anchors for the fixed tools, keyed by "<group>|<entry>"
+const TOOL_ANCHOR: Record<string, ReturnType<typeof searchAnchor>> = {
+  "traverse|ladder": searchAnchor("tool.ladder"),
+  "traverse|bridge": searchAnchor("tool.bridge"),
+  "traverse|door": searchAnchor("tool.door"),
+  "traverse|stairs": searchAnchor("tool.stairs"),
+  "traverse|exit": searchAnchor("tool.exit"),
+  "roof|roof:slope": searchAnchor("tool.roof.slope"),
+  "roof|roof:flat": searchAnchor("tool.roof.flat"),
+  "roof|roof:bent": searchAnchor("tool.roof.bent"),
+  "roof|roof:pyramid": searchAnchor("tool.roof.pyramid"),
+  "roof|roof:pyramidcell": searchAnchor("tool.roof.pyramidcell"),
+  "roof|roof:gable": searchAnchor("tool.roof.gable"),
+  "fence|fence:block": searchAnchor("tool.fence.block"),
+  "fence|fence:edge": searchAnchor("tool.fence.edge"),
+  "fence|fence:mid": searchAnchor("tool.fence.mid"),
+  "fence|fence:layered": searchAnchor("tool.fence.layered"),
+  "fence|fence:cross": searchAnchor("tool.fence.cross"),
+  "events|start": searchAnchor("tool.start"),
+  "events|restricted": searchAnchor("tool.restricted"),
+  "events|wall": searchAnchor("tool.chanceWall"),
+  "events|message": searchAnchor("tool.message"),
+  "events|image": searchAnchor("tool.image"),
+  "events|shop": searchAnchor("tool.shop"),
+  "light|ceiling:": searchAnchor("tool.light.ceiling"),
+  "light|ceiling:flicker": searchAnchor("tool.light.ceiling.flicker"),
+  "light|ceiling:spark": searchAnchor("tool.light.ceiling.spark"),
+  "light|ceiling:pulse": searchAnchor("tool.light.ceiling.pulse"),
+  "light|point:": searchAnchor("tool.light.point"),
+  "light|point:flicker": searchAnchor("tool.light.point.flicker"),
+  "light|point:spark": searchAnchor("tool.light.point.spark"),
+  "light|point:pulse": searchAnchor("tool.light.point.pulse"),
+  "smoke|smoke": searchAnchor("tool.smoke.smoke"),
+  "smoke|fire": searchAnchor("tool.smoke.fire"),
+  "smoke|mist": searchAnchor("tool.smoke.mist"),
+  "smoke|groundfog": searchAnchor("tool.smoke.groundfog"),
+  "smoke|motes": searchAnchor("tool.smoke.motes"),
+  "smoke|petals": searchAnchor("tool.smoke.petals"),
+  "smoke|fireflies": searchAnchor("tool.smoke.fireflies"),
+};
 
 // (a shared texture has no translated name: its own name shows)
 const assetName = (name: string) => t(("assetTree.name."+name) as Key) ?? name;
@@ -40,12 +82,14 @@ export function AssetTree(p: EditorBarProps & { searchRequest?: AssetSearchReque
   const [decals, setDecals] = useState<string[]>([]);
   const [error, setError] = useState(false);
   useLayoutEffect(() => {
-    if (p.searchRequest?.id !== "tool.roofAuto") return;
+    const id = p.searchRequest?.id;
+    if (!id) return;
     search("");
+    const group = assetToolGroup(id);
     collapse(previous => {
       const next = new Set(previous);
       next.delete("panel");
-      next.delete("roof");
+      if (group) next.delete(group);
       return next;
     });
   }, [p.searchRequest]);
@@ -149,14 +193,14 @@ export function AssetTree(p: EditorBarProps & { searchRequest?: AssetSearchReque
       <div className="min-h-0 flex-1 overflow-y-auto">
       {groups.map(group=>{const entries=group.entries.filter(e=>!term||`${e.label} ${e.search??""} ${e.id} ${e.kind} ${group.label}`.toLocaleLowerCase().includes(term));return <section key={group.id} className={group.id==="events"?"mt-2 border-t-2 border-neutral-600":undefined}>
         <div className="flex items-center border-y border-neutral-800 bg-neutral-950">
-          <button type="button" className="min-w-0 flex-1 p-1 text-left" aria-expanded={!collapsed.has(group.id)} onClick={()=>collapse(prev=>{const next=new Set(prev);next.has(group.id)?next.delete(group.id):next.add(group.id);return next;})}>{collapsed.has(group.id)?"▸":"▾"} {group.label}</button>
+          <button type="button" {...(group.id === "roof" ? searchAnchor("tool.roofAuto") : {})} className="min-w-0 flex-1 p-1 text-left" aria-expanded={!collapsed.has(group.id)} onClick={()=>collapse(prev=>{const next=new Set(prev);next.has(group.id)?next.delete(group.id):next.add(group.id);return next;})}>{collapsed.has(group.id)?"▸":"▾"} {group.label}</button>
           {!group.bare&&<button type="button" className="p-1" aria-label={`${t(p.hiddenLayers.has(group.id)?"editorBar.show":"editorBar.hide")} ${group.label}`} aria-pressed={p.hiddenLayers.has(group.id)} onClick={()=>p.onToggleLayer(group.id)}>{p.hiddenLayers.has(group.id)?<EyeOff size={14}/>:<Eye size={14}/>}</button>}
           {!group.bare&&<button type="button" className={`p-1 rounded ${p.lockedLayers.has(group.id)?"bg-amber-500/25 text-amber-300":"text-neutral-500 hover:text-neutral-300"}`} title={`${t(p.lockedLayers.has(group.id)?"assetTree.unlock":"assetTree.lock")} ${group.label}`} aria-label={`${t(p.lockedLayers.has(group.id)?"assetTree.unlock":"assetTree.lock")} ${group.label}`} aria-pressed={p.lockedLayers.has(group.id)} onClick={()=>p.onToggleLayerLock(group.id)}>{p.lockedLayers.has(group.id)?<Lock size={14}/>:<LockOpen size={14}/>}</button>}
         </div>
         {(!collapsed.has(group.id)||!!term)&&<>
           {group.id==="texture"&&<div className="flex flex-wrap gap-1 p-1">{(["wall","floor","ceiling"] as const).map(s=><button type="button" key={s} aria-pressed={surface===s} className="border border-neutral-600 px-1 aria-pressed:bg-neutral-700" onClick={()=>setSurface(s)}>{t(`editorBar.${s}`)}</button>)}</div>}
           {group.id==="prop"&&<div className="flex flex-wrap gap-1 p-1">{["3D","billboard","pillar"].map(k=><button type="button" key={k} aria-pressed={propTab===k} className="border border-neutral-600 px-1 aria-pressed:bg-neutral-700" onClick={()=>setPropTab(k)}>{t(k==="3D"?"assetManager.threeD":k==="billboard"?"assetManager.billboard":"assetTree.pillar")}</button>)}</div>}
-          {entries.map(e=><button key={e.id} type="button" {...(group.id === "roof" && e.active ? searchAnchor("tool.roofAuto") : {})} title={e.id.includes("_shared_") ? e.label : `${e.label} (${e.id})`} aria-pressed={p.tool===(e.tool??group.id)&&!!e.active} className="flex w-full items-center gap-1 border border-transparent p-1 text-left hover:bg-neutral-800 aria-pressed:border-amber-400" onClick={event=>e.pick(event.currentTarget)} onDoubleClick={()=>{if(e.manager)openAssetManager(e.manager,e.managerId??e.id);}}>
+          {entries.map(e=><button key={e.id} type="button" {...(TOOL_ANCHOR[`${group.id}|${e.id}`] ?? {})} title={e.id.includes("_shared_") ? e.label : `${e.label} (${e.id})`} aria-pressed={p.tool===(e.tool??group.id)&&!!e.active} className="flex w-full items-center gap-1 border border-transparent p-1 text-left hover:bg-neutral-800 aria-pressed:border-amber-400" onClick={event=>e.pick(event.currentTarget)} onDoubleClick={()=>{if(e.manager)openAssetManager(e.manager,e.managerId??e.id);}}>
             {e.actor?<ActorThumb type={e.actor} className="block h-12 w-12 shrink-0"/>:(e.image||e.style||e.icon)&&<span className="flex h-12 w-12 shrink-0 items-center justify-center bg-contain bg-center bg-no-repeat" style={{...e.style,imageRendering:"auto"}}>{e.icon}{e.image&&<Thumb src={e.image} className="h-full w-full object-contain"/>}</span>}<span className="min-w-0 break-words">{e.label}</span>
           </button>)}
           {!entries.length&&<p className="p-1 text-neutral-500">{t("assetTree.empty")}</p>}

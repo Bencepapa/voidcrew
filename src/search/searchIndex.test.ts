@@ -9,16 +9,18 @@ import { SEARCH_TARGETS, type SearchTarget } from "./targets";
 
 assert.equal(normalizeSearch("  TETŐ\t és Égbolt "), "teto es egbolt");
 for (const dictionary of [{ ...debugEn, ...editorShellEn }, { ...debugHu, ...editorShellHu }]) {
-  const index = buildSearchIndex(SEARCH_TARGETS, target => dictionary[target.titleKey as keyof typeof dictionary]);
+  const index = buildSearchIndex(SEARCH_TARGETS, target => dictionary[target.titleKey as keyof typeof dictionary] ?? target.titleKey);
   for (const query of ["napszak", "time of day"]) {
     assert.equal(index.query(query)[0]?.id, "setting.sky.timeOfDay", query);
   }
   for (const query of ["nap", "sun"]) {
     assert.ok(index.query(query).some(target => target.id === "setting.sky.timeOfDay"), query);
   }
-  for (const query of ["teto", "tet", "rorf", "auto roof"]) {
+  for (const query of ["teto", "tet", "auto roof"]) {
     assert.equal(index.query(query)[0]?.id, "tool.roofAuto", query);
   }
+  // a typo still finds the roof tool group among the first few (the roof forms are its own entries)
+  assert.ok(index.query("rorf").slice(0, 3).some(target => target.id === "tool.roofAuto"), "rorf");
   assert.equal(index.query("skyLightAzimuth")[0]?.id, "setting.sky.sunAzimuth");
   assert.equal(index.query("light probes")[0]?.id, "debug.lightProbes");
   assert.deepEqual(index.query(""), []);

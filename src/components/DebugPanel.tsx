@@ -63,22 +63,23 @@ interface SliderConfig {
   min: number;
   max: number;
   step: number;
+  anchor?: ReturnType<typeof searchAnchor>;
 }
 
 const VIEW_SLIDERS: SliderConfig[] = [
-  { key: "fov", label: "debug.fov", min: 40, max: 100, step: 1 },
-  { key: "moveDurationMs", label: "debug.stepDurationMs", min: 60, max: 600, step: 10 },
+  { key: "fov", label: "debug.fov", min: 40, max: 100, step: 1, anchor: searchAnchor("debug.camera.fov") },
+  { key: "moveDurationMs", label: "debug.stepDurationMs", min: 60, max: 600, step: 10, anchor: searchAnchor("debug.camera.stepDuration") },
 ];
 
-const ACCENT_RATIO_SLIDER: SliderConfig = { key: "accentRatio", label: "debug.accentShareOfWalls", min: 0, max: 1, step: 0.05 };
+const ACCENT_RATIO_SLIDER: SliderConfig = { key: "accentRatio", label: "debug.accentShareOfWalls", min: 0, max: 1, step: 0.05, anchor: searchAnchor("debug.textures.accentRatio") };
 
 // how vivid a texture's pixel must be to count as accent (see accent.ts)
-const ACCENT_SLIDERS: SliderConfig[] = [{ key: "accentMinSat", label: "debug.accentMinSaturation", min: 0, max: 1, step: 0.05 }];
+const ACCENT_SLIDERS: SliderConfig[] = [{ key: "accentMinSat", label: "debug.accentMinSaturation", min: 0, max: 1, step: 0.05, anchor: searchAnchor("debug.lights.accentMinSat") }];
 const LIVERY_NAMES: Record<number, Key> = {"0":"debug.color.red","30":"debug.color.orange","55":"debug.color.yellow","120":"debug.color.green","185":"debug.color.cyan","215":"debug.color.blue","280":"debug.color.purple"};
 
 const CAMERA_SLIDERS: SliderConfig[] = [
-  { key: "eyeHeight", label: "debug.eyeHeight", min: 0.1, max: 0.9, step: 0.01 },
-  { key: "cameraPullback", label: "debug.cameraPullback", min: 0, max: 0.49, step: 0.01 },
+  { key: "eyeHeight", label: "debug.eyeHeight", min: 0.1, max: 0.9, step: 0.01, anchor: searchAnchor("debug.camera.eyeHeight") },
+  { key: "cameraPullback", label: "debug.cameraPullback", min: 0, max: 0.49, step: 0.01, anchor: searchAnchor("debug.camera.pullback") },
 ];
 
 const GRAPHICS_LABELS: Record<string, Key> = {"Low":"debug.preset.Low","Medium":"debug.preset.Medium","High":"debug.preset.High","Ultra":"debug.preset.Ultra","Custom":"debug.preset.Custom"};
@@ -116,6 +117,7 @@ export function DebugPanel({
         </div>
         <input
           type="range"
+          {...s.anchor}
           min={s.min}
           max={s.max}
           step={s.step}
@@ -127,7 +129,7 @@ export function DebugPanel({
     );
   }
 
-  function range(label: string, value: number, min: number, max: number, step: number, onValue: (value: number) => void) {
+  function range(label: string, value: number, min: number, max: number, step: number, onValue: (value: number) => void, anchor?: ReturnType<typeof searchAnchor>) {
     return (
       <div className="flex flex-col gap-0.5">
         <div className="flex justify-between text-[10px] text-neutral-300">
@@ -136,6 +138,7 @@ export function DebugPanel({
         </div>
         <input
           type="range"
+          {...anchor}
           min={min}
           max={max}
           step={step}
@@ -152,26 +155,28 @@ export function DebugPanel({
   }
 
   function ruleEditor(rule: PostRule, index: number) {
+    const first = index === 0;
     return (
       <div key={index} className="flex flex-col gap-1 border border-neutral-800 rounded-sm p-1.5">
         <div className="flex items-center gap-2 text-[11px] font-semibold">
-          <input type="checkbox" checked={rule.on} onChange={(e) => setRule(index, { on: e.target.checked })} />
+          <input type="checkbox" {...(first ? searchAnchor("debug.post.ruleOn") : {})} checked={rule.on} onChange={(e) => setRule(index, { on: e.target.checked })} />
           <span>{t("debug.postRule", { v1: index + 1 })}</span>
         </div>
         <label className="flex items-center justify-between gap-2 text-[10px] text-neutral-300">
           <span>{t("debug.postRuleSource")}</span>
           <input
             type="color"
+            {...(first ? searchAnchor("debug.post.ruleHue") : {})}
             value={hueToHex(rule.hue)}
             onChange={(e) => setRule(index, { hue: hueOfHex(e.target.value) })}
             className="h-6 w-10 bg-transparent"
           />
         </label>
-        {range(t("debug.postRuleWidth"), rule.width, 5, 90, 1, (v) => setRule(index, { width: v }))}
-        {range(t("debug.postRuleMinSat"), rule.minSat, 0, 1, 0.01, (v) => setRule(index, { minSat: v }))}
+        {range(t("debug.postRuleWidth"), rule.width, 5, 90, 1, (v) => setRule(index, { width: v }), first ? searchAnchor("debug.post.ruleWidth") : undefined)}
+        {range(t("debug.postRuleMinSat"), rule.minSat, 0, 1, 0.01, (v) => setRule(index, { minSat: v }), first ? searchAnchor("debug.post.ruleMinSat") : undefined)}
         {select(
           t("debug.postRuleMode"),
-          <select value={rule.mode} onChange={(e) => setRule(index, { mode: e.target.value as PostRuleMode })} className={SELECT}>
+          <select {...(first ? searchAnchor("debug.post.ruleMode") : {})} value={rule.mode} onChange={(e) => setRule(index, { mode: e.target.value as PostRuleMode })} className={SELECT}>
             <option value="keep">{t("debug.postRuleModeKeep")}</option>
             <option value="shift">{t("debug.postRuleModeShift")}</option>
             <option value="fade">{t("debug.postRuleModeFade")}</option>
@@ -181,13 +186,14 @@ export function DebugPanel({
           <span>{t("debug.postRuleTarget")}</span>
           <input
             type="color"
+            {...(first ? searchAnchor("debug.post.ruleTarget") : {})}
             value={rule.target}
             onChange={(e) => setRule(index, { target: e.target.value })}
             className="h-6 w-10 bg-transparent"
           />
         </label>
-        {range(t("debug.postRuleSaturation"), rule.sat, 0, 2, 0.05, (v) => setRule(index, { sat: v }))}
-        {range(t("debug.postRuleValue"), rule.val, 0.2, 3, 0.05, (v) => setRule(index, { val: v }))}
+        {range(t("debug.postRuleSaturation"), rule.sat, 0, 2, 0.05, (v) => setRule(index, { sat: v }), first ? searchAnchor("debug.post.ruleSaturation") : undefined)}
+        {range(t("debug.postRuleValue"), rule.val, 0.2, 3, 0.05, (v) => setRule(index, { val: v }), first ? searchAnchor("debug.post.ruleValue") : undefined)}
       </div>
     );
   }
@@ -224,10 +230,11 @@ export function DebugPanel({
   // (and the shared skies uploaded in the Assets manager)
   const sharedSkies = useSharedImages().filter((image) => image.type === "sky");
   // a map default texture: a drop-down of the sets of one kind
-  const textureSelect = (slot: string, label: string, kind: TextureSetKind, accent = false) =>
+  const textureSelect = (slot: string, label: string, kind: TextureSetKind, accent = false, anchor?: ReturnType<typeof searchAnchor>) =>
     select(
       label,
       <select
+        {...anchor}
         value={typeof mapTextures?.[slot] === "string" ? mapTextures[slot] as string : ""}
         onChange={(e) => onMapTexture?.(slot, e.target.value || undefined)}
         className={SELECT}
@@ -298,15 +305,15 @@ export function DebugPanel({
         {t("debug.debug")}
         {!inEditor && <PlayToggle />}
       </div>
-      <div className="flex items-center justify-between gap-2 text-[11px] text-neutral-300">
+      <div {...searchAnchor("debug.language")} className="flex items-center justify-between gap-2 text-[11px] text-neutral-300">
         <span>{t("common.language")}</span>
         <LangSwitch />
       </div>
-      {onReleaseNotes && <button type="button" className={button} onClick={onReleaseNotes}>{t("app.releaseArchive")}</button>}
+      {onReleaseNotes && <button type="button" {...searchAnchor("debug.releaseNotes")} className={button} onClick={onReleaseNotes}>{t("app.releaseArchive")}</button>}
       {world && !LOCKED_WORLD &&
         select(
           t("debug.world"),
-          <select value={world} onChange={(e) => switchWorld(e.target.value as WorldId)} className={SELECT}>
+          <select {...searchAnchor("debug.world")} value={world} onChange={(e) => switchWorld(e.target.value as WorldId)} className={SELECT}>
             {(Object.values(WORLDS) as { id: WorldId; name: string }[]).map((w) => (
               <option key={w.id} value={w.id}>
                 {w.name}
@@ -318,10 +325,10 @@ export function DebugPanel({
       {!inEditor && (onEditMap || mapId) && (
         <div className="flex flex-col gap-1 pt-1">
           {onEditMap && (
-            <button type="button" onClick={onEditMap} className={`${button} border-amber-500/60 text-amber-200`}>{t("debug.editMapTab")}</button>
+            <button type="button" {...searchAnchor("debug.editMap")} onClick={onEditMap} className={`${button} border-amber-500/60 text-amber-200`}>{t("debug.editMapTab")}</button>
           )}
           {mapId && (
-            <button type="button" onClick={() => downloadMap(mapId)} className={button}>{t("debug.downloadMapJson", { v1: mapId })}</button>
+            <button type="button" {...searchAnchor("debug.downloadMap")} onClick={() => downloadMap(mapId)} className={button}>{t("debug.downloadMapJson", { v1: mapId })}</button>
           )}
         </div>
       )}
@@ -329,13 +336,14 @@ export function DebugPanel({
       {section(
         t("debug.lights"),
         <>
-          {check("bakedLights", t("debug.bakedLightingOffEveryMapLightReal"))}
+          {check("bakedLights", t("debug.bakedLightingOffEveryMapLightReal"), searchAnchor("debug.lights.baked"))}
           {check("showLightProbes", t("debug.showLightProbes"), inEditor ? searchAnchor("debug.lightProbes") : undefined)}
           {settings.bakedLights && (
             <>
               {select(
                 t("debug.bakedLight"),
                 <select
+                  {...searchAnchor("debug.lights.gridMode")}
                   value={settings.lightGridMode}
                   onChange={(e) => set("lightGridMode", e.target.value as ViewportSettings["lightGridMode"])}
                   className={SELECT}
@@ -344,15 +352,16 @@ export function DebugPanel({
                   <option value="cube">{t("debug.cubeSixDirections")}</option>
                 </select>,
               )}
-              {slider({ key: "lightGridDensity", label: "debug.bakedSamplesPerCellUnlessTheMap", min: 2, max: 12, step: 1 })}
-              {slider({ key: "lightGridQuickDensity", label: "debug.quickBakeSamplesPerCell", min: 0, max: 4, step: 1 })}
-              {slider({ key: "lightBounce", label: "debug.lightBounce0UnlitRoomsStayDark", min: 0, max: 3, step: 0.05 })}
-              {slider({ key: "skyDomeIntensity", label: "debug.skyDomeStrength0None", min: 0, max: 3, step: 0.05 })}
+              {slider({ key: "lightGridDensity", label: "debug.bakedSamplesPerCellUnlessTheMap", min: 2, max: 12, step: 1, anchor: searchAnchor("debug.lights.gridDensity") })}
+              {slider({ key: "lightGridQuickDensity", label: "debug.quickBakeSamplesPerCell", min: 0, max: 4, step: 1, anchor: searchAnchor("debug.lights.quickDensity") })}
+              {slider({ key: "lightBounce", label: "debug.lightBounce0UnlitRoomsStayDark", min: 0, max: 3, step: 0.05, anchor: searchAnchor("debug.lights.bounce") })}
+              {slider({ key: "skyDomeIntensity", label: "debug.skyDomeStrength0None", min: 0, max: 3, step: 0.05, anchor: searchAnchor("debug.lights.skyDome") })}
             </>
           )}
           {select(
             t("debug.shipLivery"),
             <select
+              {...searchAnchor("debug.lights.shipLivery")}
               value={String(settings.shipAccent)}
               onChange={(e) => {
                 const v = e.target.value;
@@ -379,18 +388,18 @@ export function DebugPanel({
           <div className="text-[10px] text-neutral-300">{t("debug.theMapSDefaultTextureSetsWhat")}</div>
           {onMapTexture && (
             <>
-              {textureSelect("wall", t("debug.wallTexture"), "wall")}
-              {textureSelect("accent", t("debug.accentTextureSomeWalls"), "wall", true)}
+              {textureSelect("wall", t("debug.wallTexture"), "wall", false, searchAnchor("debug.textures.wall"))}
+              {textureSelect("accent", t("debug.accentTextureSomeWalls"), "wall", true, searchAnchor("debug.textures.accent"))}
               {mapTextures?.accent && slider(ACCENT_RATIO_SLIDER)}
-              {textureSelect("floor", t("debug.floorTexture"), "floor")}
-              {textureSelect("ceiling", t("debug.ceilingTexture"), "ceiling")}
-              {textureSelect("door", t("debug.door"), "door")}
-              {textureSelect("doorFrame", t("debug.doorFrame"), "door")}
-              {textureSelect("liftDoor", t("debug.liftDoor"), "door")}
-              {textureSelect("window", t("debug.window"), "window")}
+              {textureSelect("floor", t("debug.floorTexture"), "floor", false, searchAnchor("debug.textures.floor"))}
+              {textureSelect("ceiling", t("debug.ceilingTexture"), "ceiling", false, searchAnchor("debug.textures.ceiling"))}
+              {textureSelect("door", t("debug.door"), "door", false, searchAnchor("debug.textures.door"))}
+              {textureSelect("doorFrame", t("debug.doorFrame"), "door", false, searchAnchor("debug.textures.doorFrame"))}
+              {textureSelect("liftDoor", t("debug.liftDoor"), "door", false, searchAnchor("debug.textures.liftDoor"))}
+              {textureSelect("window", t("debug.window"), "window", false, searchAnchor("debug.textures.window"))}
               {select(
                 t("debug.skyImageOpenAirMaps"),
-                <select value={mapTextures?.sky ?? ""} onChange={(e) => onMapTexture("sky", e.target.value || undefined)} className={SELECT}>
+                <select {...searchAnchor("debug.textures.sky")} value={mapTextures?.sky ?? ""} onChange={(e) => onMapTexture("sky", e.target.value || undefined)} className={SELECT}>
                   <option value="">{t("debug.starrySkyGenerated")}</option>
                   {skies.map((name) => (
                     <option key={name} value={name}>
@@ -417,7 +426,7 @@ export function DebugPanel({
         t("look.section"),
         <>
           <div className="text-[10px] text-neutral-300">{t("look.debugOffHint")}</div>
-          {check("postLookOff", t("look.debugOff"))}
+          {check("postLookOff", t("look.debugOff"), searchAnchor("debug.look.off"))}
         </>,
       )}
 
@@ -425,10 +434,10 @@ export function DebugPanel({
         t("debug.postDark"),
         <>
           <div className="text-[10px] text-neutral-300">{t("debug.postDarkHint")}</div>
-          {check("postDark", t("debug.postDarkOn"))}
+          {check("postDark", t("debug.postDarkOn"), searchAnchor("debug.post.enabled"))}
           <div className="flex flex-wrap items-center gap-1">
-            <button type="button" className={button} title={t("debug.postCopyHint")} onClick={copyPost}>{t("debug.postCopy")}</button>
-            <button type="button" className={button} title={t("debug.postPasteHint")} onClick={pastePost}>{t("debug.postPaste")}</button>
+            <button type="button" {...searchAnchor("debug.post.copy")} className={button} title={t("debug.postCopyHint")} onClick={copyPost}>{t("debug.postCopy")}</button>
+            <button type="button" {...searchAnchor("debug.post.paste")} className={button} title={t("debug.postPasteHint")} onClick={pastePost}>{t("debug.postPaste")}</button>
           </div>
           {postBox && (
             <div className="flex flex-col gap-1">
@@ -450,15 +459,15 @@ export function DebugPanel({
           {postNote && <div className="text-[10px] text-neutral-300">{postNote}</div>}
           {settings.postDark && (
             <>
-              {slider({ key: "postDarkness", label: "debug.postDarkness", min: 0, max: 1, step: 0.01 })}
-              {slider({ key: "postWarm", label: "debug.postWarm", min: 0.5, max: 3, step: 0.05 })}
-              {slider({ key: "postCold", label: "debug.postCold", min: 0.5, max: 3, step: 0.05 })}
-              {slider({ key: "postSaturation", label: "debug.postSaturation", min: 0.5, max: 2, step: 0.05 })}
-              {slider({ key: "postPalette", label: "debug.postPalette", min: 0, max: 1, step: 0.01 })}
-              {slider({ key: "postVignette", label: "debug.postVignette", min: 0, max: 1, step: 0.01 })}
+              {slider({ key: "postDarkness", label: "debug.postDarkness", min: 0, max: 1, step: 0.01, anchor: searchAnchor("debug.post.darkness") })}
+              {slider({ key: "postWarm", label: "debug.postWarm", min: 0.5, max: 3, step: 0.05, anchor: searchAnchor("debug.post.warm") })}
+              {slider({ key: "postCold", label: "debug.postCold", min: 0.5, max: 3, step: 0.05, anchor: searchAnchor("debug.post.cold") })}
+              {slider({ key: "postSaturation", label: "debug.postSaturation", min: 0.5, max: 2, step: 0.05, anchor: searchAnchor("debug.post.saturation") })}
+              {slider({ key: "postPalette", label: "debug.postPalette", min: 0, max: 1, step: 0.01, anchor: searchAnchor("debug.post.palette") })}
+              {slider({ key: "postVignette", label: "debug.postVignette", min: 0, max: 1, step: 0.01, anchor: searchAnchor("debug.post.vignette") })}
               {select(
                 t("debug.postMask"),
-                <select value={settings.postMask} onChange={(e) => set("postMask", e.target.value as PostMaskMode)} className={SELECT}>
+                <select {...searchAnchor("debug.post.mask")} value={settings.postMask} onChange={(e) => set("postMask", e.target.value as PostMaskMode)} className={SELECT}>
                   <option value="off">{t("debug.postMaskOff")}</option>
                   <option value="rules">{t("debug.postMaskRules")}</option>
                 </select>,
@@ -469,6 +478,7 @@ export function DebugPanel({
               {select(
                 t("debug.postOthersMode"),
                 <select
+                  {...searchAnchor("debug.post.othersMode")}
                   value={settings.postOthers.mode}
                   onChange={(e) => set("postOthers", { ...settings.postOthers, mode: e.target.value as PostOthersMode })}
                   className={SELECT}
@@ -480,9 +490,10 @@ export function DebugPanel({
               {settings.postOthers.mode === "fade" &&
                 range(t("debug.postOthersFadeAmount"), settings.postOthers.fade, 0, 1, 0.01, (v) =>
                   set("postOthers", { ...settings.postOthers, fade: v }),
-                )}
+                searchAnchor("debug.post.othersFade"))}
               <button
                 type="button"
+                {...searchAnchor("debug.post.reset")}
                 onClick={() => onChange({ ...settings, ...defaultPostSettings(), postDark: settings.postDark, postLookOff: settings.postLookOff })}
                 className={button}
               >
@@ -500,6 +511,7 @@ export function DebugPanel({
           {select(
             t("debug.preset"),
             <select
+              {...searchAnchor("debug.graphics.preset")}
               value={presetOf(settings)}
               onChange={(e) => {
                 const preset = GRAPHICS_PRESETS[e.target.value];
@@ -519,10 +531,10 @@ export function DebugPanel({
               ))}
             </select>,
           )}
-          {slider({ key: "particleQuality", label: "debug.particlesSmokeFlamesPetals", min: 0.1, max: 1, step: 0.05 })}
+          {slider({ key: "particleQuality", label: "debug.particlesSmokeFlamesPetals", min: 0.1, max: 1, step: 0.05, anchor: searchAnchor("debug.graphics.particles") })}
           {select(
             t("debug.particleUpdates"),
-            <select value={settings.particleEvery} onChange={(e) => set("particleEvery", Number(e.target.value))} className={SELECT}>
+            <select {...searchAnchor("debug.graphics.particleUpdates")} value={settings.particleEvery} onChange={(e) => set("particleEvery", Number(e.target.value))} className={SELECT}>
               <option value={1}>{t("debug.everyFrame")}</option>
               <option value={2}>{t("debug.every2ndFrame")}</option>
               <option value={3}>{t("debug.every3rdFrame")}</option>
@@ -530,7 +542,7 @@ export function DebugPanel({
           )}
           {select(
             t("debug.smoothWallPolygons"),
-            <select value={settings.wallDetail} onChange={(e) => set("wallDetail", Number(e.target.value))} className={SELECT}>
+            <select {...searchAnchor("debug.graphics.wallDetail")} value={settings.wallDetail} onChange={(e) => set("wallDetail", Number(e.target.value))} className={SELECT}>
               <option value={16}>{t("debug.low512TrianglesAWall")}</option>
               <option value={32}>{t("debug.medium2048")}</option>
               <option value={64}>{t("debug.high8192")}</option>
@@ -538,7 +550,7 @@ export function DebugPanel({
           )}
           {select(
             t("debug.doorDetail"),
-            <select value={settings.doorDetail} onChange={(e) => set("doorDetail", Number(e.target.value))} className={SELECT} title={t("debug.doorDetailHint")}>
+            <select {...searchAnchor("debug.graphics.doorDetail")} value={settings.doorDetail} onChange={(e) => set("doorDetail", Number(e.target.value))} className={SELECT} title={t("debug.doorDetailHint")}>
               <option value={0}>{t("debug.doorDetailAuto")}</option>
               <option value={16}>16</option>
               <option value={32}>32</option>
@@ -548,7 +560,7 @@ export function DebugPanel({
           )}
           {select(
             t("debug.resolutionDevicePixelsPerPixel"),
-            <select value={settings.pixelRatioCap} onChange={(e) => set("pixelRatioCap", Number(e.target.value))} className={SELECT}>
+            <select {...searchAnchor("debug.graphics.resolution")} value={settings.pixelRatioCap} onChange={(e) => set("pixelRatioCap", Number(e.target.value))} className={SELECT}>
               <option value={0.5}>{t("debug.05xBlurryLightest")}</option>
               <option value={0.75}>{t("debug.075xSoft")}</option>
               <option value={1}>{t("debug.1x")}</option>
@@ -559,7 +571,7 @@ export function DebugPanel({
           )}
           {select(
             t("debug.viewDistanceLimitFogClosesIn"),
-            <select value={settings.viewDistanceCap} onChange={(e) => set("viewDistanceCap", Number(e.target.value))} className={SELECT}>
+            <select {...searchAnchor("debug.graphics.viewDistanceCap")} value={settings.viewDistanceCap} onChange={(e) => set("viewDistanceCap", Number(e.target.value))} className={SELECT}>
               <option value={5}>{t("debug.5Cells")}</option>
               <option value={6}>{t("debug.6Cells")}</option>
               <option value={7}>{t("debug.7Cells")}</option>
@@ -569,7 +581,7 @@ export function DebugPanel({
           )}
           {select(
             t("debug.distantDetailWallsDoorsProps"),
-            <select value={settings.lodScale} onChange={(e) => set("lodScale", Number(e.target.value))} className={SELECT}>
+            <select {...searchAnchor("debug.graphics.lod")} value={settings.lodScale} onChange={(e) => set("lodScale", Number(e.target.value))} className={SELECT}>
               <option value={1}>{t("debug.normalCoarserFrom2Cells")}</option>
               <option value={3}>{t("debug.farCoarserFrom7Cells")}</option>
               <option value={0}>{t("debug.fullDetailEverywhere")}</option>
@@ -577,14 +589,14 @@ export function DebugPanel({
           )}
           {select(
             t("debug.smoothedEdgesAntialiasing"),
-            <select value={settings.antialias} onChange={(e) => set("antialias", Number(e.target.value))} className={SELECT}>
+            <select {...searchAnchor("debug.graphics.antialias")} value={settings.antialias} onChange={(e) => set("antialias", Number(e.target.value))} className={SELECT}>
               <option value={0}>{t("debug.off")}</option>
               <option value={1}>{t("debug.on")}</option>
             </select>,
           )}
           {select(
             t("debug.realLightsAtOnceTorchesFiresFlashes"),
-            <select value={settings.lightPool} onChange={(e) => set("lightPool", Number(e.target.value))} className={SELECT}>
+            <select {...searchAnchor("debug.graphics.lightPool")} value={settings.lightPool} onChange={(e) => set("lightPool", Number(e.target.value))} className={SELECT}>
               <option value={2}>{t("debug.2Lightest")}</option>
               <option value={4}>4</option>
               <option value={6}>6</option>
@@ -593,7 +605,7 @@ export function DebugPanel({
           )}
           {select(
             t("debug.surfaceNormalMapsFineBumps"),
-            <select value={settings.normalMaps} onChange={(e) => set("normalMaps", Number(e.target.value))} className={SELECT}>
+            <select {...searchAnchor("debug.graphics.normalMaps")} value={settings.normalMaps} onChange={(e) => set("normalMaps", Number(e.target.value))} className={SELECT}>
               <option value={0}>{t("debug.off")}</option>
               <option value={1}>{t("debug.on")}</option>
             </select>,
@@ -605,6 +617,7 @@ export function DebugPanel({
             min: 5,
             max: Math.max(VIEW_DISTANCE_HIGH, settings.viewDistanceCap),
             step: 0.5,
+            anchor: searchAnchor("debug.graphics.viewDistance"),
           })}
           {effectiveViewDistance(settings) < settings.viewDistance && (
             <div className="text-[10px] text-neutral-300">{t("debug.limitedToByThisDeviceSSetting", { v1: effectiveViewDistance(settings) })}</div>
@@ -618,10 +631,11 @@ export function DebugPanel({
         <>
           {VIEW_SLIDERS.map(slider)}
           {CAMERA_SLIDERS.map(slider)}
-          {check("decalsEnabled", t("debug.decals"))}
+          {check("decalsEnabled", t("debug.decals"), searchAnchor("debug.camera.decals"))}
           {select(
             t("debug.geometryView"),
             <select
+              {...searchAnchor("debug.camera.geometryView")}
               value={settings.geometryView}
               onChange={(e) => set("geometryView", e.target.value as ViewportSettings["geometryView"])}
               className={SELECT}
@@ -633,10 +647,10 @@ export function DebugPanel({
               <option value="depth">{t("debug.depthMaps")}</option>
             </select>,
           )}
-          {check("showNormals", t("debug.normalMaps"))}
-          {check("showMetal", t("debug.metalGloss"))}
-          {check("showGlow", t("debug.glowMaps"))}
-          {check("showAO", t("debug.ambientOcclusion"))}
+          {check("showNormals", t("debug.normalMaps"), searchAnchor("debug.camera.showNormals"))}
+          {check("showMetal", t("debug.metalGloss"), searchAnchor("debug.camera.showMetal"))}
+          {check("showGlow", t("debug.glowMaps"), searchAnchor("debug.camera.showGlow"))}
+          {check("showAO", t("debug.ambientOcclusion"), searchAnchor("debug.camera.showAO"))}
         </>,
       )}
 
@@ -646,6 +660,7 @@ export function DebugPanel({
           {select(
             t("debug.smokePuffs"),
             <select
+              {...searchAnchor("debug.smoke.style")}
               value={settings.smokeStyle}
               onChange={(e) => set("smokeStyle", e.target.value as ViewportSettings["smokeStyle"])}
               className={SELECT}
@@ -659,9 +674,9 @@ export function DebugPanel({
               <option value="turnedSquares">{t("debug.seeThroughSquaresTurning")}</option>
             </select>,
           )}
-          {check("smokeWalls", t("debug.smokeBumpsIntoWallsFloorsCeilings"))}
-          {check("smokeProps", t("debug.smokeBumpsIntoProps"))}
-          {check("smokeActors", t("debug.robotsPushSmokeAside"))}
+          {check("smokeWalls", t("debug.smokeBumpsIntoWallsFloorsCeilings"), searchAnchor("debug.smoke.walls"))}
+          {check("smokeProps", t("debug.smokeBumpsIntoProps"), searchAnchor("debug.smoke.props"))}
+          {check("smokeActors", t("debug.robotsPushSmokeAside"), searchAnchor("debug.smoke.actors"))}
         </>,
       )}
 
@@ -669,23 +684,24 @@ export function DebugPanel({
         t("debug.playTesting"),
         <>
           <label className="flex items-center gap-2 text-[11px] cursor-pointer">
-            <input type="checkbox" checked={autoShared} onChange={(e) => setAutoLoadShared(e.target.checked)} />
+            <input type="checkbox" {...searchAnchor("debug.play.autoShared")} checked={autoShared} onChange={(e) => setAutoLoadShared(e.target.checked)} />
             {t("debug.autoLoadShared")}
           </label>
-          {check("gridMovement", t("debug.gridMovementOffFreeJoysticks"))}
-          {check("aimMiniGame", t("debug.aimingMiniGameOffChanceRoll"))}
-          {check("immortalCrew", t("debug.immortalCrewHPStopsAt1"))}
-          {check("noclip", t("debug.noclipWalkThroughWalls"))}
-          {check("wallBacking", t("debug.blackWallPillarBacking"))}
-          {check("backingInspect", t("debug.inspectBackingTranslucentWallsColouredPanels"))}
-          {check("enemyScanner", t("debug.scannerEnemyOutlinesCrewGear"))}
+          {check("gridMovement", t("debug.gridMovementOffFreeJoysticks"), searchAnchor("debug.play.gridMovement"))}
+          {check("aimMiniGame", t("debug.aimingMiniGameOffChanceRoll"), searchAnchor("debug.play.aimMiniGame"))}
+          {check("immortalCrew", t("debug.immortalCrewHPStopsAt1"), searchAnchor("debug.play.immortalCrew"))}
+          {check("noclip", t("debug.noclipWalkThroughWalls"), searchAnchor("debug.play.noclip"))}
+          {check("wallBacking", t("debug.blackWallPillarBacking"), searchAnchor("debug.play.wallBacking"))}
+          {check("backingInspect", t("debug.inspectBackingTranslucentWallsColouredPanels"), searchAnchor("debug.play.backingInspect"))}
+          {check("enemyScanner", t("debug.scannerEnemyOutlinesCrewGear"), searchAnchor("debug.play.enemyScanner"))}
           <label className="flex items-center gap-2 text-[11px] cursor-pointer">
-            <input type="checkbox" checked={enemiesInactive} onChange={(e) => setEnemiesOff(e.target.checked)} />
+            <input type="checkbox" {...searchAnchor("debug.play.enemiesInactive")} checked={enemiesInactive} onChange={(e) => setEnemiesOff(e.target.checked)} />
             {t("debug.enemiesInactive")}
           </label>
           {select(
             t("pickup.mode"),
             <select
+              {...searchAnchor("debug.play.pickupMode")}
               value={storedPickup ?? ""}
               title={t("pickup.modeHint")}
               onChange={(e) => setStoredPickupMode(parsePickupMode(e.target.value) ?? null)}
@@ -714,7 +730,7 @@ export function DebugPanel({
             <div className="flex items-center justify-between gap-2 text-[11px]">
               <span>{t("debug.variation", { v1: seed })}</span>
               {onReroll && (
-                <button type="button" onClick={onReroll} className="border border-neutral-600 rounded-sm px-2 py-0.5 hover:bg-neutral-800">{t("debug.reroll")}</button>
+                <button type="button" {...searchAnchor("debug.mood.reroll")} onClick={onReroll} className="border border-neutral-600 rounded-sm px-2 py-0.5 hover:bg-neutral-800">{t("debug.reroll")}</button>
               )}
             </div>
             {mood && onMood && (
@@ -753,6 +769,7 @@ export function DebugPanel({
             )}
             <button
               type="button"
+              {...searchAnchor("debug.stats.copy")}
               className={`${button} mt-1 self-start`}
               onClick={() => {
                 const lines = [
