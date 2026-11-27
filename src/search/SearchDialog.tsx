@@ -98,6 +98,12 @@ export function SearchDialog({ world, history, onHistoryChange, onClose }: Searc
       style={neutralStyle}
       className="fixed inset-0 m-auto w-[min(34rem,94vw)] max-w-none rounded-lg border border-neutral-500 bg-neutral-950 p-4 text-sm text-white shadow-2xl backdrop:bg-black/70"
       onCancel={e => { e.preventDefault(); close(); }}
+      // (a portal's React events bubble up the component tree: keep the view's mouselook from capturing the pointer)
+      onPointerDown={e => e.stopPropagation()}
+      onPointerUp={e => e.stopPropagation()}
+      onMouseDown={e => e.stopPropagation()}
+      onClick={e => e.stopPropagation()}
+      onWheel={e => e.stopPropagation()}
       onKeyDown={e => {
         e.stopPropagation();
         if (e.key === "Escape" && !e.nativeEvent.isComposing) {
