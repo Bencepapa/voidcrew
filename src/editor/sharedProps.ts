@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { isSharedPropId, PROP_TYPES, type EditableProp } from "../game/props";
-import { prismInset, prismSides } from "../game/propPrism";
+import { prismInset, prismSides, prismWrap } from "../game/propPrism";
 import { bundledDefinitions } from "../game/sharedBuiltins";
 import { definitionIdOk } from "../game/sharedContent";
 import { assetInWorld, assetWorld, type WorldId } from "../game/worlds";
@@ -41,6 +41,7 @@ function readDefinition(raw: Partial<EditableProp> | null | undefined): Editable
     ...(raw.kind === "prism" ? {
       sides: prismSides(raw.sides),
       inset: prismInset(raw.inset),
+      wrap: prismWrap(raw.wrap),
       textureB: typeof raw.textureB === "string" && texturePattern.test(raw.textureB) ? raw.textureB : undefined,
     } : {}),
   };

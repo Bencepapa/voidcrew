@@ -7,10 +7,10 @@ export function propPrismGeometry(faces: readonly PrismSide[], height: number): 
   const uv: number[] = [];
   let start = 0;
   for (const material of [0, 1]) {
-    for (const { from: [ax, az], to: [bx, bz], material: group } of faces) {
+    for (const { from: [ax, az], to: [bx, bz], material: group, u0, u1 } of faces) {
       if (group !== material) continue;
       positions.push(ax, 0, az, bx, 0, bz, bx, height, bz, ax, 0, az, bx, height, bz, ax, height, az);
-      uv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+      uv.push(u0, 0, u1, 0, u1, 1, u0, 0, u1, 1, u0, 1);
     }
     const end = positions.length / 3;
     if (end > start) geometry.addGroup(start, end - start, material);

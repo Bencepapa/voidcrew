@@ -1,4 +1,4 @@
-import { PRISM_MAX_INSET, PRISM_MAX_SIDES, PRISM_MIN_SIDES, prismInset, prismSides } from "../game/propPrism";
+import { PRISM_MAX_INSET, PRISM_MAX_SIDES, PRISM_MIN_SIDES, prismInset, prismSides, prismWrap } from "../game/propPrism";
 import type { EditableProp } from "../game/props";
 import { t } from "../i18n";
 import { NumberField } from "./NumberField";
@@ -13,6 +13,8 @@ export function PrismPropFields({ definition, textures, edit, field }: {
       min={PRISM_MIN_SIDES} max={PRISM_MAX_SIDES} step={1} onChange={sides => edit({ sides })}/>
     <NumberField label={t("assetManager.propDraft.prismInset")} value={prismInset(definition.inset)}
       min={0} max={PRISM_MAX_INSET} step={1} unit="%" defaultValue={0} slider onChange={inset => edit({ inset })}/>
+    <NumberField label={t("assetManager.propDraft.prismWrap")} value={prismWrap(definition.wrap)}
+      min={0} max={PRISM_MAX_SIDES} step={1} defaultValue={0} slider onChange={wrap => edit({ wrap })}/>
     <label>{t("assetManager.propDraft.textureB")}
       <select className={field} value={definition.textureB ?? ""} onChange={event => edit({ textureB: event.target.value || undefined })}>
         <option value="">{t("assetManager.propDraft.sameTexture")}</option>

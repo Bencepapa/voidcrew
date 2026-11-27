@@ -196,7 +196,7 @@ export function createPropModels(deps: {
         }
         return kit.wallMat;
       };
-      const geometry = propPrismGeometry(prismFaces(length, depth, prismSides(type.sides), prismInset(type.inset), !!alternate), height * wallHeight);
+      const geometry = propPrismGeometry(prismFaces(length, depth, prismSides(type.sides), prismInset(type.inset), !!alternate, type.wrap), height * wallHeight);
       geometries.push(geometry);
       const mesh = new THREE.Mesh(geometry, [material(type.texture), material(alternate ?? type.texture)]);
       mesh.position.y = (type.elevation ?? 0) * wallHeight;

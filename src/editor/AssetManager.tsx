@@ -392,7 +392,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [publishingProp, setPublishingProp] = useState("");
   const prop = sample==="prop" ? propDraft?.definition ?? PROP_TYPES[id] : undefined;
   const propRenderKey = prop && JSON.stringify([prop.kind, prop.size, prop.elevation, prop.wall, prop.relief,
-    ...(prop.kind === "prism" ? [prop.sides, prop.inset] : [])]);
+    ...(prop.kind === "prism" ? [prop.sides, prop.inset, prop.wrap] : [])]);
   const alternateTexture = prop?.kind === "prism" ? prop.textureB : undefined;
   const top = prop ? prop.size[1] + ("elevation" in prop ? prop.elevation ?? 0 : 0) : 0;
   const showCeiling = ceiling==="On" || (ceiling==="Auto" && top<=1);
@@ -922,7 +922,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         const flat=!prop || ["panel","billboard","cross","chamfer"].includes(prop.kind);
         const alternate = alternateTexture && groups[alternateTexture]?.diffuse ? alternateTexture : undefined;
         const geo = keep(prop?.kind==="prism"
-          ? propPrismGeometry(prismFaces(w,d,prismSides(prop.sides),prismInset(prop.inset),!!alternate),h)
+          ? propPrismGeometry(prismFaces(w,d,prismSides(prop.sides),prismInset(prop.inset),!!alternate,prop.wrap),h)
           : flat ? new THREE.PlaneGeometry(w,h) : new THREE.BoxGeometry(w,h,d));
         const faceMat=(name:string)=>assetMaterial(name,{alphaTest:.4});
         let faces: THREE.Material | THREE.Material[]=mat;

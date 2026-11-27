@@ -20,7 +20,7 @@ export const RELEASES: Release[] = [
     items: [
       { title: "Kereső a szerkesztőben", text: "A nagyítóval, illetve Ctrl+P vagy Ctrl+K billentyűvel nyitható kereső az automata tetőhöz, a napszak és a napfény beállításaihoz, valamint a fényprobe kapcsolóhoz ugrik." },
       { title: "Kiadási jegyzetek", text: "A menüből bármikor megnyithatod a korábbi kiadások jegyzeteit." },
-      { title: "Sokszög és csillag alakú tárgy", text: "Az Asset Managerben kipróbálható a 3–12 oldalú, csillagformára is behúzható tárgyforma két váltakozó textúrával." },
+      { title: "Sokszög és csillag alakú tárgy", text: "Az Asset Managerben kipróbálható a 3–12 oldalú, csillagformára is behúzható tárgyforma két váltakozó textúrával; a textúra több oldalon át is futhat, így egy szögből az egész kép látszik." },
       { title: "Hangfeltöltés", text: "Az Asset Managerben hangeffektet, zenét és GUI-hangot tölthetsz fel, beállíthatod az alapértelmezett hangerőt és sebességet, és a szerkesztőben lerakás előtt is meghallgathatod." },
       { title: "Tárgyfelvétel egérrel", text: "A rejtett szerkesztői jelölők mellett is működik a földön fekvő tárgyak felvétele kattintással vagy a hátizsákra húzással." },
       { title: "Fényprobe-ok megjelenítése", text: "A Hibakeresés panelen bekapcsolhatók az előszámított fénymintákat mutató színes gömbök és az irányított fény irányjelzői." },

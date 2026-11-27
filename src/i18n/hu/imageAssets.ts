@@ -86,6 +86,7 @@ export const imageAssetsHu = {
   "assetManager.propDraft.prism": "Sokszög / csillag (kísérleti)",
   "assetManager.propDraft.prismSides": "Oldalak / csillagcsúcsok",
   "assetManager.propDraft.prismInset": "Csillag behúzása",
+  "assetManager.propDraft.prismWrap": "Textúra átfutása oldalakon (0 = minden lapon a teljes kép)",
   "assetManager.propDraft.textureB": "Váltakozó textúra (B)",
   "assetManager.propDraft.sameTexture": "Az első textúra ismétlése",
   "assetManager.propDraft.needTextureB": "Válassz elérhető második textúrát.",

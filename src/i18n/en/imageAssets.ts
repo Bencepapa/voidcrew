@@ -86,6 +86,7 @@ export const imageAssetsEn = {
   "assetManager.propDraft.prism": "Polygon / star (experimental)",
   "assetManager.propDraft.prismSides": "Sides / star points",
   "assetManager.propDraft.prismInset": "Star inset",
+  "assetManager.propDraft.prismWrap": "Texture runs across sides (0 = whole texture on every face)",
   "assetManager.propDraft.textureB": "Alternating texture (B)",
   "assetManager.propDraft.sameTexture": "Repeat the first texture",
   "assetManager.propDraft.needTextureB": "Choose an available second texture.",

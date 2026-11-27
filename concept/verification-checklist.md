@@ -95,3 +95,4 @@ Pipálható lista: húzd ki, ami rendben van; ami nem, azt írd le (melyik lép�
 ## Következő kérések / megjegyzések
 - Törlés (Supabase) és automatikus mentés visszaállítása, a bolt/közzététel (H4/H5) még nincs tesztelve.
 - Lehetséges utómunka: az Asset Manager bezárási figyelmeztetése csak a textúra-piszkozatokat számolja; a `bolt-ablak.svg` az egyszerű bolt-módra.
+- [ ] **Sokszög/csillag: textúra átfutása.** Asset Manager → saját prop → Forma: Sokszög / csillag, 6 oldal, 40% behúzás, „Textúra átfutása” = 3. Várt: egy kép három oldalon fut át (a behúzás miatti fél lapok egy oldalnak számítanak), a B textúra a következő három oldalon; 0-nál minden lapon a teljes kép, mint eddig; a pályára rakott példány ugyanígy néz ki.

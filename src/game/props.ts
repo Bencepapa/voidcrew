@@ -114,6 +114,8 @@ export type PropType = {
       textureB?: string;
       sides?: number;
       inset?: number;
+      // how many sides one copy of the texture stretches across (0/unset: a full copy on every face)
+      wrap?: number;
     }
   | {
       // a square pillar from the floor to the ceiling (whatever the cell's
