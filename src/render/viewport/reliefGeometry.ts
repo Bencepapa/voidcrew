@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { createReliefWallGeometry, downsampleHeightGrid, loadHeightGrid, type EdgeSegment } from "../reliefMesh";
+import type { ReliefUvWindow } from "../reliefUvWindow";
 import { textureTuning } from "../textureTuning";
 import type { DecalLibrary } from "../decals";
 import type { ViewportSettings } from "./settings";
@@ -49,6 +50,7 @@ export function createReliefGeometry(context: ReliefGeometryContext) {
       holeBackZ?: number;
       rows?: [number, number];
       cols?: [number, number];
+      uvWindow?: ReliefUvWindow;
       holeLevels?: number;
       // relief depth (default: the settings')
       depth?: number;
@@ -110,7 +112,7 @@ export function createReliefGeometry(context: ReliefGeometryContext) {
         const smooth = shape.hybrid || ((kit.smooth || settings.reliefMode === "smooth") && !grid.solid && !shape.holeLevels);
         const smoothLod = smooth ? shape.smoothLod : undefined;
         let edgeProfile: EdgeSegment[] | undefined;
-        if (shape.coarse && shape.coarse > 1 && !smoothLod) {
+        if (shape.coarse && shape.coarse > 1 && !smoothLod && !shape.uvWindow) {
           const coarseKey = `${kit.depthUrl}|${shape.coarse}`;
           let coarse = coarseGrids.get(coarseKey);
           if (!coarse) {
@@ -149,6 +151,8 @@ export function createReliefGeometry(context: ReliefGeometryContext) {
           holeBackZ: shape.holeBackZ,
           rows: shape.rows,
           cols: shape.cols,
+          uvWindow: shape.uvWindow,
+          windowCoarse: smoothLod ? undefined : shape.coarse,
           holeLevels: shape.holeLevels,
           joinEdges: shape.joinEdges,
           floorEdges: shape.floorEdges,
