@@ -1,4 +1,5 @@
 import { isTextEntry } from "./keyboardFocus";
+import { routeSearchKey } from "./search/searchKeyboard";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
@@ -24,6 +25,10 @@ document.title = WORLDS[START_MAP.world].name;
 for (const type of ["keydown", "keyup", "keypress"] as const) {
   window.addEventListener(type, (e) => {
     if (!(e.target instanceof HTMLElement) || !isTextEntry(e.target)) return;
+    if (type === "keydown" && routeSearchKey(e)) {
+      e.stopImmediatePropagation();
+      return;
+    }
     if (type === "keydown" && (e.key === "Escape" || (e.key === "Enter" && e.target instanceof HTMLInputElement))) {
       e.preventDefault();
       e.target.blur();

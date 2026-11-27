@@ -5,6 +5,7 @@ import { neutralStyle } from "../editor/inspector/parts";
 import { t, useLang } from "../i18n";
 import { rememberSearch, type SearchHistoryEntry } from "./history";
 import { navigate } from "./openers";
+import { setSearchKeyHandler } from "./searchKeyboard";
 import { buildSearchIndex } from "./searchIndex";
 import { findSearchTarget, SEARCH_TARGETS, type SearchTarget } from "./targets";
 
@@ -49,6 +50,27 @@ export function SearchDialog({ world, history, onHistoryChange, onClose }: Searc
     dialog.current?.close();
     onClose();
   }
+
+  // the dialog's own keys; main.tsx's text-field guard hands them over (see searchKeyboard.ts)
+  function onKey(e: { key: string; isComposing: boolean; preventDefault(): void }) {
+    if (e.isComposing) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    } else if (!rows.length) {
+      return;
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      setSelected((active + step + rows.length) % rows.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      void choose(active);
+    }
+  }
+  const onKeyRef = useRef(onKey);
+  onKeyRef.current = onKey;
+  useEffect(() => setSearchKeyHandler(e => onKeyRef.current(e)), []);
 
   async function choose(index: number) {
     const row = rows[index];
@@ -100,17 +122,7 @@ export function SearchDialog({ world, history, onHistoryChange, onClose }: Searc
         className={DIALOG_INPUT}
         value={query}
         onChange={e => { setQuery(e.target.value); setSelected(0); setMissing(false); }}
-        onKeyDown={e => {
-          if (e.nativeEvent.isComposing || !rows.length) return;
-          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            const step = e.key === "ArrowDown" ? 1 : -1;
-            setSelected((active + step + rows.length) % rows.length);
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            void choose(active);
-          }
-        }}
+        onKeyDown={e => { if (e.key !== "Escape") onKey({ key: e.key, isComposing: e.nativeEvent.isComposing, preventDefault: () => e.preventDefault() }); }}
       />
       {!searching && rows.length > 0 && (
         <div className="mt-3 flex items-center justify-between gap-2 text-xs text-neutral-300">
