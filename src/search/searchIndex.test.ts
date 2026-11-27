@@ -5,6 +5,7 @@ import { editorShellEn } from "../i18n/en/editorShell";
 import { editorShellHu } from "../i18n/hu/editorShell";
 import { normalizeSearch } from "./normalizeSearch";
 import { buildSearchIndex } from "./searchIndex";
+import { assetTarget } from "./assetTargets";
 import { SEARCH_TARGETS, type SearchTarget } from "./targets";
 
 assert.equal(normalizeSearch("  TETŐ\t és Égbolt "), "teto es egbolt");
@@ -44,3 +45,16 @@ const worlds = buildSearchIndex([
 assert.equal(worlds.query("lantern", "fantasy")[0]?.id, "fantasy");
 assert.equal(worlds.query("lantern", "scifi")[0]?.id, "scifi");
 assert.equal(worlds.query("lantern")[0]?.id, "neutral");
+
+const catalogue = buildSearchIndex([{ ...base, id: "static" }], target => target.asset?.name ?? "roof");
+const one = assetTarget({ kind: "assetSound", id: "fantasy_sound_00000000-0000-4000-8000-000000000001", name: "Share Bell", category: "effect" });
+const renamed = assetTarget({ ...one.asset!, name: "Village Chime" });
+catalogue.replaceAssets([one]);
+assert.equal(catalogue.query("bell")[0]?.id, one.id);
+catalogue.replaceAssets([renamed]);
+assert.equal(renamed.id, one.id);
+assert.deepEqual(catalogue.query("bell"), []);
+assert.equal(catalogue.query("chime")[0]?.id, one.id);
+assert.equal(catalogue.query("roof")[0]?.id, "static");
+catalogue.replaceAssets([]);
+assert.deepEqual(catalogue.query("chime"), []);

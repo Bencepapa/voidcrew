@@ -2,12 +2,24 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "re
 import { createPortal } from "react-dom";
 import { DIALOG_BUTTON, DIALOG_INPUT } from "../editor/Dialog";
 import { neutralStyle } from "../editor/inspector/parts";
-import { t, useLang } from "../i18n";
+import { dictionaryText, t, useLang } from "../i18n";
 import { rememberSearch, type SearchHistoryEntry } from "./history";
 import { navigate } from "./openers";
 import { isSearchShortcut, setSearchKeyHandler } from "./searchKeyboard";
 import { buildSearchIndex } from "./searchIndex";
+import { assetCategoryKey } from "./assetTargets";
+import { useAssetSearchTargets } from "./useAssetSearchTargets";
 import { findSearchTarget, SEARCH_TARGETS, type SearchTarget } from "./targets";
+
+function displayTitle(target: SearchTarget) {
+  return target.asset && !target.asset.nameKey ? target.asset.name : t(target.titleKey);
+}
+
+function indexedTitle(target: SearchTarget) {
+  if (target.asset && !target.asset.nameKey) return target.asset.name;
+  const titles = new Set([dictionaryText(target.titleKey, "hu"), dictionaryText(target.titleKey, "en")]);
+  return [...titles].filter(Boolean).join(" ");
+}
 
 interface SearchDialogProps {
   world: SearchTarget["world"];
@@ -17,8 +29,15 @@ interface SearchDialogProps {
 }
 
 export function SearchDialog({ world, history, onHistoryChange, onClose }: SearchDialogProps) {
-  const lang = useLang();
-  const index = useMemo(() => buildSearchIndex(SEARCH_TARGETS, target => t(target.titleKey)), [lang]);
+  useLang();
+  const assets = useAssetSearchTargets();
+  const index = useMemo(() => buildSearchIndex(SEARCH_TARGETS, indexedTitle), []);
+  const assetById = useMemo(() => new Map(assets.map(target => [target.id, target])), [assets]);
+  const [indexedAssets, setIndexedAssets] = useState<typeof assets>();
+  useLayoutEffect(() => {
+    index.replaceAssets(assets);
+    setIndexedAssets(assets);
+  }, [assets, index]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [missing, setMissing] = useState(false);
@@ -27,9 +46,9 @@ export function SearchDialog({ world, history, onHistoryChange, onClose }: Searc
   const listId = useId();
   const searching = !!query.trim();
   const rows = searching
-    ? index.query(query, world).map(target => ({ target, query }))
+    ? index.query(query, world).filter(target => !target.asset || indexedAssets === assets).map(target => ({ target, query }))
     : history.flatMap(entry => {
-      const target = findSearchTarget(entry.targetId);
+      const target = assetById.get(entry.targetId) ?? findSearchTarget(entry.targetId);
       return target ? [{ target, query: entry.query }] : [];
     });
   const active = Math.min(selected, rows.length - 1);
@@ -77,7 +96,7 @@ export function SearchDialog({ world, history, onHistoryChange, onClose }: Searc
     const element = dialog.current;
     if (!row || !element?.open) return;
     element.close();
-    const found = await navigate(row.target.id);
+    const found = await navigate(row.target);
     if (!element.isConnected) return;
     if (found) {
       onHistoryChange(rememberSearch(history, { query: row.query, targetId: row.target.id }));
@@ -147,7 +166,10 @@ export function SearchDialog({ world, history, onHistoryChange, onClose }: Searc
             onMouseDown={e => e.preventDefault()}
             onClick={() => void choose(i)}
           >
-            <span>{t(row.target.titleKey)}</span>
+            <span>{displayTitle(row.target)}</span>
+            {searching && row.target.asset && <span className="text-xs text-neutral-400">
+              {t(assetCategoryKey(row.target.asset.kind))}{row.target.world && ` · ${t(row.target.world === "fantasy" ? "assetManager.fantasy" : "assetManager.scifi")}`}
+            </span>}
             {!searching && <span className="break-all text-xs text-neutral-400">{row.query}</span>}
           </li>
         ))}

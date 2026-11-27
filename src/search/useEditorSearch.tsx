@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import type { WorldId } from "../game/worlds";
+import { openAssetManager, type Sample } from "../editor/AssetManager";
+import type { AssetSearchKind, SearchAsset } from "./assetTargets";
 import { registerEditorSearchOpeners } from "./editorSearchOpeners";
 import { readSearchHistory, saveSearchHistory, type SearchHistoryEntry } from "./history";
 import { SearchDialog } from "./SearchDialog";
 import { isSearchShortcut } from "./searchKeyboard";
 
-export interface AssetSearchRequest { id: string }
+export interface AssetSearchRequest { id: string; tree?: SearchAsset["tree"] }
+
+const managerCategory: Record<AssetSearchKind, Sample> = {
+  assetProp: "prop", assetTexture: "material", assetSound: "sound", assetActor: "actor", assetItem: "item",
+};
 
 const storage = () => window.localStorage;
 
@@ -29,12 +35,26 @@ export function useEditorSearch(
     return registerEditorSearchOpeners({
       openMapRender: () => { setAssetRequest(null); panels.current.openMapRender(); },
       openDebug: () => { setAssetRequest(null); panels.current.openDebug(); },
+      openAssetManager: (id, target) => {
+        setAssetRequest(null);
+        openAssetManager("prop", "", { targetId: id, propField: target.propField });
+      },
+      openAsset: (id, { asset }) => {
+        if (!asset) return;
+        if (asset.tree && (!asset.world || asset.world === world || asset.tree.group === "fence")) {
+          panels.current.revealAssetTree(id);
+          setAssetRequest({ id, tree: asset.tree });
+        } else {
+          setAssetRequest(null);
+          openAssetManager(managerCategory[asset.kind], asset.id, { targetId: id });
+        }
+      },
       openAssetTree: id => {
         panels.current.revealAssetTree(id);
         setAssetRequest({ id });
       },
     });
-  }, [enabled]);
+  }, [enabled, world]);
 
   useEffect(() => {
     if (!enabled) return;

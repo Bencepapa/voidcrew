@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { formatNumber } from "../i18n";
+import type { searchAnchor } from "../search/searchAnchor";
 
 // A number the editor's way (EDITOR_UI_PLAN.md, section 6): drag it sideways
 // to change it, click it to type it. One component for every number in the
@@ -39,6 +40,7 @@ export interface NumberFieldProps {
   disabled?: boolean;
   title?: string;
   className?: string;
+  anchor?: ReturnType<typeof searchAnchor>;
 }
 
 const decimalsOf = (step: number) => {
@@ -62,6 +64,7 @@ export function NumberField({
   disabled,
   title,
   className = "",
+  anchor,
 }: NumberFieldProps) {
   const shownDigits = digits ?? decimalsOf(step);
   const clamp = (v: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
@@ -195,6 +198,7 @@ export function NumberField({
       <div
         ref={box}
         role="spinbutton"
+        {...anchor}
         aria-valuenow={value}
         aria-valuemin={min}
         aria-valuemax={max}

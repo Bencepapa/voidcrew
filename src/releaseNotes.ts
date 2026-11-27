@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 4,
     date: "2026-11-26",
     items: [
+      { title: "Assetek és propbeállítások keresése", text: "A szerkesztő keresőjéből az assetek kiválaszthatók, és a propok alak-, textúra- vagy árnyékbeállításai közvetlenül megnyithatók." },
       { title: "Lágy árnyék a propok alatt", text: "A prizma, panel, kereszt és billboard propok lágy padlóárnyékának erőssége az Eszközkezelőben állítható." },
       { title: "Kereső a szerkesztőben", text: "A nagyítóval, illetve Ctrl+P vagy Ctrl+K billentyűvel nyitható kereső az automata tetőhöz, a napszak és a napfény beállításaihoz, valamint a fényprobe kapcsolóhoz ugrik." },
       { title: "Kiadási jegyzetek", text: "A menüből bármikor megnyithatod a korábbi kiadások jegyzeteit." },

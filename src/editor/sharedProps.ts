@@ -91,7 +91,7 @@ export function createPropDraft(world: WorldId, kind: EditableProp["kind"], text
   const draft: PropDraft = {
     id: `${world}_prop_${crypto.randomUUID()}`,
     world,
-    definition: { name: "", kind, texture, size: [.6, .6, .15], elevation: 0, relief: 1, wall: false, blocks: false },
+    definition: { name: "", kind, texture, size: [.6, .6, kind === "prism" ? .6 : .15], elevation: 0, relief: 1, wall: false, blocks: false },
   };
   savePropDraft(draft);
   return draft;

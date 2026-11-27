@@ -8,6 +8,7 @@ import { idb } from "./idb";
 import { SharedHttpError, sharedConfigured, sharedToken } from "./sharedAuth";
 import { publishSharedSound, useSharedSounds } from "./sharedSounds";
 import { newSoundId, readSoundFile, type SoundDraft } from "./soundDraft";
+import { searchAnchor } from "../search/searchAnchor";
 import { SoundPreview } from "./SoundPreview";
 import { SignInPopover } from "./TexturePanel";
 
@@ -27,8 +28,8 @@ function useAudioBlob(blob: Blob | undefined) {
   return source?.blob === blob ? source?.url : undefined;
 }
 
-export function SoundAssetsPanel({ world, targetWorld, category, initialId, onNotice, onError }: {
-  world: WorldId | "All"; targetWorld: WorldId; category: string; initialId?: string;
+export function SoundAssetsPanel({ world, targetWorld, category, initialId, searchTargetId, onNotice, onError }: {
+  world: WorldId | "All"; targetWorld: WorldId; category: string; initialId?: string; searchTargetId?: string;
   onNotice: (message: string) => void; onError: (message: string) => void;
 }) {
   const published = useSharedSounds();
@@ -134,7 +135,7 @@ export function SoundAssetsPanel({ world, targetWorld, category, initialId, onNo
       </div>
     </aside>
     {(item || builtin) && <section className="min-w-0 max-w-lg flex-1 space-y-3 overflow-auto pr-2" aria-label={t("assetManager.properties")}>
-      <h2 className="text-base font-semibold">{item?.name || (builtin ? t(`sound.sample.${builtin}`) : t("sound.assets.newName"))}</h2>
+      <h2 {...(searchTargetId && initialId === selected ? searchAnchor(searchTargetId) : {})} tabIndex={-1} className="text-base font-semibold">{item?.name || (builtin ? t(`sound.sample.${builtin}`) : t("sound.assets.newName"))}</h2>
       {item && <p className="text-neutral-400">{worldLabel(item.world)} · {t(`sound.assets.category.${item.category}`)}</p>}
       {src && <SoundPreview src={src} volume={item?.volume ?? 0.6} rate={item?.rate ?? 1} label={t("sound.assets.preview")}
         onDuration={builtin ? seconds => setBuiltinDuration({ id: builtin, seconds }) : undefined} />}

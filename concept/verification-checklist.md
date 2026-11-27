@@ -12,6 +12,8 @@ Pipálható lista: húzd ki, ami rendben van; ami nem, azt írd le (melyik lép�
 
 ## Szerkesztő
 
+- [ ] **Assetkeresés és Eszközkezelő.** Nyisd meg a keresőt Ctrl+Shift+F-fel. Keress egy propra, textúrára, hangra, NPC-re és felszedhető tárgyra. Az aktuális világban használható találat válassza ki az Assetfa ecsetét, a másik világbeli találat az adott assetet nyissa meg az Eszközkezelőben. Frissítsd a megosztott listát, majd keresd meg az újonnan betöltött elemet. A `csillag`, `sokszög`, `prism wrap` és `árnyék` találatok emeljék ki a megfelelő propmezőt. Piszkozat nélkül a mező olvasható előnézetben nyíljon meg.
+
 - [x] Helyezz le egy prizma, panel, kereszt és billboard propot, majd emeld meg az egyiket: az árnyékok széle lágy, a panelé látható szélességű, a megemelt propé pedig a padlón marad, összemegy és halványul. Felülnézetben is maradjon a billboard árnyéka a padlón. Kattints csak az árnyékra: a prop ne legyen kijelölve. Az Eszközkezelőben állítsd egy prop árnyékerősségét 0-ra és mentsd el: az árnyék eltűnik.
 
 - [x] **Kereső a szerkesztőben.** Edge-ben és Chrome-ban nyisd meg a nagyítóval, majd Ctrl+P-vel és Ctrl+K-val. Az Esc adja vissza a fókuszt. Keress `teto` vagy `auto roof` kifejezésre, válassz Enterrel, és ellenőrizd, hogy az Eszközfában megnyílik a Tető (automata) csoport, a kiválasztott forma fókuszt kap, és az eszköz tippje megmutatja a Shift+kattintást. Egy megemelt tömbön a Shift+kattintás fedje le az egész tömböt. Ezután keress `napszak`, majd `time of day` kifejezésre. Mindkettő ugyanarra a Napszak mezőre ugorjon, amely rövid kiemelést és fókuszt kap. Nyisd meg újra a keresőt, és üres mezőből Enterrel ismét nyisd meg a legutóbbi találatot.

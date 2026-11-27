@@ -78,7 +78,9 @@ const hu: Partial<Record<Key, string>> = { ...lookHu, ...soundHu, ...acousticsHu
 
 export type Key = keyof typeof en;
 // whether a key has a string (for optional, data-driven names)
-export const hasKey = (key: string): key is Key => key in en;
+export const hasKey = (key: string): key is Key => Object.hasOwn(en, key);
+export const dictionaryText = (key: string, locale: Lang): string | undefined =>
+  hasKey(key) ? (locale === "hu" ? hu[key] : en[key]) : undefined;
 export type Lang = "en" | "hu";
 export const LANGS: Lang[] = ["hu", "en"];
 

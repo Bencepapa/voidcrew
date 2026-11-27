@@ -12,14 +12,23 @@ export function buildSearchIndex(targets: readonly SearchTarget[], titleFor: (ta
       boost: { title: 8, synonyms: 4, oldIds: 2, keywords: 1 },
     },
   });
-  index.addAll(targets.map(target => ({
+  const documents = (list: readonly SearchTarget[]) => list.map(target => ({
     id: target.id,
     title: normalizeSearch(titleFor(target)),
     synonyms: normalizeSearch(target.synonyms.join(" ")),
     oldIds: normalizeSearch(target.oldIds?.join(" ") ?? ""),
     keywords: normalizeSearch(target.keywords.join(" ")),
-  })));
+  }));
+  index.addAll(documents(targets));
+  let assetIds: string[] = [];
   return {
+    replaceAssets(assets: readonly SearchTarget[]) {
+      index.discardAll(assetIds);
+      for (const id of assetIds) byId.delete(id);
+      assetIds = assets.map(target => target.id);
+      for (const target of assets) byId.set(target.id, target);
+      index.addAll(documents(assets));
+    },
     query(query: string, world?: SearchTarget["world"]): SearchTarget[] {
       return index.search(normalizeSearch(query), {
         boostDocument: (id: string | number) => world && byId.get(String(id))?.world === world ? 1.1 : 1,

@@ -50,6 +50,9 @@ import { PropAssetFields } from "./PropAssetFields";
 import { DialoguesPanel } from "./DialoguesPanel";
 import { ShopsPanel } from "./ShopsPanel";
 import { SoundAssetsPanel } from "./SoundAssetsPanel";
+import { searchAnchor } from "../search/searchAnchor";
+import { isPrismField, type AssetManagerSearchRequest } from "../search/assetManagerTargets";
+import { findSearchProp, searchPropExample } from "./assetManagerSearchProps";
 import { loadSharedSounds } from "./sharedSounds";
 import { SOUND_CATEGORIES, isSoundCategory } from "../audio/sharedSamples";
 import { prismFaces, prismInset, prismSides } from "../game/propPrism";
@@ -230,8 +233,8 @@ const TUNING: { key: keyof TextureTuning; label: Key; max: number; hint: Key }[]
 ];
 
 
-export function openAssetManager(sample: Sample, id: string) {
-  window.dispatchEvent(new CustomEvent("voidcrew:open-asset", {detail: {sample, id}}));
+export function openAssetManager(sample: Sample, id: string, search?: AssetManagerSearchRequest) {
+  window.dispatchEvent(new CustomEvent("voidcrew:open-asset", {detail: {sample, id, search}}));
 }
 
 export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
@@ -253,6 +256,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [world, setWorld] = useState<WorldId | "All">("All");
   const [sub, setSub] = useState("All");
   const [query, setQuery] = useState("");
+  const [searchRequest, setSearchRequest] = useState<AssetManagerSearchRequest>();
   const drafts = useDrafts();
   const imageDrafts = useImageDrafts();
   const propDrafts = usePropDrafts();
@@ -266,7 +270,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   useTextureVersion();
   useEffect(() => {
     const openAsset = (event: Event) => {
-      const {sample, id} = (event as CustomEvent<{sample: Sample; id: string}>).detail;
+      const {sample, id: requestedId, search} = (event as CustomEvent<{sample: Sample; id: string; search?: AssetManagerSearchRequest}>).detail;
+      const id = requestedId || (search?.propField ? findSearchProp(search.propField, activeWorld(), getPropDrafts(), PROP_TYPES, assetInWorld) : "");
+      setSearchRequest(search);
+      setQuery("");
+      if (search?.propField) setPanelOpen(true);
       const imageDraft = getImageDrafts().find(d => d.id === id);
       // Select the category, sub-category and world that make the item visible.
       const propDraft = getPropDrafts().find(draft => draft.id === id);
@@ -317,7 +325,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   // (the Dialogues and Shops categories are panels of their own, with no asset list, world or preview)
   const ownPanel = sample==="dialogue" || sample==="shop" || sample==="sound";
   const entries: Entry[] = ownPanel ? []
-    : sample==="material" ? Object.entries(catalog).filter(([,v])=>isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[],world:assetWorld(key)}))
+    : sample==="material" ? Object.entries(catalog).filter(([key,v])=>(!!searchRequest && key===selected)||isTraverse(v)||[v.kind].flat().some(k=>["wall","floor","ceiling"].includes(k))).map(([key,v])=>({key,label:v.label,img:v.diffuse,groups:isTraverse(v)?["traverse"]:[v.kind].flat() as string[],world:assetWorld(key)}))
       // (a new draft with no diffuse yet isn't in the registry)
       .concat(drafts.filter(d=>!isPropTexture(d.kinds) && !catalog[draftId(d)]).map(d=>({key:draftId(d),label:d.name || t("assetManager.untitled"),img:"",groups:d.kinds as string[],world:d.world})))
     : sample==="door" ? [...doorCatalog.filter(asset => !doorDrafts.some(draft => draft.id === asset.id)), ...doorDrafts]
@@ -359,7 +367,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     (sub==="All" || e.groups.includes(sub) || (e.propDraft && e.key===selected && sub!=="decal")));
   const term = query.trim().toLocaleLowerCase();
   const shown = term ? visible.filter(e=>`${e.label} ${e.key}`.toLocaleLowerCase().includes(term)) : visible;
-  const entry = shown.find(e=>e.key===selected) ?? shown[0];
+  const entry = shown.find(e=>e.key===selected) ?? (searchRequest?.propField && !selected ? undefined : shown[0]);
   const id = entry?.key ?? "";
   const selectedActor = sample === "actor" ? ACTOR_TYPES[id] : undefined;
   const doorDraft = sample === "door" ? doorDrafts.find(draft => draft.id === id) : undefined;
@@ -383,6 +391,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const isDecal = sample === "prop" && !!entry && entry.groups.includes("decal");
   const builtinDecalSize = useImageSize(entry?.builtinDecal ? entry.img : undefined);
   const propDraft = entry?.propDraft;
+  const searchProp = searchRequest?.propField && !propDraft
+    ? searchPropExample(searchRequest.propField, world === "All" ? activeWorld() : world, id, PROP_TYPES[id])
+    : undefined;
   // the prop's own texture: a draft's, or a published prop's when that texture is editable (it is then edited in place; the
   // first change makes the prop's draft, so that Publish carries the texture along)
   const sharedPropId = sample==="prop" && !propDraft && isSharedPropId(id) ? id : "";
@@ -565,7 +576,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   async function createProp() {
     try {
       const targetWorld = world === "All" ? activeWorld() : world;
-      const draft = createPropDraft(targetWorld, sub === "billboard" ? "billboard" : "panel");
+      const draft = createPropDraft(targetWorld, searchRequest?.propField && isPrismField(searchRequest.propField) ? "prism" : sub === "billboard" ? "billboard" : "panel");
       await attachPropTexture(draft);
       setQuery("");
       setPose(-1); setTurn(0); setPlacement("Auto");
@@ -612,11 +623,13 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   }
   // the dialog always opens in the world the editor is working in
   function openManager() {
+    setSearchRequest(undefined);
     if (document.pointerLockElement) document.exitPointerLock();
     setWorld(activeWorld());
     setOpen(true);
   }
   function changeSample(next: Sample) {
+    setSearchRequest(undefined);
     setSample(next);
     setSub("All");
     setPose(-1); setTurn(0); setPlacement("Auto");
@@ -627,11 +640,11 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   // a narrow window folds both side panels away; the strips still open them
   useEffect(() => {
     if (!open) return;
-    const fit = () => { if (window.innerWidth < 900) { setListOpen(false); setPanelOpen(false); } };
+    const fit = () => { if (window.innerWidth < 900) { setListOpen(false); if (!searchRequest?.propField) setPanelOpen(false); } };
     window.addEventListener("resize", fit);
     fit();
     return () => window.removeEventListener("resize", fit);
-  }, [open]);
+  }, [open, searchRequest]);
   const [tuneStamp, setTuneStamp] = useState(0);
   const [saveNote, setSaveNote] = useState("");
   const [copyNote, setCopyNote] = useState("");
@@ -1138,7 +1151,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         <UnsavedBar onError={setError}/>
         {sample==="dialogue" ? <DialoguesPanel onError={setError} onNotice={setNotice}/> : sample==="shop" ? <ShopsPanel onError={setError} onNotice={setNotice}/> : sample==="sound" ?
           <SoundAssetsPanel key={selected} initialId={selected} world={world} targetWorld={world==="All" ? activeWorld() : world}
-            category={sub} onError={setError} onNotice={setNotice}/> : <div className="flex min-h-0 flex-1 gap-2">
+            category={sub} searchTargetId={searchRequest?.targetId} onError={setError} onNotice={setNotice}/> : <div className="flex min-h-0 flex-1 gap-2">
           {listOpen ? <aside className="flex w-64 shrink-0 flex-col gap-1 overflow-hidden border-r border-neutral-800 pr-2">
             <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.assets")}</strong><button aria-label={t("assetManager.collapseAssets")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setListOpen(false)}>◀</button></div>
             <div className="flex items-center gap-1">
@@ -1155,7 +1168,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
                 return <button key={e.key} type="button" data-key={e.key}
                   ref={node=>{if(node && pendingScroll.current===e.key){node.scrollIntoView({block:"nearest"});pendingScroll.current=null;}}}
                   className={"flex w-full items-center gap-2 rounded-sm border px-1 py-0.5 text-left text-xs "+(id===e.key?"border-amber-400 bg-amber-400/10 text-amber-100":"border-transparent text-neutral-200 hover:bg-neutral-900")}
-                  aria-pressed={id===e.key} onClick={()=>{select(e.key);setPose(-1);setPlacement("Auto");}}>
+                  aria-pressed={id===e.key} onClick={()=>{setSearchRequest(undefined);select(e.key);setPose(-1);setPlacement("Auto");}}>
                   {a?<ActorThumb type={a} className="block h-9 w-9 shrink-0"/>
                     :e.draft?<DraftThumb draft={e.draft}/>
                     :e.img?<Thumb src={e.img} className="h-9 w-9 shrink-0 object-contain"/>
@@ -1170,7 +1183,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
             </div>
           </aside> : <button aria-label={t("assetManager.showAssets")} title={t("assetManager.assets")} className={strip} onClick={()=>setListOpen(true)}>▶</button>}
           <main className="flex min-w-0 flex-1 flex-col gap-2">
-            <div className="flex shrink-0 flex-wrap items-center gap-2"><strong>{entry?.label ?? t("assetManager.noAssets")}</strong>
+            <div className="flex shrink-0 flex-wrap items-center gap-2"><strong {...(searchRequest && !searchRequest.propField && id && id===selected ? searchAnchor(searchRequest.targetId) : {})} tabIndex={-1}>
+              {entry?.label ?? t(searchProp ? "editorSearch.propExample" : "assetManager.noAssets")}
+            </strong>
               {sample==="material" && <>{["Wall","Floor","Ceiling"].map(v=><button className={button} aria-pressed={orientation===v} key={v} onClick={()=>{orient(v);if(v==="Ceiling" || v==="Floor"){const cam=liveCamera.current;if(cam){cam.camera.position.y=v==="Ceiling"?.25:1.7;cam.controls.target.y=v==="Ceiling"?.95:.05;cam.controls.update();}}if(v!=="Wall" && layout==="Block")setLayout("Single");}}>{display(v)}</button>)}{(orientation==="Wall"?["Single","Pair","Block"]:["Single","Pair"]).map(v=><button className={button} aria-pressed={layout===v} key={v} onClick={()=>setLayout(v)}>{display(v)}</button>)}</>}
               {sample==="actor" && entry && <>
                 {selectedActor && <label>{t("assetManager.pose")} <select className={selectClass} value={pose} onChange={e=>setPose(+e.target.value)}>
@@ -1196,14 +1211,15 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               ? <StillPreview url={previewUrl} alt={entry?.label ?? ""}/>
               : <div className="min-h-0 max-h-[65vh] flex-1 overflow-hidden rounded-sm border border-neutral-800 [&>canvas]:block" ref={host}/>}
           </main>
-          {panelOpen ? <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-neutral-800 pl-2">
+          {panelOpen ? <aside tabIndex={-1} className="flex w-72 shrink-0 flex-col gap-2 overflow-auto border-l border-neutral-800 pl-2">
             <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t("assetManager.properties")}</strong><button aria-label={t("assetManager.collapseProperties")} title={t("assetManager.collapse")} className="px-2 text-neutral-400 hover:text-neutral-200" onClick={()=>setPanelOpen(false)}>▶</button></div>
             {sample==="door" ? doorAsset && <DoorAssetFields key={id} asset={doorAsset} editable={!!doorDraft} onError={setError}/>
               : sample==="still" || sample==="sky" || isDecal || (sample==="item" && (isPickupDraft || entry?.image?.pickup)) ? <>
               {selectedImageDraft && <p className="text-xs text-neutral-400">{t("assetManager.world")}: {worldName(selectedImageDraft.world)}</p>}
               <ImageAssetInspector key={id} draft={selectedImageDraft} image={isDecal ? decalImage : entry?.image} pickupPreview={pickupMaps} onError={setError} onRevised={select}/>
             </> : <>
-            {propDraft && <PropAssetFields key={id} draft={propDraft}
+            {searchProp && <p className="text-xs text-neutral-400">{t(id ? "editorSearch.propReadOnly" : "editorSearch.propExampleHint")}</p>}
+            {(propDraft || searchProp) && <PropAssetFields key={id} draft={(propDraft ?? searchProp)!} readOnly={!!searchProp}
               ownedReady={!!editor.view?.slot("diffuse").has}
               mapsBusy={!!ownedTexture && (editor.busy || propAiTexture === ownedTexture)}
               onPublishing={busy => setPublishingProp(busy ? id : "")} onError={setError}/>}

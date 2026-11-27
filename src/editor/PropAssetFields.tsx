@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DEFAULT_PROP_SHADOW } from "../game/propShadow";
 import { t } from "../i18n";
 import type { EditableProp } from "../game/props";
+import { searchAnchor } from "../search/searchAnchor";
 import { NumberField } from "./NumberField";
 import { PrismPropFields } from "./PrismPropFields";
 import { sharedConfigured, useSharedAuth } from "./sharedAuth";
@@ -9,12 +10,18 @@ import { attachPropTexture, discardPropDraft, getPropDrafts, PROP_SHAPES, propTe
 import { errorText, SignInPopover } from "./TexturePanel";
 import { BUTTON, idle } from "./inspector/parts";
 
+const sizeAnchors = {
+  width: searchAnchor("assetManager.prop.width"),
+  height: searchAnchor("assetManager.prop.height"),
+  depth: searchAnchor("assetManager.prop.depth"),
+};
 const field = "w-full min-w-0 rounded border border-neutral-600 bg-neutral-900 px-2 py-1";
 
-export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onError }: {
+export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onError, readOnly }: {
   draft: PropDraft;
   ownedReady: boolean;
   mapsBusy: boolean;
+  readOnly?: boolean;
   onPublishing: (busy: boolean) => void;
   onError: (message: string) => void;
 }) {
@@ -61,12 +68,12 @@ export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onE
 
   return <details open className="rounded border border-neutral-800 p-2">
     <summary className="cursor-pointer font-semibold">{t("assetManager.propDraft.fields")}</summary>
-    <fieldset disabled={busy || mapsBusy} className="mt-2 flex min-w-0 flex-col gap-2">
+    <fieldset disabled={readOnly || busy || mapsBusy} className="mt-2 flex min-w-0 flex-col gap-2">
       <label>{t("assetManager.image.name")}
-        <input className={field} value={definition.name ?? ""} maxLength={100} onChange={event => edit({ name: event.target.value })}/>
+        <input {...searchAnchor("assetManager.prop.name")} className={field} value={definition.name ?? ""} maxLength={100} onChange={event => edit({ name: event.target.value })}/>
       </label>
       <label>{t("assetManager.propDraft.shape")}
-        <select className={field} value={definition.kind} onChange={event => {
+        <select {...searchAnchor("assetManager.prop.shape")} className={field} value={definition.kind} onChange={event => {
           const kind = PROP_SHAPES[event.target.selectedIndex];
           const [width, height] = definition.size;
           edit(kind === "prism" ? { kind, size: [width, height, width] } : { kind });
@@ -75,7 +82,7 @@ export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onE
         </select>
       </label>
       <label>{t("assetManager.propDraft.texture")}
-        <select className={field} value={definition.texture} onChange={event => {
+        <select {...searchAnchor("assetManager.prop.texture")} className={field} value={definition.texture} onChange={event => {
           if (event.target.value === own) void useOwnTexture();
           else edit({ texture: event.target.value });
         }}>
@@ -85,33 +92,33 @@ export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onE
           {[...textures].map(([id, texture]) => <option key={id} value={id}>{texture.label}</option>)}
         </select>
       </label>
-      {definition.kind === "prism" && <PrismPropFields definition={definition} textures={textures} edit={edit} field={field}/>}
+      {definition.kind === "prism" && <PrismPropFields definition={definition} textures={textures} edit={edit} field={field} readOnly={readOnly}/>}
       {(["width", "height", "depth"] as const).map((axis, index) =>
-        <NumberField key={axis} value={definition.size[index]} min={axis === "depth" ? .01 : .05} max={8} step={.01}
+        <NumberField disabled={readOnly} anchor={sizeAnchors[axis]} key={axis} value={definition.size[index]} min={axis === "depth" ? .01 : .05} max={8} step={.01}
           label={t(`assetManager.propDraft.${axis}`)} onChange={value => {
             const size: EditableProp["size"] = [...definition.size];
             size[index] = value;
             edit({ size });
           }}/>)}
       <p className="text-xs text-neutral-400">{t("assetManager.propDraft.footprintHint")}</p>
-      <NumberField label={t("assetManager.propDraft.elevation")} value={definition.elevation ?? 0} min={0} max={8} step={.05}
+      <NumberField disabled={readOnly} anchor={searchAnchor("assetManager.prop.elevation")} label={t("assetManager.propDraft.elevation")} value={definition.elevation ?? 0} min={0} max={8} step={.05}
         defaultValue={0} onChange={elevation => edit({ elevation })}/>
-      <NumberField label={t("assetManager.propDraft.shadow")} value={definition.shadow ?? DEFAULT_PROP_SHADOW} min={0} max={1} step={.05}
+      <NumberField disabled={readOnly} anchor={searchAnchor("assetManager.prop.shadow")} label={t("assetManager.propDraft.shadow")} value={definition.shadow ?? DEFAULT_PROP_SHADOW} min={0} max={1} step={.05}
         defaultValue={DEFAULT_PROP_SHADOW} onChange={shadow => edit({ shadow })}/>
-      {definition.kind !== "billboard" && definition.kind !== "prism" && <NumberField label={t("assetManager.reliefDepth")} value={definition.relief ?? 1}
+      {definition.kind !== "billboard" && definition.kind !== "prism" && <NumberField disabled={readOnly} anchor={searchAnchor("assetManager.prop.relief")} label={t("assetManager.reliefDepth")} value={definition.relief ?? 1}
         min={0} max={3} step={.05} defaultValue={1} onChange={relief => edit({ relief })}/>}
-      <label><input type="checkbox" checked={definition.wall ?? false} onChange={event => edit({ wall: event.target.checked })}/> {t("assetManager.propDraft.wall")}</label>
-      <label><input type="checkbox" checked={definition.blocks ?? false} onChange={event => edit({ blocks: event.target.checked })}/> {t("assetManager.propDraft.blocks")}</label>
-      <div className="flex flex-wrap gap-1">
+      <label><input {...searchAnchor("assetManager.prop.wall")} type="checkbox" checked={definition.wall ?? false} onChange={event => edit({ wall: event.target.checked })}/> {t("assetManager.propDraft.wall")}</label>
+      <label><input {...searchAnchor("assetManager.prop.blocks")} type="checkbox" checked={definition.blocks ?? false} onChange={event => edit({ blocks: event.target.checked })}/> {t("assetManager.propDraft.blocks")}</label>
+      {!readOnly && <div className="flex flex-wrap gap-1">
         <button type="button" className={`${BUTTON} ${idle}`} disabled={!definition.name?.trim() || !(usesOwnTexture ? ownedReady : textures.has(definition.texture))}
           onClick={startPublish}>{t("assetManager.image.publish")}</button>
         <button type="button" className={`${BUTTON} ${idle}`} onClick={async () => {
           if (!window.confirm(t("assetManager.image.discardConfirm", { name: definition.name || t("assetManager.untitled") }))) return;
           try { await discardPropDraft(draft.id); } catch (error) { onError(errorText(error)); }
         }}>{t("assetManager.image.discard")}</button>
-      </div>
+      </div>}
     </fieldset>
-    <p className="mt-1 text-xs text-yellow-300">{t(busy ? "assetManager.image.working" : "assetManager.image.statusDraft")}</p>
+    {!readOnly && <p className="mt-1 text-xs text-yellow-300">{t(busy ? "assetManager.image.working" : "assetManager.image.statusDraft")}</p>}
     {signIn && <SignInPopover className="fixed left-1/2 top-24 z-30 -translate-x-1/2"
       onDone={() => { setSignIn(false); void publish(); }} onCancel={() => setSignIn(false)} onError={onError}/>}
   </details>;

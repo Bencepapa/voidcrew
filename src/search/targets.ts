@@ -3,8 +3,10 @@ import type { WorldId } from "../game/worlds";
 import { DEBUG_TARGETS } from "./debugTargets";
 import { MAP_RENDER_TARGETS } from "./mapRenderTargets";
 import { ASSET_TREE_TARGETS } from "./assetTreeTargets";
+import { ASSET_MANAGER_TARGETS, type PropSearchField } from "./assetManagerTargets";
+import type { SearchAsset } from "./assetTargets";
 
-export type SearchTargetKind = "mapRender" | "assetTree" | "debug";
+export type SearchTargetKind = "mapRender" | "assetTree" | "debug" | "assetManager" | SearchAsset["kind"];
 
 export interface SearchTarget {
   id: string;
@@ -14,6 +16,8 @@ export interface SearchTarget {
   keywords: readonly string[];
   world?: WorldId;
   oldIds?: readonly string[];
+  asset?: SearchAsset;
+  propField?: PropSearchField;
 }
 
 export const SEARCH_TARGETS: readonly SearchTarget[] = [
@@ -61,6 +65,7 @@ export const SEARCH_TARGETS: readonly SearchTarget[] = [
   ...MAP_RENDER_TARGETS,
   ...DEBUG_TARGETS,
   ...ASSET_TREE_TARGETS,
+  ...ASSET_MANAGER_TARGETS,
 ];
 
 export const findSearchTarget = (id: string) =>
