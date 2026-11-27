@@ -1,11 +1,12 @@
 import * as THREE from "three";
 import { fenceFaces, isFoliageSpec, type FenceModelSpec } from "../../game/fences";
 import { isSharedTextureId } from "../../game/mapSharedRefs";
+import { prismFacePlacement } from "../../game/prismFacePlacement";
 import { prismFaces, prismInset, prismSides } from "../../game/propPrism";
 import { PROP_TYPES, propReliefAmount, propReliefCells, type PropFace, type PropPart, type PropType, type PropView } from "../../game/props";
 import { useLightGrid, type LightGridUniforms } from "../lightGrid";
 import { buildOperableModel } from "../operableModel";
-import { propPrismGeometry } from "../propPrismMesh";
+import type { ReliefUvWindow } from "../reliefUvWindow";
 import { buildRoofGeometry } from "../roofMesh";
 import { isTextureSetId, TEXTURE_SETS, textureFolder, type TextureSetId } from "../textureSets";
 import { textureTuning } from "../textureTuning";
@@ -105,8 +106,7 @@ export function createPropModels(deps: {
   async function buildPropTemplate(type: PropType): Promise<THREE.Group | null> {
     const [length, height, depth] = type.size;
     // (its texture sets take its own normal strength)
-    const propKitFor = (setId: string) => {
-      const kit = sharedPropKitFor(setId);
+    const propKitFor = (setId: string, kit = sharedPropKitFor(setId)) => {
       kit.normal = type.normal;
       const normal = settingsRef.current.normalStrength * (kit.normal ?? 1);
       kit.wallMat.normalScale.set(normal, normal);
@@ -184,23 +184,30 @@ export function createPropModels(deps: {
 
     if (type.kind === "prism") {
       const alternate = type.textureB && (!isSharedTextureId(type.textureB) || isTextureSetId(type.textureB)) ? type.textureB : undefined;
-      const material = (id: string) => {
-        const key = `prism:${id}`;
+      const h = height * wallHeight;
+      const elevation = (type.elevation ?? 0) * wallHeight;
+      const cells = propReliefCells(type);
+      for (const edge of prismFaces(length, depth, prismSides(type.sides), prismInset(type.inset), !!alternate, type.wrap)) {
+        const { width, position, yaw } = prismFacePlacement(edge, h, elevation);
+        const id = (edge.material === 1 && alternate) || type.texture;
+        const uvWindow: ReliefUvWindow | undefined = edge.u0 === 0 && edge.u1 === 1 ? undefined : [edge.u0, edge.u1];
+        const shape = { width, height: h, flushEdges: false, depth: relief, coarse: PROP_COARSE, uvWindow };
+        // Each window owns its AO map. Surface textures still share the scene's texture cache.
+        const key = `prism:${JSON.stringify([id, type.normal, cells, shape])}`;
         let kit = propKits.get(key);
         if (!kit) {
           kit = createWallKit(id, false, false);
           kit.wallMat.alphaTest = 0.5;
-          kit.wallMat.side = THREE.DoubleSide;
           useLightGrid(kit.wallMat, lightGrid);
+          useLightGrid(kit.sideMat, lightGrid);
           propKits.set(key, kit);
         }
-        return kit.wallMat;
-      };
-      const geometry = propPrismGeometry(prismFaces(length, depth, prismSides(type.sides), prismInset(type.inset), !!alternate, type.wrap), height * wallHeight);
-      geometries.push(geometry);
-      const mesh = new THREE.Mesh(geometry, [material(type.texture), material(alternate ?? type.texture)]);
-      mesh.position.y = (type.elevation ?? 0) * wallHeight;
-      template.add(mesh);
+        propKitFor(id, kit);
+        const panel = await buildPropRelief(kit, shape, cells);
+        if (!panel) return null;
+        face(panel.geometry, kit, position, [0, yaw]);
+        face(panel.geometry, kit, position, [0, yaw + Math.PI], true);
+      }
       return template;
     }
 

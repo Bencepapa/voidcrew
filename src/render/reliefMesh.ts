@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import { MAX_BAKED_LEVELS, mostCommonLevel, quantizeHeights, removeSmallIslands } from "./heightLevels";
+import { windowHeightGrid, windowU, type HeightGrid, type ReliefUvWindow } from "./reliefUvWindow";
+
+export type { HeightGrid } from "./reliefUvWindow";
 
 // Turns a grayscale height map into real, stepped wall geometry: every height
 // level becomes a flat front face and every step between levels becomes a
@@ -9,16 +12,6 @@ import { MAX_BAKED_LEVELS, mostCommonLevel, quantizeHeights, removeSmallIslands 
 //
 // Coordinate convention matches THREE.PlaneGeometry: centered on the origin,
 // facing +Z, image row 0 at the top.
-
-export interface HeightGrid {
-  width: number;
-  height: number;
-  // 0..1, row-major, row 0 = top of the image
-  data: Float32Array;
-  // 1 = solid cell, 0 = hole (transparent in the height map); absent when
-  // the map has no transparency
-  solid?: Uint8Array;
-}
 
 export interface ReliefOptions {
   wallWidth: number;
@@ -48,6 +41,10 @@ export interface ReliefOptions {
   rows?: [number, number];
   // the same for the map's columns, as fractions of its width from the left
   cols?: [number, number];
+  // Exact horizontal texture interval. The relief and its AO map are local
+  // to this interval, while the material UVs address the original texture.
+  uvWindow?: ReliefUvWindow;
+  windowCoarse?: number;
   // cut this many of the lowest levels out as holes - a grate's slots, to
   // see through
   holeLevels?: number;
@@ -216,6 +213,15 @@ export function downsampleHeightGrid(grid: HeightGrid, factor: number): HeightGr
 }
 
 export function createReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
+  const window = opts.uvWindow;
+  if (!window) return buildReliefWallGeometry(grid, opts);
+  const result = buildReliefWallGeometry(windowHeightGrid(grid, window, opts.windowCoarse), opts);
+  const uv = result.geometry.getAttribute("uv");
+  for (let i = 0; i < uv.count; i++) uv.setX(i, windowU(window, uv.getX(i)));
+  return result;
+}
+
+function buildReliefWallGeometry(grid: HeightGrid, opts: ReliefOptions): ReliefResult {
   if (opts.smooth && !opts.holeLevels && (!grid.solid || opts.smoothHoles)) return createSmoothReliefGeometry(grid, opts);
   const { width: fullW, height: fullH } = grid;
 
@@ -613,7 +619,8 @@ function createSmoothReliefGeometry(grid: HeightGrid, opts: ReliefOptions): Reli
   // slopes back to holeBackZ instead (one cell wide), which is a continuous
   // surface, so there are no cracks; a door frame's two halves meet there.
   const holeSolid = opts.smoothHoles ? grid.solid : undefined;
-  const factor = Math.max(1, Math.ceil(Math.max(grid.width, grid.height) / (opts.smoothCells ?? SMOOTH_CELLS)));
+  const detailFactor = Math.max(1, Math.ceil(Math.max(grid.width, grid.height) / (opts.smoothCells ?? SMOOTH_CELLS)));
+  const factor = opts.uvWindow ? Math.min(detailFactor, grid.width, grid.height) : detailFactor;
   let cellSolid: Uint8Array | undefined;
   let src: HeightGrid;
   if (holeSolid) {

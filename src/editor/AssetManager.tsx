@@ -392,7 +392,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   const [publishingProp, setPublishingProp] = useState("");
   const prop = sample==="prop" ? propDraft?.definition ?? PROP_TYPES[id] : undefined;
   const propRenderKey = prop && JSON.stringify([prop.kind, prop.size, prop.elevation, prop.wall, prop.relief,
-    ...(prop.kind === "prism" ? [prop.sides, prop.inset, prop.wrap] : [])]);
+    ...(prop.kind === "prism" ? [prop.sides, prop.inset, prop.wrap, prop.normal] : [])]);
   const alternateTexture = prop?.kind === "prism" ? prop.textureB : undefined;
   const top = prop ? prop.size[1] + ("elevation" in prop ? prop.elevation ?? 0 : 0) : 0;
   const showCeiling = ceiling==="On" || (ceiling==="Auto" && top<=1);
@@ -928,7 +928,21 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         let faces: THREE.Material | THREE.Material[]=mat;
         if(prop?.kind==="box"){const top=faceMat(prop.top);faces=[mat,mat,top,top,mat,mat];}
         if(prop?.kind==="cabin"){const side=faceMat(prop.views+"_side"),top=faceMat(prop.views+"_top");faces=[side,side,top,top,mat,faceMat(prop.inside)];}
-        if(prop?.kind==="prism") faces=[mat,alternate && alternate!==primary ? assetMaterial(alternate,{alphaTest:.5,side:THREE.DoubleSide}) : mat];
+        if(prop?.kind==="prism") {
+          const alternateMat = alternate && alternate !== primary
+            ? assetMaterial(alternate, { alphaTest: .5, side: THREE.DoubleSide })
+            : mat;
+          faces = [mat, alternateMat];
+          const applyPrimary = apply;
+          const normal = DEFAULT_SETTINGS.normalStrength * (prop.normal ?? 1);
+          apply = () => {
+            applyPrimary();
+            mat.normalScale.multiplyScalar(normal);
+            if (alternate && alternateMat !== mat) {
+              alternateMat.normalScale.setScalar(normal * (textureTuning(alternate)?.normal ?? 1));
+            }
+          };
+        }
         const mesh=new THREE.Mesh(geo,faces);
         mesh.position.y=(onWall && !prop?.wall ? .5 : h/2)-(prop?.kind==="prism" ? h/2 : 0);
         object.add(mesh);
