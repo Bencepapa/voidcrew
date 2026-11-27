@@ -969,7 +969,7 @@ export function GameViewport({
       if (found) root.userData.spriteMesh = found;
       return found;
     };
-    function lieFlat(root: THREE.Object3D, child: THREE.Mesh | undefined, grow = 1) {
+    function lieFlat(root: THREE.Object3D, child: THREE.Mesh | undefined, grow = 1, parentYaw = 0) {
       let st = flatState.get(root);
       if (!st) {
         st = { scale: root.scale.clone(), child, childPos: child?.position.clone() };
@@ -977,7 +977,7 @@ export function GameViewport({
       }
       flatRoots.add(root);
       root.rotation.order = "YXZ";
-      root.rotation.set(-Math.PI / 2, -topdown.yaw, 0);
+      root.rotation.set(-Math.PI / 2, -topdown.yaw - parentYaw, 0);
       const plane = (child ?? (root as THREE.Mesh)).geometry as THREE.PlaneGeometry | undefined;
       const w = plane?.parameters?.width;
       const h = plane?.parameters?.height;
@@ -1002,7 +1002,10 @@ export function GameViewport({
         }
         return;
       }
-      for (const b of billboardProps) lieFlat(b, spriteOf(b));
+      for (const b of billboardProps) {
+        const billboard = b.getObjectByName("propBillboard");
+        if (billboard) lieFlat(billboard, spriteOf(billboard), 1, b.rotation.y);
+      }
       for (const entry of actorMeshes.values()) {
         lieFlat(entry.mesh, undefined);
         entry.mesh.position.y = floorY(Math.round(entry.mesh.position.x), Math.round(entry.mesh.position.z)) + 0.05;
@@ -1213,7 +1216,7 @@ export function GameViewport({
       busted, markSprite, propKits, createWallKit, cabinGlass, cavity,
     });
     const propScene = createPropScene({
-      map, group, wallHeight, primarySet, floorY, wallKitFor, buildPillar, buildChamfer,
+      map, group, wallHeight, reliefDepth, primarySet, floorY, wallKitFor, buildPillar, buildChamfer,
       buildFence: propModels.buildFence, buildPropTemplate: propModels.buildPropTemplate,
       addPropLods, track, fences, editModeRef, propWiresRef,
     });

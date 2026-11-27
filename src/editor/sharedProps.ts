@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { isSharedPropId, PROP_TYPES, type EditableProp } from "../game/props";
 import { prismInset, prismSides, prismWrap } from "../game/propPrism";
+import { propShadowStrength } from "../game/propShadow";
 import { bundledDefinitions } from "../game/sharedBuiltins";
 import { definitionIdOk } from "../game/sharedContent";
 import { assetInWorld, assetWorld, type WorldId } from "../game/worlds";
@@ -35,6 +36,7 @@ function readDefinition(raw: Partial<EditableProp> | null | undefined): Editable
     texture: raw.texture,
     size: [bound(raw.size[0], .05, 8, .6), bound(raw.size[1], .05, 8, .6), bound(raw.size[2], .01, 8, .15)],
     elevation: bound(raw.elevation, 0, 8, 0),
+    ...(raw.shadow === undefined ? {} : { shadow: propShadowStrength(raw.shadow) }),
     relief: bound(raw.relief, 0, 3, 1),
     blocks: raw.blocks === true,
     wall: raw.wall === true,

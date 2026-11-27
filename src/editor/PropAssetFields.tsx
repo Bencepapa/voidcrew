@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DEFAULT_PROP_SHADOW } from "../game/propShadow";
 import { t } from "../i18n";
 import type { EditableProp } from "../game/props";
 import { NumberField } from "./NumberField";
@@ -95,6 +96,8 @@ export function PropAssetFields({ draft, ownedReady, mapsBusy, onPublishing, onE
       <p className="text-xs text-neutral-400">{t("assetManager.propDraft.footprintHint")}</p>
       <NumberField label={t("assetManager.propDraft.elevation")} value={definition.elevation ?? 0} min={0} max={8} step={.05}
         defaultValue={0} onChange={elevation => edit({ elevation })}/>
+      <NumberField label={t("assetManager.propDraft.shadow")} value={definition.shadow ?? DEFAULT_PROP_SHADOW} min={0} max={1} step={.05}
+        defaultValue={DEFAULT_PROP_SHADOW} onChange={shadow => edit({ shadow })}/>
       {definition.kind !== "billboard" && definition.kind !== "prism" && <NumberField label={t("assetManager.reliefDepth")} value={definition.relief ?? 1}
         min={0} max={3} step={.05} defaultValue={1} onChange={relief => edit({ relief })}/>}
       <label><input type="checkbox" checked={definition.wall ?? false} onChange={event => edit({ wall: event.target.checked })}/> {t("assetManager.propDraft.wall")}</label>

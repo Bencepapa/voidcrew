@@ -9,6 +9,7 @@ import type { createEditPicking } from "./editPicking";
 import { EDIT_DIG_COLOR, EDIT_FILL_COLOR, EDIT_LIGHT_ADD_COLOR, EDIT_LIGHT_REMOVE_COLOR, EDIT_PAINT_COLOR, EDIT_SELECT_COLOR } from "./editor";
 import { SOUND_ICON_SIZE } from "./editorMarkers";
 import type { createMapLightState } from "./lightFixtures";
+import { expandByPropModel } from "./propShadows";
 import type { ViewportSettings } from "./settings";
 
 interface SelectionBoxContext {
@@ -126,7 +127,7 @@ export function createSelectionBox(ctx: SelectionBoxContext) {
         if (obj) selectBounds.expandByObject(obj);
       } else if (ev.kind === "prop") {
         const obj = propObjects.get(ev.index);
-        if (obj) selectBounds.expandByObject(obj);
+        if (obj) expandByPropModel(selectBounds, obj);
       } else if (ev.kind === "wall") {
         // a wall face: around its marker (the face itself is no object of its own)
         for (const marker of getEventMarkers().children) {
@@ -216,7 +217,7 @@ export function createSelectionBox(ctx: SelectionBoxContext) {
     const propIndex = editModeRef.current ? selectedPropRef.current : null;
     const prop = propIndex === null ? undefined : propObjects.get(propIndex);
     if (prop) {
-      selectBounds.setFromObject(prop);
+      expandByPropModel(selectBounds.makeEmpty(), prop);
       selectBounds.getCenter(selectCenter);
       selectBounds.getSize(selectSize);
       selectBox.position.copy(selectCenter);
@@ -357,7 +358,7 @@ export function createSelectionBox(ctx: SelectionBoxContext) {
     } else if (mode === "prop") {
       const obj = propObjects.get(target.prop!);
       if (obj) {
-        selectBounds.setFromObject(obj);
+        expandByPropModel(selectBounds.makeEmpty(), obj);
         selectBounds.getCenter(selectCenter);
         selectBounds.getSize(selectSize);
         editBox.position.copy(selectCenter);

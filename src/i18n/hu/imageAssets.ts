@@ -95,6 +95,7 @@ export const imageAssetsHu = {
   "assetManager.propDraft.height": "Magasság",
   "assetManager.propDraft.depth": "Befoglaló mélység",
   "assetManager.propDraft.elevation": "Magasság a padló fölött",
+  "assetManager.propDraft.shadow": "Talajárnyék erőssége",
   "assetManager.propDraft.wall": "Falra szerelt",
   "assetManager.propDraft.blocks": "Blokkolja a cellát",
   "assetManager.propDraft.needName": "Közzététel előtt adj nevet a propnak.",
