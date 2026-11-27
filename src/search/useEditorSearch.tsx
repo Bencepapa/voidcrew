@@ -11,7 +11,7 @@ const storage = () => window.localStorage;
 export function useEditorSearch(
   enabled: boolean,
   world: WorldId,
-  openers: { openMapRender: () => void; openDebug: () => void; revealAssetTree: () => void },
+  openers: { openMapRender: () => void; openDebug: () => void; revealAssetTree: (id: string) => void },
 ) {
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState(() => readSearchHistory(storage));
@@ -29,7 +29,7 @@ export function useEditorSearch(
       openMapRender: () => { setAssetRequest(null); panels.current.openMapRender(); },
       openDebug: () => { setAssetRequest(null); panels.current.openDebug(); },
       openAssetTree: id => {
-        panels.current.revealAssetTree();
+        panels.current.revealAssetTree(id);
         setAssetRequest({ id });
       },
     });

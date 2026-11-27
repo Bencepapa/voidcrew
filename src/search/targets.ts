@@ -1,5 +1,8 @@
 import type { Key } from "../i18n";
 import type { WorldId } from "../game/worlds";
+import { DEBUG_TARGETS } from "./debugTargets";
+import { MAP_RENDER_TARGETS } from "./mapRenderTargets";
+import { ASSET_TREE_TARGETS } from "./assetTreeTargets";
 
 export type SearchTargetKind = "mapRender" | "assetTree" | "debug";
 
@@ -55,6 +58,9 @@ export const SEARCH_TARGETS: readonly SearchTarget[] = [
     synonyms: ["fényprobe", "fényminták", "light probes", "show light probes"],
     keywords: ["sütött fény", "baked lighting", "debug"], oldIds: ["showLightProbes"],
   },
+  ...MAP_RENDER_TARGETS,
+  ...DEBUG_TARGETS,
+  ...ASSET_TREE_TARGETS,
 ];
 
 export const findSearchTarget = (id: string) =>

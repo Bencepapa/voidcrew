@@ -2554,7 +2554,7 @@ export default function App() {
   const editorSearch = useEditorSearch(editMode, map.world, {
     openMapRender: () => { setEditorDebug(false); chooseTool("select"); },
     openDebug: () => setEditorDebug(true),
-    revealAssetTree: () => { setEditorDebug(false); setMiniZoom(false); chooseTool("roofauto"); },
+    revealAssetTree: (id) => { setEditorDebug(false); setMiniZoom(false); if (id === "tool.roofAuto") chooseTool("roofauto"); },
   });
   const editInteraction = (target: InteractionTarget, event?: Interaction, merge?: string) => {
     const result = applyEdit(map.id, file => setInteraction(file, map, target, event), merge && `event ${JSON.stringify(target)} ${merge}`);

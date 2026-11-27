@@ -2,6 +2,7 @@ import { useState } from "react";
 import { t } from "../i18n";
 import { playAt, playMany, playOrbit, probeStatus, relative, stopAllProbes, type ProbeStatus } from "../audio/audioProbe";
 import { isHrtf, setHrtf } from "../audio/engine";
+import { searchAnchor } from "../search/searchAnchor";
 
 // The Debug panel's "Sound (probe)" section: test voices put at places round the listener (see src/audio/audioProbe.ts).
 // Each stays where it was put in the world, so turning and walking should move it in the stereo field.
@@ -23,7 +24,7 @@ export function AudioProbeSection() {
     <>
       <p className="text-[10px] text-neutral-400">{t("debug.audioProbeHint")}</p>
       <div className="flex flex-wrap gap-1">
-        <button type="button" className={BUTTON} onClick={run(() => playAt(relative(3, 0)))}>{t("debug.audioAhead")}</button>
+        <button type="button" {...searchAnchor("debug.audio.probe")} className={BUTTON} onClick={run(() => playAt(relative(3, 0)))}>{t("debug.audioAhead")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playAt(relative(0, 3)))}>{t("debug.audioRight")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playAt(relative(0, -3)))}>{t("debug.audioLeft")}</button>
         <button type="button" className={BUTTON} onClick={run(() => playAt(relative(-3, 0)))}>{t("debug.audioBehind")}</button>
@@ -36,7 +37,7 @@ export function AudioProbeSection() {
         <button type="button" className={BUTTON} onClick={run(() => stopAllProbes())}>{t("debug.audioStop")}</button>
       </div>
       <label className="flex items-center gap-2 text-[11px] cursor-pointer">
-        <input type="checkbox" checked={hrtf} onChange={(e) => { setHrtf(e.target.checked); setHrtfState(e.target.checked); }} />
+        <input type="checkbox" {...searchAnchor("debug.audio.hrtf")} checked={hrtf} onChange={(e) => { setHrtf(e.target.checked); setHrtfState(e.target.checked); }} />
         {t("debug.audioHrtf")}
       </label>
       {status && <p className="text-[10px] text-neutral-300">{t("debug.audioStatus", { state: status.state, rate: status.sampleRate, active: status.active })}</p>}

@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { t } from "../i18n";
 import { currentRoom, engineStatus, getSoundSettings, outputLevels, setMasterVolume, setMuted, setRearStrength, setReverbAmount, setReverbOn, subscribeSoundSettings, wetLevel } from "../audio/engine";
 import { dbText } from "../audio/meter";
+import { searchAnchor } from "../search/searchAnchor";
 
 // The Debug panel's "Sound" section: the master volume and the mute switch for everything that plays (the map's
 // sound emitters and the test voices below), kept between sessions (see src/audio/engine.ts).
@@ -30,6 +31,7 @@ export function SoundSection() {
         {t("sound.volume")}
         <input
           type="range"
+          {...searchAnchor("debug.sound.volume")}
           min={0}
           max={1}
           step={0.05}
@@ -40,13 +42,14 @@ export function SoundSection() {
         <span className="w-9 text-right tabular-nums">{Math.round(settings.volume * 100)}%</span>
       </label>
       <label className="flex items-center gap-2 text-[11px] cursor-pointer">
-        <input type="checkbox" checked={settings.muted} onChange={(e) => setMuted(e.target.checked)} />
+        <input type="checkbox" {...searchAnchor("debug.sound.mute")} checked={settings.muted} onChange={(e) => setMuted(e.target.checked)} />
         {t("sound.mute")}
       </label>
       <label className="flex items-center gap-2 text-[11px]" title={t("sound.rearHint")}>
         {t("sound.rear")}
         <input
           type="range"
+          {...searchAnchor("debug.sound.rear")}
           min={0}
           max={1}
           step={0.05}
@@ -57,13 +60,14 @@ export function SoundSection() {
         <span className="w-9 text-right tabular-nums">{Math.round(settings.rearStrength * 100)}%</span>
       </label>
       <label className="flex items-center gap-2 text-[11px] cursor-pointer" title={t("acoustics.reverbHint")}>
-        <input type="checkbox" checked={settings.reverbOn} onChange={(e) => setReverbOn(e.target.checked)} />
+        <input type="checkbox" {...searchAnchor("debug.sound.reverbOn")} checked={settings.reverbOn} onChange={(e) => setReverbOn(e.target.checked)} />
         {t("acoustics.reverbOn")}
       </label>
       <label className={`flex items-center gap-2 text-[11px] ${settings.reverbOn ? "" : "opacity-40"}`} title={t("acoustics.reverbHint")}>
         {t("acoustics.reverb")}
         <input
           type="range"
+          {...searchAnchor("debug.sound.reverb")}
           min={0}
           max={1}
           step={0.05}

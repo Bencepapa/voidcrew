@@ -7,6 +7,7 @@ import {
   type SharedCacheStatus,
 } from "../editor/sharedServiceWorker";
 import { formatNumber, t, type Key } from "../i18n";
+import { searchAnchor } from "../search/searchAnchor";
 
 const BUTTON = "text-[11px] border border-neutral-600 rounded-sm px-2 py-1 hover:bg-neutral-800 text-left";
 
@@ -34,6 +35,7 @@ export function SharedCacheDebugSection() {
       <label className="flex items-center gap-2 text-[11px] cursor-pointer">
         <input
           type="checkbox"
+          {...searchAnchor("debug.sw.enabled")}
           checked={status.enabled}
           disabled={!status.available}
           onChange={(e) => void setSharedServiceWorkerSwitch(e.target.checked).then(refresh)}
@@ -43,8 +45,8 @@ export function SharedCacheDebugSection() {
       <div className="text-[10px] text-neutral-300">{t("debug.swState", { state: t(stateKey(status)) })}</div>
       <div className="text-[10px] text-neutral-300">{t("debug.swEntries", { n: status.entries, size: mb })}</div>
       <div className="flex gap-1">
-        <button type="button" className={BUTTON} onClick={() => void clearSharedCache().then(refresh)}>{t("debug.swClear")}</button>
-        <button type="button" className={BUTTON} onClick={refresh}>{t("debug.swRefresh")}</button>
+        <button type="button" {...searchAnchor("debug.sw.clear")} className={BUTTON} onClick={() => void clearSharedCache().then(refresh)}>{t("debug.swClear")}</button>
+        <button type="button" {...searchAnchor("debug.sw.refresh")} className={BUTTON} onClick={refresh}>{t("debug.swRefresh")}</button>
       </div>
     </>
   );

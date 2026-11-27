@@ -5,6 +5,7 @@ import { removeItem } from "../game/inventory";
 import { changeInventory, haulOf } from "../game/inventoryStore";
 import { storyDebug, storyDebugSetQuest, storyDebugSetVar, storyJumpToChapter, storyReset, storySave, useStoryRevision } from "../game/story/storyRuntime";
 import { t } from "../i18n";
+import { searchAnchor } from "../search/searchAnchor";
 
 // Starts the story over: the story state is fresh, the test story's items (the `tesztsztori*` ones) leave the
 // backpack, and the page reloads so the map's actors and pickups are back where they started.
@@ -74,13 +75,13 @@ export function StoryDebugSection() {
       {status.dialogue ? t("debug.storyDialogue", { npc: status.dialogue.npc, passage: `${status.dialogue.file}/${status.dialogue.passage}` }) : t("debug.storyNoDialogue")}
     </div>
     <div className="flex items-center gap-1">
-      <select value={jump} onChange={(e) => setTarget(e.target.value)} className={`${FIELD} flex-1`} aria-label={t("debug.storyJump")}>
+      <select {...searchAnchor("debug.story.jump")} value={jump} onChange={(e) => setTarget(e.target.value)} className={`${FIELD} flex-1`} aria-label={t("debug.storyJump")}>
         {d.chapters.map((c) => <option key={c} value={c}>{c}</option>)}
       </select>
       <button type="button" disabled={!jump} onClick={() => storyJumpToChapter(jump)}
         className="text-[11px] border border-neutral-600 rounded-sm px-2 py-0.5 hover:bg-neutral-800">{t("debug.storyJumpGo")}</button>
     </div>
-    <button type="button" onClick={restartStory} title={t("debug.storyRestartTip")}
+    <button type="button" {...searchAnchor("debug.story.restart")} onClick={restartStory} title={t("debug.storyRestartTip")}
       className="self-start text-[11px] border border-amber-700 text-amber-200 rounded-sm px-2 py-0.5 hover:bg-neutral-800">{t("debug.storyRestart")}</button>
     <VarGroup title={t("debug.storyCampaignVars")} scope="campaign" vars={state.campaign}/>
     <VarGroup title={t("debug.storyChapterVars")} scope="chapter" vars={state.chapterVars}/>
