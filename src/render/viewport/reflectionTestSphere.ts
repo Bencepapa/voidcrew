@@ -28,13 +28,13 @@ export function addReflectionTestSphere(scene: Scene, lightGrid: LightGridUnifor
     captured = undefined;
   }
   return {
-    update(enabled: boolean, canCapture: boolean, renderer: WebGLRenderer, headlamp: PointLight, surfaces: Iterable<Object3D>, props: Iterable<Object3D>) {
+    update(enabled: boolean, canCapture: boolean, renderer: WebGLRenderer, headlamp: PointLight, surfaces: Iterable<Object3D>) {
       if (!enabled) {
         clearCapture();
       } else if (!attempted && canCapture) {
         attempted = true;
         try {
-          captured = captureReflection(renderer, scene, sphere.position, [...surfaces, ...props], headlamp, lightGrid).target;
+          captured = captureReflection(renderer, scene, sphere.position, surfaces, headlamp, lightGrid).target;
           material.envMap = captured.texture;
           material.needsUpdate = true;
           probeMask.value = 0;

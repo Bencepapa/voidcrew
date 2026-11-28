@@ -173,7 +173,17 @@ export function createPuddleProps(scene: Scene, lightGrid: LightGridUniforms, wa
     debug.update(room && captures.get(room)?.cube?.texture, room?.origin);
   }
 
-  return { build, update, showCubeAt, dispose() {
+  function invalidateDoor(x: number, z: number) {
+    for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const room = rooms?.(x + dx, z + dz);
+      if (!room) continue;
+      const capture = captures.get(room);
+      if (capture) capture.revision = -1;
+      failedRooms.delete(room);
+    }
+  }
+
+  return { build, update, showCubeAt, invalidateDoor, dispose() {
     debug.dispose();
     geometry?.dispose();
     base?.dispose();

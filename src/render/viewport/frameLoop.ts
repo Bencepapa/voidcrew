@@ -92,7 +92,7 @@ interface FrameLoopDeps {
   propObjects: Map<number, THREE.Object3D>;
   getReliefStats: () => ReliefStats | null;
   reflectionTest?: ReturnType<typeof import("./reflectionTestSphere").addReflectionTestSphere>;
-  puddles: Pick<ReturnType<typeof import("./puddleProps").createPuddleProps>, "update" | "showCubeAt">;
+  puddles: Pick<ReturnType<typeof import("./puddleProps").createPuddleProps>, "update" | "showCubeAt" | "invalidateDoor">;
   renderer: THREE.WebGLRenderer;
   rideRef: RefObject<LiftRide | null | undefined>;
   selectionBox: Pick<ReturnType<typeof import("./selectionBox").createSelectionBox>, "updateEditHighlight">;
@@ -253,7 +253,11 @@ export function createFrameLoop(deps: FrameLoopDeps) {
       const eased = easeOutQuad(p);
       anim.panel.position.lerpVectors(anim.from, target, eased);
       anim.panel.rotation.y = lerp(anim.fromYaw, anim.panel.userData.open ? anim.panel.userData.openYaw : 0, eased);
-      if (p >= 1) doorAnimsRef.current.delete(key);
+      if (p >= 1) {
+        doorAnimsRef.current.delete(key);
+        const cell = anim.panel.parent?.userData.doorCell;
+        if (cell) puddles.invalidateDoor(cell.x, cell.y);
+      }
     }
 
     // A lift ride: the cabin shakes (easing in and out), its lights dip
@@ -574,9 +578,10 @@ export function createFrameLoop(deps: FrameLoopDeps) {
     }
     layFlatSprites();
     applyMaterialViews(s);
-    reflectionTest?.update(s.reflectionTestCubemap, isReady() && s.geometryView === "textured", renderer, pointLight, facingSurfaces, propObjects.values());
     const textured = s.geometryView === "textured";
-    const restoreRoomMaterials = puddles.update(getLiveMap(), renderer, pointLight, camera, now, t, isReady() && textured,
+    const canCaptureReflection = isReady() && textured && doorAnimsRef.current.size === 0;
+    reflectionTest?.update(s.reflectionTestCubemap, canCaptureReflection, renderer, pointLight, facingSurfaces);
+    const restoreRoomMaterials = puddles.update(getLiveMap(), renderer, pointLight, camera, now, t, canCaptureReflection,
       facingSurfaces, propObjects, textured && s.roomMaterialReflections, cam, s.showRoomReflectionCube);
     if (s.showRoomReflectionCube) puddles.showCubeAt(cam.x, cam.z);
     else puddles.showCubeAt();

@@ -60,9 +60,15 @@ export function captureReflection(
       surface.visible = true;
     }
     scene.traverse(object => {
-      if (!object.userData.excludeFromReflectionCapture) return;
-      if (!visibility.has(object)) visibility.set(object, object.visible);
-      object.visible = false;
+      const { excludeFromReflectionCapture, prop, doorCell, editHidden } = object.userData;
+      if (excludeFromReflectionCapture) {
+        if (!visibility.has(object)) visibility.set(object, object.visible);
+        object.visible = false;
+      } else if (!object.visible && !editHidden && (prop || doorCell)) {
+        // The main camera's sight mask is unrelated to what the probe can see.
+        if (!visibility.has(object)) visibility.set(object, false);
+        object.visible = true;
+      }
     });
     headlamp.intensity = 0;
     lightGrid.reflectionStrength.value = 0;
