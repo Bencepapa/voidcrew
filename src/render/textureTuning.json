@@ -1,4 +1,24 @@
 {
+  "wall4": {
+    "roomReflection": true,
+    "rough": 0.55
+  },
+  "wall5": {
+    "roomReflection": true,
+    "rough": 0.58
+  },
+  "floor1": {
+    "roomReflection": true,
+    "rough": 0.45
+  },
+  "floor2": {
+    "roomReflection": true,
+    "rough": 0.62
+  },
+  "ceiling1": {
+    "roomReflection": true,
+    "rough": 0.68
+  },
   "fantasywall1": {
     "rough": 1.65,
     "metal": 0.05
@@ -36,5 +56,8 @@
     "relief": 0.85,
     "rough": 0.8,
     "metal": 0.35
+  },
+  "crewwall1": {
+    "roomReflection": true
   }
 }

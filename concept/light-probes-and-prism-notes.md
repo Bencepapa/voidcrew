@@ -1,6 +1,6 @@
 # Fényprobe-ok és hasáb: nyitott kérdések (2026-11-27)
 
-A felhasználó kézi tesztjéből. Még nincs megoldva, nincs eldöntve.
+A felhasználó kézi tesztjéből és a szobatükröződési kísérletből fennmaradt teendők.
 
 ## Fényprobe-megjelenítő
 
@@ -12,6 +12,12 @@ A felhasználó kézi tesztjéből. Még nincs megoldva, nincs eldöntve.
 
 - A mostani rendszer egyszerű: directional módban egy probe-nak ambient színe, egy fő fénye és iránya van. Elmosott tükröződéshez irányonkénti fény kell (legalább a 6 irányú cube, jobb esetben alacsony rendű SH), és nem csak a fényforrások és az ég, hanem a falakról és propokról visszavert átlagszín is (színes bounce, a nap-bake terv C változata).
 - Megválaszolandó: mennyibe kerül a cube mód és a felület-visszaverődés a bake-ben; elég-e a cube a sci-fi témához, vagy reflection probe (cubemap) kell. Kapcsolódó ötlet: memória `probe-reflections-idea`.
+
+## Szobatükröződés debug nézete
+
+- A Debug kapcsoló az aktuális szoba meglévő nyers cubemapját kis, hatoldalú kockán mutatja a felvételi ponton. A kapcsoló kereshető, és a megjelenítés nem készít új felvételt.
+- [ ] **Részletes cubemap-nézet.** Később külön panelen látszódjon az oldaljelölés (`+X`, `−X`, `+Y`, `−Y`, `+Z`, `−Z`), a felbontás, a régió határa és a dobozprojekció állapota. A nézet jelezze, ha a helyiséghez még nincs felvétel.
+- A vizsgált adat a falak, propok és tócsák közös szobafelvétele. A tesztgömb saját cubemapja és a világítás hatirányú probe-ja külön adatforrás. A diagnosztikai nézet megnyitásakor az előnézetet egyszer kell előállítani, a normál rendereléshez nem szükséges képpontonkénti GPU-visszaolvasás.
 
 ## Hasáb-dombormű
 

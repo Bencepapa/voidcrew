@@ -34,7 +34,7 @@ export function addReflectionTestSphere(scene: Scene, lightGrid: LightGridUnifor
       } else if (!attempted && canCapture) {
         attempted = true;
         try {
-          captured = captureReflection(renderer, scene, sphere.position, [...surfaces, ...props], headlamp, lightGrid);
+          captured = captureReflection(renderer, scene, sphere.position, [...surfaces, ...props], headlamp, lightGrid).target;
           material.envMap = captured.texture;
           material.needsUpdate = true;
           probeMask.value = 0;

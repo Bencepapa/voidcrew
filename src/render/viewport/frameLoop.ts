@@ -92,7 +92,7 @@ interface FrameLoopDeps {
   propObjects: Map<number, THREE.Object3D>;
   getReliefStats: () => ReliefStats | null;
   reflectionTest?: ReturnType<typeof import("./reflectionTestSphere").addReflectionTestSphere>;
-  puddles: Pick<ReturnType<typeof import("./puddleProps").createPuddleProps>, "update">;
+  puddles: Pick<ReturnType<typeof import("./puddleProps").createPuddleProps>, "update" | "showCubeAt">;
   renderer: THREE.WebGLRenderer;
   rideRef: RefObject<LiftRide | null | undefined>;
   selectionBox: Pick<ReturnType<typeof import("./selectionBox").createSelectionBox>, "updateEditHighlight">;
@@ -577,7 +577,9 @@ export function createFrameLoop(deps: FrameLoopDeps) {
     reflectionTest?.update(s.reflectionTestCubemap, isReady() && s.geometryView === "textured", renderer, pointLight, facingSurfaces, propObjects.values());
     const textured = s.geometryView === "textured";
     const restoreRoomMaterials = puddles.update(getLiveMap(), renderer, pointLight, camera, now, t, isReady() && textured,
-      facingSurfaces, propObjects, textured && s.roomMaterialReflections);
+      facingSurfaces, propObjects, textured && s.roomMaterialReflections, cam, s.showRoomReflectionCube);
+    if (s.showRoomReflectionCube) puddles.showCubeAt(cam.x, cam.z);
+    else puddles.showCubeAt();
     try { postPipeline.renderGeometryView(s.geometryView); }
     finally { restoreRoomMaterials?.(); }
 

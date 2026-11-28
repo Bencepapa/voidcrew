@@ -26,7 +26,7 @@ import { effectiveViewDistance } from "../render/graphics";
 import { ownAccentUniforms, type AccentUniforms } from "../render/accent";
 import { propEdit } from "../editor/propEditState";
 import { ITEM_TYPES, isSharedPickupId } from "../game/items";
-import { createLightGridUniforms, disposeLightGrid } from "../render/lightGrid";
+import { createLightGridUniforms, disposeLightGrid, useLightGrid } from "../render/lightGrid";
 import {
 bridgeAt,
 cellAt,
@@ -1130,6 +1130,7 @@ export function GameViewport({
       geometryCache: cache.decalGeometries,
       manifest: (cache.decalManifest ??= fetchDecalManifest(import.meta.env.BASE_URL, bust)),
       wallHeight,
+      lightMaterial: (material) => useLightGrid(material, lightGrid),
       levels: (cell) => ({ floor: floorY(cell.x, cell.y), ceiling: ceilingY(cell.x, cell.y) }),
       // standing water lies over the floor's highest relief
       waterLift: floorDepth * 0.9 + 0.004,

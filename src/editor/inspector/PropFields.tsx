@@ -4,7 +4,7 @@ import type { EditorBarProps } from "../EditorBar";
 import { KindChoice, Section, slider, chanceSlider, linkFields, BUTTON, idle } from "./parts";
 
 import { PROP_TYPES, propEditable } from "../../game/props";
-import { PUDDLE_PROP } from "../../game/puddle";
+import { PUDDLE_PROP, PUDDLE_RIPPLE, readPuddleRipple } from "../../game/puddle";
 import { propEdit } from "../propEditState";
 import { useTextureVersion } from "../textureLibrary";
 import { useSharedPropVersion } from "../sharedProps";
@@ -43,6 +43,11 @@ return <>
 </div>}
 {p.prop.fence ? <FencePieceFields {...p}/> : <>
 <KindChoice label={t("editorBar.prop")} value={p.prop.name} options={Object.keys(PROP_TYPES).filter(id => assetInWorld(id) && PROP_TYPES[id].kind !== "fence").map(value => ({value,label:value === PUDDLE_PROP ? t("assetTree.name.puddle_prop") : PROP_TYPES[value].name ?? value}))} onChange={prop => p.onPropChange({prop})}/>
+{p.prop.name === PUDDLE_PROP && (["speed", "amplitude", "density"] as const).map(key => {
+  const { min, max } = PUDDLE_RIPPLE[key];
+  return <div key={key}>{slider(t(`editorBar.puddle.${key}`), p.prop?.ripple?.[key] ?? 1, min, max, 0.05,
+    value => p.onPropChange({ ripple: readPuddleRipple({ ...p.prop?.ripple, [key]: value }) }, key), 1)}</div>;
+})}
 
 {p.prop.retexturable && (
                   // (a roof wears any wall-kind set - the user's shared ones too; the other props

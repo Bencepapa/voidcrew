@@ -9,6 +9,7 @@ import type { PropLock } from "./propLocks";
 import type { SkyGradient } from "./skyGradient";
 import type { SoundSpec } from "./sounds";
 import type { AcousticZone } from "./acousticZones";
+import type { PuddleRipple } from "./puddle";
 
 export type Direction = "N" | "E" | "S" | "W";
 
@@ -233,6 +234,7 @@ export type LightEffect = "flicker" | "spark" | "pulse";
 
 export interface PropSpec extends Linked {
   interaction?: Interaction;
+  ripple?: PuddleRipple;
   // a props.ts PROP_TYPES name, e.g. "crate1"
   prop: string;
   cell: Vec2;

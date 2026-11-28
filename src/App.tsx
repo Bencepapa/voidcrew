@@ -2327,6 +2327,7 @@ export default function App() {
     return {
       name: spec.prop,
       texture: spec.texture,
+      ripple: spec.ripple,
       retexturable: !!type && propRetexturable(type),
       links: linksOf(spec),
       rotation: spec.rotation ?? 0,

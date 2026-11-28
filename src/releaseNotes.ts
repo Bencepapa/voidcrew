@@ -15,6 +15,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: 5,
+    date: "2026-11-28",
+    items: [
+      { title: "Tükröződő tócsa a Fantasy és a Void Crew világban", text: "A padlóra helyezhető, méretezhető tócsa sebessége, amplitúdója és fodrozódásának sűrűsége az Inspektorban állítható. A lerakott tócsa kijelölhető és törölhető." },
+      { title: "Szobatükröződés anyagonként", text: "Az Eszközkezelő Megjelenés paneljén a támogatott felületek szobatükröződése textúránként Automatikus, Be vagy Ki módba állítható." },
+      { title: "Szobatükröződés előnézete", text: "Az Eszközkezelő 3×3-as és 5×5-ös előnézeti szobájában külön kapcsolható a szobatükröződés. A Debug panel a pálya aktuális szobájának felvételi kockáját mutatja." },
+      { title: "Helyi tükröződés és világítás", text: "A folyosóról nyíló szobák saját felvételt kapnak, a matt falakon halványabb a tükröződés, az üveg sötét részein látszanak a csillagok, a matricák pedig megkapják a helyi előszámított fényt." },
+    ],
+  },
+  {
     version: 4,
     date: "2026-11-26",
     items: [

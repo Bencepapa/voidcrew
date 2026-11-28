@@ -58,6 +58,7 @@ export function createStructuralTiles({
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
+  sheenMat.userData.roomWindowReflection = true;
   for (const [setId, windowKit] of windowKits) {
     // a wide window's pieces continue each other: no flush edge margins
     // (they'd flatten the mullions on the seams)

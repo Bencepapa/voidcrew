@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { BoxGeometry, Group, Line, LineBasicMaterial, BufferGeometry, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "three";
-import { raycastDrawn } from "./raycastObjects";
+import { passesEditTransparency, raycastDrawn, seeThrough } from "./raycastObjects";
 
 const scene = new Group();
 const emitterMarker = new Group();
@@ -25,3 +25,17 @@ ring.visible = false;
 assert.equal(raycastDrawn(ray, scene.children)[0]?.object, item);
 item.visible = false;
 assert.equal(raycastDrawn(ray, scene.children).length, 0);
+
+const transparent = new Mesh(new BoxGeometry(), new MeshBasicMaterial({ transparent: true, depthWrite: false }));
+assert.equal(passesEditTransparency(transparent, true, true), false);
+transparent.userData.pickTransparentProp = true;
+assert.equal(passesEditTransparency(transparent, false, true), true);
+assert.equal(passesEditTransparency(transparent, false, false), false);
+assert.equal(seeThrough(transparent), true);
+
+const looseItem = new Group();
+looseItem.userData.itemIndex = 0;
+looseItem.add(transparent);
+delete transparent.userData.pickTransparentProp;
+assert.equal(passesEditTransparency(transparent, true, false), true);
+assert.equal(passesEditTransparency(transparent, false, true), false);

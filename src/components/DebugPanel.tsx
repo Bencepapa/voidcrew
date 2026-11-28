@@ -363,6 +363,7 @@ export function DebugPanel({
           {slider({ key: "probeReflectionDensity", label: "debug.probeReflectionDensity", min: 1, max: 3, step: 1, anchor: searchAnchor("debug.lights.probeReflectionDensity") })}
           {check("reflectionTestCubemap", t("debug.reflectionTestCubemap"), searchAnchor("debug.lights.reflectionTestCubemap"))}
           {check("roomMaterialReflections", t("debug.roomMaterialReflections"), searchAnchor("debug.lights.roomMaterialReflections"))}
+          {check("showRoomReflectionCube", t("debug.showRoomReflectionCube"), searchAnchor("debug.lights.showRoomReflectionCube"))}
           {select(
             t("debug.shipLivery"),
             <select

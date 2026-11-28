@@ -144,6 +144,7 @@ export class DecalLibrary {
       // the manifest (public/decals/index.json), if already fetched
       manifest?: Promise<Record<string, DecalManifestEntry>>;
       wallHeight: number;
+      lightMaterial?: (material: THREE.MeshStandardMaterial) => void;
       // world heights of a cell's floor and ceiling
       levels: (cell: Vec2) => CellLevels;
       // how far above a floor standing water lies (above its relief's bumps)
@@ -445,9 +446,11 @@ export class DecalLibrary {
     const key = `${base.uuid}|${layer}`;
     let material = this.layered.get(key);
     if (!material) {
-      material = std.clone();
-      (material as THREE.MeshStandardMaterial).polygonOffsetUnits = std.polygonOffsetUnits - layer * LAYER_UNITS;
-      this.pullOverFarLevels(material);
+      const lit = std.clone();
+      lit.polygonOffsetUnits = std.polygonOffsetUnits - layer * LAYER_UNITS;
+      this.opts.lightMaterial?.(lit);
+      this.pullOverFarLevels(lit);
+      material = lit;
       this.layered.set(key, material);
       this.disposables.push(material);
     }

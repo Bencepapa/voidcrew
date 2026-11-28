@@ -24,6 +24,7 @@ import type { OperableInfo } from "./operableEdits";
 import type { KeyFlag } from "../game/keys";
 import type { PropLock } from "../game/propLocks";
 import type { PropLockInfo } from "./lockEdits";
+import type { PuddleRipple } from "../game/puddle";
 
 export interface MapLook {
   weather?: Weather;
@@ -152,7 +153,7 @@ export interface EditorBarProps {
   onDecalDeselect: () => void;
   // the selected prop, and what the panel does with it
   prop: PropInfo | null;
-  onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string; at?: Direction; fence?: FenceStyle; operable?: OperableSpec; lock?: PropLock } & Linked, merge?: string) => void;
+  onPropChange: (patch: { prop?: string; rotation?: number; elevation?: number; scale?: number; chance?: number; texture?: string; at?: Direction; fence?: FenceStyle; operable?: OperableSpec; lock?: PropLock; ripple?: PuddleRipple } & Linked, merge?: string) => void;
   // every item's name in the map (see Linked), for the link fields
   linkIds: string[];
   // the flags something on the map raises (a door's lock key can be one of them)
@@ -383,6 +384,7 @@ export interface ItemInfo {
 // the selected prop as the panel shows it
 export interface PropInfo {
   name: string;
+  ripple?: PuddleRipple;
   // the texture set it wears instead of its own, and whether it can
   texture?: string;
   retexturable: boolean;

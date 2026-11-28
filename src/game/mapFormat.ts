@@ -18,6 +18,7 @@ import { cleanLook, type LookSpec } from "./look";
 import { cleanSkyGradient, type SkyGradient } from "./skyGradient";
 import { worldOfMap } from "./worlds";
 import { parsePickupMode } from "./pickupMode";
+import { PUDDLE_PROP, readPuddleRipple, type PuddleRipple } from "./puddle";
 import type { RenderLook } from "./renderLook";
 import { readSounds, type SoundSpec } from "./sounds";
 import { readZones, type AcousticZone } from "./acousticZones";
@@ -217,6 +218,7 @@ export interface MapFile {
   // at: where in the cell (default "center"); rotation: degrees
   props?: {
     interaction?: Interaction;
+    ripple?: PuddleRipple;
     prop: string;
     x: number;
     y: number;
@@ -488,6 +490,7 @@ export function parseMap(id: string, file: MapFile): GameMap {
       if (form === "edge" && !isSide(p.at)) throw new Error(`prop at ${p.x},${p.y}: a fence_edge needs the side of its cell it stands on (at: N, E, S or W)`);
       return {
         prop: p.prop,
+        ripple: p.prop === PUDDLE_PROP ? readPuddleRipple(p.ripple) : undefined,
         interaction: readInteraction(p.interaction),
         cell: { x: p.x, y: p.y },
         at: p.at ?? "center",

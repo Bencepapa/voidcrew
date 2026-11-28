@@ -19,6 +19,10 @@ export const isItemObject = (obj: THREE.Object3D) => {
   for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (o.userData.itemIndex !== undefined) return true;
   return false;
 };
+
+export function passesEditTransparency(obj: THREE.Object3D, allowItems: boolean, allowProps: boolean) {
+  return !seeThrough(obj) || (allowItems && isItemObject(obj)) || (allowProps && obj.userData.pickTransparentProp === true);
+}
 export const isProp = (obj: THREE.Object3D) => {
   for (let o: THREE.Object3D | null = obj; o; o = o.parent) if (o.userData.prop) return true;
   return false;

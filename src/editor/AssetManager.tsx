@@ -40,6 +40,7 @@ type Entry = { key: string; label: string; img: string; groups: string[]; world:
 import { ITEM_TYPES } from "../game/items";
 import { activeWorld, assetInWorld, assetWorld, type WorldId } from "../game/worlds";
 import { PUDDLE_MASK_PATH, PUDDLE_PROP } from "../game/puddle";
+import { createAssetRoomReflection } from "./assetRoomReflection";
 import { fetchDecalManifest } from "../render/decals";
 import { sharedImage, useSharedImages, type ImagePurpose, type SharedImage } from "../render/sharedImages";
 import { neutralStyle } from "./inspector/parts";
@@ -305,6 +306,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
   }, []);
   const [orientation, orient] = useState("Wall");
   const [background, setBackground] = useState("Gray");
+  const [previewRoomReflection, setPreviewRoomReflection] = useState(false);
+  const furnishedRoom = background === "3×3" || background === "5×5";
   const [ceiling, setCeiling] = useState("Auto");
   const [rgb, setRgb] = useState(false);
   const [pose, setPose] = useState(-1);
@@ -676,8 +679,8 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       setCopyNote(t("assetManager.copied"));
     } catch { setCopyNote(t("assetManager.copyError")); }
   }
-  const lights = useRef({ keyLight, rimLight, turn });
-  lights.current = { keyLight, rimLight, turn };
+  const lights = useRef({ keyLight, rimLight, turn, previewRoomReflection });
+  lights.current = { keyLight, rimLight, turn, previewRoomReflection };
   const liveCamera = useRef<{camera:THREE.PerspectiveCamera,controls:OrbitControls} | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const previewRenderer = useRef<THREE.WebGLRenderer | null>(null);
@@ -752,7 +755,15 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
     const main=new THREE.PointLight(0xffdfba,9), rim=new THREE.PointLight(0xaacfff,6);
     main.position.set(1.4,1.8,1); rim.position.set(-1,.7,.2); scene.add(main,rim);
     const object=new THREE.Group(); scene.add(object);
-    const loader=new THREE.TextureLoader();
+    const roomReflection = createAssetRoomReflection(renderer, scene, object, error => {
+      console.warn("Asset room reflection failed:", error);
+      if (!disposed) setError(t("assetManager.roomReflectionPreviewError"));
+    });
+    const loadManager = new THREE.LoadingManager();
+    let roomLoading = false;
+    loadManager.onStart = () => { roomLoading = true; };
+    loadManager.onLoad = () => { roomLoading = false; roomReflection.invalidate(); };
+    const loader=new THREE.TextureLoader(loadManager);
     const texture=(url:string, color=true) => {
       const loaded=keep(loader.load(url,undefined,undefined,()=>{if(!disposed)setError(t("assetManager.loadError", { url }));}));
       if(color)loaded.colorSpace=THREE.SRGBColorSpace;
@@ -812,6 +823,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
         }
       };
       mat.customProgramCacheKey=()=>[view,!!inspect,!!diffuse,!!gloss,enabled(group,"diffuse")].join("-");
+      roomReflection.add(mat);
       return mat;
     }
     if(sample==="material") {
@@ -908,11 +920,13 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
             surface.updateMatrixWorld();
             if(textured)scene.add(surface);
             const geometry=keep(new DecalGeometry(surface,surface.position,surface.rotation,size));
-            scene.add(new THREE.Mesh(geometry,stamp));
+            const decal = new THREE.Mesh(geometry,stamp);
+            roomReflection.exclude(decal);
+            scene.add(decal);
           }
         }
       }
-      void projectSamples().catch(()=>{if(!disposed)setError(t("assetManager.decalError"));});
+      void projectSamples().then(()=>roomReflection.invalidate()).catch(()=>{if(!disposed)setError(t("assetManager.decalError"));});
     } else if (!propDraft || groups[primary]?.diffuse) {
       const onWall=!!prop && (placement==="Wall" || (placement==="Auto" && prop.wall));
       if(onWall)object.position.z=-half+(prop?.size[2] ?? .02)/2+.01;
@@ -920,7 +934,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       if(!prop || prop.kind!=="views"){
         // (its normal map too, where it has one - for the tuning)
       const mat=assetMaterial(primary,{alphaTest:prop?.kind==="prism"?.5:.4,side:THREE.DoubleSide});
-      apply = () => { const t = tuneRef.current, n = t?.normal ?? 1; mat.normalScale.set(n, n); mat.roughness = Math.min(1, .85 * (t?.rough ?? 1)); mat.metalness = Math.min(1, .02 * (t?.metal ?? 1)); };
+      apply = () => { const t = tuneRef.current, n = t?.normal ?? 1; mat.normalScale.set(n, n); mat.roughness = mat.roughnessMap ? 1 : Math.min(1, .85 * (t?.rough ?? 1)); mat.metalness = mat.metalnessMap ? 1 : Math.min(1, .02 * (t?.metal ?? 1)); };
         const [w,h,d]=prop?.size ?? (sample==="item"?[.24,.24,.15]:[.6,.6,.02]);
         const flat=!prop || ["panel","billboard","cross","chamfer"].includes(prop.kind);
         const alternate = alternateTexture && groups[alternateTexture]?.diffuse ? alternateTexture : undefined;
@@ -1070,7 +1084,9 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       }
       main.visible=lights.current.keyLight; rim.visible=lights.current.rimLight;
       object.rotation.y=lights.current.turn*Math.PI/180;
-      apply(); animate(time); renderer.render(scene,camera);
+      apply(); animate(time);
+      roomReflection.update(furnishedRoom && view === "textured" && lights.current.previewRoomReflection, roomLoading, Number(main.visible) + 2 * Number(rim.visible));
+      renderer.render(scene,camera);
     });
     return ()=>{
       canvas.removeEventListener("pointerdown",focus);
@@ -1088,6 +1104,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
       }
       resize.disconnect();
       controls.dispose();
+      roomReflection.dispose();
       resources.forEach(r=>r.dispose());
     };
   },[open,sample,id,groups,view,hidden,edits,layout,joinEdges,orientation,background,showCeiling,world,rgb,pose,placement,tune?.relief,reliefMode,reliefDepth,wallDetail,previewUrl,selectedDecalDraft?.surface,preview2D,pickup?.height,pickup?.glow,propRenderKey,primary,npcEditor,npcSizes[id]]);
@@ -1256,6 +1273,7 @@ export function AssetManager({ reliefMode, reliefDepth, wallDetail }: {
               <div className="mt-1 flex flex-col gap-2 text-sm">
                 <label>{t("assetManager.room")} <select className={button+" !py-1"} value={background} onChange={e=>setBackground(e.target.value)}>{["Empty","Gray","3×3","5×5",...(sample==="material"?["Selected texture"]:[])].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>
                 <label>{t("assetManager.roomCeiling")} <select className={button+" !py-1"} value={ceiling} onChange={e=>setCeiling(e.target.value)}>{["Auto","On","Off"].map(v=><option key={v} value={v}>{display(v)}</option>)}</select></label>
+                <label title={t("assetManager.roomReflectionPreviewHint")}><input type="checkbox" checked={previewRoomReflection} disabled={!furnishedRoom || view !== "textured"} onChange={e=>setPreviewRoomReflection(e.target.checked)}/> {t("assetManager.roomReflectionPreview")}</label>
                 <p className="text-xs text-neutral-300">{t("assetManager.walkHint")}</p>
                 <label><input type="checkbox" checked={rgb} onChange={e=>setRgb(e.target.checked)}/> {t("assetManager.rgb")}</label>
                 <label><input type="checkbox" checked={keyLight} onChange={e=>setKeyLight(e.target.checked)}/> {t("assetManager.keyLight")}</label>

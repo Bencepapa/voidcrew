@@ -66,17 +66,17 @@ export function linkFields(links: Linked, ids: string[], onChange: (patch: Linke
 }
 
 // Same callbacks and limits as the old sliders; open transforms have no bar.
-export function slider(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void) {
- return <Numeric label={label} value={value} min={min} max={max} step={step} onChange={onChange}/>;
+export function slider(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void, defaultValue?: number) {
+ return <Numeric label={label} value={value} min={min} max={max} step={step} onChange={onChange} defaultValue={defaultValue}/>;
 }
-function Numeric({label,value,min,max,step,onChange}: {label:string;value:number;min:number;max:number;step:number;onChange:(v:number)=>void}) {
+function Numeric({label,value,min,max,step,onChange,defaultValue}: {label:string;value:number;min:number;max:number;step:number;onChange:(v:number)=>void;defaultValue?:number}) {
  const commit=useContext(CommitContext);
  const degrees=[t("editorBar.turn"),t("editorBar.heading"),t("editorBar.tilt"),t("editorBar.hue")].includes(label);
  const open=[t("editorBar.turn"),t("editorBar.scale"),t("editorBar.height"),t("editorBar.place"),t("editorBar.heading")].includes(label);
  const percent=[t("editorBar.chance"),t("editorBar.locked")].includes(label);
  const defaults:Record<string,number>={ [t("editorBar.scale")]:1,[t("editorBar.amount")]:1,[t("editorBar.puffSize")]:1,[t("editorBar.count")]:1,[t("editorBar.everyS")]:30,[t("editorBar.max")]:1,[t("editorBar.locked")]:1,[t("editorBar.intensity")]:1,[t("editorBar.range")]:3,[t("editorBar.lightStrength")]:1,[t("editorBar.lightReach")]:1,["+-"]:30 };
  const factor=percent?100:1;
- return <NumberField label={label} value={value*factor} min={min*factor} max={max*factor} step={step*factor} digits={percent||degrees?0:undefined} defaultValue={(defaults[label]??0)*factor} unit={percent?"%":degrees?"°":label===t("editorBar.scale")?"×":undefined} slider={!open} onChange={v=>onChange(v/factor)} onCommit={commit}/>;
+ return <NumberField label={label} value={value*factor} min={min*factor} max={max*factor} step={step*factor} digits={percent||degrees?0:undefined} defaultValue={(defaultValue??defaults[label]??0)*factor} unit={percent?"%":degrees?"°":label===t("editorBar.scale")?"×":undefined} slider={!open} onChange={v=>onChange(v/factor)} onCommit={commit}/>;
 }
 
 // Undefined retains the map's inherited renderer default, as the old select did.

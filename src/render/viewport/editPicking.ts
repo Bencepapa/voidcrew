@@ -9,7 +9,7 @@ import { TOPDOWN_REACH } from "./camera";
 import { LIGHT_SPOT_GAP, ORIGIN_NDC, SURFACE_PIXELS } from "./constants";
 import type { EditTarget, ViewportRef } from "./contracts";
 import { EDIT_REACH, TOOL_LAYER } from "./editor";
-import { drawnChain, isItemObject, seeThrough } from "./raycastObjects";
+import { drawnChain, passesEditTransparency, seeThrough } from "./raycastObjects";
 
 // The editor layer a picked object belongs to (a locked one is looked
 // through: what's behind it can still be clicked).
@@ -126,8 +126,7 @@ export function createEditPicking({
           (h.object.userData.actorId === undefined || editToolRef.current === "robot" || selecting) &&
           (lightTool || h.object.userData.mapLight === undefined) &&
           drawnChain(h.object) &&
-          // (the loose items are see-through sprites, but the Item tool can point at them)
-          (!seeThrough(h.object) || ((editToolRef.current === "item" || selecting || operableLink.active()) && isItemObject(h.object))) &&
+          passesEditTransparency(h.object, editToolRef.current === "item" || selecting || operableLink.active(), editToolRef.current === "prop" || selecting) &&
           // (a fence's floor mark: the Select tool and the fence tools point at it, the others see the floor under it)
           (h.object.parent?.name !== "fenceMarker" || selecting || editToolRef.current.startsWith("fence")) &&
           // (the thing being dragged is looked through: what's behind it is
