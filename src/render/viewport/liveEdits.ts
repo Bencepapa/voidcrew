@@ -143,7 +143,6 @@ export function createLiveEdits(deps: LiveEditsDeps) {
       previewObjects = built.objects;
       previewGeometries = built.geometries;
     }
-    setLiveMap(edited ? next : map);
     // (what is in sight, and what each light reaches, follow the new cells)
     invalidateSight();
     sceneVersion++;
@@ -155,6 +154,7 @@ export function createLiveEdits(deps: LiveEditsDeps) {
     }
   }
   const applyChanges = (next: GameMap) => {
+    setLiveMap(next);
     smokeFire.setWeatherMap(next);
     if (next.structureKey !== previewKey) {
       previewKey = next.structureKey;

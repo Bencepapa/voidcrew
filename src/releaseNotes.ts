@@ -18,6 +18,7 @@ export const RELEASES: Release[] = [
     version: 5,
     date: "2026-11-28",
     items: [
+      { title: "Tócsa élő előnézete", text: "Az újonnan lerakott tócsa azonnal átveszi a szoba meglévő tükröződését, a három fodrozódási beállítás pedig szerkesztés közben is érvényesül." },
       { title: "Ajtók és kerítések a szobatükröződésben", text: "A felvétel a játékos látóterén kívüli propokat is figyelembe veszi, az ajtó mozgása után pedig frissülnek a szomszédos helyiségek felvételei." },
       { title: "Tükröződő tócsa a Fantasy és a Void Crew világban", text: "A padlóra helyezhető, méretezhető tócsa sebessége, amplitúdója és fodrozódásának sűrűsége az Inspektorban állítható. A lerakott tócsa kijelölhető és törölhető." },
       { title: "Szobatükröződés anyagonként", text: "Az Eszközkezelő Megjelenés paneljén a támogatott felületek szobatükröződése textúránként Automatikus, Be vagy Ki módba állítható." },

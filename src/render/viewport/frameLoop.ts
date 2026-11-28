@@ -579,7 +579,7 @@ export function createFrameLoop(deps: FrameLoopDeps) {
     layFlatSprites();
     applyMaterialViews(s);
     const textured = s.geometryView === "textured";
-    const canCaptureReflection = isReady() && textured && doorAnimsRef.current.size === 0;
+    const canCaptureReflection = isReady() && textured;
     reflectionTest?.update(s.reflectionTestCubemap, canCaptureReflection, renderer, pointLight, facingSurfaces);
     const restoreRoomMaterials = puddles.update(getLiveMap(), renderer, pointLight, camera, now, t, canCaptureReflection,
       facingSurfaces, propObjects, textured && s.roomMaterialReflections, cam, s.showRoomReflectionCube);

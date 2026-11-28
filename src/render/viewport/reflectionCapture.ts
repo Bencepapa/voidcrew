@@ -53,6 +53,7 @@ export function captureReflection(
   const intensity = headlamp.intensity;
   const reflection = lightGrid.reflectionStrength.value;
   const visibility = new Map<Object3D, boolean>();
+  const doorPoses: { leaf: Object3D; position: Vector3; yaw: number }[] = [];
   try {
     for (const surface of surfaces) {
       if (surface.visible || surface.userData.editHidden) continue;
@@ -69,12 +70,29 @@ export function captureReflection(
         if (!visibility.has(object)) visibility.set(object, false);
         object.visible = true;
       }
+      // Photograph the intended door pose even when its animation is slowed
+      // or paused. One door must not block captures anywhere on the map.
+      if (object.parent?.userData.doorCell && object.userData.openPos && object.userData.closedPos) {
+        const { open, openPos, closedPos, openYaw } = object.userData;
+        const position = open ? openPos : closedPos;
+        const yaw = open ? openYaw : 0;
+        if (!object.position.equals(position) || object.rotation.y !== yaw) {
+          doorPoses.push({ leaf: object, position: object.position.clone(), yaw: object.rotation.y });
+          object.position.copy(position);
+          object.rotation.y = yaw;
+        }
+      }
     });
     headlamp.intensity = 0;
     lightGrid.reflectionStrength.value = 0;
     return captureEnvironment(renderer, scene, origin, faceSize, keepCube);
   } finally {
     for (const [object, visible] of visibility) object.visible = visible;
+    for (const { leaf, position, yaw } of doorPoses) {
+      leaf.position.copy(position);
+      leaf.rotation.y = yaw;
+      leaf.updateMatrixWorld();
+    }
     lightGrid.reflectionStrength.value = reflection;
     headlamp.intensity = intensity;
   }

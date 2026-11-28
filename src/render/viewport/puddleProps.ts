@@ -7,6 +7,7 @@ import { captureReflection } from "./reflectionCapture";
 import { reflectionRooms, type ReflectionRoom } from "./reflectionRooms";
 import { hasRoomMetal, roomMetalMeshes, syncRoomMetal, type RoomMetalMaterial } from "./roomMetal";
 import { createRoomReflectionDebug } from "./roomReflectionDebug";
+import { renderedSpecs } from "./sceneCache";
 
 const PUDDLE_MESH = "reflectivePuddle";
 const MAX_ROOMS = 4;
@@ -25,6 +26,7 @@ export function createPuddleProps(scene: Scene, lightGrid: LightGridUniforms, wa
   let geometry: PlaneGeometry | undefined;
   let rooms: ReturnType<typeof reflectionRooms> | undefined;
   let previousMap: GameMap | undefined;
+  let captureInputs: string | undefined;
   let grid = lightGrid.faces[0].value;
   let revision = 0;
   let nextCaptureAt = 0;
@@ -64,8 +66,15 @@ export function createPuddleProps(scene: Scene, lightGrid: LightGridUniforms, wa
       captures.clear();
       rooms = reflectionRooms(map, wallHeight);
     }
-    if (previousMap !== map || grid !== lightGrid.faces[0].value) {
+    const previousInputs = captureInputs;
+    if (previousMap !== map) {
       previousMap = map;
+      // Puddles are omitted from the capture. Their placement and ripple
+      // settings can reuse the room texture without another six draws.
+      const solidProps = (map.props ?? []).filter(spec => spec.prop !== PUDDLE_PROP);
+      captureInputs = JSON.stringify([map.structureKey, renderedSpecs(solidProps), renderedSpecs(map.decals), map.lights]);
+    }
+    if (captureInputs !== previousInputs || grid !== lightGrid.faces[0].value) {
       grid = lightGrid.faces[0].value;
       revision++;
       failedRooms.clear();
